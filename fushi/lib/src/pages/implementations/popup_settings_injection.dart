@@ -863,6 +863,18 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
     // 裸窗口」的既有真相。浏览器扩展不经本注入 → undefined → 同样走页内面板
     // （它的 bridge-shim 对 minedCardAction 也只回 null）。
     window.__fushiMinedCardActionNative = ${!options.globalLookup};
+    // BYOK AI 解释的文案（docs/agent/ai-explanation.md §10）。放静态段：它们随
+    // locale 变，不随查词变，没必要每次查词重发。
+    window.i18nAiTitle = ${jsonEncode(t.ai_explain_title)};
+    window.i18nAiStateGenerating = ${jsonEncode(t.ai_explain_state_generating)};
+    window.i18nAiStateManual = ${jsonEncode(t.ai_explain_state_manual)};
+    window.i18nAiStateNotConfigured = ${jsonEncode(t.ai_explain_state_not_configured)};
+    window.i18nAiStateTimedOut = ${jsonEncode(t.ai_explain_state_timed_out)};
+    window.i18nAiStateFailed = ${jsonEncode(t.ai_explain_state_failed)};
+    window.i18nAiStateEmpty = ${jsonEncode(t.ai_explain_state_empty)};
+    window.i18nAiActionGenerate = ${jsonEncode(t.ai_explain_action_generate)};
+    window.i18nAiActionRegenerate = ${jsonEncode(t.ai_explain_action_regenerate)};
+    window.i18nAiActionCancel = ${jsonEncode(t.ai_explain_action_cancel)};
     window.i18nMinedCardTitle = ${jsonEncode(t.anki_mined_card_title)};
     window.i18nMinedCardSubtitle = ${jsonEncode(t.anki_mined_card_subtitle)};
     window.i18nMinedMultipleMatches = ${jsonEncode(t.anki_mined_multiple_matches(count: '{count}'))};

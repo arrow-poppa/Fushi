@@ -2211,7 +2211,12 @@ html.eink.global-lookup body {
     font-style: italic;
 }
 
-/* 流式光标。只是提示「还在写」，不做花哨动画。 */
+/* 流式光标：静止，不做动画。
+   三个理由。① 文字本来就在一行行往外冒，那才是最强的「还在写」信号，闪烁光标加不了
+   多少信息。② 动画要 @keyframes + @media(prefers-reduced-motion) 两条**文档级**规则，
+   而 content.css 生成器按设计对文档级规则一律报错、要人决定怎么收——为一个装饰去
+   改那条共享管线不划算。③ 浏览器扩展里根本没人注入 __fushiAiState，这段样式在那边
+   是纯死重量，却会被注进用户访问的每一个页面。 */
 .ai-explanation[data-status="streaming"] .ai-explanation-text::after {
     content: '';
     display: inline-block;
@@ -2220,18 +2225,6 @@ html.eink.global-lookup body {
     margin-left: 1px;
     vertical-align: text-bottom;
     background-color: currentColor;
-    animation: ai-explanation-caret 1s step-end infinite;
-}
-
-@keyframes ai-explanation-caret {
-    0%, 100% { opacity: 0.65; }
-    50% { opacity: 0; }
-}
-
-@media (prefers-reduced-motion: reduce) {
-    .ai-explanation[data-status="streaming"] .ai-explanation-text::after {
-        animation: none;
-        opacity: 0.65;
-    }
+    opacity: 0.65;
 }
 /* ===== end BYOK AI Explanation ============================================= */

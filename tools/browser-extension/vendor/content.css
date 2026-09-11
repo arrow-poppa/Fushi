@@ -2027,6 +2027,96 @@
     background: var(--background-color);
 }
 
+/* ===== BYOK AI Explanation =================================================
+   契约见 docs/agent/ai-explanation.md。用既有的 MD3 变量取色，不自带调色板：
+   参考实现在这里写死了 #f8f9ff / #1a1d2e 两套渐变，换主题就脏。 */
+.ai-explanation {
+    margin: 0 0 10px 0;
+    padding: 10px 12px;
+    border: 1px solid var(--md-outline-variant, var(--outline-variant, rgba(128, 128, 128, 0.35)));
+    border-radius: var(--fushi-radius-card, 10px);
+    background: var(--md-surface-container, var(--background-color-light, transparent));
+}
+
+.ai-explanation-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 6px;
+}
+
+.ai-explanation-title {
+    flex: 1 1 auto;
+    font-weight: 600;
+    color: var(--md-on-surface-variant, var(--on-surface-variant, inherit));
+    /* 标题不该被选中带进 {popup-selection-text}：用户拖选解释正文时很容易扫到它。 */
+    user-select: none;
+    -webkit-user-select: none;
+}
+
+.ai-explanation-action {
+    flex: 0 0 auto;
+    /* 44px 是可点区域下限；图标本身小，但手指不小。 */
+    min-width: 28px;
+    min-height: 28px;
+    padding: 2px 6px;
+    border: none;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--md-on-surface-variant, var(--on-surface-variant, inherit));
+    font-size: 1.1em;
+    line-height: 1;
+    cursor: pointer;
+    user-select: none;
+    -webkit-user-select: none;
+}
+
+.ai-explanation-action:hover {
+    background: var(--md-surface-container-high, rgba(128, 128, 128, 0.16));
+}
+
+.ai-explanation-action:active {
+    background: var(--md-surface-container-high, rgba(128, 128, 128, 0.28));
+}
+
+/* 正文必须真能选中：制卡的 {popup-selection-text} 全靠它，而弹窗里别的地方
+   为了手势可靠性大多禁了选择。 */
+.ai-explanation-text {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    user-select: text;
+    -webkit-user-select: text;
+    -webkit-touch-callout: default;
+}
+
+/* 未配置 / 手动 / 出错这几个态是提示语而不是答案，弱化一点，避免被当成模型输出。 */
+.ai-explanation[data-status="notConfigured"] .ai-explanation-text,
+.ai-explanation[data-status="manual"] .ai-explanation-text,
+.ai-explanation[data-status="loading"] .ai-explanation-text,
+.ai-explanation[data-status="timedOut"] .ai-explanation-text,
+.ai-explanation[data-status="failed"] .ai-explanation-text {
+    color: var(--md-on-surface-variant, var(--on-surface-variant, inherit));
+    font-style: italic;
+}
+
+/* 流式光标：静止，不做动画。
+   三个理由。① 文字本来就在一行行往外冒，那才是最强的「还在写」信号，闪烁光标加不了
+   多少信息。② 动画要 @keyframes + @media(prefers-reduced-motion) 两条**文档级**规则，
+   而 content.css 生成器按设计对文档级规则一律报错、要人决定怎么收——为一个装饰去
+   改那条共享管线不划算。③ 浏览器扩展里根本没人注入 __fushiAiState，这段样式在那边
+   是纯死重量，却会被注进用户访问的每一个页面。 */
+.ai-explanation[data-status="streaming"] .ai-explanation-text::after {
+    content: '';
+    display: inline-block;
+    width: 0.45em;
+    height: 1em;
+    margin-left: 1px;
+    vertical-align: text-bottom;
+    background-color: currentColor;
+    opacity: 0.65;
+}
+/* ===== end BYOK AI Explanation ============================================= */
+
 /*
  *  content-css-overlay.css — extension-only additions appended to the generated
  *  content.css (see generate-content-css.mjs).

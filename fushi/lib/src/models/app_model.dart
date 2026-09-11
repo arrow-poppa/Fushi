@@ -51,6 +51,8 @@ import 'package:fushi/src/pages/implementations/dictionary_webview_media.dart'
 import 'package:fushi/src/pages/implementations/popup_dictionary_page.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi/src/ai/ai_credential_store.dart';
+import 'package:fushi/src/ai/ai_explanation_client.dart';
+import 'package:fushi/src/ai/ai_explanation_repository.dart';
 import 'package:fushi/src/ai/ai_settings_store.dart';
 import 'package:fushi/src/anki/anki_media_dedup_runner.dart';
 import 'package:fushi/src/media/floating_dict_channel.dart';
@@ -926,6 +928,15 @@ class AppModel with ChangeNotifier {
   AiCredentialStore? _aiCredentials;
   AiCredentialStore get aiCredentials =>
       _aiCredentials ??= PrefsAiCredentialStore(prefsRepo);
+
+  /// BYOK AI 解释的请求编排（缓存 / 去重 / 超时 / 取消）。
+  ///
+  /// **app 级单例**，不是每个弹窗一个：60 秒缓存要跨弹窗生效，不然刚查过的词换个
+  /// 界面再查一次又得付一次钱。弹窗侧各自持 [AiExplanationController]，共用这一个。
+  /// 懒建：AI 没配置时这条路径一次都不会走到，弹窗热路径不该为它付任何代价。
+  AiExplanationRepository? _aiExplanations;
+  AiExplanationRepository get aiExplanations =>
+      _aiExplanations ??= AiExplanationRepository(client: AiExplanationClient());
 
   /// v101 统一更新提醒。懒建：四个投递方（番剧订阅检查、漫画库刷新、扩展检查、
   /// app 版本检查）与更新页共用这一份，进程内单例。

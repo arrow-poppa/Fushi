@@ -613,6 +613,7 @@ class AnkiMiningPayload {
     this.phoneticTranscriptions = '',
     this.popupSelectionText = '',
     this.glossarySelectionHighlighted = false,
+    this.aiExplanation = '',
     this.audio = '',
     this.selectedDictionary = '',
     this.dictionaryMedia = const [],
@@ -686,6 +687,7 @@ class AnkiMiningPayload {
       popupSelectionText: json['popupSelectionText'] as String? ?? '',
       glossarySelectionHighlighted:
           _boolFromPayloadWire(json['glossarySelectionHighlighted']),
+      aiExplanation: json['aiExplanation'] as String? ?? '',
       audio: json['audio'] as String? ?? '',
       selectedDictionary: json['selectedDictionary'] as String? ?? '',
       dictionaryMedia: dictionaryMedia,
@@ -717,6 +719,13 @@ class AnkiMiningPayload {
   /// [BaseAnkiRepository.shouldYieldSelectionText]。旧 payload 没有这个键 →
   /// `false` → 行为逐字节不变。
   final bool glossarySelectionHighlighted;
+
+  /// BYOK AI 解释的**最终**答案（`{ai-explanation}`）。
+  ///
+  /// popup.js 只在 done 态填它（`__fushiAiFinalText`）：加载中/出错/超时的占位
+  /// 文案进了卡片就是永久污染，而且制卡当时没人会发现。旧 payload 没有这个键 →
+  /// 空串 → 行为逐字节不变。
+  final String aiExplanation;
   final String audio;
   final String selectedDictionary;
   final List<DictionaryMedia> dictionaryMedia;
@@ -933,6 +942,10 @@ class AnkiHandlebarRenderer {
         // 由知道笔记类型和字段映射的那一层决定
         // （[BaseAnkiRepository.shouldYieldSelectionText]）。
         return yieldSelectionText ? '' : payload.popupSelectionText;
+      case '{ai-explanation}':
+        // 纯追加：不动 {popup-selection-text} 的语义，两者互不影响。选中一段解释
+        // 去制卡时，SelectionText 仍然只给那一段，这里给的是完整答案。
+        return payload.aiExplanation;
       case '{sentence}':
         return _sentenceValue(payload, context);
       case '{cue-sentence}':
@@ -1060,6 +1073,7 @@ class AnkiHandlebarOptions {
     '{glossary-first}',
     '{selected-glossary}',
     '{popup-selection-text}',
+    '{ai-explanation}',
     '{sentence}',
     '{cue-sentence}',
     '{frequencies}',

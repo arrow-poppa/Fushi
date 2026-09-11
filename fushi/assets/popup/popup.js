@@ -2053,6 +2053,9 @@ async function buildMinePayload(expression, reading, frequencies, pitches, rules
         phoneticTranscriptions,
         popupSelectionText,
         glossarySelectionHighlighted,
+        // {ai-explanation}：只有 done 态才有内容（见 __fushiAiFinalText），
+        // 加载中/出错/超时的占位文案绝不进卡片。
+        aiExplanation: window.__fushiAiFinalText(),
         audio,
         selectedDictionary: selectedDictionaries[idx]?.name || '',
         dictionaryMedia: JSON.stringify([...dictionaryMedia.values()])

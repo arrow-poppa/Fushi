@@ -146,6 +146,14 @@
 | 全量快捷键 / 手柄 / 鼠标绑定盘点快照（2026-06-11） | [docs/agent/shortcuts-inventory.md](docs/agent/shortcuts-inventory.md) |
 | 学习统计域（v90）：唯一事实表 `study_segments` / `StudyClock` / `loadStatFacts` / `StatWindow` / 同步 wire v2 / legacy 冻结规则 | [docs/agent/statistics.md](docs/agent/statistics.md) |
 | Galgame 用户报告 / 脱敏 probe / adapter 骨架 / 离线 replay / 双架构验证 / 真机证据 | [docs/agent/galgame-hooking.md](docs/agent/galgame-hooking.md) |
+| BYOK AI 解释：provider 契约 / 提示词占位符 / SSE 流式 / 缓存与取消 / 弹窗状态 / 未知词兜底 / Anki 标记 / 凭据脱敏 | [docs/agent/ai-explanation.md](docs/agent/ai-explanation.md) |
+
+## AI Explanation
+
+- 动 BYOK AI Explanation 相关代码前，**先完整读** [docs/agent/ai-explanation.md](docs/agent/ai-explanation.md)：它是这条功能的目标、范围、非目标、与上游扩展的**逐条对照矩阵**、架构、永久决策、provider 契约、凭据安全、弹窗与 Anki 接线、未知词兜底和验收标准的唯一真相源。功能的架构决策、永久要求或**可观察契约**发生变化时，同步更新该文档。
+- 硬边界：AI 逻辑**一律在 Dart 层**（provider / 提示词 / 缓存 / 流式 / 取消），不进 `native/fushidicts/`；`AI Fallback` 是 Dart 侧合成结果，不写进词典索引。出站必须走 `createAppHttpIoClient()`（裸 client 会被 `fushi/test/tools/outbound_http_discipline_guard_test.dart` 判红）。
+- 凭据（各 provider 的 API key、custom endpoint、custom body JSON）必须登记进 `fushi/lib/src/sync/pref_redaction_policy.dart` 的 `sensitiveKeys`：备份、Profile 快照、Profile 分享三条出境通道共用那一个谓词。**绝不记录** Authorization header、bearer token、完整请求体，以及带 key 的完整 Gemini URL。
+- 临时进度写 [docs/agent/ai-explanation-handoff.md](docs/agent/ai-explanation-handoff.md)，不要写进本文件。
 
 ## 模块索引
 

@@ -6,7 +6,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/ai/ai_explanation_client.dart';
 import 'package:fushi/src/ai/ai_prompt_renderer.dart';
 import 'package:fushi/src/ai/ai_provider_config.dart';
-import 'package:http/http.dart' as http;
 import 'package:http/io_client.dart';
 
 /// End-to-end transport tests against a real loopback server, following the

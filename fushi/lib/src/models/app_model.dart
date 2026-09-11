@@ -5691,6 +5691,9 @@ class AppModel with ChangeNotifier {
   }) {
     if (result.entries.isNotEmpty) return result;
     if (!hasExplicitBoundary) return result;
+    // 偏好没加载完就别读：`prefsRepo` 是个 `!`，而查词可以先于 initialise() 发生
+    // （热槽种子、widget 测试）。这里抛异常会把**整条查词渲染**一起带走。
+    if (!isPreferencesReady) return result;
     if (!aiSettings.read().unknownWordFallback) return result;
     final AiFallbackToken? token = AiFallback.resolveFallbackTerm(
       result.searchTerm,

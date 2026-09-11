@@ -10,6 +10,7 @@
 /// repository above it, because they are policy rather than transport.
 library;
 
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:fushi/src/ai/ai_gemini_request.dart';
@@ -122,11 +123,24 @@ class AiExplanationClient {
     required AiProviderConfig config,
     required AiRenderedPrompts prompts,
     required String apiKey,
+    Future<void>? abortSignal,
   }) async {
     final AiHttpRequest built = buildRequest(
         config: config, prompts: prompts, apiKey: apiKey, stream: false);
     final String label = labelFor(config.provider);
     final http.Client client = _newClient();
+    bool closed = false;
+    void closeOnce() {
+      if (closed) return;
+      closed = true;
+      client.close();
+    }
+
+    // Closing the client mid-flight is what aborts a non-streaming request:
+    // there is no other way to stop one, and without it "close the popup" would
+    // leave the provider generating an answer nobody will read — and billing
+    // for it.
+    unawaited(abortSignal?.whenComplete(closeOnce) ?? Future<void>.value());
     try {
       final http.Response response = await client.post(
         Uri.parse(built.url),
@@ -159,7 +173,7 @@ class AiExplanationClient {
       }
       return AiResponseParser.extractOpenAiMessage(decoded).trim();
     } finally {
-      client.close();
+      closeOnce();
     }
   }
 
@@ -176,13 +190,21 @@ class AiExplanationClient {
     required AiProviderConfig config,
     required AiRenderedPrompts prompts,
     required String apiKey,
+    Future<void>? abortSignal,
   }) async* {
     final AiHttpRequest built = buildRequest(
         config: config, prompts: prompts, apiKey: apiKey, stream: true);
     final String label = labelFor(config.provider);
     final bool isGemini = config.provider == AiProvider.gemini;
     final http.Client client = _newClient();
+    bool closed = false;
+    void closeOnce() {
+      if (closed) return;
+      closed = true;
+      client.close();
+    }
 
+    unawaited(abortSignal?.whenComplete(closeOnce) ?? Future<void>.value());
     try {
       final http.Request request = http.Request('POST', Uri.parse(built.url))
         ..headers.addAll(built.headers)
@@ -250,7 +272,7 @@ class AiExplanationClient {
       final AiProviderException? pending = streamError;
       if (pending != null) throw pending;
     } finally {
-      client.close();
+      closeOnce();
     }
   }
 

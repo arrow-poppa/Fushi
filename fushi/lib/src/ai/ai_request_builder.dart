@@ -97,6 +97,23 @@ class AiHttpRequest {
   };
 }
 
+/// Validates the Custom Request Body JSON, returning a message or null.
+///
+/// Same rules as [AiRequestBuilder.applyCustomRequestBodyJson], so the settings
+/// field and the request builder can never disagree about what is acceptable.
+/// Exists so a typo is reported while the user is still looking at the field:
+/// otherwise the first sign of trouble is a generic "failed to generate" in the
+/// popup on some later lookup, with nothing pointing at the cause.
+String? validateAiRequestBodyJson(String rawJson) {
+  final Map<String, Object?> probe = <String, Object?>{};
+  try {
+    AiRequestBuilder.applyCustomRequestBodyJson(probe, rawJson);
+    return null;
+  } on AiRequestException catch (error) {
+    return error.message;
+  }
+}
+
 /// Pure helpers shared by every OpenAI-compatible provider.
 abstract final class AiRequestBuilder {
   /// Whether [endpoint] really is OpenRouter.

@@ -8,6 +8,7 @@ import 'package:fushi/src/lookup/global_lookup_controller.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 import 'package:fushi/src/settings/settings_actions.dart';
 import 'package:fushi/src/settings/settings_context.dart';
+import 'package:fushi/src/settings/settings_schema_ai.dart';
 import 'package:fushi/src/settings/port_kill_confirm.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi_engine/sync/deletion_propagation.dart';
@@ -827,6 +828,9 @@ SettingsDestination buildLookupDestination() {
           // 加回设置项前请先想清楚它凭什么值得占一个全局条目。
         ],
       ),
+      // BYOK AI 解释：查词时用用户自己的 AI 服务生成结合上下文的解释。
+      // 分区正文在 settings_schema_ai.dart，契约见 docs/agent/ai-explanation.md。
+      buildAiExplanationSection(),
     ],
   );
 }

@@ -50,6 +50,8 @@ import 'package:fushi/src/pages/implementations/dictionary_webview_media.dart'
     show writeDictionaryMediaCache;
 import 'package:fushi/src/pages/implementations/popup_dictionary_page.dart';
 import 'package:fushi_anki/fushi_anki.dart';
+import 'package:fushi/src/ai/ai_credential_store.dart';
+import 'package:fushi/src/ai/ai_settings_store.dart';
 import 'package:fushi/src/anki/anki_media_dedup_runner.dart';
 import 'package:fushi/src/media/floating_dict_channel.dart';
 import 'package:fushi/src/models/app_font_loader.dart';
@@ -912,6 +914,18 @@ class AppModel with ChangeNotifier {
   PreferencesRepository? _prefsRepo;
   PreferencesRepository get prefsRepo => _prefsRepo!;
   bool get isPreferencesReady => _prefsRepo != null;
+
+  /// BYOK AI 解释的行为设置与凭据（见 docs/agent/ai-explanation.md）。
+  ///
+  /// 两者都只包一个 [prefsRepo] 引用，构造本身零成本；缓存成字段是因为设置页与
+  /// 每次查词都会读它们，没必要每帧新建对象。凭据走独立 store：它的规则（不出境、
+  /// 不跟 Profile、不落日志）与其它偏好不同，收在一个窄接口里才好审计。
+  AiSettingsStore? _aiSettings;
+  AiSettingsStore get aiSettings => _aiSettings ??= AiSettingsStore(prefsRepo);
+
+  AiCredentialStore? _aiCredentials;
+  AiCredentialStore get aiCredentials =>
+      _aiCredentials ??= PrefsAiCredentialStore(prefsRepo);
 
   /// v101 统一更新提醒。懒建：四个投递方（番剧订阅检查、漫画库刷新、扩展检查、
   /// app 版本检查）与更新页共用这一份，进程内单例。

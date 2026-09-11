@@ -19,41 +19,27 @@
 
 ## Completed
 
-- **Phase 1 — audit.** Repo/branch/worktree state verified; instruction files read in
-  full (`CLAUDE.md`, `AGENTS.md`, `docs/agent/build.md`, `review-process.md`, relevant
-  parts of `fast-workflow.md`, and the `fushi/`, `fushi_anki/`, `fushi_dictionary`
-  module docs). `docs/agent/ai-explanation.md` written.
-- **Phase 3 — base layer.** `AiSseParser`, `AiPromptRenderer`, `AiProviderConfig`,
-  the 27 `ai_explain_*` preference keys, and credential registration in
-  `PrefRedactionPolicy` / `kCredentialPreferenceKeys`, each with tests.
-- **Phase 4 — providers.** `AiRequestBuilder` (OpenAI / DeepSeek / Custom+OpenRouter),
-  `AiGeminiRequestBuilder`, `AiResponseParser`, `AiExplanationClient` (streaming,
-  cancellation, sanitised errors), each with tests.
+- **Phase 1 — audit** and `docs/agent/ai-explanation.md` (parity matrix, architecture,
+  permanent decisions, deliberate divergences).
+- **Phase 3 — base layer**: SSE parser, prompt renderer, config model, 27 preference
+  keys, credential registration in `PrefRedactionPolicy`.
+- **Phase 4 — providers**: request builders for OpenAI / DeepSeek / Custom+OpenRouter
+  and Gemini, response extraction, HTTP client with streaming + cancellation,
+  repository with cache / dedup / timeout / the single non-streaming retry.
+- **Persistence**: `AiPrefKeys`, `AiCredentialStore`, `AiSettingsStore`, wired onto
+  `AppModel` as `aiSettings` / `aiCredentials`.
+- **Unknown-word fallback**: synthetic `AI Fallback` result, built in Dart only.
+- **i18n**: 60 keys across all 17 locales via `i18n_sync.dart` + `slang`.
+- **Settings**: the AI Explanation section under Settings → Lookup, with the five
+  interactive rows registered in `settings_schema_coverage_test`'s `kCoveredElsewhere`.
+- **Popup**: the explanation box in `popup.js` + `popup.css`, with jsdom tests.
+- **Anki**: the `{ai-explanation}` marker, threaded through `renderMediaPayload`.
 
 ### Parity evidence
 
-The reference implementation was executed under Node and diffed against this port,
-case by case. **684 cases, all identical:**
-
-| Area | Cases | What it covers |
-|---|---|---|
-| SSE framing | 23 | separators incl. `\r\r`, single-space strip, events split across chunks, termination with no trailing blank line, `[DONE]`, malformed payloads, Unicode |
-| Reasoning / routing / merge | 301 | 192 thinking combinations x 2 endpoint kinds, 96 routing combinations, 13 deep-merge shapes |
-| Gemini | 360 | 18 model ids x 5 thinking levels x streaming x system prompt — resolved model id, host, thinking level, full URL and full body |
-
-Harnesses live in the session scratchpad (not committed); they are reproducible from
-the reference tree at any time.
-
-### Commits on `agent/claude-ai-explanation`
-
-| Commit | Contents |
-|---|---|
-| `b3ac39b6` | docs: parity matrix, handoff, CLAUDE.md reference |
-| `0fb887f4` | SSE parser + prompt renderer |
-| `20ce166f` | config model + preference keys + credential redaction |
-| `e0bac9b1` | OpenAI / DeepSeek / Custom request building |
-| `72dc7f1e` | Gemini routing + response extraction |
-| `7424418b` | HTTP client: streaming, cancellation, sanitised errors |
+The reference implementation was executed under Node and diffed against this port.
+**684 cases identical** (23 SSE framing, 301 reasoning/routing/merge, 360 Gemini),
+plus 36 recorded fallback-tokenizer cases embedded directly as test expectations.
 
 ## Decisions taken with the user (2026-09-11)
 
@@ -76,13 +62,21 @@ the reference tree at any time.
 
 ## Tests run
 
-- **CI run 34560758748** (`main.yml`, `workflow_dispatch`, fork): `dart analyze`
-  **passed** on commits through `20ce166f`. The unit-test, package-test and JS-test
-  steps were still running when this was written — re-check before trusting them.
-- No Dart runs locally: this machine has no Flutter SDK (see Environment constraints).
-- The 684-case parity diffs above were run locally under Node + Python. They validate
-  **algorithms**, not Dart compilation; `dart analyze` and `flutter test` on CI are the
-  real gate.
+All local, with Flutter 3.44.0 (matching CI):
+
+| Command | Result |
+|---|---|
+| `flutter analyze` (whole project) | **No issues found!** |
+| `flutter test test/ai` | +252 passed |
+| `flutter test test/settings test/ai test/models` | +1410 passed |
+| `flutter test test/anki test/ai` | +648 passed |
+| `flutter test` in `packages/fushi_anki` | +562 passed |
+| `flutter test test/i18n` | +30 passed |
+| `npm test` in `test/js` | 72/72 passed |
+
+CI run 34560758748 (`main.yml` on the fork) was green through commit `20ce166f`:
+`dart analyze`, **25511** app tests, package tests, and both JS suites. Note the
+count — `CLAUDE.md` warns that a zero-test run disguises itself as a pass.
 
 ## Pending tests
 
@@ -113,14 +107,21 @@ None yet.
 
 ## Recommended next work
 
-1. **Phase 4b — repository**: cache (60 s TTL, key per §8.3), dedup by in-flight key,
-   30 s inactivity timeout re-armed per chunk, cancellation policy, and the
-   non-streaming fallback with its four guards (§5.6.1 — replicate exactly).
-2. **Credential store + settings UI**: `ai_explain_*` getters/setters on
-   `PreferencesRepository`, an AI Integration settings section, i18n keys via
-   `fushi/tool/i18n_sync.dart` only.
-3. **Phase 5 — popup**: states, streaming into one text node, selection and copy.
-4. **Phase 6 — fallback and Anki**: synthetic `AI Fallback` result, `{ai-explanation}`.
-5. **Phase 7 — surfaces**, then **Phase 8 — full CI validation and the arm64 artifact**
-   (`release.yml` with `build_only: true` produces downloadable artifacts without
-   publishing a release).
+Everything below the UI is done and verified; what remains is integration.
+
+1. **Controller wiring** — the one piece that makes it work end to end:
+   - register an `aiExplainAction` JS handler in `dictionary_popup_webview.dart`
+     (regenerate / cancel) alongside the existing 27;
+   - inject the AI state and the `window.i18nAi*` strings with the popup payload
+     (`popup_settings_injection.dart`), reusing the static/dynamic split so the
+     per-lookup push stays small;
+   - on lookup: build the cache key, call `AiExplanationRepository.explain`, push
+     each `AiExplanationResult` through `window.__fushiAiUpdate`;
+   - honour `cancelPendingRequests` on popup dismiss / new lookup / surface hide.
+2. **AI Fallback wiring** — call `AiFallback.resolveFallbackTerm` when
+   `searchDictionary` returns no entries and the setting is on, passing
+   `hasExplicitBoundary: true` for selection-driven lookups.
+3. **Surfaces** — thread the sentence from each host (see §6.2 of the feature doc for
+   the verified carrier per surface; three surfaces genuinely have none).
+4. **Validation** — full CI run, then the arm64 artifact via `release.yml` with
+   `build_only: true` (produces downloadable artifacts without publishing a release).

@@ -107,30 +107,23 @@ None yet.
 
 ## Recommended next work
 
-### 1. Finish the explicit-boundary audit (blocks the fallback on reader surfaces)
+### 1. ~~Explicit-boundary audit~~ — done
 
-`BaseSourcePageState.searchDictionaryResult` gained
-`bool hasExplicitBoundary = false`, and the default is **deliberately false**:
-that method is reached from at least six call sites with different semantics —
-drag-selection (boundary is the selection), tap-to-scan (boundary is guessed
-from a scan window), card-internal link clicks, and the manga OCR path.
+All six `searchDictionaryResult` call sites were read. The rule applied: does the
+caller hand over text the **user** delimited, or a window the app scanned?
 
-Enabling the fallback on a tap-scan path in Japanese produces exactly the
-failure the reference's language blacklist exists to prevent: a "word" covering
-half a clause, with the highlight over the wrong range. So each call site has to
-be read before it is flipped:
+| Call site | Path | Boundary |
+|---|---|---|
+| `base_source_page.dart:850` `onTextSelected` | popup tap-scan (`selection.js` `selectFromPosition`, "scan forward up to maxLength chars") | no |
+| `base_source_page.dart:890` `onLinkClick` | headword / link target | **yes** |
+| `reader_fushi/webview.part.dart:1726` | native text selection (drag) | **yes** |
+| `reader_fushi_page.dart:3925` (via `lookup.part.dart`) | reader tap-scan | no |
+| `reader_fushi/chrome.part.dart:400` | context menu over a native selection | **yes** |
+| `manga_fushi_page.dart:3704` | OCR tap-scan (`processMangaSelection`) | no |
 
-| Call site | Verdict |
-|---|---|
-| `dictionary_page_mixin.dart` manual search / link / subtitle line | **enabled** — the query is the user's own text |
-| `base_source_page.dart:850`, `:890` | unaudited |
-| `reader_fushi/webview.part.dart:1726` | unaudited |
-| `reader_fushi_page.dart:3925` | unaudited |
-| `reader_fushi/chrome.part.dart:400` | unaudited |
-| `manga_fushi_page.dart:3704` | unaudited |
-
-For each: does the caller hand over text the **user** delimited, or a scan window
-the app guessed? Only the former may pass `hasExplicitBoundary: true`.
+The three "yes" sites now pass `hasExplicitBoundary: true`; the three tap-scan
+sites stay false, because with no supplied boundary the tokenizer would return a
+whole clause in a language without spaces.
 
 ### 2. Real-device verification
 

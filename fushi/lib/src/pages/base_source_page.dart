@@ -897,6 +897,8 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
           final count = await searchDictionaryResult(
             searchTerm: query,
             selectionRect: childRect,
+            // 边界明确：点的是词头 / 链接目标，整串就是那个词，不是扫描窗。
+            hasExplicitBoundary: true,
           );
           if (count > 0) {
             // BUG-2054：与 onTextSelected 对称（含两道身份门）。

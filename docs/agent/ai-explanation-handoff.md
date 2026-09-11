@@ -22,17 +22,38 @@
 - **Phase 1 — audit.** Repo/branch/worktree state verified; instruction files read in
   full (`CLAUDE.md`, `AGENTS.md`, `docs/agent/build.md`, `review-process.md`, relevant
   parts of `fast-workflow.md`, and the `fushi/`, `fushi_anki/`, `fushi_dictionary`
-  module docs).
-- Yomitan AI feature extracted in full and cross-verified against the sources
-  (placeholders, OpenRouter detection, identifying headers, fallback language set,
-  SSE reader, non-streaming fallback guards).
-- Fushi integration points mapped and the load-bearing claims re-verified first-hand:
-  the outbound-HTTP CI guard sentinel, `snapshotSelection()` pointer-down wiring, and
-  the `popupJson ?? buildLookupEntriesJson` fallback that makes a synthetic Dart-only
-  result renderable.
-- `docs/agent/ai-explanation.md` written (objective, scope, non-objectives, parity
-  matrix, architecture, permanent decisions, deliberate divergences, credential
-  security, popup and Anki integration, tests, limitations, acceptance, licence).
+  module docs). `docs/agent/ai-explanation.md` written.
+- **Phase 3 — base layer.** `AiSseParser`, `AiPromptRenderer`, `AiProviderConfig`,
+  the 27 `ai_explain_*` preference keys, and credential registration in
+  `PrefRedactionPolicy` / `kCredentialPreferenceKeys`, each with tests.
+- **Phase 4 — providers.** `AiRequestBuilder` (OpenAI / DeepSeek / Custom+OpenRouter),
+  `AiGeminiRequestBuilder`, `AiResponseParser`, `AiExplanationClient` (streaming,
+  cancellation, sanitised errors), each with tests.
+
+### Parity evidence
+
+The reference implementation was executed under Node and diffed against this port,
+case by case. **684 cases, all identical:**
+
+| Area | Cases | What it covers |
+|---|---|---|
+| SSE framing | 23 | separators incl. `\r\r`, single-space strip, events split across chunks, termination with no trailing blank line, `[DONE]`, malformed payloads, Unicode |
+| Reasoning / routing / merge | 301 | 192 thinking combinations x 2 endpoint kinds, 96 routing combinations, 13 deep-merge shapes |
+| Gemini | 360 | 18 model ids x 5 thinking levels x streaming x system prompt — resolved model id, host, thinking level, full URL and full body |
+
+Harnesses live in the session scratchpad (not committed); they are reproducible from
+the reference tree at any time.
+
+### Commits on `agent/claude-ai-explanation`
+
+| Commit | Contents |
+|---|---|
+| `b3ac39b6` | docs: parity matrix, handoff, CLAUDE.md reference |
+| `0fb887f4` | SSE parser + prompt renderer |
+| `20ce166f` | config model + preference keys + credential redaction |
+| `e0bac9b1` | OpenAI / DeepSeek / Custom request building |
+| `72dc7f1e` | Gemini routing + response extraction |
+| `7424418b` | HTTP client: streaming, cancellation, sanitised errors |
 
 ## Decisions taken with the user (2026-09-11)
 
@@ -55,8 +76,13 @@
 
 ## Tests run
 
-- None yet — no code written yet. Documentation-only change so far, so per `CLAUDE.md`
-  the bar is `git diff --cached --check`.
+- **CI run 34560758748** (`main.yml`, `workflow_dispatch`, fork): `dart analyze`
+  **passed** on commits through `20ce166f`. The unit-test, package-test and JS-test
+  steps were still running when this was written — re-check before trusting them.
+- No Dart runs locally: this machine has no Flutter SDK (see Environment constraints).
+- The 684-case parity diffs above were run locally under Node + Python. They validate
+  **algorithms**, not Dart compilation; `dart analyze` and `flutter test` on CI are the
+  real gate.
 
 ## Pending tests
 
@@ -87,9 +113,14 @@ None yet.
 
 ## Recommended next work
 
-1. Phase 3 — base layer: `AiProviderConfig`, `AiPromptRenderer`, `AiSseParser`, the
-   preference keys, and `PrefRedactionPolicy` registration, with unit tests. This is
-   pure Dart with no Flutter dependency and is the cheapest thing to get green on CI.
-2. Phase 4 — providers and the repository (cache, dedup, timeout, cancellation).
-3. Phase 5 — popup states and the JS box.
-4. Phase 6 — fallback and Anki.
+1. **Phase 4b — repository**: cache (60 s TTL, key per §8.3), dedup by in-flight key,
+   30 s inactivity timeout re-armed per chunk, cancellation policy, and the
+   non-streaming fallback with its four guards (§5.6.1 — replicate exactly).
+2. **Credential store + settings UI**: `ai_explain_*` getters/setters on
+   `PreferencesRepository`, an AI Integration settings section, i18n keys via
+   `fushi/tool/i18n_sync.dart` only.
+3. **Phase 5 — popup**: states, streaming into one text node, selection and copy.
+4. **Phase 6 — fallback and Anki**: synthetic `AI Fallback` result, `{ai-explanation}`.
+5. **Phase 7 — surfaces**, then **Phase 8 — full CI validation and the arm64 artifact**
+   (`release.yml` with `build_only: true` produces downloadable artifacts without
+   publishing a release).

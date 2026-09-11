@@ -68,6 +68,33 @@ class AiHttpRequest {
 
   /// The encoded body. Also never safe to log: it contains the user's prompts.
   String encodeBody() => jsonEncode(body);
+
+  /// The URL with any credential-bearing query parameter removed.
+  ///
+  /// Gemini is the one provider that authenticates with `?key=<apiKey>` rather
+  /// than a header, so its URL *is* a secret. Anything that reports a request —
+  /// a log line, an error message, a bug report — must use this and never
+  /// [url]. See `docs/agent/ai-explanation.md` §9.
+  String get safeUrl {
+    final Uri? uri = Uri.tryParse(url);
+    if (uri == null) return '<invalid url>';
+    if (uri.queryParameters.isEmpty) return uri.toString();
+    final Map<String, String> safe = <String, String>{
+      for (final MapEntry<String, String> e in uri.queryParameters.entries)
+        e.key: _credentialQueryKeys.contains(e.key.toLowerCase())
+            ? '<redacted>'
+            : e.value,
+    };
+    return uri.replace(queryParameters: safe).toString();
+  }
+
+  static const Set<String> _credentialQueryKeys = <String>{
+    'key',
+    'api_key',
+    'apikey',
+    'access_token',
+    'token',
+  };
 }
 
 /// Pure helpers shared by every OpenAI-compatible provider.

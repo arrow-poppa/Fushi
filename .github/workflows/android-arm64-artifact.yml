@@ -15,8 +15,16 @@ name: Android arm64 artifact (unsigned)
 # 所以这条的定位很窄：临时签名、只出 arm64、只上传 artifact、绝不发布。
 # 产物**不可分发**（签名是每次构建现生成的一次性 key）。
 
+# 触发方式两条：
+#
+# * `workflow_dispatch` —— 文件进了默认分支之后的常规入口。
+# * 给 PR 打 `build-arm64` 标签 —— 在文件还没进默认分支时唯一可用的入口
+#   （GitHub 要求 workflow_dispatch 的定义位于默认分支）。用 `types: [labeled]`
+#   而不是裸 `pull_request`，是为了不给每一条无关 PR 都挂上一次 Android 全量构建。
 on:
   workflow_dispatch:
+  pull_request:
+    types: [labeled]
 
 permissions:
   contents: read
@@ -28,6 +36,9 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    if: >-
+      github.event_name == 'workflow_dispatch'
+      || github.event.label.name == 'build-arm64'
     steps:
       - uses: actions/checkout@v6
         with:

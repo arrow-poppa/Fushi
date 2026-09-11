@@ -78,6 +78,35 @@ CI run 34560758748 (`main.yml` on the fork) was green through commit `20ce166f`:
 `dart analyze`, **25511** app tests, package tests, and both JS suites. Note the
 count — `CLAUDE.md` warns that a zero-test run disguises itself as a pass.
 
+## Pre-existing failure, not this branch's (verified)
+
+`test/pages/home_video_page_menu_test.dart` — "卡片菜单单删会回收本视频 app-owned 封面
+字幕与内嵌字幕缓存" — fails inside a `test/pages` batch and passes 17/17 when the file
+is run alone. The error is:
+
+```
+A Timer is still pending even after the widget tree was disposed.
+  VideoSpecsService._probeAndStore (video_specs_service.dart:338)
+  VideoSpecsService._pump           (video_specs_service.dart:277)
+```
+
+**Classified against a clean baseline rather than assumed.** A detached worktree at
+`develop` (`cda13c620`, no `fushi/lib/src/ai`) was bootstrapped and run:
+
+| | passed | skipped | failed |
+|---|---|---|---|
+| `develop` baseline | 3675 | 7 | 1 |
+| this branch | 3675 | 7 | 1 |
+
+Identical counts, same test, same stack. Nothing in this branch touches
+`VideoSpecsService`. So: **this branch adds no regression to `test/pages`**, and the
+leaked timer is someone else's to fix — worth filing via `dart run tool/bug.dart new`
+if it starts costing people time, which is a call for the repo owner rather than this
+feature branch.
+
+Do not "fix" it here, and do not let it mask a real red: re-run the single file alone
+before concluding anything about a `test/pages` batch failure.
+
 ## Pending tests
 
 Everything in `ai-explanation.md` §12.

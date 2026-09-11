@@ -107,6 +107,12 @@ class AiExplanationRepository {
     }
   }
 
+  /// Abandons the request for [cacheKey], if one is running.
+  ///
+  /// The explicit-cancel path: the user pressed the button for *this* word, so
+  /// only this word's request stops. Other surfaces keep theirs.
+  void cancel(String cacheKey) => _abort(cacheKey);
+
   /// Abandons every in-flight request except [cacheKey].
   ///
   /// The new-lookup path: the word now on screen keeps generating, the rest

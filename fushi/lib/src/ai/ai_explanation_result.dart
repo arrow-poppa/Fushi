@@ -64,50 +64,48 @@ class AiExplanationResult {
   });
 
   const AiExplanationResult.notConfigured()
-      : status = AiExplanationStatus.notConfigured,
-        text = '',
-        failure = null,
-        providerMessage = null;
+    : status = AiExplanationStatus.notConfigured,
+      text = '',
+      failure = null,
+      providerMessage = null;
 
   const AiExplanationResult.manual()
-      : status = AiExplanationStatus.manual,
-        text = '',
-        failure = null,
-        providerMessage = null;
+    : status = AiExplanationStatus.manual,
+      text = '',
+      failure = null,
+      providerMessage = null;
 
   const AiExplanationResult.loading()
-      : status = AiExplanationStatus.loading,
-        text = '',
-        failure = null,
-        providerMessage = null;
+    : status = AiExplanationStatus.loading,
+      text = '',
+      failure = null,
+      providerMessage = null;
 
   const AiExplanationResult.streaming(this.text)
-      : status = AiExplanationStatus.streaming,
-        failure = null,
-        providerMessage = null;
+    : status = AiExplanationStatus.streaming,
+      failure = null,
+      providerMessage = null;
 
   const AiExplanationResult.done(this.text)
-      : status = AiExplanationStatus.done,
-        failure = null,
-        providerMessage = null;
+    : status = AiExplanationStatus.done,
+      failure = null,
+      providerMessage = null;
 
   const AiExplanationResult.timedOut()
-      : status = AiExplanationStatus.timedOut,
-        text = '',
-        failure = null,
-        providerMessage = null;
+    : status = AiExplanationStatus.timedOut,
+      text = '',
+      failure = null,
+      providerMessage = null;
 
   const AiExplanationResult.cancelled()
-      : status = AiExplanationStatus.cancelled,
-        text = '',
-        failure = null,
-        providerMessage = null;
+    : status = AiExplanationStatus.cancelled,
+      text = '',
+      failure = null,
+      providerMessage = null;
 
-  const AiExplanationResult.failed(
-    this.failure, {
-    this.providerMessage,
-  })  : status = AiExplanationStatus.failed,
-        text = '';
+  const AiExplanationResult.failed(this.failure, {this.providerMessage})
+    : status = AiExplanationStatus.failed,
+      text = '';
 
   final AiExplanationStatus status;
 

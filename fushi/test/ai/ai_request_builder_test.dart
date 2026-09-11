@@ -23,11 +23,11 @@ void main() {
   const String otherUrl = 'https://api.example.com/v1/chat/completions';
 
   AiRenderedPrompts prompts({String system = ''}) => AiPromptRenderer.render(
-        userTemplate: 'Explain {{target}} in {{sentence}}.',
-        systemTemplate: system,
-        target: 'word',
-        sentence: 'ctx',
-      );
+    userTemplate: 'Explain {{target}} in {{sentence}}.',
+    systemTemplate: system,
+    target: 'word',
+    sentence: 'ctx',
+  );
 
   Map<String, Object?> customBody({
     AiThinkingMode thinkingMode = AiThinkingMode.unset,
@@ -39,24 +39,23 @@ void main() {
     String requestBodyJson = '',
     String endpoint = openRouterUrl,
     bool stream = false,
-  }) =>
-      AiRequestBuilder.buildCustom(
-        config: AiProviderConfig(
-          provider: AiProvider.custom,
-          customEndpoint: endpoint,
-          customModel: 'some/model',
-          customThinkingMode: thinkingMode,
-          customThinkingIntensity: thinkingIntensity,
-          customThinkingValue: thinkingValue,
-          customRoutingMode: routingMode,
-          customRoutingSlugs: slugs,
-          customAllowFallbacks: allowFallbacks,
-          customRequestBodyJson: requestBodyJson,
-        ),
-        prompts: prompts(),
-        apiKey: 'k',
-        stream: stream,
-      ).body;
+  }) => AiRequestBuilder.buildCustom(
+    config: AiProviderConfig(
+      provider: AiProvider.custom,
+      customEndpoint: endpoint,
+      customModel: 'some/model',
+      customThinkingMode: thinkingMode,
+      customThinkingIntensity: thinkingIntensity,
+      customThinkingValue: thinkingValue,
+      customRoutingMode: routingMode,
+      customRoutingSlugs: slugs,
+      customAllowFallbacks: allowFallbacks,
+      customRequestBodyJson: requestBodyJson,
+    ),
+    prompts: prompts(),
+    apiKey: 'k',
+    stream: stream,
+  ).body;
 
   group('messages', () {
     test('a user message is always present', () {
@@ -65,27 +64,34 @@ void main() {
       // "prompt" or "messages"`.
       for (final AiHttpRequest request in <AiHttpRequest>[
         AiRequestBuilder.buildOpenAi(
-            config: const AiProviderConfig(),
-            prompts: AiPromptRenderer.render(
-                userTemplate: '',
-                systemTemplate: '',
-                target: 'w',
-                sentence: ''),
-            apiKey: 'k',
-            stream: false),
+          config: const AiProviderConfig(),
+          prompts: AiPromptRenderer.render(
+            userTemplate: '',
+            systemTemplate: '',
+            target: 'w',
+            sentence: '',
+          ),
+          apiKey: 'k',
+          stream: false,
+        ),
         AiRequestBuilder.buildDeepSeek(
-            config: const AiProviderConfig(deepseekModel: 'd'),
-            prompts: prompts(),
-            apiKey: 'k',
-            stream: false),
+          config: const AiProviderConfig(deepseekModel: 'd'),
+          prompts: prompts(),
+          apiKey: 'k',
+          stream: false,
+        ),
       ]) {
-        final List<Object?> messages = request.body['messages']! as List<Object?>;
+        final List<Object?> messages =
+            request.body['messages']! as List<Object?>;
         expect(messages, isNotEmpty);
         final Map<Object?, Object?> last =
             messages.last as Map<Object?, Object?>;
         expect(last['role'], 'user');
-        expect((last['content']! as String).trim(), isNotEmpty,
-            reason: 'a request must never carry an empty user message');
+        expect(
+          (last['content']! as String).trim(),
+          isNotEmpty,
+          reason: 'a request must never carry an empty user message',
+        );
       }
     });
 
@@ -96,8 +102,9 @@ void main() {
     });
 
     test('prepends the system message when one is set', () {
-      final List<Map<String, String>> messages =
-          AiRequestBuilder.buildMessages(prompts(system: 'be terse'));
+      final List<Map<String, String>> messages = AiRequestBuilder.buildMessages(
+        prompts(system: 'be terse'),
+      );
       expect(messages, hasLength(2));
       expect(messages.first['role'], 'system');
       expect(messages.first['content'], 'be terse');
@@ -108,10 +115,11 @@ void main() {
   group('OpenAI', () {
     test('uses the fixed endpoint and a bearer token', () {
       final AiHttpRequest request = AiRequestBuilder.buildOpenAi(
-          config: const AiProviderConfig(),
-          prompts: prompts(),
-          apiKey: 'sk-test',
-          stream: false);
+        config: const AiProviderConfig(),
+        prompts: prompts(),
+        apiKey: 'sk-test',
+        stream: false,
+      );
       expect(request.url, 'https://api.openai.com/v1/chat/completions');
       expect(request.headers['Authorization'], 'Bearer sk-test');
       expect(request.headers['Content-Type'], 'application/json');
@@ -121,21 +129,26 @@ void main() {
       // Upstream trims for DeepSeek and Custom but not OpenAI, so a key copied
       // with a trailing newline fails only there. That is a bug, not a contract.
       final AiHttpRequest request = AiRequestBuilder.buildOpenAi(
-          config: const AiProviderConfig(),
-          prompts: prompts(),
-          apiKey: '  sk-test\n',
-          stream: false);
+        config: const AiProviderConfig(),
+        prompts: prompts(),
+        apiKey: '  sk-test\n',
+        stream: false,
+      );
       expect(request.headers['Authorization'], 'Bearer sk-test');
     });
 
     test('omits the stream key entirely when not streaming', () {
       final Map<String, Object?> body = AiRequestBuilder.buildOpenAi(
-          config: const AiProviderConfig(),
-          prompts: prompts(),
-          apiKey: 'k',
-          stream: false).body;
-      expect(body.containsKey('stream'), isFalse,
-          reason: 'upstream sends no stream field at all on the sync path');
+        config: const AiProviderConfig(),
+        prompts: prompts(),
+        apiKey: 'k',
+        stream: false,
+      ).body;
+      expect(
+        body.containsKey('stream'),
+        isFalse,
+        reason: 'upstream sends no stream field at all on the sync path',
+      );
       expect(body['model'], 'gpt-4o-mini');
       expect(body['temperature'], 0.7);
     });
@@ -143,76 +156,87 @@ void main() {
     test('sets stream true when streaming', () {
       expect(
         AiRequestBuilder.buildOpenAi(
-            config: const AiProviderConfig(),
-            prompts: prompts(),
-            apiKey: 'k',
-            stream: true).body['stream'],
+          config: const AiProviderConfig(),
+          prompts: prompts(),
+          apiKey: 'k',
+          stream: true,
+        ).body['stream'],
         isTrue,
       );
     });
 
     test('never carries reasoning, routing or custom body fields', () {
       final Map<String, Object?> body = AiRequestBuilder.buildOpenAi(
-          config: const AiProviderConfig(
-            customThinkingMode: AiThinkingMode.enabled,
-            customRequestBodyJson: '{"top_p":0.1}',
-          ),
-          prompts: prompts(),
-          apiKey: 'k',
-          stream: false).body;
-      expect(body.keys.toSet(),
-          <String>{'model', 'messages', 'temperature'});
+        config: const AiProviderConfig(
+          customThinkingMode: AiThinkingMode.enabled,
+          customRequestBodyJson: '{"top_p":0.1}',
+        ),
+        prompts: prompts(),
+        apiKey: 'k',
+        stream: false,
+      ).body;
+      expect(body.keys.toSet(), <String>{'model', 'messages', 'temperature'});
     });
   });
 
   group('DeepSeek', () {
     test('uses the endpoint without a /v1 segment', () {
       final AiHttpRequest request = AiRequestBuilder.buildDeepSeek(
-          config: const AiProviderConfig(deepseekModel: 'deepseek-chat'),
-          prompts: prompts(),
-          apiKey: 'k',
-          stream: false);
-      expect(request.url, 'https://api.deepseek.com/chat/completions',
-          reason: 'adding /v1 404s');
+        config: const AiProviderConfig(deepseekModel: 'deepseek-chat'),
+        prompts: prompts(),
+        apiKey: 'k',
+        stream: false,
+      );
+      expect(
+        request.url,
+        'https://api.deepseek.com/chat/completions',
+        reason: 'adding /v1 404s',
+      );
     });
 
     test('always carries an explicit stream field', () {
       expect(
         AiRequestBuilder.buildDeepSeek(
-            config: const AiProviderConfig(deepseekModel: 'd'),
-            prompts: prompts(),
-            apiKey: 'k',
-            stream: false).body['stream'],
+          config: const AiProviderConfig(deepseekModel: 'd'),
+          prompts: prompts(),
+          apiKey: 'k',
+          stream: false,
+        ).body['stream'],
         isFalse,
       );
     });
 
     test('uses the non-OpenRouter thinking shape', () {
       final Map<String, Object?> body = AiRequestBuilder.buildDeepSeek(
-          config: const AiProviderConfig(
-            deepseekModel: 'd',
-            deepseekThinkingMode: AiThinkingMode.enabled,
-            deepseekThinkingIntensity: AiThinkingIntensity.max,
-          ),
-          prompts: prompts(),
-          apiKey: 'k',
-          stream: false).body;
+        config: const AiProviderConfig(
+          deepseekModel: 'd',
+          deepseekThinkingMode: AiThinkingMode.enabled,
+          deepseekThinkingIntensity: AiThinkingIntensity.max,
+        ),
+        prompts: prompts(),
+        apiKey: 'k',
+        stream: false,
+      ).body;
       expect(body['thinking'], <String, Object?>{'type': 'enabled'});
-      expect(body['reasoning_effort'], 'max',
-          reason: 'max is only rewritten to xhigh on OpenRouter');
+      expect(
+        body['reasoning_effort'],
+        'max',
+        reason: 'max is only rewritten to xhigh on OpenRouter',
+      );
       expect(body.containsKey('reasoning'), isFalse);
     });
 
     test('disabled suppresses reasoning_effort', () {
       final Map<String, Object?> body = AiRequestBuilder.buildDeepSeek(
-          config: const AiProviderConfig(
-            deepseekModel: 'd',
-            deepseekThinkingMode: AiThinkingMode.disabled,
-            deepseekThinkingIntensity: AiThinkingIntensity.high,
-          ),
-          prompts: prompts(),
-          apiKey: 'k',
-          stream: false).body;
+        config: const AiProviderConfig(
+          deepseekModel: 'd',
+          deepseekThinkingMode: AiThinkingMode.disabled,
+          deepseekThinkingIntensity: AiThinkingIntensity.high,
+        ),
+        prompts: prompts(),
+        apiKey: 'k',
+        stream: false,
+      ).body;
       expect(body['thinking'], <String, Object?>{'type': 'disabled'});
       expect(body.containsKey('reasoning_effort'), isFalse);
     });
@@ -222,10 +246,13 @@ void main() {
     test('matches the domain and its subdomains', () {
       expect(AiRequestBuilder.isOpenRouterEndpoint(openRouterUrl), isTrue);
       expect(
-          AiRequestBuilder.isOpenRouterEndpoint('https://openrouter.ai/'), isTrue);
+        AiRequestBuilder.isOpenRouterEndpoint('https://openrouter.ai/'),
+        isTrue,
+      );
       expect(
-          AiRequestBuilder.isOpenRouterEndpoint('https://api.openrouter.ai/v1'),
-          isTrue);
+        AiRequestBuilder.isOpenRouterEndpoint('https://api.openrouter.ai/v1'),
+        isTrue,
+      );
     });
 
     test('rejects lookalike hosts (divergence §8.4)', () {
@@ -236,8 +263,11 @@ void main() {
         'https://notopenrouter.ai/v1',
         'https://openrouter.ai.attacker.com/v1',
       ]) {
-        expect(AiRequestBuilder.isOpenRouterEndpoint(url), isFalse,
-            reason: '$url is not OpenRouter');
+        expect(
+          AiRequestBuilder.isOpenRouterEndpoint(url),
+          isFalse,
+          reason: '$url is not OpenRouter',
+        );
       }
     });
 
@@ -251,16 +281,20 @@ void main() {
     test('identify Fushi and use the documented header name', () {
       final Map<String, String> headers = AiRequestBuilder.buildCustom(
         config: const AiProviderConfig(
-            provider: AiProvider.custom,
-            customEndpoint: openRouterUrl,
-            customModel: 'm'),
+          provider: AiProvider.custom,
+          customEndpoint: openRouterUrl,
+          customModel: 'm',
+        ),
         prompts: prompts(),
         apiKey: 'k',
         stream: false,
       ).headers;
       expect(headers['X-Title'], 'Fushi');
-      expect(headers.containsKey('X-OpenRouter-Title'), isFalse,
-          reason: 'upstream sends a header OpenRouter does not document');
+      expect(
+        headers.containsKey('X-OpenRouter-Title'),
+        isFalse,
+        reason: 'upstream sends a header OpenRouter does not document',
+      );
       expect(headers['HTTP-Referer'], isNot(contains('yomitan')));
       expect(headers['HTTP-Referer'], startsWith('https://'));
     });
@@ -268,9 +302,10 @@ void main() {
     test('are absent on non-OpenRouter endpoints', () {
       final Map<String, String> headers = AiRequestBuilder.buildCustom(
         config: const AiProviderConfig(
-            provider: AiProvider.custom,
-            customEndpoint: otherUrl,
-            customModel: 'm'),
+          provider: AiProvider.custom,
+          customEndpoint: otherUrl,
+          customModel: 'm',
+        ),
         prompts: prompts(),
         apiKey: 'k',
         stream: false,
@@ -283,28 +318,42 @@ void main() {
   group('OpenRouter provider routing', () {
     test('order, only and ignore each map to their own field', () {
       expect(
-          (customBody(
-                  routingMode: AiProviderRoutingMode.order,
-                  slugs: 'a,b')['provider']! as Map<String, Object?>)['order'],
-          <String>['a', 'b']);
+        (customBody(
+              routingMode: AiProviderRoutingMode.order,
+              slugs: 'a,b',
+            )['provider']!
+            as Map<String, Object?>)['order'],
+        <String>['a', 'b'],
+      );
       expect(
-          (customBody(
-                  routingMode: AiProviderRoutingMode.only,
-                  slugs: 'a')['provider']! as Map<String, Object?>)['only'],
-          <String>['a']);
+        (customBody(
+              routingMode: AiProviderRoutingMode.only,
+              slugs: 'a',
+            )['provider']!
+            as Map<String, Object?>)['only'],
+        <String>['a'],
+      );
       expect(
-          (customBody(
-                  routingMode: AiProviderRoutingMode.ignore,
-                  slugs: 'a')['provider']! as Map<String, Object?>)['ignore'],
-          <String>['a']);
+        (customBody(
+              routingMode: AiProviderRoutingMode.ignore,
+              slugs: 'a',
+            )['provider']!
+            as Map<String, Object?>)['ignore'],
+        <String>['a'],
+      );
     });
 
     test('slugs split on commas and newlines and drop empties', () {
-      expect(AiRequestBuilder.parseProviderSlugs('a, b\nc'),
-          <String>['a', 'b', 'c']);
+      expect(AiRequestBuilder.parseProviderSlugs('a, b\nc'), <String>[
+        'a',
+        'b',
+        'c',
+      ]);
       expect(AiRequestBuilder.parseProviderSlugs(' , , '), isEmpty);
-      expect(AiRequestBuilder.parseProviderSlugs('deepinfra/turbo, fireworks'),
-          <String>['deepinfra/turbo', 'fireworks']);
+      expect(
+        AiRequestBuilder.parseProviderSlugs('deepinfra/turbo, fireworks'),
+        <String>['deepinfra/turbo', 'fireworks'],
+      );
     });
 
     test('no routing field is emitted when the slug list is empty', () {
@@ -317,18 +366,21 @@ void main() {
     test('allow_fallbacks rides along even with routing left on Default', () {
       // Consequence worth pinning: every OpenRouter request carries a provider
       // object because allow_fallbacks alone makes it non-empty.
-      expect(customBody()['provider'],
-          <String, Object?>{'allow_fallbacks': true});
-      expect(customBody(allowFallbacks: false)['provider'],
-          <String, Object?>{'allow_fallbacks': false});
+      expect(customBody()['provider'], <String, Object?>{
+        'allow_fallbacks': true,
+      });
+      expect(customBody(allowFallbacks: false)['provider'], <String, Object?>{
+        'allow_fallbacks': false,
+      });
     });
 
     test('routing is inert on a non-OpenRouter endpoint', () {
       expect(
         customBody(
-            endpoint: otherUrl,
-            routingMode: AiProviderRoutingMode.only,
-            slugs: 'a'),
+          endpoint: otherUrl,
+          routingMode: AiProviderRoutingMode.only,
+          slugs: 'a',
+        ),
         isNot(contains('provider')),
       );
     });
@@ -337,61 +389,77 @@ void main() {
   group('reasoning mapping', () {
     test('nothing is added when neither axis is set', () {
       expect(customBody().containsKey('reasoning'), isFalse);
-      expect(customBody(endpoint: otherUrl).keys.toSet(),
-          <String>{'model', 'messages', 'temperature'});
+      expect(customBody(endpoint: otherUrl).keys.toSet(), <String>{
+        'model',
+        'messages',
+        'temperature',
+      });
     });
 
     test('disabled wins over any intensity', () {
       expect(
         customBody(
-            thinkingMode: AiThinkingMode.disabled,
-            thinkingIntensity: AiThinkingIntensity.high),
-        containsPair('reasoning',
-            <String, Object?>{'effort': 'none', 'exclude': true}),
+          thinkingMode: AiThinkingMode.disabled,
+          thinkingIntensity: AiThinkingIntensity.high,
+        ),
+        containsPair('reasoning', <String, Object?>{
+          'effort': 'none',
+          'exclude': true,
+        }),
       );
     });
 
     test('high and max map to high and xhigh', () {
       expect(
-          customBody(thinkingIntensity: AiThinkingIntensity.high)['reasoning'],
-          <String, Object?>{'effort': 'high', 'exclude': true});
+        customBody(thinkingIntensity: AiThinkingIntensity.high)['reasoning'],
+        <String, Object?>{'effort': 'high', 'exclude': true},
+      );
       expect(
-          customBody(thinkingIntensity: AiThinkingIntensity.max)['reasoning'],
-          <String, Object?>{'effort': 'xhigh', 'exclude': true});
+        customBody(thinkingIntensity: AiThinkingIntensity.max)['reasoning'],
+        <String, Object?>{'effort': 'xhigh', 'exclude': true},
+      );
     });
 
     test('enabled with no intensity sets enabled true', () {
-      expect(customBody(thinkingMode: AiThinkingMode.enabled)['reasoning'],
-          <String, Object?>{'enabled': true, 'exclude': true});
+      expect(
+        customBody(thinkingMode: AiThinkingMode.enabled)['reasoning'],
+        <String, Object?>{'enabled': true, 'exclude': true},
+      );
     });
 
     test('a numeric custom value becomes max_tokens', () {
       expect(
         customBody(
-            thinkingIntensity: AiThinkingIntensity.custom,
-            thinkingValue: '2000')['reasoning'],
+          thinkingIntensity: AiThinkingIntensity.custom,
+          thinkingValue: '2000',
+        )['reasoning'],
         <String, Object?>{'max_tokens': 2000, 'exclude': true},
       );
     });
 
     test('a textual custom value becomes effort, with max special-cased', () {
       expect(
-          customBody(
-              thinkingIntensity: AiThinkingIntensity.custom,
-              thinkingValue: 'medium')['reasoning'],
-          <String, Object?>{'effort': 'medium', 'exclude': true});
+        customBody(
+          thinkingIntensity: AiThinkingIntensity.custom,
+          thinkingValue: 'medium',
+        )['reasoning'],
+        <String, Object?>{'effort': 'medium', 'exclude': true},
+      );
       expect(
-          customBody(
-              thinkingIntensity: AiThinkingIntensity.custom,
-              thinkingValue: 'max')['reasoning'],
-          <String, Object?>{'effort': 'xhigh', 'exclude': true});
+        customBody(
+          thinkingIntensity: AiThinkingIntensity.custom,
+          thinkingValue: 'max',
+        )['reasoning'],
+        <String, Object?>{'effort': 'xhigh', 'exclude': true},
+      );
     });
 
     test('a JSON object custom value merges into reasoning', () {
       expect(
         customBody(
-            thinkingIntensity: AiThinkingIntensity.custom,
-            thinkingValue: '{"max_tokens":2000}')['reasoning'],
+          thinkingIntensity: AiThinkingIntensity.custom,
+          thinkingValue: '{"max_tokens":2000}',
+        )['reasoning'],
         <String, Object?>{'max_tokens': 2000, 'exclude': true},
       );
     });
@@ -400,81 +468,108 @@ void main() {
       // Internal thinking must never reach the popup.
       expect(
         (customBody(
-                    thinkingIntensity: AiThinkingIntensity.custom,
-                    thinkingValue: '{"effort":"high","exclude":false}')[
-                'reasoning']! as Map<String, Object?>)['exclude'],
+              thinkingIntensity: AiThinkingIntensity.custom,
+              thinkingValue: '{"effort":"high","exclude":false}',
+            )['reasoning']!
+            as Map<String, Object?>)['exclude'],
         isTrue,
       );
     });
 
     test('invalid JSON degrades to an effort string, it does not throw', () {
       expect(
-          customBody(
-              thinkingIntensity: AiThinkingIntensity.custom,
-              thinkingValue: '{bad json')['reasoning'],
-          <String, Object?>{'effort': '{bad json', 'exclude': true});
+        customBody(
+          thinkingIntensity: AiThinkingIntensity.custom,
+          thinkingValue: '{bad json',
+        )['reasoning'],
+        <String, Object?>{'effort': '{bad json', 'exclude': true},
+      );
     });
 
     test('a JSON array is not treated as an object', () {
       expect(
-          customBody(
-              thinkingIntensity: AiThinkingIntensity.custom,
-              thinkingValue: '[1,2]')['reasoning'],
-          <String, Object?>{'effort': '[1,2]', 'exclude': true});
+        customBody(
+          thinkingIntensity: AiThinkingIntensity.custom,
+          thinkingValue: '[1,2]',
+        )['reasoning'],
+        <String, Object?>{'effort': '[1,2]', 'exclude': true},
+      );
     });
 
-    test('intensity without a mode still sets reasoning_effort off OpenRouter',
-        () {
-      expect(
+    test(
+      'intensity without a mode still sets reasoning_effort off OpenRouter',
+      () {
+        expect(
           customBody(
-              endpoint: otherUrl,
-              thinkingIntensity: AiThinkingIntensity.high)['reasoning_effort'],
-          'high');
-    });
+            endpoint: otherUrl,
+            thinkingIntensity: AiThinkingIntensity.high,
+          )['reasoning_effort'],
+          'high',
+        );
+      },
+    );
   });
 
   group('custom request body JSON', () {
     test('is a no-op when empty or whitespace', () {
-      expect(customBody(requestBodyJson: '   ').keys,
-          isNot(contains('top_p')));
+      expect(customBody(requestBodyJson: '   ').keys, isNot(contains('top_p')));
     });
 
     test('merges new keys and overrides generated ones', () {
-      final Map<String, Object?> body =
-          customBody(requestBodyJson: '{"top_p":0.5,"temperature":0.1}');
+      final Map<String, Object?> body = customBody(
+        requestBodyJson: '{"top_p":0.5,"temperature":0.1}',
+      );
       expect(body['top_p'], 0.5);
-      expect(body['temperature'], 0.1,
-          reason: 'custom values win over the generated body');
+      expect(
+        body['temperature'],
+        0.1,
+        reason: 'custom values win over the generated body',
+      );
     });
 
     test('merges deeply rather than replacing whole objects', () {
-      final Map<String, Object?> provider = customBody(
-        routingMode: AiProviderRoutingMode.order,
-        slugs: 'a',
-        requestBodyJson: '{"provider":{"order":["z"]}}',
-      )['provider']! as Map<String, Object?>;
+      final Map<String, Object?> provider =
+          customBody(
+                routingMode: AiProviderRoutingMode.order,
+                slugs: 'a',
+                requestBodyJson: '{"provider":{"order":["z"]}}',
+              )['provider']!
+              as Map<String, Object?>;
       expect(provider['order'], <String>['z'], reason: 'arrays replace');
-      expect(provider['allow_fallbacks'], isTrue,
-          reason: 'sibling keys survive a deep merge');
+      expect(
+        provider['allow_fallbacks'],
+        isTrue,
+        reason: 'sibling keys survive a deep merge',
+      );
     });
 
     test('rejects a JSON array', () {
-      expect(() => customBody(requestBodyJson: '[1,2]'),
-          throwsA(isA<AiRequestException>()));
+      expect(
+        () => customBody(requestBodyJson: '[1,2]'),
+        throwsA(isA<AiRequestException>()),
+      );
     });
 
     test('rejects a scalar and null', () {
-      expect(() => customBody(requestBodyJson: '5'),
-          throwsA(isA<AiRequestException>()));
-      expect(() => customBody(requestBodyJson: '"x"'),
-          throwsA(isA<AiRequestException>()));
-      expect(() => customBody(requestBodyJson: 'null'),
-          throwsA(isA<AiRequestException>()));
+      expect(
+        () => customBody(requestBodyJson: '5'),
+        throwsA(isA<AiRequestException>()),
+      );
+      expect(
+        () => customBody(requestBodyJson: '"x"'),
+        throwsA(isA<AiRequestException>()),
+      );
+      expect(
+        () => customBody(requestBodyJson: 'null'),
+        throwsA(isA<AiRequestException>()),
+      );
     });
 
     test('rejects malformed JSON before any network call', () {
-      expect(() => customBody(requestBodyJson: '{oops'),
-          throwsA(isA<AiRequestException>()));
+      expect(
+        () => customBody(requestBodyJson: '{oops'),
+        throwsA(isA<AiRequestException>()),
+      );
     });
 
     test('the rejection message names the setting and leaks nothing', () {
@@ -518,9 +613,10 @@ void main() {
       expect(
         AiRequestBuilder.buildCustom(
           config: const AiProviderConfig(
-              provider: AiProvider.custom,
-              customEndpoint: 'https://api.example.com/weird/path',
-              customModel: 'm'),
+            provider: AiProvider.custom,
+            customEndpoint: 'https://api.example.com/weird/path',
+            customModel: 'm',
+          ),
           prompts: prompts(),
           apiKey: 'k',
           stream: false,
@@ -533,9 +629,10 @@ void main() {
       expect(
         () => AiRequestBuilder.buildCustom(
           config: const AiProviderConfig(
-              provider: AiProvider.custom,
-              customEndpoint: 'api.example.com',
-              customModel: 'm'),
+            provider: AiProvider.custom,
+            customEndpoint: 'api.example.com',
+            customModel: 'm',
+          ),
           prompts: prompts(),
           apiKey: 'k',
           stream: false,
@@ -548,9 +645,10 @@ void main() {
       expect(
         () => AiRequestBuilder.buildCustom(
           config: const AiProviderConfig(
-              provider: AiProvider.custom,
-              customEndpoint: 'ftp://api.example.com/v1',
-              customModel: 'm'),
+            provider: AiProvider.custom,
+            customEndpoint: 'ftp://api.example.com/v1',
+            customModel: 'm',
+          ),
           prompts: prompts(),
           apiKey: 'k',
           stream: false,
@@ -565,9 +663,10 @@ void main() {
       expect(
         AiRequestBuilder.buildCustom(
           config: const AiProviderConfig(
-              provider: AiProvider.custom,
-              customEndpoint: 'http://127.0.0.1:11434/v1/chat/completions',
-              customModel: 'm'),
+            provider: AiProvider.custom,
+            customEndpoint: 'http://127.0.0.1:11434/v1/chat/completions',
+            customModel: 'm',
+          ),
           prompts: prompts(),
           apiKey: 'k',
           stream: false,
@@ -595,18 +694,21 @@ void main() {
       final Map<String, Object?> body = decoded! as Map<String, Object?>;
       expect(body['stream'], isTrue);
       expect((body['messages']! as List<Object?>), hasLength(2));
-      expect(body['reasoning'],
-          <String, Object?>{'effort': 'xhigh', 'exclude': true});
+      expect(body['reasoning'], <String, Object?>{
+        'effort': 'xhigh',
+        'exclude': true,
+      });
     });
 
     test('preserves Unicode prompts', () {
       final AiHttpRequest request = AiRequestBuilder.buildOpenAi(
         config: const AiProviderConfig(),
         prompts: AiPromptRenderer.render(
-            userTemplate: '{{target}} / {{sentence}}',
-            systemTemplate: '',
-            target: '猫',
-            sentence: '猫が好きです。🐱'),
+          userTemplate: '{{target}} / {{sentence}}',
+          systemTemplate: '',
+          target: '猫',
+          sentence: '猫が好きです。🐱',
+        ),
         apiKey: 'k',
         stream: false,
       );

@@ -22,7 +22,10 @@ const String kAiDefaultUserPrompt =
 
 /// The rendered prompts for one request.
 class AiRenderedPrompts {
-  const AiRenderedPrompts({required this.userPrompt, required this.systemPrompt});
+  const AiRenderedPrompts({
+    required this.userPrompt,
+    required this.systemPrompt,
+  });
 
   /// Always non-empty — see [AiPromptRenderer.render].
   final String userPrompt;

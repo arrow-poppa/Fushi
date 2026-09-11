@@ -67,8 +67,9 @@ abstract final class AiGeminiRequestBuilder {
     required String modelId,
     required AiGeminiThinkingLevel configuredLevel,
   }) {
-    final String raw =
-        modelId.trim().isEmpty ? AiDefaults.geminiModel : modelId.trim();
+    final String raw = modelId.trim().isEmpty
+        ? AiDefaults.geminiModel
+        : modelId.trim();
 
     String working = raw.startsWith('models/') ? raw.substring(7) : raw;
     bool useVertex = false;
@@ -82,8 +83,9 @@ abstract final class AiGeminiRequestBuilder {
     }
 
     final bool isLowThinking = working.contains('low-thinking');
-    final String apiModelId =
-        isLowThinking ? 'gemini-3-flash-preview' : working;
+    final String apiModelId = isLowThinking
+        ? 'gemini-3-flash-preview'
+        : working;
     if (isLowThinking) useVertex = true;
 
     if (apiModelId == 'gemini-3-pro-preview' ||
@@ -172,12 +174,15 @@ abstract final class AiGeminiRequestBuilder {
     );
 
     final String method = stream ? 'streamGenerateContent' : 'generateContent';
-    final String base =
-        route.useVertexExpress ? kGeminiVertexBase : kGeminiApiBase;
-    final String query = Uri(queryParameters: <String, String>{
-      if (stream) 'alt': 'sse',
-      'key': apiKey.trim(),
-    }).query;
+    final String base = route.useVertexExpress
+        ? kGeminiVertexBase
+        : kGeminiApiBase;
+    final String query = Uri(
+      queryParameters: <String, String>{
+        if (stream) 'alt': 'sse',
+        'key': apiKey.trim(),
+      },
+    ).query;
 
     return AiHttpRequest(
       url: '$base/${route.apiModelId}:$method?$query',

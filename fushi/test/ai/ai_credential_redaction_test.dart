@@ -59,8 +59,11 @@ void main() {
   group('AI credentials never leave the device', () {
     test('every AI credential key is redacted', () {
       for (final String key in aiCredentialKeys) {
-        expect(PrefRedactionPolicy.isDeviceLocalOrCredential(key), isTrue,
-            reason: '$key holds a BYOK credential and must not be exported');
+        expect(
+          PrefRedactionPolicy.isDeviceLocalOrCredential(key),
+          isTrue,
+          reason: '$key holds a BYOK credential and must not be exported',
+        );
       }
     });
 
@@ -71,8 +74,11 @@ void main() {
       // copied between them, so this is both a leak and a cross-contamination
       // guard.
       for (final String key in aiCredentialKeys) {
-        expect(ProfileKeys.isExcludedPref(key), isTrue,
-            reason: '$key must not enter profile_settings');
+        expect(
+          ProfileKeys.isExcludedPref(key),
+          isTrue,
+          reason: '$key must not enter profile_settings',
+        );
       }
     });
 
@@ -84,13 +90,21 @@ void main() {
         'ai_explain_custom_endpoint',
         'ai_explain_custom_body_json',
       ]) {
-        final bool matchesShape = PrefRedactionPolicy.credentialSubstrings
-            .any((String s) => key.toLowerCase().contains(s));
-        expect(matchesShape, isFalse,
-            reason: '$key deliberately has no credential shape; '
-                'if this ever becomes true the test below stops proving anything');
-        expect(PrefRedactionPolicy.sensitiveKeys.contains(key), isTrue,
-            reason: '$key is only protected by being named explicitly');
+        final bool matchesShape = PrefRedactionPolicy.credentialSubstrings.any(
+          (String s) => key.toLowerCase().contains(s),
+        );
+        expect(
+          matchesShape,
+          isFalse,
+          reason:
+              '$key deliberately has no credential shape; '
+              'if this ever becomes true the test below stops proving anything',
+        );
+        expect(
+          PrefRedactionPolicy.sensitiveKeys.contains(key),
+          isTrue,
+          reason: '$key is only protected by being named explicitly',
+        );
       }
     });
 
@@ -104,8 +118,11 @@ void main() {
         'ai_explain_deepseek_api_key',
         'ai_explain_custom_api_key',
       ]) {
-        expect(PrefRedactionPolicy.sensitiveKeys.contains(key), isTrue,
-            reason: '$key must be listed explicitly, not left to the fallback');
+        expect(
+          PrefRedactionPolicy.sensitiveKeys.contains(key),
+          isTrue,
+          reason: '$key must be listed explicitly, not left to the fallback',
+        );
       }
     });
 
@@ -113,8 +130,11 @@ void main() {
       // Two registries describe the same fact; drift between them is how a key
       // ends up protected in one place and not the other.
       for (final String key in aiCredentialKeys) {
-        expect(kCredentialPreferenceKeys.contains(key), isTrue,
-            reason: '$key must be registered in kCredentialPreferenceKeys');
+        expect(
+          kCredentialPreferenceKeys.contains(key),
+          isTrue,
+          reason: '$key must be registered in kCredentialPreferenceKeys',
+        );
       }
     });
   });
@@ -122,8 +142,11 @@ void main() {
   group('AI behaviour settings stay portable', () {
     test('behaviour keys are not redacted', () {
       for (final String key in aiBehaviourKeys) {
-        expect(PrefRedactionPolicy.isDeviceLocalOrCredential(key), isFalse,
-            reason: '$key is a behaviour preference and should follow backups');
+        expect(
+          PrefRedactionPolicy.isDeviceLocalOrCredential(key),
+          isFalse,
+          reason: '$key is a behaviour preference and should follow backups',
+        );
       }
     });
 
@@ -131,15 +154,21 @@ void main() {
       // The user asked for AI behaviour to respect Profiles; per-Profile prompt
       // or provider choices are the point of the feature.
       for (final String key in aiBehaviourKeys) {
-        expect(ProfileKeys.isExcludedPref(key), isFalse,
-            reason: '$key should follow the active Profile');
+        expect(
+          ProfileKeys.isExcludedPref(key),
+          isFalse,
+          reason: '$key should follow the active Profile',
+        );
       }
     });
 
     test('no behaviour key is misfiled as a credential', () {
       for (final String key in aiBehaviourKeys) {
-        expect(kCredentialPreferenceKeys.contains(key), isFalse,
-            reason: '$key is not a credential');
+        expect(
+          kCredentialPreferenceKeys.contains(key),
+          isFalse,
+          reason: '$key is not a credential',
+        );
       }
     });
   });
@@ -149,9 +178,15 @@ void main() {
       // The guard test scans getPref/setPref call sites, but it cannot see keys
       // that no code reads yet. This keeps the registry honest while the feature
       // is still being built out.
-      for (final String key in <String>[...aiCredentialKeys, ...aiBehaviourKeys]) {
-        expect(kKnownPreferenceKeys.contains(key), isTrue,
-            reason: '$key must be registered before use');
+      for (final String key in <String>[
+        ...aiCredentialKeys,
+        ...aiBehaviourKeys,
+      ]) {
+        expect(
+          kKnownPreferenceKeys.contains(key),
+          isTrue,
+          reason: '$key must be registered before use',
+        );
       }
     });
 
@@ -165,9 +200,13 @@ void main() {
         ...aiCredentialKeys,
         ...aiBehaviourKeys,
       };
-      expect(registered, classified,
-          reason: 'every ai_explain_* key must be classified as either a '
-              'credential or a behaviour preference');
+      expect(
+        registered,
+        classified,
+        reason:
+            'every ai_explain_* key must be classified as either a '
+            'credential or a behaviour preference',
+      );
     });
   });
 }

@@ -60,7 +60,7 @@ class AiExplanationClient {
   /// working. A bare `http.Client()` here would fail
   /// `fushi/test/tools/outbound_http_discipline_guard_test.dart`.
   AiExplanationClient({http.Client Function()? clientFactory})
-      : _clientFactory = clientFactory ?? createAppHttpIoClient;
+    : _clientFactory = clientFactory ?? createAppHttpIoClient;
 
   final http.Client Function() _clientFactory;
 
@@ -87,16 +87,32 @@ class AiExplanationClient {
     switch (config.provider) {
       case AiProvider.openai:
         return AiRequestBuilder.buildOpenAi(
-            config: config, prompts: prompts, apiKey: apiKey, stream: stream);
+          config: config,
+          prompts: prompts,
+          apiKey: apiKey,
+          stream: stream,
+        );
       case AiProvider.gemini:
         return AiGeminiRequestBuilder.build(
-            config: config, prompts: prompts, apiKey: apiKey, stream: stream);
+          config: config,
+          prompts: prompts,
+          apiKey: apiKey,
+          stream: stream,
+        );
       case AiProvider.deepseek:
         return AiRequestBuilder.buildDeepSeek(
-            config: config, prompts: prompts, apiKey: apiKey, stream: stream);
+          config: config,
+          prompts: prompts,
+          apiKey: apiKey,
+          stream: stream,
+        );
       case AiProvider.custom:
         return AiRequestBuilder.buildCustom(
-            config: config, prompts: prompts, apiKey: apiKey, stream: stream);
+          config: config,
+          prompts: prompts,
+          apiKey: apiKey,
+          stream: stream,
+        );
     }
   }
 
@@ -126,7 +142,11 @@ class AiExplanationClient {
     Future<void>? abortSignal,
   }) async {
     final AiHttpRequest built = buildRequest(
-        config: config, prompts: prompts, apiKey: apiKey, stream: false);
+      config: config,
+      prompts: prompts,
+      apiKey: apiKey,
+      stream: false,
+    );
     final String label = labelFor(config.provider);
     final http.Client client = _newClient();
     bool closed = false;
@@ -165,7 +185,9 @@ class AiExplanationClient {
       final String? embedded = AiResponseParser.extractErrorMessage(decoded);
       if (embedded != null) {
         throw AiProviderException(
-            providerLabel: label, providerMessage: embedded);
+          providerLabel: label,
+          providerMessage: embedded,
+        );
       }
 
       if (config.provider == AiProvider.gemini) {
@@ -193,7 +215,11 @@ class AiExplanationClient {
     Future<void>? abortSignal,
   }) async* {
     final AiHttpRequest built = buildRequest(
-        config: config, prompts: prompts, apiKey: apiKey, stream: true);
+      config: config,
+      prompts: prompts,
+      apiKey: apiKey,
+      stream: true,
+    );
     final String label = labelFor(config.provider);
     final bool isGemini = config.provider == AiProvider.gemini;
     final http.Client client = _newClient();
@@ -218,7 +244,7 @@ class AiExplanationClient {
           statusCode: response.statusCode,
           providerMessage:
               AiResponseParser.extractErrorMessage(_tryDecode(text)) ??
-                  _clip(text),
+              _clip(text),
         );
       }
 
@@ -241,8 +267,10 @@ class AiExplanationClient {
 
         final String? error = AiResponseParser.extractErrorMessage(parsed);
         if (error != null) {
-          streamError =
-              AiProviderException(providerLabel: label, providerMessage: error);
+          streamError = AiProviderException(
+            providerLabel: label,
+            providerMessage: error,
+          );
           finished = true;
           return;
         }
@@ -253,8 +281,9 @@ class AiExplanationClient {
         if (delta.isNotEmpty) yield delta;
       }
 
-      await for (final String chunk
-          in response.stream.transform(utf8.decoder)) {
+      await for (final String chunk in response.stream.transform(
+        utf8.decoder,
+      )) {
         for (final String payload in parser.addChunk(chunk)) {
           for (final String delta in handle(payload)) {
             yield delta;

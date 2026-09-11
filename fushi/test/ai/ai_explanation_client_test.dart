@@ -59,17 +59,20 @@ void main() {
       );
 
   AiRenderedPrompts prompts({String system = ''}) => AiPromptRenderer.render(
-        userTemplate: 'explain {{target}}',
-        systemTemplate: system,
-        target: 'word',
-        sentence: 'ctx',
-      );
+    userTemplate: 'explain {{target}}',
+    systemTemplate: system,
+    target: 'word',
+    sentence: 'ctx',
+  );
 
   /// Writes an SSE body, optionally flushing between writes so the client sees
   /// genuinely separate network chunks.
   Future<void> writeSse(HttpRequest request, List<String> chunks) async {
-    request.response.headers.contentType =
-        ContentType('text', 'event-stream', charset: 'utf-8');
+    request.response.headers.contentType = ContentType(
+      'text',
+      'event-stream',
+      charset: 'utf-8',
+    );
     for (final String chunk in chunks) {
       request.response.write(chunk);
       await request.response.flush();
@@ -81,45 +84,62 @@ void main() {
     test('sends the built body and returns the answer', () async {
       handler = (HttpRequest request) async {
         request.response.headers.contentType = ContentType.json;
-        request.response.write(jsonEncode(<String, Object?>{
-          'choices': <Object?>[
-            <String, Object?>{
-              'message': <String, Object?>{'content': '  the answer  '},
-            },
-          ],
-        }));
+        request.response.write(
+          jsonEncode(<String, Object?>{
+            'choices': <Object?>[
+              <String, Object?>{
+                'message': <String, Object?>{'content': '  the answer  '},
+              },
+            ],
+          }),
+        );
         await request.response.close();
       };
 
       final String answer = await client().generate(
-          config: customConfig(), prompts: prompts(), apiKey: 'k');
+        config: customConfig(),
+        prompts: prompts(),
+        apiKey: 'k',
+      );
 
       expect(answer, 'the answer', reason: 'the answer is trimmed');
       final Map<String, Object?> sent =
           jsonDecode(receivedBodies.single) as Map<String, Object?>;
       expect(sent['model'], 'test/model');
       expect(sent.containsKey('stream'), isFalse);
-      expect((sent['messages']! as List<Object?>).single,
-          <String, Object?>{'role': 'user', 'content': 'explain word'});
+      expect((sent['messages']! as List<Object?>).single, <String, Object?>{
+        'role': 'user',
+        'content': 'explain word',
+      });
       expect(receivedHeaders.single.value('authorization'), 'Bearer k');
     });
 
     test('surfaces a non-2xx provider message', () async {
       handler = (HttpRequest request) async {
         request.response.statusCode = 401;
-        request.response.write(jsonEncode(<String, Object?>{
-          'error': <String, Object?>{'message': 'Incorrect API key provided'},
-        }));
+        request.response.write(
+          jsonEncode(<String, Object?>{
+            'error': <String, Object?>{'message': 'Incorrect API key provided'},
+          }),
+        );
         await request.response.close();
       };
 
       await expectLater(
         client().generate(
-            config: customConfig(), prompts: prompts(), apiKey: 'bad'),
-        throwsA(isA<AiProviderException>()
-            .having((AiProviderException e) => e.statusCode, 'status', 401)
-            .having((AiProviderException e) => e.providerMessage, 'message',
-                'Incorrect API key provided')),
+          config: customConfig(),
+          prompts: prompts(),
+          apiKey: 'bad',
+        ),
+        throwsA(
+          isA<AiProviderException>()
+              .having((AiProviderException e) => e.statusCode, 'status', 401)
+              .having(
+                (AiProviderException e) => e.providerMessage,
+                'message',
+                'Incorrect API key provided',
+              ),
+        ),
       );
     });
 
@@ -127,19 +147,27 @@ void main() {
       // Real gateways do this, and rendering it as a blank explanation would
       // hide a genuine failure from the user.
       handler = (HttpRequest request) async {
-        request.response.write(jsonEncode(<String, Object?>{
-          'error': <String, Object?>{'message': 'quota exceeded'},
-        }));
+        request.response.write(
+          jsonEncode(<String, Object?>{
+            'error': <String, Object?>{'message': 'quota exceeded'},
+          }),
+        );
         await request.response.close();
       };
 
       await expectLater(
-        client()
-            .generate(config: customConfig(), prompts: prompts(), apiKey: 'k'),
-        throwsA(isA<AiProviderException>().having(
+        client().generate(
+          config: customConfig(),
+          prompts: prompts(),
+          apiKey: 'k',
+        ),
+        throwsA(
+          isA<AiProviderException>().having(
             (AiProviderException e) => e.providerMessage,
             'message',
-            'quota exceeded')),
+            'quota exceeded',
+          ),
+        ),
       );
     });
 
@@ -153,8 +181,11 @@ void main() {
       };
 
       try {
-        await client()
-            .generate(config: customConfig(), prompts: prompts(), apiKey: 'k');
+        await client().generate(
+          config: customConfig(),
+          prompts: prompts(),
+          apiKey: 'k',
+        );
         fail('expected a provider error');
       } on AiProviderException catch (e) {
         expect(e.providerMessage!.length, lessThanOrEqualTo(304));
@@ -165,64 +196,79 @@ void main() {
     test('round-trips a Unicode prompt and answer', () async {
       handler = (HttpRequest request) async {
         request.response.headers.contentType = ContentType.json;
-        request.response.add(utf8.encode(jsonEncode(<String, Object?>{
-          'choices': <Object?>[
-            <String, Object?>{
-              'message': <String, Object?>{'content': '「猫」は cat 🐱'},
-            },
-          ],
-        })));
+        request.response.add(
+          utf8.encode(
+            jsonEncode(<String, Object?>{
+              'choices': <Object?>[
+                <String, Object?>{
+                  'message': <String, Object?>{'content': '「猫」は cat 🐱'},
+                },
+              ],
+            }),
+          ),
+        );
         await request.response.close();
       };
 
       final String answer = await client().generate(
         config: customConfig(),
         prompts: AiPromptRenderer.render(
-            userTemplate: '{{target}} / {{sentence}}',
-            systemTemplate: '',
-            target: '猫',
-            sentence: '猫が好きです'),
+          userTemplate: '{{target}} / {{sentence}}',
+          systemTemplate: '',
+          target: '猫',
+          sentence: '猫が好きです',
+        ),
         apiKey: 'k',
       );
 
       expect(answer, '「猫」は cat 🐱');
-      expect(receivedBodies.single, contains('猫が好きです'),
-          reason: 'the prompt must survive UTF-8 encoding');
+      expect(
+        receivedBodies.single,
+        contains('猫が好きです'),
+        reason: 'the prompt must survive UTF-8 encoding',
+      );
     });
   });
 
   group('streaming', () {
     test('yields deltas from a well-formed SSE stream', () async {
       handler = (HttpRequest request) => writeSse(request, <String>[
-            'data: {"choices":[{"delta":{"content":"Hel"}}]}\n\n',
-            'data: {"choices":[{"delta":{"content":"lo"}}]}\n\n',
-            'data: [DONE]\n\n',
-          ]);
+        'data: {"choices":[{"delta":{"content":"Hel"}}]}\n\n',
+        'data: {"choices":[{"delta":{"content":"lo"}}]}\n\n',
+        'data: [DONE]\n\n',
+      ]);
 
       final List<String> deltas = await client()
           .generateStream(
-              config: customConfig(), prompts: prompts(), apiKey: 'k')
+            config: customConfig(),
+            prompts: prompts(),
+            apiKey: 'k',
+          )
           .toList();
 
       expect(deltas, <String>['Hel', 'lo']);
       expect(
-          (jsonDecode(receivedBodies.single) as Map<String, Object?>)['stream'],
-          isTrue);
+        (jsonDecode(receivedBodies.single) as Map<String, Object?>)['stream'],
+        isTrue,
+      );
     });
 
     test('reassembles an event split across network chunks', () async {
       // The case a naive implementation gets wrong: the JSON payload arrives in
       // three separate TCP writes.
       handler = (HttpRequest request) => writeSse(request, <String>[
-            'data: {"choices":[{"delta":',
-            '{"content":"split"}}]}',
-            '\n\ndata: [DONE]\n\n',
-          ]);
+        'data: {"choices":[{"delta":',
+        '{"content":"split"}}]}',
+        '\n\ndata: [DONE]\n\n',
+      ]);
 
       expect(
         await client()
             .generateStream(
-                config: customConfig(), prompts: prompts(), apiKey: 'k')
+              config: customConfig(),
+              prompts: prompts(),
+              apiKey: 'k',
+            )
             .toList(),
         <String>['split'],
       );
@@ -230,15 +276,18 @@ void main() {
 
     test('ignores keep-alives and non-JSON padding', () async {
       handler = (HttpRequest request) => writeSse(request, <String>[
-            ': keep-alive\n\n',
-            'data: not json at all\n\n',
-            'data: {"choices":[{"delta":{"content":"ok"}}]}\n\n',
-          ]);
+        ': keep-alive\n\n',
+        'data: not json at all\n\n',
+        'data: {"choices":[{"delta":{"content":"ok"}}]}\n\n',
+      ]);
 
       expect(
         await client()
             .generateStream(
-                config: customConfig(), prompts: prompts(), apiKey: 'k')
+              config: customConfig(),
+              prompts: prompts(),
+              apiKey: 'k',
+            )
             .toList(),
         <String>['ok'],
         reason: 'padding must not be fatal',
@@ -247,15 +296,18 @@ void main() {
 
     test('stops at [DONE] and discards anything after it', () async {
       handler = (HttpRequest request) => writeSse(request, <String>[
-            'data: {"choices":[{"delta":{"content":"a"}}]}\n\n',
-            'data: [DONE]\n\n',
-            'data: {"choices":[{"delta":{"content":"late"}}]}\n\n',
-          ]);
+        'data: {"choices":[{"delta":{"content":"a"}}]}\n\n',
+        'data: [DONE]\n\n',
+        'data: {"choices":[{"delta":{"content":"late"}}]}\n\n',
+      ]);
 
       expect(
         await client()
             .generateStream(
-                config: customConfig(), prompts: prompts(), apiKey: 'k')
+              config: customConfig(),
+              prompts: prompts(),
+              apiKey: 'k',
+            )
             .toList(),
         <String>['a'],
       );
@@ -263,59 +315,83 @@ void main() {
 
     test('handles a stream that ends without a trailing blank line', () async {
       handler = (HttpRequest request) => writeSse(request, <String>[
-            'data: {"choices":[{"delta":{"content":"tail"}}]}',
-          ]);
+        'data: {"choices":[{"delta":{"content":"tail"}}]}',
+      ]);
 
       expect(
         await client()
             .generateStream(
-                config: customConfig(), prompts: prompts(), apiKey: 'k')
+              config: customConfig(),
+              prompts: prompts(),
+              apiKey: 'k',
+            )
             .toList(),
         <String>['tail'],
         reason: 'the residual buffer is a real final event',
       );
     });
 
-    test('throws an in-stream error only after draining what arrived',
-        () async {
-      // Text that already reached the user must not be discarded by a late
-      // error frame.
-      handler = (HttpRequest request) => writeSse(request, <String>[
-            'data: {"choices":[{"delta":{"content":"partial"}}]}\n\n',
-            'data: {"error":{"message":"upstream exploded"}}\n\n',
-          ]);
+    test(
+      'throws an in-stream error only after draining what arrived',
+      () async {
+        // Text that already reached the user must not be discarded by a late
+        // error frame.
+        handler = (HttpRequest request) => writeSse(request, <String>[
+          'data: {"choices":[{"delta":{"content":"partial"}}]}\n\n',
+          'data: {"error":{"message":"upstream exploded"}}\n\n',
+        ]);
 
-      final List<String> deltas = <String>[];
-      await expectLater(
-        client()
-            .generateStream(
-                config: customConfig(), prompts: prompts(), apiKey: 'k')
-            .forEach(deltas.add),
-        throwsA(isA<AiProviderException>().having(
-            (AiProviderException e) => e.providerMessage,
-            'message',
-            'upstream exploded')),
-      );
-      expect(deltas, <String>['partial'],
-          reason: 'the delta that arrived before the error is still delivered');
-    });
+        final List<String> deltas = <String>[];
+        await expectLater(
+          client()
+              .generateStream(
+                config: customConfig(),
+                prompts: prompts(),
+                apiKey: 'k',
+              )
+              .forEach(deltas.add),
+          throwsA(
+            isA<AiProviderException>().having(
+              (AiProviderException e) => e.providerMessage,
+              'message',
+              'upstream exploded',
+            ),
+          ),
+        );
+        expect(
+          deltas,
+          <String>['partial'],
+          reason: 'the delta that arrived before the error is still delivered',
+        );
+      },
+    );
 
     test('reports a non-2xx before yielding anything', () async {
       handler = (HttpRequest request) async {
         request.response.statusCode = 429;
-        request.response.write(jsonEncode(<String, Object?>{
-          'error': <String, Object?>{'message': 'slow down'},
-        }));
+        request.response.write(
+          jsonEncode(<String, Object?>{
+            'error': <String, Object?>{'message': 'slow down'},
+          }),
+        );
         await request.response.close();
       };
 
       await expectLater(
         client()
             .generateStream(
-                config: customConfig(), prompts: prompts(), apiKey: 'k')
+              config: customConfig(),
+              prompts: prompts(),
+              apiKey: 'k',
+            )
             .toList(),
-        throwsA(isA<AiProviderException>()
-            .having((AiProviderException e) => e.statusCode, 'status', 429)),
+        throwsA(
+          isA<AiProviderException>().having(
+            (AiProviderException e) => e.statusCode,
+            'status',
+            429,
+          ),
+        ),
       );
     });
 
@@ -323,11 +399,15 @@ void main() {
       // Cancellation is how "close the popup" and "look up another word" abort
       // an answer nobody will read.
       handler = (HttpRequest request) async {
-        request.response.headers.contentType =
-            ContentType('text', 'event-stream', charset: 'utf-8');
+        request.response.headers.contentType = ContentType(
+          'text',
+          'event-stream',
+          charset: 'utf-8',
+        );
         for (int i = 0; i < 200; i++) {
-          request.response
-              .write('data: {"choices":[{"delta":{"content":"$i "}}]}\n\n');
+          request.response.write(
+            'data: {"choices":[{"delta":{"content":"$i "}}]}\n\n',
+          );
           try {
             await request.response.flush();
           } on Object {
@@ -344,40 +424,51 @@ void main() {
       final Completer<void> gotSome = Completer<void>();
       final StreamSubscription<String> sub = client()
           .generateStream(
-              config: customConfig(), prompts: prompts(), apiKey: 'k')
+            config: customConfig(),
+            prompts: prompts(),
+            apiKey: 'k',
+          )
           .listen((String delta) {
-        received.add(delta);
-        if (!gotSome.isCompleted) gotSome.complete();
-      });
+            received.add(delta);
+            if (!gotSome.isCompleted) gotSome.complete();
+          });
 
       await gotSome.future;
       final int atCancel = received.length;
       await sub.cancel();
       await Future<void>.delayed(const Duration(milliseconds: 80));
 
-      expect(received.length, atCancel,
-          reason: 'no delta may arrive after cancel()');
+      expect(
+        received.length,
+        atCancel,
+        reason: 'no delta may arrive after cancel()',
+      );
       expect(received, isNotEmpty);
     });
 
-    test('the extractor is chosen by provider, not by sniffing the payload',
-        () async {
-      // A Gemini-shaped payload arriving on an OpenAI-compatible endpoint must
-      // yield nothing rather than being opportunistically parsed: picking the
-      // extractor from the response shape would make a malicious or misbehaving
-      // gateway able to steer which parser runs.
-      handler = (HttpRequest request) => writeSse(request, <String>[
-            'data: {"candidates":[{"content":{"parts":[{"text":"x"}]}}]}\n\n',
-          ]);
+    test(
+      'the extractor is chosen by provider, not by sniffing the payload',
+      () async {
+        // A Gemini-shaped payload arriving on an OpenAI-compatible endpoint must
+        // yield nothing rather than being opportunistically parsed: picking the
+        // extractor from the response shape would make a malicious or misbehaving
+        // gateway able to steer which parser runs.
+        handler = (HttpRequest request) => writeSse(request, <String>[
+          'data: {"candidates":[{"content":{"parts":[{"text":"x"}]}}]}\n\n',
+        ]);
 
-      expect(
-        await client()
-            .generateStream(
-                config: customConfig(), prompts: prompts(), apiKey: 'k')
-            .toList(),
-        isEmpty,
-      );
-    });
+        expect(
+          await client()
+              .generateStream(
+                config: customConfig(),
+                prompts: prompts(),
+                apiKey: 'k',
+              )
+              .toList(),
+          isEmpty,
+        );
+      },
+    );
   });
 
   group('request shape', () {
@@ -388,12 +479,14 @@ void main() {
       };
 
       await client().generate(
-          config: customConfig(),
-          prompts: prompts(system: 'be terse'),
-          apiKey: 'k');
+        config: customConfig(),
+        prompts: prompts(system: 'be terse'),
+        apiKey: 'k',
+      );
 
       final List<Object?> messages =
-          (jsonDecode(receivedBodies.single) as Map<String, Object?>)['messages']!
+          (jsonDecode(receivedBodies.single)
+                  as Map<String, Object?>)['messages']!
               as List<Object?>;
       expect(messages, hasLength(2));
       expect((messages.first as Map<String, Object?>)['role'], 'system');
@@ -408,8 +501,11 @@ void main() {
       };
 
       expect(
-        await client()
-            .generate(config: customConfig(), prompts: prompts(), apiKey: 'k'),
+        await client().generate(
+          config: customConfig(),
+          prompts: prompts(),
+          apiKey: 'k',
+        ),
         'local',
       );
     });

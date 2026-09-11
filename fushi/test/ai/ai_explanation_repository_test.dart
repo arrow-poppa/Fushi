@@ -22,11 +22,11 @@ void main() {
   _FakeClient fake() => _FakeClient();
 
   AiRenderedPrompts prompts() => AiPromptRenderer.render(
-        userTemplate: 'explain {{target}}',
-        systemTemplate: '',
-        target: 'word',
-        sentence: 'ctx',
-      );
+    userTemplate: 'explain {{target}}',
+    systemTemplate: '',
+    target: 'word',
+    sentence: 'ctx',
+  );
 
   AiProviderConfig config({bool stream = false}) =>
       AiProviderConfig(streamResponse: stream);
@@ -35,25 +35,26 @@ void main() {
     _FakeClient client, {
     Duration timeout = const Duration(seconds: 30),
     AiExplanationCache? cache,
-  }) =>
-      AiExplanationRepository(
-          client: client, cache: cache, inactivityTimeout: timeout);
+  }) => AiExplanationRepository(
+    client: client,
+    cache: cache,
+    inactivityTimeout: timeout,
+  );
 
   Future<List<AiExplanationResult>> collect(
     AiExplanationRepository repository, {
     bool stream = false,
     String key = 'k',
     bool force = false,
-  }) =>
-      repository
-          .explain(
-            cacheKey: key,
-            config: config(stream: stream),
-            prompts: prompts(),
-            apiKey: 'api',
-            force: force,
-          )
-          .toList();
+  }) => repository
+      .explain(
+        cacheKey: key,
+        config: config(stream: stream),
+        prompts: prompts(),
+        apiKey: 'api',
+        force: force,
+      )
+      .toList();
 
   group('cache', () {
     test('a fresh hit answers without touching the provider', () async {
@@ -71,8 +72,10 @@ void main() {
 
     test('a stale entry is refetched', () async {
       DateTime now = DateTime(2026);
-      final AiExplanationCache cache =
-          AiExplanationCache(now: () => now, ttl: const Duration(minutes: 1));
+      final AiExplanationCache cache = AiExplanationCache(
+        now: () => now,
+        ttl: const Duration(minutes: 1),
+      );
       final _FakeClient client = fake()..answer = 'a';
       final AiExplanationRepository repository = repo(client, cache: cache);
 
@@ -88,7 +91,9 @@ void main() {
     test('failures are never cached', () async {
       final _FakeClient client = fake()
         ..error = const AiProviderException(
-            providerLabel: 'Custom', providerMessage: 'boom');
+          providerLabel: 'Custom',
+          providerMessage: 'boom',
+        );
       final AiExplanationRepository repository = repo(client);
 
       final List<AiExplanationResult> first = await collect(repository);
@@ -98,8 +103,11 @@ void main() {
         ..error = null
         ..answer = 'recovered';
       final List<AiExplanationResult> second = await collect(repository);
-      expect(second.last.text, 'recovered',
-          reason: 'a cached error would make the failure sticky for a minute');
+      expect(
+        second.last.text,
+        'recovered',
+        reason: 'a cached error would make the failure sticky for a minute',
+      );
       expect(client.generateCalls, 2);
     });
 
@@ -124,13 +132,20 @@ void main() {
       final Future<List<AiExplanationResult>> b = collect(repository);
       final List<List<AiExplanationResult>> both =
           await Future.wait<List<AiExplanationResult>>(
-              <Future<List<AiExplanationResult>>>[a, b]);
+            <Future<List<AiExplanationResult>>>[a, b],
+          );
 
-      expect(client.generateCalls, 1,
-          reason: 'a popup that re-renders must not pay twice');
+      expect(
+        client.generateCalls,
+        1,
+        reason: 'a popup that re-renders must not pay twice',
+      );
       expect(both[0].last.text, 'shared');
-      expect(both[1].last.text, 'shared',
-          reason: 'the joiner sees the same answer');
+      expect(
+        both[1].last.text,
+        'shared',
+        reason: 'the joiner sees the same answer',
+      );
     });
 
     test('force bypasses the cache and re-asks', () async {
@@ -139,8 +154,10 @@ void main() {
 
       await collect(repository);
       client.answer = 'two';
-      final List<AiExplanationResult> regenerated =
-          await collect(repository, force: true);
+      final List<AiExplanationResult> regenerated = await collect(
+        repository,
+        force: true,
+      );
 
       expect(client.generateCalls, 2);
       expect(regenerated.last.text, 'two');
@@ -162,14 +179,18 @@ void main() {
         ..deltas = <String>['Hel', 'lo', ' world'];
       final AiExplanationRepository repository = repo(client);
 
-      final List<AiExplanationResult> results =
-          await collect(repository, stream: true);
+      final List<AiExplanationResult> results = await collect(
+        repository,
+        stream: true,
+      );
 
       expect(results.first.status, AiExplanationStatus.loading);
       expect(
         results
-            .where((AiExplanationResult r) =>
-                r.status == AiExplanationStatus.streaming)
+            .where(
+              (AiExplanationResult r) =>
+                  r.status == AiExplanationStatus.streaming,
+            )
             .map((AiExplanationResult r) => r.text),
         <String>['Hel', 'Hello', 'Hello world'],
         reason: 'each update carries the accumulated answer, not the delta',
@@ -183,8 +204,10 @@ void main() {
       final AiExplanationRepository repository = repo(client);
 
       await collect(repository, stream: true);
-      final List<AiExplanationResult> second =
-          await collect(repository, stream: true);
+      final List<AiExplanationResult> second = await collect(
+        repository,
+        stream: true,
+      );
 
       expect(client.streamCalls, 1);
       expect(second.last.text, 'ab');
@@ -198,8 +221,10 @@ void main() {
         ..answer = 'via fallback';
       final AiExplanationRepository repository = repo(client);
 
-      final List<AiExplanationResult> results =
-          await collect(repository, stream: true);
+      final List<AiExplanationResult> results = await collect(
+        repository,
+        stream: true,
+      );
 
       expect(client.streamCalls, 1);
       expect(client.generateCalls, 1, reason: 'exactly one retry');
@@ -216,29 +241,40 @@ void main() {
         ..answer = 'must not be used';
       final AiExplanationRepository repository = repo(client);
 
-      final List<AiExplanationResult> results =
-          await collect(repository, stream: true);
+      final List<AiExplanationResult> results = await collect(
+        repository,
+        stream: true,
+      );
 
-      expect(client.generateCalls, 0,
-          reason: 'text arrived, so the failure is surfaced, not retried');
+      expect(
+        client.generateCalls,
+        0,
+        reason: 'text arrived, so the failure is surfaced, not retried',
+      );
       expect(results.last.status, AiExplanationStatus.failed);
     });
 
-    test('retries at most once — a failing fallback is not retried again',
-        () async {
-      final _FakeClient client = fake()
-        ..streamError = Exception('no stream')
-        ..error = const AiProviderException(
-            providerLabel: 'Custom', providerMessage: 'still broken');
-      final AiExplanationRepository repository = repo(client);
+    test(
+      'retries at most once — a failing fallback is not retried again',
+      () async {
+        final _FakeClient client = fake()
+          ..streamError = Exception('no stream')
+          ..error = const AiProviderException(
+            providerLabel: 'Custom',
+            providerMessage: 'still broken',
+          );
+        final AiExplanationRepository repository = repo(client);
 
-      final List<AiExplanationResult> results =
-          await collect(repository, stream: true);
+        final List<AiExplanationResult> results = await collect(
+          repository,
+          stream: true,
+        );
 
-      expect(client.generateCalls, 1, reason: 'no second retry');
-      expect(results.last.status, AiExplanationStatus.failed);
-      expect(results.last.providerMessage, 'still broken');
-    });
+        expect(client.generateCalls, 1, reason: 'no second retry');
+        expect(results.last.status, AiExplanationStatus.failed);
+        expect(results.last.providerMessage, 'still broken');
+      },
+    );
 
     test('does not fall back after a cancel', () async {
       final _FakeClient client = fake()
@@ -250,10 +286,11 @@ void main() {
       final List<AiExplanationResult> seen = <AiExplanationResult>[];
       final StreamSubscription<AiExplanationResult> sub = repository
           .explain(
-              cacheKey: 'k',
-              config: config(stream: true),
-              prompts: prompts(),
-              apiKey: 'api')
+            cacheKey: 'k',
+            config: config(stream: true),
+            prompts: prompts(),
+            apiKey: 'api',
+          )
           .listen(seen.add);
 
       await Future<void>.delayed(const Duration(milliseconds: 10));
@@ -261,8 +298,11 @@ void main() {
       await Future<void>.delayed(const Duration(milliseconds: 120));
       await sub.cancel();
 
-      expect(client.generateCalls, 0,
-          reason: 'an abandoned request must not start another one');
+      expect(
+        client.generateCalls,
+        0,
+        reason: 'an abandoned request must not start another one',
+      );
       expect(seen.last.status, AiExplanationStatus.cancelled);
     });
   });
@@ -277,10 +317,11 @@ void main() {
       final List<AiExplanationResult> seen = <AiExplanationResult>[];
       final StreamSubscription<AiExplanationResult> sub = repository
           .explain(
-              cacheKey: 'k',
-              config: config(stream: true),
-              prompts: prompts(),
-              apiKey: 'api')
+            cacheKey: 'k',
+            config: config(stream: true),
+            prompts: prompts(),
+            apiKey: 'api',
+          )
           .listen(seen.add);
 
       await Future<void>.delayed(const Duration(milliseconds: 20));
@@ -289,8 +330,11 @@ void main() {
       await sub.cancel();
 
       expect(seen.last.status, AiExplanationStatus.cancelled);
-      expect(repository.cached('k'), isNull,
-          reason: 'a partial abandoned answer must not be cached');
+      expect(
+        repository.cached('k'),
+        isNull,
+        reason: 'a partial abandoned answer must not be cached',
+      );
       expect(repository.hasPending, isFalse);
     });
 
@@ -302,17 +346,19 @@ void main() {
 
       final StreamSubscription<AiExplanationResult> keep = repository
           .explain(
-              cacheKey: 'keep',
-              config: config(),
-              prompts: prompts(),
-              apiKey: 'api')
+            cacheKey: 'keep',
+            config: config(),
+            prompts: prompts(),
+            apiKey: 'api',
+          )
           .listen((_) {});
       final StreamSubscription<AiExplanationResult> drop = repository
           .explain(
-              cacheKey: 'drop',
-              config: config(),
-              prompts: prompts(),
-              apiKey: 'api')
+            cacheKey: 'drop',
+            config: config(),
+            prompts: prompts(),
+            apiKey: 'api',
+          )
           .listen((_) {});
 
       await Future<void>.delayed(const Duration(milliseconds: 10));
@@ -330,8 +376,10 @@ void main() {
       final _FakeClient client = fake()
         ..answer = 'too late'
         ..delay = const Duration(milliseconds: 300);
-      final AiExplanationRepository repository =
-          repo(client, timeout: const Duration(milliseconds: 40));
+      final AiExplanationRepository repository = repo(
+        client,
+        timeout: const Duration(milliseconds: 40),
+      );
 
       final List<AiExplanationResult> results = await collect(repository);
 
@@ -339,30 +387,41 @@ void main() {
       expect(repository.cached('k'), isNull);
     });
 
-    test('a chunk re-arms the timeout, so a long answer is not cut off',
-        () async {
-      // Four chunks 30 ms apart with a 50 ms timeout: the total 120 ms far
-      // exceeds the timeout, but no single gap does.
-      final _FakeClient client = fake()
-        ..deltas = <String>['a', 'b', 'c', 'd']
-        ..streamDelay = const Duration(milliseconds: 30);
-      final AiExplanationRepository repository =
-          repo(client, timeout: const Duration(milliseconds: 50));
+    test(
+      'a chunk re-arms the timeout, so a long answer is not cut off',
+      () async {
+        // Four chunks 30 ms apart with a 50 ms timeout: the total 120 ms far
+        // exceeds the timeout, but no single gap does.
+        final _FakeClient client = fake()
+          ..deltas = <String>['a', 'b', 'c', 'd']
+          ..streamDelay = const Duration(milliseconds: 30);
+        final AiExplanationRepository repository = repo(
+          client,
+          timeout: const Duration(milliseconds: 50),
+        );
 
-      final List<AiExplanationResult> results =
-          await collect(repository, stream: true);
+        final List<AiExplanationResult> results = await collect(
+          repository,
+          stream: true,
+        );
 
-      expect(results.last.status, AiExplanationStatus.done,
-          reason: 'the timeout measures inactivity, not total duration');
-      expect(results.last.text, 'abcd');
-    });
+        expect(
+          results.last.status,
+          AiExplanationStatus.done,
+          reason: 'the timeout measures inactivity, not total duration',
+        );
+        expect(results.last.text, 'abcd');
+      },
+    );
 
     test('a timeout is distinct from a cancellation', () async {
       final _FakeClient client = fake()
         ..answer = 'x'
         ..delay = const Duration(milliseconds: 300);
-      final AiExplanationRepository repository =
-          repo(client, timeout: const Duration(milliseconds: 40));
+      final AiExplanationRepository repository = repo(
+        client,
+        timeout: const Duration(milliseconds: 40),
+      );
 
       final List<AiExplanationResult> results = await collect(repository);
       expect(results.last.status, isNot(AiExplanationStatus.cancelled));
@@ -374,9 +433,10 @@ void main() {
     test('a provider error keeps its sanitised message', () async {
       final _FakeClient client = fake()
         ..error = const AiProviderException(
-            providerLabel: 'OpenAI',
-            statusCode: 401,
-            providerMessage: 'Incorrect API key provided');
+          providerLabel: 'OpenAI',
+          statusCode: 401,
+          providerMessage: 'Incorrect API key provided',
+        );
       final AiExplanationRepository repository = repo(client);
 
       final List<AiExplanationResult> results = await collect(repository);
@@ -387,7 +447,8 @@ void main() {
     test('a configuration error is reported as such', () async {
       final _FakeClient client = fake()
         ..error = const AiRequestException(
-            'Invalid Custom Request Body JSON: expected a JSON object.');
+          'Invalid Custom Request Body JSON: expected a JSON object.',
+        );
       final AiExplanationRepository repository = repo(client);
 
       final List<AiExplanationResult> results = await collect(repository);
@@ -396,7 +457,8 @@ void main() {
 
     test('an unknown transport error carries no provider text', () async {
       // Nothing from a raw socket/TLS failure is safe to surface verbatim.
-      final _FakeClient client = fake()..error = Exception('SocketException: ...');
+      final _FakeClient client = fake()
+        ..error = Exception('SocketException: ...');
       final AiExplanationRepository repository = repo(client);
 
       final List<AiExplanationResult> results = await collect(repository);
@@ -413,23 +475,28 @@ void main() {
       final AiExplanationRepository repository = repo(client);
 
       final Stream<AiExplanationResult> first = repository.explain(
-          cacheKey: 'k',
-          config: config(stream: true),
-          prompts: prompts(),
-          apiKey: 'api');
+        cacheKey: 'k',
+        config: config(stream: true),
+        prompts: prompts(),
+        apiKey: 'api',
+      );
       final StreamSubscription<AiExplanationResult> sub = first.listen((_) {});
 
       await Future<void>.delayed(const Duration(milliseconds: 40));
       final List<AiExplanationResult> joined = await repository
           .explain(
-              cacheKey: 'k',
-              config: config(stream: true),
-              prompts: prompts(),
-              apiKey: 'api')
+            cacheKey: 'k',
+            config: config(stream: true),
+            prompts: prompts(),
+            apiKey: 'api',
+          )
           .toList();
 
-      expect(joined.first.text, isNotEmpty,
-          reason: 'a popup that re-rendered must not see a blank box');
+      expect(
+        joined.first.text,
+        isNotEmpty,
+        reason: 'a popup that re-rendered must not see a blank box',
+      );
       expect(joined.last.status, AiExplanationStatus.done);
       await sub.cancel();
     });
@@ -470,8 +537,9 @@ class _FakeClient extends AiExplanationClient {
   }) async {
     generateCalls++;
     bool aborted = false;
-    unawaited(abortSignal?.whenComplete(() => aborted = true) ??
-        Future<void>.value());
+    unawaited(
+      abortSignal?.whenComplete(() => aborted = true) ?? Future<void>.value(),
+    );
     if (delay > Duration.zero) await Future<void>.delayed(delay);
     if (aborted) throw Exception('aborted');
     final Exception? failure = error;
@@ -488,8 +556,9 @@ class _FakeClient extends AiExplanationClient {
   }) async* {
     streamCalls++;
     bool aborted = false;
-    unawaited(abortSignal?.whenComplete(() => aborted = true) ??
-        Future<void>.value());
+    unawaited(
+      abortSignal?.whenComplete(() => aborted = true) ?? Future<void>.value(),
+    );
     for (final String delta in deltas) {
       if (streamDelay > Duration.zero) await Future<void>.delayed(streamDelay);
       if (aborted) return;

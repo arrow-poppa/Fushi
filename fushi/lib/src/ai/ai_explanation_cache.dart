@@ -100,7 +100,8 @@ class AiExplanationCache {
   /// Live entry count, after pruning anything already stale. Test-facing.
   int get length {
     _entries.removeWhere(
-        (String _, _CacheEntry e) => _now().difference(e.storedAt) >= ttl);
+      (String _, _CacheEntry e) => _now().difference(e.storedAt) >= ttl,
+    );
     return _entries.length;
   }
 }

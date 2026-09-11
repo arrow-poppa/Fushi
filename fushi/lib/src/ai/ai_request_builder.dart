@@ -178,9 +178,10 @@ abstract final class AiRequestBuilder {
     final String customValue = customThinkingValue.trim();
     final String effectiveIntensity =
         thinkingIntensity == AiThinkingIntensity.custom
-            ? customValue
-            : thinkingIntensity.wire;
-    final bool hasThinkingMode = thinkingMode == AiThinkingMode.enabled ||
+        ? customValue
+        : thinkingIntensity.wire;
+    final bool hasThinkingMode =
+        thinkingMode == AiThinkingMode.enabled ||
         thinkingMode == AiThinkingMode.disabled;
     final bool hasIntensity = effectiveIntensity.isNotEmpty;
 
@@ -196,8 +197,9 @@ abstract final class AiRequestBuilder {
           customValue.isNotEmpty) {
         reasoning.addAll(parseCustomReasoningValue(customValue));
       } else if (hasIntensity) {
-        reasoning['effort'] =
-            effectiveIntensity == 'max' ? 'xhigh' : effectiveIntensity;
+        reasoning['effort'] = effectiveIntensity == 'max'
+            ? 'xhigh'
+            : effectiveIntensity;
       } else if (hasThinkingMode) {
         reasoning['enabled'] = true;
       }
@@ -297,8 +299,8 @@ abstract final class AiRequestBuilder {
       if (existing is Map && value is Map) {
         final Map<String, Object?> existingMap =
             existing is Map<String, Object?>
-                ? existing
-                : Map<String, Object?>.from(existing);
+            ? existing
+            : Map<String, Object?>.from(existing);
         deepMergeRequestBody(existingMap, Map<String, Object?>.from(value));
         target[key] = existingMap;
       } else {

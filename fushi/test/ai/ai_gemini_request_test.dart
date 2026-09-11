@@ -17,16 +17,19 @@ import 'package:fushi/src/ai/ai_request_builder.dart';
 /// See `docs/agent/ai-explanation.md` §5.3.
 void main() {
   AiRenderedPrompts prompts({String system = ''}) => AiPromptRenderer.render(
-        userTemplate: 'explain {{target}}',
-        systemTemplate: system,
-        target: 'word',
-        sentence: 'ctx',
-      );
+    userTemplate: 'explain {{target}}',
+    systemTemplate: system,
+    target: 'word',
+    sentence: 'ctx',
+  );
 
-  AiGeminiRoute route(String model,
-          [AiGeminiThinkingLevel level = AiGeminiThinkingLevel.unset]) =>
-      AiGeminiRequestBuilder.resolveRoute(
-          modelId: model, configuredLevel: level);
+  AiGeminiRoute route(
+    String model, [
+    AiGeminiThinkingLevel level = AiGeminiThinkingLevel.unset,
+  ]) => AiGeminiRequestBuilder.resolveRoute(
+    modelId: model,
+    configuredLevel: level,
+  );
 
   group('model id sanitisation', () {
     test('empty falls back to the default model', () {
@@ -53,8 +56,11 @@ void main() {
       final AiGeminiRoute r = route('gemini-low-thinking');
       expect(r.apiModelId, 'gemini-3-flash-preview');
       expect(r.useVertexExpress, isTrue);
-      expect(r.thinkingLevel, 'LOW',
-          reason: 'low-thinking defaults the level to LOW');
+      expect(
+        r.thinkingLevel,
+        'LOW',
+        reason: 'low-thinking defaults the level to LOW',
+      );
     });
   });
 
@@ -69,24 +75,34 @@ void main() {
     });
 
     test('a plain 3.1 pro preview stays on the public API', () {
-      expect(route('gemini-3.1-pro-preview').useVertexExpress, isFalse,
-          reason: 'only the -vertex variant switches host');
+      expect(
+        route('gemini-3.1-pro-preview').useVertexExpress,
+        isFalse,
+        reason: 'only the -vertex variant switches host',
+      );
     });
   });
 
   group('thinking level normalisation', () {
     test('non-Gemini-3 models never carry a thinking level', () {
-      expect(route('gemini-2.5-pro', AiGeminiThinkingLevel.high).thinkingLevel,
-          isEmpty);
-      expect(route('gemini-2.0-flash', AiGeminiThinkingLevel.medium)
-          .thinkingLevel, isEmpty);
+      expect(
+        route('gemini-2.5-pro', AiGeminiThinkingLevel.high).thinkingLevel,
+        isEmpty,
+      );
+      expect(
+        route('gemini-2.0-flash', AiGeminiThinkingLevel.medium).thinkingLevel,
+        isEmpty,
+      );
     });
 
     test('Gemini 3 models keep the configured level', () {
       expect(
-          route('gemini-3-flash-preview', AiGeminiThinkingLevel.medium)
-              .thinkingLevel,
-          'MEDIUM');
+        route(
+          'gemini-3-flash-preview',
+          AiGeminiThinkingLevel.medium,
+        ).thinkingLevel,
+        'MEDIUM',
+      );
     });
 
     test('the Pro previews fold MINIMAL to LOW and MEDIUM to HIGH', () {
@@ -96,13 +112,22 @@ void main() {
         'gemini-3-pro-preview',
         'gemini-3.1-pro-preview',
       ]) {
-        expect(route(model, AiGeminiThinkingLevel.minimal).thinkingLevel, 'LOW',
-            reason: '$model folds MINIMAL to LOW');
-        expect(route(model, AiGeminiThinkingLevel.medium).thinkingLevel, 'HIGH',
-            reason: '$model folds MEDIUM to HIGH');
+        expect(
+          route(model, AiGeminiThinkingLevel.minimal).thinkingLevel,
+          'LOW',
+          reason: '$model folds MINIMAL to LOW',
+        );
+        expect(
+          route(model, AiGeminiThinkingLevel.medium).thinkingLevel,
+          'HIGH',
+          reason: '$model folds MEDIUM to HIGH',
+        );
         expect(route(model, AiGeminiThinkingLevel.low).thinkingLevel, 'LOW');
         expect(route(model, AiGeminiThinkingLevel.high).thinkingLevel, 'HIGH');
-        expect(route(model, AiGeminiThinkingLevel.unset).thinkingLevel, isEmpty);
+        expect(
+          route(model, AiGeminiThinkingLevel.unset).thinkingLevel,
+          isEmpty,
+        );
       }
     });
   });
@@ -111,7 +136,9 @@ void main() {
     AiHttpRequest build(String model, {required bool stream}) =>
         AiGeminiRequestBuilder.build(
           config: AiProviderConfig(
-              provider: AiProvider.gemini, geminiModel: model),
+            provider: AiProvider.gemini,
+            geminiModel: model,
+          ),
           prompts: prompts(),
           apiKey: 'SECRET-KEY',
           stream: stream,
@@ -136,15 +163,20 @@ void main() {
     test('a Vertex model uses the aiplatform host', () {
       expect(
         build('gemini-3-pro-preview', stream: false).url,
-        startsWith('https://aiplatform.googleapis.com/v1/publishers/google/'
-            'models/gemini-3-pro-preview:generateContent'),
+        startsWith(
+          'https://aiplatform.googleapis.com/v1/publishers/google/'
+          'models/gemini-3-pro-preview:generateContent',
+        ),
       );
     });
 
     test('authenticates with a query parameter and no auth header', () {
       final AiHttpRequest request = build('gemini-2.5-flash', stream: false);
-      expect(request.headers.containsKey('Authorization'), isFalse,
-          reason: 'Gemini offers no header alternative');
+      expect(
+        request.headers.containsKey('Authorization'),
+        isFalse,
+        reason: 'Gemini offers no header alternative',
+      );
       expect(request.url, contains('key=SECRET-KEY'));
     });
 
@@ -154,8 +186,11 @@ void main() {
       final AiHttpRequest request = build('gemini-2.5-flash', stream: true);
       expect(request.safeUrl, isNot(contains('SECRET-KEY')));
       expect(request.safeUrl, contains('key=%3Credacted%3E'));
-      expect(request.safeUrl, contains('alt=sse'),
-          reason: 'non-credential parameters stay readable');
+      expect(
+        request.safeUrl,
+        contains('alt=sse'),
+        reason: 'non-credential parameters stay readable',
+      );
     });
   });
 
@@ -163,7 +198,9 @@ void main() {
     Map<String, Object?> body(String model, {String system = ''}) =>
         AiGeminiRequestBuilder.build(
           config: AiProviderConfig(
-              provider: AiProvider.gemini, geminiModel: model),
+            provider: AiProvider.gemini,
+            geminiModel: model,
+          ),
           prompts: prompts(system: system),
           apiKey: 'k',
           stream: false,
@@ -172,7 +209,8 @@ void main() {
     test('the public API body omits the content role', () {
       final List<Object?> contents =
           body('gemini-2.5-flash')['contents']! as List<Object?>;
-      final Map<String, Object?> first = contents.single as Map<String, Object?>;
+      final Map<String, Object?> first =
+          contents.single as Map<String, Object?>;
       expect(first.containsKey('role'), isFalse);
       expect(first['parts'], <Object?>[
         <String, Object?>{'text': 'explain word'},
@@ -187,7 +225,10 @@ void main() {
     });
 
     test('omits systemInstruction when there is no system prompt', () {
-      expect(body('gemini-2.5-flash').containsKey('systemInstruction'), isFalse);
+      expect(
+        body('gemini-2.5-flash').containsKey('systemInstruction'),
+        isFalse,
+      );
     });
 
     test('includes systemInstruction when one is set', () {
@@ -204,11 +245,14 @@ void main() {
     test('adds thinkingConfig only for a Gemini 3 model with a level', () {
       Map<String, Object?> gen(String model, AiGeminiThinkingLevel level) =>
           AiGeminiRequestBuilder.buildBody(
-            prompts: prompts(),
-            route: AiGeminiRequestBuilder.resolveRoute(
-                modelId: model, configuredLevel: level),
-            temperature: 0.7,
-          )['generationConfig']! as Map<String, Object?>;
+                prompts: prompts(),
+                route: AiGeminiRequestBuilder.resolveRoute(
+                  modelId: model,
+                  configuredLevel: level,
+                ),
+                temperature: 0.7,
+              )['generationConfig']!
+              as Map<String, Object?>;
 
       expect(
         gen('gemini-3-flash-preview', AiGeminiThinkingLevel.high),
@@ -217,22 +261,29 @@ void main() {
           'thinkingConfig': <String, Object?>{'thinkingLevel': 'HIGH'},
         },
       );
-      expect(gen('gemini-2.5-flash', AiGeminiThinkingLevel.high),
-          <String, Object?>{'temperature': 0.7},
-          reason: 'a 2.x model must not receive thinkingConfig');
-      expect(gen('gemini-3-flash-preview', AiGeminiThinkingLevel.unset),
-          <String, Object?>{'temperature': 0.7},
-          reason: 'no level means let the API default apply');
+      expect(
+        gen('gemini-2.5-flash', AiGeminiThinkingLevel.high),
+        <String, Object?>{'temperature': 0.7},
+        reason: 'a 2.x model must not receive thinkingConfig',
+      );
+      expect(
+        gen('gemini-3-flash-preview', AiGeminiThinkingLevel.unset),
+        <String, Object?>{'temperature': 0.7},
+        reason: 'no level means let the API default apply',
+      );
     });
 
     test('clamps the temperature', () {
-      final Map<String, Object?> gen = AiGeminiRequestBuilder.buildBody(
-        prompts: prompts(),
-        route: AiGeminiRequestBuilder.resolveRoute(
-            modelId: 'gemini-2.5-flash',
-            configuredLevel: AiGeminiThinkingLevel.unset),
-        temperature: 99,
-      )['generationConfig']! as Map<String, Object?>;
+      final Map<String, Object?> gen =
+          AiGeminiRequestBuilder.buildBody(
+                prompts: prompts(),
+                route: AiGeminiRequestBuilder.resolveRoute(
+                  modelId: 'gemini-2.5-flash',
+                  configuredLevel: AiGeminiThinkingLevel.unset,
+                ),
+                temperature: 99,
+              )['generationConfig']!
+              as Map<String, Object?>;
       expect(gen['temperature'], 2.0);
     });
   });

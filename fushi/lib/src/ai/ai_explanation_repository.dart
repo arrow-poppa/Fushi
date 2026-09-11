@@ -35,8 +35,8 @@ class AiExplanationRepository {
     required AiExplanationClient client,
     AiExplanationCache? cache,
     this.inactivityTimeout = kAiInactivityTimeout,
-  })  : _client = client,
-        _cache = cache ?? AiExplanationCache();
+  }) : _client = client,
+       _cache = cache ?? AiExplanationCache();
 
   final AiExplanationClient _client;
   final AiExplanationCache _cache;
@@ -89,12 +89,9 @@ class AiExplanationRepository {
     _pending[cacheKey] = pending;
     final Stream<AiExplanationResult> stream = pending.subscribe();
     // Not awaited: the caller consumes the stream.
-    unawaited(_run(
-      pending: pending,
-      config: config,
-      prompts: prompts,
-      apiKey: apiKey,
-    ));
+    unawaited(
+      _run(pending: pending, config: config, prompts: prompts, apiKey: apiKey),
+    );
     return stream;
   }
 
@@ -156,7 +153,11 @@ class AiExplanationRepository {
     try {
       if (config.streamResponse) {
         await _runStreaming(
-            pending: pending, config: config, prompts: prompts, apiKey: apiKey);
+          pending: pending,
+          config: config,
+          prompts: prompts,
+          apiKey: apiKey,
+        );
       } else {
         final String text = await _client.generate(
           config: config,
@@ -193,17 +194,24 @@ class AiExplanationRepository {
       } else if (pending.cancelled || !_isCurrent(pending)) {
         // Normal operation: the popup closed or another word was looked up.
       } else if (error is AiProviderException) {
-        pending.finish(AiExplanationResult.failed(
+        pending.finish(
+          AiExplanationResult.failed(
             AiExplanationFailure.provider,
-            providerMessage: error.providerMessage));
+            providerMessage: error.providerMessage,
+          ),
+        );
       } else if (error is AiRequestException) {
-        pending.finish(AiExplanationResult.failed(
+        pending.finish(
+          AiExplanationResult.failed(
             AiExplanationFailure.configuration,
-            providerMessage: error.message));
+            providerMessage: error.message,
+          ),
+        );
       } else {
         // Network down, DNS, TLS: nothing here is safe to surface verbatim.
         pending.finish(
-            const AiExplanationResult.failed(AiExplanationFailure.unknown));
+          const AiExplanationResult.failed(AiExplanationFailure.unknown),
+        );
       }
     } finally {
       pending.clearTimeout();

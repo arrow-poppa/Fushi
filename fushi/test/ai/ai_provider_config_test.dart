@@ -70,8 +70,11 @@ void main() {
       expect(AiProvider.fromWire(null), AiProvider.openai);
       expect(AiThinkingMode.fromWire('sideways'), AiThinkingMode.unset);
       expect(AiThinkingIntensity.fromWire(null), AiThinkingIntensity.unset);
-      expect(AiGeminiThinkingLevel.fromWire('high'), AiGeminiThinkingLevel.unset,
-          reason: 'gemini levels are upper-case; lower-case is not a match');
+      expect(
+        AiGeminiThinkingLevel.fromWire('high'),
+        AiGeminiThinkingLevel.unset,
+        reason: 'gemini levels are upper-case; lower-case is not a match',
+      );
       expect(AiProviderRoutingMode.fromWire('x'), AiProviderRoutingMode.unset);
     });
   });
@@ -83,11 +86,17 @@ void main() {
       expect(AiDefaults.geminiModel, 'gemini-2.5-flash');
       expect(AiDefaults.temperature, 0.7);
       expect(AiDefaults.autoGenerateOnLookup, isTrue);
-      expect(AiDefaults.streamResponse, isFalse,
-          reason: 'streaming is opt-in upstream');
+      expect(
+        AiDefaults.streamResponse,
+        isFalse,
+        reason: 'streaming is opt-in upstream',
+      );
       expect(AiDefaults.cancelPendingRequests, isTrue);
-      expect(AiDefaults.unknownWordFallback, isFalse,
-          reason: 'the unknown-word fallback is opt-in upstream');
+      expect(
+        AiDefaults.unknownWordFallback,
+        isFalse,
+        reason: 'the unknown-word fallback is opt-in upstream',
+      );
       expect(AiDefaults.providerAllowFallbacks, isTrue);
       expect(AiDefaults.userPrompt, kAiDefaultUserPrompt);
       expect(AiDefaults.systemPrompt, isEmpty);
@@ -169,41 +178,78 @@ void main() {
     });
 
     test('OpenAI and Gemini are usable on their default models alone', () {
-      expect(const AiProviderConfig(provider: AiProvider.openai)
-          .isConfigured(hasApiKey: true), isTrue);
-      expect(const AiProviderConfig(provider: AiProvider.gemini)
-          .isConfigured(hasApiKey: true), isTrue);
+      expect(
+        const AiProviderConfig(
+          provider: AiProvider.openai,
+        ).isConfigured(hasApiKey: true),
+        isTrue,
+      );
+      expect(
+        const AiProviderConfig(
+          provider: AiProvider.gemini,
+        ).isConfigured(hasApiKey: true),
+        isTrue,
+      );
     });
 
     test('DeepSeek additionally requires a model id', () {
       // Matches the reference generator's stricter check, which is the one that
       // decides observable behaviour upstream.
-      expect(const AiProviderConfig(provider: AiProvider.deepseek)
-          .isConfigured(hasApiKey: true), isFalse);
-      expect(const AiProviderConfig(
-              provider: AiProvider.deepseek, deepseekModel: 'deepseek-chat')
-          .isConfigured(hasApiKey: true), isTrue);
-      expect(const AiProviderConfig(
-              provider: AiProvider.deepseek, deepseekModel: '   ')
-          .isConfigured(hasApiKey: true), isFalse,
-          reason: 'whitespace is not a model id');
+      expect(
+        const AiProviderConfig(
+          provider: AiProvider.deepseek,
+        ).isConfigured(hasApiKey: true),
+        isFalse,
+      );
+      expect(
+        const AiProviderConfig(
+          provider: AiProvider.deepseek,
+          deepseekModel: 'deepseek-chat',
+        ).isConfigured(hasApiKey: true),
+        isTrue,
+      );
+      expect(
+        const AiProviderConfig(
+          provider: AiProvider.deepseek,
+          deepseekModel: '   ',
+        ).isConfigured(hasApiKey: true),
+        isFalse,
+        reason: 'whitespace is not a model id',
+      );
     });
 
     test('Custom requires both an endpoint and a model id', () {
       const String url = 'https://api.example.com/v1/chat/completions';
-      expect(const AiProviderConfig(provider: AiProvider.custom)
-          .isConfigured(hasApiKey: true), isFalse);
-      expect(const AiProviderConfig(
-              provider: AiProvider.custom, customEndpoint: url)
-          .isConfigured(hasApiKey: true), isFalse,
-          reason: 'endpoint without model is incomplete');
-      expect(const AiProviderConfig(
-              provider: AiProvider.custom, customModel: 'm')
-          .isConfigured(hasApiKey: true), isFalse,
-          reason: 'model without endpoint is incomplete');
-      expect(const AiProviderConfig(
-              provider: AiProvider.custom, customEndpoint: url, customModel: 'm')
-          .isConfigured(hasApiKey: true), isTrue);
+      expect(
+        const AiProviderConfig(
+          provider: AiProvider.custom,
+        ).isConfigured(hasApiKey: true),
+        isFalse,
+      );
+      expect(
+        const AiProviderConfig(
+          provider: AiProvider.custom,
+          customEndpoint: url,
+        ).isConfigured(hasApiKey: true),
+        isFalse,
+        reason: 'endpoint without model is incomplete',
+      );
+      expect(
+        const AiProviderConfig(
+          provider: AiProvider.custom,
+          customModel: 'm',
+        ).isConfigured(hasApiKey: true),
+        isFalse,
+        reason: 'model without endpoint is incomplete',
+      );
+      expect(
+        const AiProviderConfig(
+          provider: AiProvider.custom,
+          customEndpoint: url,
+          customModel: 'm',
+        ).isConfigured(hasApiKey: true),
+        isTrue,
+      );
     });
   });
 
@@ -211,8 +257,10 @@ void main() {
     const AiProviderConfig base = AiProviderConfig();
 
     test('is stable for an unchanged config', () {
-      expect(base.generationSignature,
-          const AiProviderConfig().generationSignature);
+      expect(
+        base.generationSignature,
+        const AiProviderConfig().generationSignature,
+      );
     });
 
     test('changes when the model changes', () {
@@ -232,22 +280,30 @@ void main() {
     });
 
     test('changes when either prompt changes', () {
-      expect(const AiProviderConfig(userPrompt: 'other').generationSignature,
-          isNot(base.generationSignature));
-      expect(const AiProviderConfig(systemPrompt: 'be terse').generationSignature,
-          isNot(base.generationSignature));
+      expect(
+        const AiProviderConfig(userPrompt: 'other').generationSignature,
+        isNot(base.generationSignature),
+      );
+      expect(
+        const AiProviderConfig(systemPrompt: 'be terse').generationSignature,
+        isNot(base.generationSignature),
+      );
     });
 
     test('changes when the temperature changes', () {
-      expect(const AiProviderConfig(temperature: 1.5).generationSignature,
-          isNot(base.generationSignature));
+      expect(
+        const AiProviderConfig(temperature: 1.5).generationSignature,
+        isNot(base.generationSignature),
+      );
     });
 
     test('uses the clamped temperature, so out-of-range values collapse', () {
       // 3.0 and 99.0 both clamp to 2.0 and genuinely produce the same request,
       // so they must share a cache entry rather than thrash it.
-      expect(const AiProviderConfig(temperature: 3).generationSignature,
-          const AiProviderConfig(temperature: 99).generationSignature);
+      expect(
+        const AiProviderConfig(temperature: 3).generationSignature,
+        const AiProviderConfig(temperature: 99).generationSignature,
+      );
     });
 
     test('ignores settings that belong to another provider', () {
@@ -272,45 +328,56 @@ void main() {
       final String baseline = custom.generationSignature;
       final List<AiProviderConfig> variants = <AiProviderConfig>[
         const AiProviderConfig(
-            provider: AiProvider.custom,
-            customEndpoint: 'https://openrouter.ai/api/v1/chat/completions',
-            customModel: 'some/model',
-            customRoutingMode: AiProviderRoutingMode.only),
+          provider: AiProvider.custom,
+          customEndpoint: 'https://openrouter.ai/api/v1/chat/completions',
+          customModel: 'some/model',
+          customRoutingMode: AiProviderRoutingMode.only,
+        ),
         const AiProviderConfig(
-            provider: AiProvider.custom,
-            customEndpoint: 'https://openrouter.ai/api/v1/chat/completions',
-            customModel: 'some/model',
-            customRoutingSlugs: 'fireworks'),
+          provider: AiProvider.custom,
+          customEndpoint: 'https://openrouter.ai/api/v1/chat/completions',
+          customModel: 'some/model',
+          customRoutingSlugs: 'fireworks',
+        ),
         const AiProviderConfig(
-            provider: AiProvider.custom,
-            customEndpoint: 'https://openrouter.ai/api/v1/chat/completions',
-            customModel: 'some/model',
-            customAllowFallbacks: false),
+          provider: AiProvider.custom,
+          customEndpoint: 'https://openrouter.ai/api/v1/chat/completions',
+          customModel: 'some/model',
+          customAllowFallbacks: false,
+        ),
         const AiProviderConfig(
-            provider: AiProvider.custom,
-            customEndpoint: 'https://openrouter.ai/api/v1/chat/completions',
-            customModel: 'some/model',
-            customThinkingMode: AiThinkingMode.enabled),
+          provider: AiProvider.custom,
+          customEndpoint: 'https://openrouter.ai/api/v1/chat/completions',
+          customModel: 'some/model',
+          customThinkingMode: AiThinkingMode.enabled,
+        ),
         const AiProviderConfig(
-            provider: AiProvider.custom,
-            customEndpoint: 'https://openrouter.ai/api/v1/chat/completions',
-            customModel: 'some/model',
-            customThinkingIntensity: AiThinkingIntensity.max),
+          provider: AiProvider.custom,
+          customEndpoint: 'https://openrouter.ai/api/v1/chat/completions',
+          customModel: 'some/model',
+          customThinkingIntensity: AiThinkingIntensity.max,
+        ),
         const AiProviderConfig(
-            provider: AiProvider.custom,
-            customEndpoint: 'https://openrouter.ai/api/v1/chat/completions',
-            customModel: 'some/model',
-            customThinkingValue: '2000'),
+          provider: AiProvider.custom,
+          customEndpoint: 'https://openrouter.ai/api/v1/chat/completions',
+          customModel: 'some/model',
+          customThinkingValue: '2000',
+        ),
         const AiProviderConfig(
-            provider: AiProvider.custom,
-            customEndpoint: 'https://openrouter.ai/api/v1/chat/completions',
-            customModel: 'some/model',
-            customRequestBodyJson: '{"top_p":0.5}'),
+          provider: AiProvider.custom,
+          customEndpoint: 'https://openrouter.ai/api/v1/chat/completions',
+          customModel: 'some/model',
+          customRequestBodyJson: '{"top_p":0.5}',
+        ),
       ];
       for (final AiProviderConfig variant in variants) {
-        expect(variant.generationSignature, isNot(baseline),
-            reason: 'a knob that changes the outgoing request must change the '
-                'cache key, otherwise the old answer is served');
+        expect(
+          variant.generationSignature,
+          isNot(baseline),
+          reason:
+              'a knob that changes the outgoing request must change the '
+              'cache key, otherwise the old answer is served',
+        );
       }
     });
 
@@ -319,8 +386,12 @@ void main() {
       // separator cannot collide with a different configuration.
       expect(
         const AiProviderConfig(userPrompt: 'a", "b').generationSignature,
-        isNot(const AiProviderConfig(userPrompt: 'a', systemPrompt: 'b')
-            .generationSignature),
+        isNot(
+          const AiProviderConfig(
+            userPrompt: 'a',
+            systemPrompt: 'b',
+          ).generationSignature,
+        ),
       );
     });
   });

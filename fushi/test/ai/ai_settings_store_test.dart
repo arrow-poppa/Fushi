@@ -131,8 +131,11 @@ void main() {
 
     test('accepts a string, including a comma decimal separator', () {
       prefs.values[AiPrefKeys.temperature] = '0,4';
-      expect(settings.read().temperature, closeTo(0.4, 1e-9),
-          reason: 'many locales type a comma');
+      expect(
+        settings.read().temperature,
+        closeTo(0.4, 1e-9),
+        reason: 'many locales type a comma',
+      );
       prefs.values[AiPrefKeys.temperature] = ' 1.5 ';
       expect(settings.read().temperature, 1.5);
     });
@@ -166,19 +169,24 @@ void main() {
     test('each provider maps to its own key', () {
       // Getting this wrong would send one provider's key to another — a live
       // credential handed to a third party.
-      expect(PrefsAiCredentialStore.keyFor(AiProvider.openai),
-          AiPrefKeys.openaiApiKey);
-      expect(PrefsAiCredentialStore.keyFor(AiProvider.gemini),
-          AiPrefKeys.geminiApiKey);
-      expect(PrefsAiCredentialStore.keyFor(AiProvider.deepseek),
-          AiPrefKeys.deepseekApiKey);
-      expect(PrefsAiCredentialStore.keyFor(AiProvider.custom),
-          AiPrefKeys.customApiKey);
       expect(
-        AiProvider.values
-            .map(PrefsAiCredentialStore.keyFor)
-            .toSet()
-            .length,
+        PrefsAiCredentialStore.keyFor(AiProvider.openai),
+        AiPrefKeys.openaiApiKey,
+      );
+      expect(
+        PrefsAiCredentialStore.keyFor(AiProvider.gemini),
+        AiPrefKeys.geminiApiKey,
+      );
+      expect(
+        PrefsAiCredentialStore.keyFor(AiProvider.deepseek),
+        AiPrefKeys.deepseekApiKey,
+      );
+      expect(
+        PrefsAiCredentialStore.keyFor(AiProvider.custom),
+        AiPrefKeys.customApiKey,
+      );
+      expect(
+        AiProvider.values.map(PrefsAiCredentialStore.keyFor).toSet().length,
         AiProvider.values.length,
         reason: 'no two providers may share a credential key',
       );
@@ -213,8 +221,10 @@ void main() {
 
     test('every credential key is declared in AiPrefKeys.credentials', () {
       for (final AiProvider provider in AiProvider.values) {
-        expect(AiPrefKeys.credentials,
-            contains(PrefsAiCredentialStore.keyFor(provider)));
+        expect(
+          AiPrefKeys.credentials,
+          contains(PrefsAiCredentialStore.keyFor(provider)),
+        );
       }
     });
   });
@@ -223,8 +233,11 @@ void main() {
     test('is false until a key is present', () async {
       expect(settings.isEnabled(credentials), isFalse);
       await credentials.writeApiKey(AiProvider.openai, 'k');
-      expect(settings.isEnabled(credentials), isTrue,
-          reason: 'OpenAI ships a usable default model');
+      expect(
+        settings.isEnabled(credentials),
+        isTrue,
+        reason: 'OpenAI ships a usable default model',
+      );
     });
 
     test('needs a model for DeepSeek and an endpoint for Custom', () async {
@@ -237,8 +250,11 @@ void main() {
       await settings.setProvider(AiProvider.custom);
       await credentials.writeApiKey(AiProvider.custom, 'k');
       await settings.setCustomModel('m');
-      expect(settings.isEnabled(credentials), isFalse,
-          reason: 'no endpoint yet');
+      expect(
+        settings.isEnabled(credentials),
+        isFalse,
+        reason: 'no endpoint yet',
+      );
       await settings.setCustomEndpoint('https://x.test/v1/chat/completions');
       expect(settings.isEnabled(credentials), isTrue);
     });

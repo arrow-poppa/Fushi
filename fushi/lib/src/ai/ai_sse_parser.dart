@@ -68,7 +68,9 @@ class AiSseParser {
     for (;;) {
       final Match? match = _eventSeparator.firstMatch(working);
       if (match == null) break;
-      final String? payload = _extractPayload(working.substring(0, match.start));
+      final String? payload = _extractPayload(
+        working.substring(0, match.start),
+      );
       if (payload != null) payloads.add(payload);
       working = working.substring(match.end);
     }

@@ -33,7 +33,8 @@ class AiSettingsStore {
   bool isEnabled(AiCredentialStore credentials) {
     final AiProviderConfig config = read();
     return config.isConfigured(
-        hasApiKey: credentials.hasApiKey(config.provider));
+      hasApiKey: credentials.hasApiKey(config.provider),
+    );
   }
 
   /// Reads the whole configuration.
@@ -43,40 +44,52 @@ class AiSettingsStore {
   AiProviderConfig read() {
     return AiProviderConfig(
       provider: AiProvider.fromWire(_string(AiPrefKeys.provider)),
-      openaiModel:
-          _string(AiPrefKeys.openaiModel, AiDefaults.openaiModel),
-      geminiModel:
-          _string(AiPrefKeys.geminiModel, AiDefaults.geminiModel),
+      openaiModel: _string(AiPrefKeys.openaiModel, AiDefaults.openaiModel),
+      geminiModel: _string(AiPrefKeys.geminiModel, AiDefaults.geminiModel),
       geminiThinkingLevel: AiGeminiThinkingLevel.fromWire(
-          _string(AiPrefKeys.geminiThinkingLevel)),
+        _string(AiPrefKeys.geminiThinkingLevel),
+      ),
       deepseekModel: _string(AiPrefKeys.deepseekModel),
-      deepseekThinkingMode:
-          AiThinkingMode.fromWire(_string(AiPrefKeys.deepseekThinkingMode)),
+      deepseekThinkingMode: AiThinkingMode.fromWire(
+        _string(AiPrefKeys.deepseekThinkingMode),
+      ),
       deepseekThinkingIntensity: AiThinkingIntensity.fromWire(
-          _string(AiPrefKeys.deepseekThinkingIntensity)),
+        _string(AiPrefKeys.deepseekThinkingIntensity),
+      ),
       customEndpoint: _string(AiPrefKeys.customEndpoint),
       customModel: _string(AiPrefKeys.customModel),
       customRoutingMode: AiProviderRoutingMode.fromWire(
-          _string(AiPrefKeys.customRoutingMode)),
+        _string(AiPrefKeys.customRoutingMode),
+      ),
       customRoutingSlugs: _string(AiPrefKeys.customRoutingSlugs),
-      customAllowFallbacks: _bool(AiPrefKeys.customRoutingAllowFallbacks,
-          AiDefaults.providerAllowFallbacks),
-      customThinkingMode:
-          AiThinkingMode.fromWire(_string(AiPrefKeys.customThinkingMode)),
+      customAllowFallbacks: _bool(
+        AiPrefKeys.customRoutingAllowFallbacks,
+        AiDefaults.providerAllowFallbacks,
+      ),
+      customThinkingMode: AiThinkingMode.fromWire(
+        _string(AiPrefKeys.customThinkingMode),
+      ),
       customThinkingIntensity: AiThinkingIntensity.fromWire(
-          _string(AiPrefKeys.customThinkingIntensity)),
+        _string(AiPrefKeys.customThinkingIntensity),
+      ),
       customThinkingValue: _string(AiPrefKeys.customThinkingValue),
       customRequestBodyJson: _string(AiPrefKeys.customRequestBodyJson),
       userPrompt: _string(AiPrefKeys.prompt, AiDefaults.userPrompt),
       systemPrompt: _string(AiPrefKeys.systemPrompt),
       temperature: _temperature(),
-      autoGenerateOnLookup:
-          _bool(AiPrefKeys.autoGenerate, AiDefaults.autoGenerateOnLookup),
+      autoGenerateOnLookup: _bool(
+        AiPrefKeys.autoGenerate,
+        AiDefaults.autoGenerateOnLookup,
+      ),
       streamResponse: _bool(AiPrefKeys.stream, AiDefaults.streamResponse),
       cancelPendingRequests: _bool(
-          AiPrefKeys.cancelPending, AiDefaults.cancelPendingRequests),
-      unknownWordFallback:
-          _bool(AiPrefKeys.unknownFallback, AiDefaults.unknownWordFallback),
+        AiPrefKeys.cancelPending,
+        AiDefaults.cancelPendingRequests,
+      ),
+      unknownWordFallback: _bool(
+        AiPrefKeys.unknownFallback,
+        AiDefaults.unknownWordFallback,
+      ),
     );
   }
 
@@ -106,8 +119,10 @@ class AiSettingsStore {
   /// Clamped on write as well as on read: an out-of-range value is rejected by
   /// some endpoints, and storing one would leave the user with a provider that
   /// silently fails until they notice the number.
-  Future<void> setTemperature(double value) =>
-      _prefs.setPref(AiPrefKeys.temperature, AiDefaults.clampTemperature(value));
+  Future<void> setTemperature(double value) => _prefs.setPref(
+    AiPrefKeys.temperature,
+    AiDefaults.clampTemperature(value),
+  );
 
   Future<void> setOpenaiModel(String value) =>
       _prefs.setPref(AiPrefKeys.openaiModel, value.trim());
@@ -176,15 +191,18 @@ class AiSettingsStore {
   /// or a hand-edited row can leave an int or a string here, and a lookup must
   /// not throw because of it.
   double _temperature() {
-    final Object? value =
-        _prefs.getPref(AiPrefKeys.temperature, defaultValue: AiDefaults.temperature);
+    final Object? value = _prefs.getPref(
+      AiPrefKeys.temperature,
+      defaultValue: AiDefaults.temperature,
+    );
     if (value is double) return AiDefaults.clampTemperature(value);
     if (value is int) return AiDefaults.clampTemperature(value.toDouble());
     if (value is String) {
       // Accept a comma decimal separator, as the reference's settings field
       // does — a lot of locales type 0,7.
       return AiDefaults.clampTemperature(
-          double.tryParse(value.trim().replaceAll(',', '.')));
+        double.tryParse(value.trim().replaceAll(',', '.')),
+      );
     }
     return AiDefaults.temperature;
   }

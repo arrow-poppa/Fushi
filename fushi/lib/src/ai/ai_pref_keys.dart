@@ -26,7 +26,8 @@ abstract final class AiPrefKeys {
   static const String geminiThinkingLevel = 'ai_explain_gemini_thinking_level';
 
   static const String deepseekModel = 'ai_explain_deepseek_model';
-  static const String deepseekThinkingMode = 'ai_explain_deepseek_thinking_mode';
+  static const String deepseekThinkingMode =
+      'ai_explain_deepseek_thinking_mode';
   static const String deepseekThinkingIntensity =
       'ai_explain_deepseek_thinking_intensity';
 

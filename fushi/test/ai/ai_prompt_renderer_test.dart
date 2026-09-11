@@ -15,13 +15,12 @@ void main() {
     String system = '',
     String target = 'word',
     String sentence = 'a sentence',
-  }) =>
-      AiPromptRenderer.render(
-        userTemplate: user,
-        systemTemplate: system,
-        target: target,
-        sentence: sentence,
-      );
+  }) => AiPromptRenderer.render(
+    userTemplate: user,
+    systemTemplate: system,
+    target: target,
+    sentence: sentence,
+  );
 
   group('placeholder substitution', () {
     test('substitutes {{target}} and {{sentence}}', () {
@@ -30,8 +29,9 @@ void main() {
 
     test('substitutes every occurrence, not just the first', () {
       expect(
-        render(user: '{{target}} {{target}} {{sentence}} {{sentence}}')
-            .userPrompt,
+        render(
+          user: '{{target}} {{target}} {{sentence}} {{sentence}}',
+        ).userPrompt,
         'word word a sentence a sentence',
       );
     });
@@ -39,21 +39,28 @@ void main() {
     test('is case-sensitive and whitespace-intolerant', () {
       // `{{ target }}` and `{{Target}}` are left alone upstream; a tolerant
       // matcher would start substituting text the user meant to keep literal.
-      expect(render(user: '{{ target }} {{Target}} {{TARGET}}').userPrompt,
-          '{{ target }} {{Target}} {{TARGET}}');
+      expect(
+        render(user: '{{ target }} {{Target}} {{TARGET}}').userPrompt,
+        '{{ target }} {{Target}} {{TARGET}}',
+      );
     });
 
     test('leaves unknown placeholders untouched', () {
-      expect(render(user: '{{reading}} {{target}}').userPrompt,
-          '{{reading}} word');
+      expect(
+        render(user: '{{reading}} {{target}}').userPrompt,
+        '{{reading}} word',
+      );
     });
 
     test('substitutes target before sentence', () {
       // Parity quirk: a target containing the literal text `{{sentence}}` is
       // substituted on the second pass. Pathological, but reproduced.
       expect(
-        render(user: '{{target}}', target: '{{sentence}}', sentence: 'CTX')
-            .userPrompt,
+        render(
+          user: '{{target}}',
+          target: '{{sentence}}',
+          sentence: 'CTX',
+        ).userPrompt,
         'CTX',
         reason: 'target is substituted first, so its content is then scanned',
       );
@@ -81,17 +88,24 @@ void main() {
     });
 
     test('the fallback still substitutes placeholders', () {
-      expect(render(user: '', target: '猫', sentence: '猫が好き').userPrompt,
-          allOf(contains('猫'), contains('猫が好き')));
+      expect(
+        render(user: '', target: '猫', sentence: '猫が好き').userPrompt,
+        allOf(contains('猫'), contains('猫が好き')),
+      );
     });
 
     test('a template of only placeholders resolving to empty falls back', () {
       // `{{sentence}}` alone with no context renders blank — that is exactly the
       // "no user input" case the divergence exists to prevent.
-      final AiRenderedPrompts result =
-          render(user: '{{sentence}}', sentence: '');
-      expect(result.userPrompt.trim(), isNotEmpty,
-          reason: 'a blank render must never become the outgoing message');
+      final AiRenderedPrompts result = render(
+        user: '{{sentence}}',
+        sentence: '',
+      );
+      expect(
+        result.userPrompt.trim(),
+        isNotEmpty,
+        reason: 'a blank render must never become the outgoing message',
+      );
     });
   });
 
@@ -99,13 +113,17 @@ void main() {
     test('is empty by default and reports no system message', () {
       final AiRenderedPrompts result = render();
       expect(result.systemPrompt, isEmpty);
-      expect(result.hasSystemPrompt, isFalse,
-          reason: 'an empty system prompt means: omit the message entirely');
+      expect(
+        result.hasSystemPrompt,
+        isFalse,
+        reason: 'an empty system prompt means: omit the message entirely',
+      );
     });
 
     test('receives the same placeholder substitution', () {
-      final AiRenderedPrompts result =
-          render(system: 'You explain {{target}}. Context: {{sentence}}');
+      final AiRenderedPrompts result = render(
+        system: 'You explain {{target}}. Context: {{sentence}}',
+      );
       expect(result.systemPrompt, 'You explain word. Context: a sentence');
       expect(result.hasSystemPrompt, isTrue);
     });
@@ -138,22 +156,28 @@ void main() {
   group('unicode and formatting preservation', () {
     test('preserves Japanese, combining marks and emoji', () {
       const String sentence = '猫が好きです。🐱';
-      expect(render(user: '{{sentence}}', sentence: sentence).userPrompt,
-          sentence);
+      expect(
+        render(user: '{{sentence}}', sentence: sentence).userPrompt,
+        sentence,
+      );
     });
 
     test('preserves newlines in the template and in the values', () {
       expect(
         render(user: 'A\n{{sentence}}\nB', sentence: 'line1\nline2').userPrompt,
         'A\nline1\nline2\nB',
-        reason: 'prompts are plain text; line structure is meaningful to models',
+        reason:
+            'prompts are plain text; line structure is meaningful to models',
       );
     });
 
     test('does not treat values as HTML', () {
       const String target = '<script>alert(1)</script>';
-      expect(render(user: '{{target}}', target: target).userPrompt, target,
-          reason: 'the prompt is a string, never markup to be escaped here');
+      expect(
+        render(user: '{{target}}', target: target).userPrompt,
+        target,
+        reason: 'the prompt is a string, never markup to be escaped here',
+      );
     });
   });
 

@@ -117,6 +117,10 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
   bool _popupOverlayRebuildScheduled = false;
   String? _activeLineId;
   String? _activeSentence;
+
+  /// AI 解释的句子上下文：直接指向本页已有的那个字段，不另造状态。
+  @override
+  String get aiSentenceContext => _activeSentence ?? '';
   bool _followLive = true;
   int _unreadLines = 0;
   String? _lastObservedLineId;

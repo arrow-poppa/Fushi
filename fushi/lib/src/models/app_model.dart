@@ -51,6 +51,7 @@ import 'package:fushi/src/pages/implementations/dictionary_webview_media.dart'
 import 'package:fushi/src/pages/implementations/popup_dictionary_page.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi/src/ai/ai_credential_store.dart';
+import 'package:fushi/src/ai/ai_fallback_entry.dart';
 import 'package:fushi/src/ai/ai_explanation_client.dart';
 import 'package:fushi/src/ai/ai_explanation_repository.dart';
 import 'package:fushi/src/ai/ai_settings_store.dart';
@@ -5669,6 +5670,39 @@ class AppModel with ChangeNotifier {
     if (!isSingleKanji(searchTerm)) return const <FushiKanjiResult>[];
     if (!FushiDicts.isInitialized) return const <FushiKanjiResult>[];
     return FushiDicts.instance.queryKanji(searchTerm);
+  }
+
+  /// 词典一条都没查到时，按需合成一条 `AI Fallback` 结果，让弹窗照常开出来。
+  ///
+  /// 契约见 docs/agent/ai-explanation.md §5.8 / §8.5。要点：
+  ///
+  /// * **不进引擎、不进索引**：结果整条在 Dart 侧造，`popupJson` 留空走纯 Dart
+  ///   分组器，`native/fushidicts/` 一行都不碰。
+  /// * **只在有明确边界时兜底**。参考实现是按语言黑名单（ja/zh/th…）关掉这条路的，
+  ///   但本仓查词流水线**有意语言无关**（`targetLanguage` 已于 2026-07-26 按用户
+  ///   指令删除，并有守卫 `target_language_removed_guard_test.dart` 钉死）。所以这里
+  ///   不引入语言概念：调用方给了边界（用户选中的那段文本）就用它，没给就不兜底。
+  ///   参考实现要黑名单，正是因为它得从一段裸缓冲里**猜**词边界；边界是现成的时候
+  ///   那个问题根本不存在。
+  /// * 用户没开这个开关时是**零成本**：先读偏好再谈别的。
+  DictionarySearchResult applyAiFallback(
+    DictionarySearchResult result, {
+    required bool hasExplicitBoundary,
+  }) {
+    if (result.entries.isNotEmpty) return result;
+    if (!hasExplicitBoundary) return result;
+    if (!aiSettings.read().unknownWordFallback) return result;
+    final AiFallbackToken? token = AiFallback.resolveFallbackTerm(
+      result.searchTerm,
+      hasExplicitBoundary: true,
+      // 有边界时 resolveFallbackTerm 根本不看这个参数——上面那行已经把「没有边界」
+      // 的情况挡掉了。传空串是为了不把语言概念带进查词链路；**不能**靠它代替上面
+      // 那道门：空串不在 kNoWordBoundaryLanguages 里，会被当成「有分词的语言」而
+      // 去跑分词器，在日语上正好吐出半句话当一个词。
+      language: '',
+    );
+    if (token == null) return result;
+    return AiFallback.buildResult(token);
   }
 
   Future<DictionarySearchResult> searchDictionary({

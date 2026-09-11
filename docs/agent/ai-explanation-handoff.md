@@ -107,21 +107,45 @@ None yet.
 
 ## Recommended next work
 
-Everything below the UI is done and verified; what remains is integration.
+### 1. Finish the explicit-boundary audit (blocks the fallback on reader surfaces)
 
-1. **Controller wiring** — the one piece that makes it work end to end:
-   - register an `aiExplainAction` JS handler in `dictionary_popup_webview.dart`
-     (regenerate / cancel) alongside the existing 27;
-   - inject the AI state and the `window.i18nAi*` strings with the popup payload
-     (`popup_settings_injection.dart`), reusing the static/dynamic split so the
-     per-lookup push stays small;
-   - on lookup: build the cache key, call `AiExplanationRepository.explain`, push
-     each `AiExplanationResult` through `window.__fushiAiUpdate`;
-   - honour `cancelPendingRequests` on popup dismiss / new lookup / surface hide.
-2. **AI Fallback wiring** — call `AiFallback.resolveFallbackTerm` when
-   `searchDictionary` returns no entries and the setting is on, passing
-   `hasExplicitBoundary: true` for selection-driven lookups.
-3. **Surfaces** — thread the sentence from each host (see §6.2 of the feature doc for
-   the verified carrier per surface; three surfaces genuinely have none).
-4. **Validation** — full CI run, then the arm64 artifact via `release.yml` with
-   `build_only: true` (produces downloadable artifacts without publishing a release).
+`BaseSourcePageState.searchDictionaryResult` gained
+`bool hasExplicitBoundary = false`, and the default is **deliberately false**:
+that method is reached from at least six call sites with different semantics —
+drag-selection (boundary is the selection), tap-to-scan (boundary is guessed
+from a scan window), card-internal link clicks, and the manga OCR path.
+
+Enabling the fallback on a tap-scan path in Japanese produces exactly the
+failure the reference's language blacklist exists to prevent: a "word" covering
+half a clause, with the highlight over the wrong range. So each call site has to
+be read before it is flipped:
+
+| Call site | Verdict |
+|---|---|
+| `dictionary_page_mixin.dart` manual search / link / subtitle line | **enabled** — the query is the user's own text |
+| `base_source_page.dart:850`, `:890` | unaudited |
+| `reader_fushi/webview.part.dart:1726` | unaudited |
+| `reader_fushi_page.dart:3925` | unaudited |
+| `reader_fushi/chrome.part.dart:400` | unaudited |
+| `manga_fushi_page.dart:3704` | unaudited |
+
+For each: does the caller hand over text the **user** delimited, or a scan window
+the app guessed? Only the former may pass `hasExplicitBoundary: true`.
+
+### 2. Real-device verification
+
+`CLAUDE.md` requires it before claiming a reader/lookup feature works: no run of
+this feature against a live provider has happened, on any platform. Everything
+so far is analyzer plus unit/widget tests.
+
+### 3. Full CI run and the arm64 artifact
+
+`release.yml` with `build_only: true` produces downloadable artifacts without
+publishing a release.
+
+### 4. Nice to have
+
+- Sentence context for the remaining surfaces (web video, floating lyric,
+  global lookup, galgame overlay); §6.2 of the feature doc names each carrier.
+- Swap the two `kCoveredElsewhere` entries that currently say "persistence only"
+  for behaviour tests, now that the controller exists.

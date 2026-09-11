@@ -642,6 +642,7 @@ class DictionaryPopupLayer extends StatelessWidget {
     this.inputSpec = const DictionaryPopupInputSpec(),
     this.onHostInputToken,
     this.debugHostOwnsPointer,
+    this.aiSentence = '',
     this.headerWidget,
     this.overlayWidget,
     this.isDark = false,
@@ -662,6 +663,12 @@ class DictionaryPopupLayer extends StatelessWidget {
   });
 
   final DictionarySearchResult? result;
+
+  /// BYOK AI 解释的 `{{sentence}}` 上下文，透传给 WebView。
+  ///
+  /// 宿主给什么就是什么；空串是合法值（首页词典 tab、悬浮词典窗、嵌套子弹窗本来
+  /// 就没有上下文）。见 docs/agent/ai-explanation.md §6.2。
+  final String aiSentence;
   final bool isSearching;
 
   /// When true, the popup's [DictionaryPopupWebView] is mounted (and stays
@@ -1205,6 +1212,7 @@ class DictionaryPopupLayer extends StatelessWidget {
             transparentDocumentBackground: transparentDocumentBackground,
             result: result ?? kPopupSearchingPlaceholderResult,
             hasChildPopup: hasChildPopup,
+            aiSentence: aiSentence,
             onTapOutside: onTapOutside,
             onTextSelected: onTextSelected,
             onLinkClick: onLinkClick,

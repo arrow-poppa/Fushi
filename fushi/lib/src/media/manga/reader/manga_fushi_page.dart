@@ -924,6 +924,10 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
 
   /// 最近一次查词的句子与词在句中偏移，喂制卡（[AnkiMiningContext]）。
   String _lastSentence = '';
+
+  /// AI 解释的句子上下文：直接指向本页已有的那个字段，不另造状态。
+  @override
+  String get aiSentenceContext => _lastSentence;
   int _lastSentenceOffset = 0;
 
   /// 漫画同一页会混排竖排对白、横排拟声/标题，不能像 EPUB 一样从整页设置

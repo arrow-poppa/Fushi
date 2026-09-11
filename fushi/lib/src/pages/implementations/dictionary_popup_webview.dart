@@ -208,7 +208,6 @@ class DictionaryPopupWebView extends ConsumerStatefulWidget {
     this.onHostInputToken,
     this.nudgeSurfaceOnRender = false,
     this.aiSentence = '',
-    this.aiProfileId = '',
   });
 
   final DictionarySearchResult result;
@@ -219,10 +218,6 @@ class DictionaryPopupWebView extends ConsumerStatefulWidget {
   /// 是在 Dart 侧把它注进制卡字段的。空串是合法值——首页词典 tab、悬浮词典窗与嵌套
   /// 子弹窗本来就没有上下文，这三处必须照常能生成，而不是被判成「配置不全」。
   final String aiSentence;
-
-  /// 当前 Profile 标识，只用于给 AI 缓存分桶：两个 Profile 用不同提示词时不能共用
-  /// 同一条答案。空串 = 不分桶。
-  final String aiProfileId;
 
   /// TODO-869：本层弹窗是否有子（后代）弹窗。注入 `window.__hasChildPopup`，让
   /// popup.js 在点卡片本体留白时据此决定是否发 `tapOutside`（有子层才关后代，叶子层
@@ -1111,6 +1106,19 @@ JSON.stringify((function(){
     return entries.first.word;
   }
 
+  /// 当前 Profile，只用于给 AI 缓存分桶：两个 Profile 用不同提示词时不能共用同一
+  /// 条答案。
+  ///
+  /// 从 app 状态直接读，不做成宿主参数——Profile 是全局状态，让每个宿主各传一次
+  /// 只会多一个「忘了传就静默串桶」的地方。
+  String get _activeProfileId {
+    final AppModel model = ref.read(appProvider);
+    if (!model.isPreferencesReady) return '';
+    final Object? raw =
+        model.prefsRepo.getPref('active_profile_id', defaultValue: '');
+    return raw?.toString() ?? '';
+  }
+
   void _onAiResult(AiExplanationResult result) {
     _aiResult = result;
     if (!mounted) return;
@@ -1144,6 +1152,13 @@ JSON.stringify((function(){
   /// 由 [_pushResults] 在非 load-more 路径上调用：加载更多是同一个词的续页，
   /// 重新发一次请求既浪费钱又会把已经画好的解释打回 loading。
   String _beginAiLookupJs() {
+    // 偏好还没加载完时整条 AI 路径不启动。弹窗可以先于 AppModel.initialise() 存在
+    // （热槽种子、样式预览、widget 测试都会这样），而 `prefsRepo` 是个 `!`
+    // ——无条件读它会在结果推送里抛异常，把**整条查词渲染**一起带走。
+    if (!ref.read(appProvider).isPreferencesReady) {
+      _aiResult = null;
+      return 'window.__fushiAiState = null;';
+    }
     if (_aiTerm.isEmpty) {
       _aiResult = null;
       // 纯汉字卡与无结果都不画：没有词就没有要解释的东西（与参考实现一致）。
@@ -1153,7 +1168,7 @@ JSON.stringify((function(){
       AiLookupTarget(
         term: _aiTerm,
         sentence: widget.aiSentence,
-        profileId: widget.aiProfileId,
+        profileId: _activeProfileId,
       ),
     );
     _aiResult = initial;

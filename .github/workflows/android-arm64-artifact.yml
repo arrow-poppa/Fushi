@@ -1,0 +1,135 @@
+name: Android arm64 artifact (unsigned)
+
+# 手动产出一个**可下载的** arm64-v8a release APK，不发布任何东西。
+#
+# 为什么单独开一条而不是复用现有的：
+#
+# * `release.yml` 会发布（GitHub Release + update manifest），且假定仓库配了签名
+#   secrets。在没有 secrets 的 fork 上它的 "Decode keystore" 写的是
+#   `echo "" | base64 -d`——一个空 keystore，构建随即无声死掉。给它加兜底等于动
+#   发布链路，那条链路有自己的策略守卫（`tool/check_release_policy.ps1`）。
+# * `main.yml` 有 throwaway keystore 兜底，但它的 release 构建步骤是
+#   `if: github.event_name == 'pull_request'`，而且它**不上传 APK**——它只验证
+#   R8/proguard/native 能过，产物随 runner 一起丢掉。
+#
+# 所以这条的定位很窄：临时签名、只出 arm64、只上传 artifact、绝不发布。
+# 产物**不可分发**（签名是每次构建现生成的一次性 key）。
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          # versionCode 由提交计数派生，浅克隆会把它截短（与 main.yml / release.yml
+          # 的 fetch-depth: 0 同源理由，见 TODO-414）。
+          fetch-depth: 0
+
+      - name: Resolve shared release sequence
+        shell: bash
+        run: |
+          set -euo pipefail
+          RELEASE_SEQUENCE=$(bash tool/release_sequence.sh)
+          if ! [[ "$RELEASE_SEQUENCE" =~ ^[0-9]+$ ]] || [ "$RELEASE_SEQUENCE" -le 0 ]; then
+            echo "::error title=Invalid release sequence::Expected positive git rev-list count, got $RELEASE_SEQUENCE"
+            exit 1
+          fi
+          echo "RELEASE_SEQUENCE=$RELEASE_SEQUENCE" >> "$GITHUB_ENV"
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: zulu
+          java-version: '17'
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.44.0'
+          channel: stable
+
+      - name: Remove local proxy from gradle.properties
+        working-directory: fushi/android
+        run: |
+          sed -i '/systemProp\.http\.proxyHost/d' gradle.properties
+          sed -i '/systemProp\.http\.proxyPort/d' gradle.properties
+          sed -i '/systemProp\.https\.proxyHost/d' gradle.properties
+          sed -i '/systemProp\.https\.proxyPort/d' gradle.properties
+          sed -i '/systemProp\.http\.nonProxyHosts/d' gradle.properties
+
+      # 烘进包里的密钥走同一个 composite action（BUG-1588：逐字抄进各 job 会漂）。
+      - name: Provide baked-in secret stubs
+        uses: ./.github/actions/provide-baked-secrets
+        with:
+          google-oauth-client-secret: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
+          log-upload-endpoint: ${{ secrets.LOG_UPLOAD_ENDPOINT }}
+          log-upload-token: ${{ secrets.LOG_UPLOAD_TOKEN }}
+          dandanplay-app-id: ${{ secrets.DANDANPLAY_APP_ID }}
+          dandanplay-app-secret: ${{ secrets.DANDANPLAY_APP_SECRET }}
+          tmdb-api-key: ${{ secrets.TMDB_API_KEY }}
+          opensubtitles-api-key: ${{ secrets.OPENSUBTITLES_API_KEY }}
+
+      # 刻意**不缓存 Gradle**：三条既有 workflow 的 cache path+key 必须逐字相同
+      # （守卫 fushi/test/build/workflow_cache_quota_guard_test.dart，理由见
+      # docs/agent/build.md「CI 缓存配额」）。这条是偶尔手动跑的产物工具，为它多开
+      # 一份 GB 级缓存条目不值当，宁可慢。
+      - name: Remove aliyun mirrors from gradle files
+        working-directory: fushi/android
+        run: |
+          sed -i "/maven.*aliyun/d" build.gradle
+          sed -i "/maven.*aliyun/d" settings.gradle
+
+      - name: Flutter pub get
+        working-directory: fushi
+        run: flutter pub get
+
+      - name: Apply pub cache patches
+        run: |
+          chmod +x ci/apply-patches.sh
+          bash ci/apply-patches.sh
+
+      # build.gradle 拒绝 debug 签名的 release APK，所以必须有一个 keystore。
+      # 这里**永远**现生成一个一次性的：本 workflow 的产物按定义不可分发，绝不
+      # 碰仓库的真签名 secrets。
+      - name: Generate throwaway keystore
+        working-directory: fushi/android
+        run: |
+          keytool -genkeypair -v -keystore fushi-release.jks \
+            -storepass ci_throwaway -keypass ci_throwaway -alias ci \
+            -keyalg RSA -keysize 2048 -validity 1 \
+            -dname "CN=Hibiki CI, O=CI, C=US"
+          cat > key.properties <<EOF
+          storePassword=ci_throwaway
+          keyPassword=ci_throwaway
+          keyAlias=ci
+          storeFile=fushi-release.jks
+          EOF
+
+      - name: Build arm64-v8a release APK
+        working-directory: fushi
+        run: >-
+          flutter build apk --release
+          --target-platform android-arm64 --split-per-abi
+          --build-number "$RELEASE_SEQUENCE"
+
+      - name: List build output
+        if: always()
+        working-directory: fushi
+        run: |
+          find build/app/outputs -type f -name '*.apk' -print -exec ls -lh {} \; || true
+
+      - name: Upload arm64-v8a APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: fushi-arm64-v8a-unsigned-${{ github.sha }}
+          path: fushi/build/app/outputs/flutter-apk/*arm64-v8a*.apk
+          if-no-files-found: error
+          retention-days: 7

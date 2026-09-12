@@ -57,7 +57,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            ninja-build clang cmake pkg-config \
+            ninja-build clang cmake pkg-config patchelf \
             gcc-14 g++-14 libstdc++-14-dev \
             libgtk-3-dev libkeybinder-3.0-dev libmpv-dev liblzma-dev
 
@@ -169,6 +169,28 @@ jobs:
           echo "::endgroup::"
           exit 1
 
+      # flutter_onnxruntime 的 CMake 只把 `libonnxruntime.so` 这个**符号链接**装进
+      # bundle/lib，真文件（.so.1 / .so.1.22.0）留在 build 树里，靠插件 .so 里烘的
+      # 绝对路径找到。在构建机上 ldd 因此全绿，换一台机器解包就是
+      # `libonnxruntime.so.1: cannot open shared object file`——而 flutter_onnxruntime
+      # 在 generated_plugin_registrant 里，这是**启动期**依赖，app 根本起不来。
+      # 与 build-multiplatform.yml 给 fushi_server 随包 onnxruntime 的做法同源。
+      - name: Bundle the real onnxruntime shared objects
+        working-directory: fushi
+        shell: bash
+        run: |
+          set -euo pipefail
+          bundle="build/linux/x64/release/bundle"
+          src="$(dirname "$(find build/linux/x64/release/plugins/flutter_onnxruntime \
+            -name 'libonnxruntime.so.1' -print -quit)")"
+          test -n "$src"
+          cp -av "$src"/libonnxruntime.so.1* "$bundle/lib/"
+          # 插件 .so 的 RUNPATH 指向 build 树；那条路径在用户机器上不存在，且
+          # DT_RUNPATH **不**参与传递依赖的继承查找，所以光把文件放进 bundle/lib
+          # 还不够。改指 $ORIGIN——它自己就在 bundle/lib 里。
+          patchelf --set-rpath '$ORIGIN' "$bundle/lib/libflutter_onnxruntime_plugin.so"
+          readelf -d "$bundle/lib/libflutter_onnxruntime_plugin.so" | grep -E 'RPATH|RUNPATH|NEEDED.*onnx'
+
       # `libfushidicts_ffi.so` 缺席过一次，表现是构建全绿、查词在真机上
       # `DynamicLibrary.open` 失败（linux/CMakeLists.txt:77 的注释就是那次的记录）。
       # 上传前硬断言，别把一个查不了词的包发给用户。
@@ -181,6 +203,12 @@ jobs:
           test -x "$bundle/fushi"
           test -f "$bundle/lib/libfushidicts_ffi.so"
           test -d "$bundle/data/flutter_assets"
+          # 悬空符号链接就是上面 onnxruntime 那个坑的通用形状：装了个名字，没装字节。
+          dangling="$(find "$bundle" -xtype l -printf '%p -> %l\n')"
+          if [ -n "$dangling" ]; then
+            echo "::error title=Dangling symlink in bundle::$dangling"
+            exit 1
+          fi
           echo "::group::bundle 内容"
           find "$bundle" -maxdepth 2 -printf '%y %10s  %p\n' | sort -k3
           echo "::endgroup::"
@@ -195,6 +223,30 @@ jobs:
         run: |
           tar -czf "$RUNNER_TEMP/fushi-linux-x64.tar.gz" \
             -C build/linux/x64/release bundle
+
+      # 上一版的 ldd 在构建机上是绿的，却漏了 onnxruntime——因为 build 树还在，烘死的
+      # 绝对路径照样解析得开。要证明包能在**别的机器**上跑，就得先让那条路径失效：
+      # 把 build 树的 plugins 挪走，再把 tar 解到别处 ldd。这是本 workflow 唯一能在
+      # 构建机上做的、对「自包含」的真检验。
+      - name: Prove the bundle resolves without the build tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          mv fushi/build/linux/x64/release/plugins "$RUNNER_TEMP/plugins-moved"
+          mkdir -p "$RUNNER_TEMP/relocated"
+          tar -xzf "$RUNNER_TEMP/fushi-linux-x64.tar.gz" -C "$RUNNER_TEMP/relocated"
+          report="$(ldd "$RUNNER_TEMP/relocated/bundle/fushi")"
+          echo "::group::ldd do bundle relocado"
+          echo "$report"
+          echo "::endgroup::"
+          missing="$(printf '%s\n' "$report" | grep 'not found' || true)"
+          if [ -n "$missing" ]; then
+            echo "::error title=Bundle not self-contained::$missing"
+            exit 1
+          fi
+          # 反向锚：确认 onnxruntime 这次真是从 bundle/lib 解析的，而不是又从某个
+          # 残留的 build 路径。断言拿不到就说明这条检验在空转。
+          printf '%s\n' "$report" | grep -F "libonnxruntime.so.1 => $RUNNER_TEMP/relocated/bundle/lib/"
 
       - name: Upload Linux x64 bundle
         uses: actions/upload-artifact@v4

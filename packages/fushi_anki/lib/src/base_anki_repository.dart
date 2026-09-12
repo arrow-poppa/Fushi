@@ -844,6 +844,7 @@ abstract class BaseAnkiRepository {
       phoneticTranscriptions: payload.phoneticTranscriptions,
       popupSelectionText: payload.popupSelectionText,
       glossarySelectionHighlighted: payload.glossarySelectionHighlighted,
+      aiExplanation: payload.aiExplanation,
       audio: processedAudio,
       selectedDictionary: payload.selectedDictionary,
       dictionaryMedia: payload.dictionaryMedia,

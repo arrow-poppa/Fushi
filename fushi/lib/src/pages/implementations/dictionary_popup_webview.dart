@@ -12,6 +12,8 @@ import 'package:fushi_anki/fushi_anki.dart'
     show AnkiOpenWordOutcome, MineOutcome, MineResult;
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
+import 'package:fushi/src/ai/ai_explanation_controller.dart';
+import 'package:fushi/src/ai/ai_explanation_result.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_input_bridge.dart';
 import 'package:fushi/src/pages/implementations/dictionary_webview_media.dart';
@@ -205,9 +207,17 @@ class DictionaryPopupWebView extends ConsumerStatefulWidget {
     this.inputSpec = const DictionaryPopupInputSpec(),
     this.onHostInputToken,
     this.nudgeSurfaceOnRender = false,
+    this.aiSentence = '',
   });
 
   final DictionarySearchResult result;
+
+  /// BYOK AI 解释的 `{{sentence}}` 上下文（见 docs/agent/ai-explanation.md §6.2）。
+  ///
+  /// 由宿主传入，不是 popup.js 给的：`buildMinePayload` 从来不产 `sentence`，各宿主
+  /// 是在 Dart 侧把它注进制卡字段的。空串是合法值——首页词典 tab、悬浮词典窗与嵌套
+  /// 子弹窗本来就没有上下文，这三处必须照常能生成，而不是被判成「配置不全」。
+  final String aiSentence;
 
   /// TODO-869：本层弹窗是否有子（后代）弹窗。注入 `window.__hasChildPopup`，让
   /// popup.js 在点卡片本体留白时据此决定是否发 `tapOutside`（有子层才关后代，叶子层
@@ -1069,6 +1079,104 @@ JSON.stringify((function(){
     }
   }
 
+  // ===== BYOK AI Explanation ================================================
+  // 契约见 docs/agent/ai-explanation.md。Dart 持有请求状态，WebView 只负责画。
+
+  AiExplanationController? _aiControllerCache;
+
+  /// 懒建：AI 没配置时这条路径一次都不会走到，弹窗热路径不该为它付任何代价。
+  AiExplanationController get _aiController =>
+      _aiControllerCache ??= AiExplanationController(
+        repository: ref.read(appProvider).aiExplanations,
+        settings: ref.read(appProvider).aiSettings,
+        credentials: ref.read(appProvider).aiCredentials,
+        onResult: _onAiResult,
+      );
+
+  /// 本轮要注入的 AI 状态。`null` = 不画这个区块。
+  AiExplanationResult? _aiResult;
+
+  /// 本次查词要解释的词。
+  ///
+  /// 取第一条词条的表记，与参考实现取 `headwords[0].term` 同口径——不是查询串，也
+  /// 不是去屈折前的原文。没有词条（纯汉字卡 / 无结果）时为空，此时不画 AI 区块。
+  String get _aiTerm {
+    final List<DictionaryEntry> entries = widget.result.entries;
+    if (entries.isEmpty) return '';
+    return entries.first.word;
+  }
+
+  /// 当前 Profile，只用于给 AI 缓存分桶：两个 Profile 用不同提示词时不能共用同一
+  /// 条答案。
+  ///
+  /// 从 app 状态直接读，不做成宿主参数——Profile 是全局状态，让每个宿主各传一次
+  /// 只会多一个「忘了传就静默串桶」的地方。
+  String get _activeProfileId {
+    final AppModel model = ref.read(appProvider);
+    if (!model.isPreferencesReady) return '';
+    final Object? raw =
+        model.prefsRepo.getPref('active_profile_id', defaultValue: '');
+    return raw?.toString() ?? '';
+  }
+
+  void _onAiResult(AiExplanationResult result) {
+    _aiResult = result;
+    if (!mounted) return;
+    _pushAiStateJs();
+  }
+
+  /// 把状态推进 WebView。
+  ///
+  /// 走 `__fushiAiUpdate` 而不是重渲染：流式每个 chunk 都重建 DOM 会把用户正在拖的
+  /// 选择清掉，而制卡的 {popup-selection-text} 全靠那个选择。
+  void _pushAiStateJs() {
+    if (_controller == null || !_ready) return;
+    final AiExplanationResult? result = _aiResult;
+    if (result == null) return;
+    _controller!.evaluateJavascript(
+      source: 'window.__fushiAiUpdate(${_aiStateJson(result)});',
+    );
+  }
+
+  static String _aiStateJson(AiExplanationResult result) => jsonEncode(
+        <String, Object?>{
+          'status': result.status.name,
+          'text': result.text,
+          // provider 自己写的那句（已脱敏）比通用文案有用得多。
+          if (result.providerMessage != null) 'detail': result.providerMessage,
+        },
+      );
+
+  /// 换词时重新决定要不要问、问什么。
+  ///
+  /// 由 [_pushResults] 在非 load-more 路径上调用：加载更多是同一个词的续页，
+  /// 重新发一次请求既浪费钱又会把已经画好的解释打回 loading。
+  String _beginAiLookupJs() {
+    // 偏好还没加载完时整条 AI 路径不启动。弹窗可以先于 AppModel.initialise() 存在
+    // （热槽种子、样式预览、widget 测试都会这样），而 `prefsRepo` 是个 `!`
+    // ——无条件读它会在结果推送里抛异常，把**整条查词渲染**一起带走。
+    if (!ref.read(appProvider).isPreferencesReady) {
+      _aiResult = null;
+      return 'window.__fushiAiState = null;';
+    }
+    if (_aiTerm.isEmpty) {
+      _aiResult = null;
+      // 纯汉字卡与无结果都不画：没有词就没有要解释的东西（与参考实现一致）。
+      return 'window.__fushiAiState = null;';
+    }
+    final AiExplanationResult initial = _aiController.onLookup(
+      AiLookupTarget(
+        term: _aiTerm,
+        sentence: widget.aiSentence,
+        profileId: _activeProfileId,
+      ),
+    );
+    _aiResult = initial;
+    return 'window.__fushiAiState = ${_aiStateJson(initial)};';
+  }
+
+  // ===== end BYOK AI Explanation ============================================
+
   // No dispose() override that disposes _controller here.
   //
   // The InAppWebView widget owns its InAppWebViewController and disposes it
@@ -1213,6 +1321,9 @@ JSON.stringify((function(){
         ? _inAppStaticExtrasJs(sentencePreviewEnabled: sentencePreviewEnabled)
         : '';
     final String entriesJs = buildPopupEntriesJs(widget.result);
+    // 加载更多是同一个词的续页：重新问一次既浪费钱，又会把已经画好的解释打回
+    // loading。只有真的换了词才重新决定。
+    final String aiStateJs = isLoadMore ? '' : _beginAiLookupJs();
     // 主题变量段随静态段一起（或已经）在 WebView 里生效；记下它供
     // didChangeDependencies 的主题热切换去重，不再另拼一份删减版拷贝。
     _lastThemeVarsJs = staticSettings.themeVarsJs;
@@ -1240,6 +1351,7 @@ JSON.stringify((function(){
       $staticSettingsJs
       $inAppExtrasJs
       $entriesJs
+      $aiStateJs
       ${ReaderCaretScripts.instantScrollInvocation(popupInstantScroll)};
       window.__fushiRenderToken = $renderToken;
       $beforeRenderJs
@@ -1786,6 +1898,33 @@ JSON.stringify((function(){
               ErrorLogService.instance,
               () {
                 logPopupJsError(ErrorLogService.instance, args);
+                return null;
+              },
+            );
+          },
+        );
+
+        // BYOK AI 解释的用户动作：重新生成 / 取消（docs/agent/ai-explanation.md §10）。
+        // 取消是真动作，不受「取消未完成的请求」那个偏好影响——那条管的是隐式放弃
+        // （关弹窗、查下一个词），不是用户刚按下的按钮。
+        controller.addJavaScriptHandler(
+          handlerName: 'aiExplainAction',
+          callback: (args) {
+            return _guardJsBridge<Object?>(
+              'DictPopupWebview.aiExplainAction',
+              null,
+              ErrorLogService.instance,
+              () {
+                final Object? raw = args.isEmpty ? null : args.first;
+                final String action = raw is Map
+                    ? (raw['action']?.toString() ?? '')
+                    : raw?.toString() ?? '';
+                switch (action) {
+                  case 'regenerate':
+                    _aiController.regenerate();
+                  case 'cancel':
+                    _aiController.cancel();
+                }
                 return null;
               },
             );

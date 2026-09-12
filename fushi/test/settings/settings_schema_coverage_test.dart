@@ -36,6 +36,34 @@ import '../helpers/test_platform_services.dart';
 /// 让覆盖测试不对「别处已覆盖」的项裸喊 UNVERIFIED/FAIL，且强制每个 changed
 /// 但未 effect-verified 的设置都必须有去处（no silent caps）。
 const Map<String, String> kCoveredElsewhere = <String, String>{
+  // BYOK AI 解释（docs/agent/ai-explanation.md）。五行都写 prefsRepo
+  // （changed=true），但生效点都不在 harness 的渲染输入里：provider / 模型决定的是
+  // **出站请求长什么样**，另外三个决定的是**查词时怎么调度请求**，两者都要有真实
+  // 弹窗和真实网络才看得见。分层咬住：
+  //
+  // - 持久化与读回（含无类型旧值的防御性读、逗号小数点、按 provider 取对应 key）：
+  //   test/ai/ai_settings_store_test.dart
+  // - provider 选择真正改变出站契约（端点 / 鉴权 / body / reasoning 映射）：
+  //   test/ai/ai_request_builder_test.dart + test/ai/ai_gemini_request_test.dart
+  // - 「实时返回」真正切换流式与非流式两条路径，「取消未完成的请求」真正中止：
+  //   test/ai/ai_explanation_repository_test.dart
+  //
+  // 「查词时自动生成」与「未知词兜底」的查词期行为现在也有用例了（弹窗控制器与
+  // AppModel.applyAiFallback 都已接上），指向已从「仅持久化」换成真行为。
+  'lookup/AI provider':
+      'test/ai/ai_settings_store_test.dart + test/ai/ai_request_builder_test.dart '
+          '+ test/ai/ai_gemini_request_test.dart（provider 决定出站契约）',
+  'lookup/Real time response':
+      'test/ai/ai_explanation_repository_test.dart（流式 / 非流式两条路径）',
+  'lookup/Cancel unfinished requests':
+      'test/ai/ai_explanation_repository_test.dart（cancelAll / cancelExcept 真中止，'
+          '且取消不写缓存）',
+  'lookup/Auto generate on lookup':
+      'test/ai/ai_explanation_controller_test.dart（关闭时**一个请求都不发**，'
+          '改由重新生成按钮触发）',
+  'lookup/Fallback for unknown words':
+      'test/ai/app_model_ai_fallback_test.dart（开关门、真结果不被顶替、'
+          '有边界才合成）+ test/ai/ai_fallback_entry_test.dart（分词器与合成结果）',
   // v101 更新提醒的五个开关：写 prefsRepo（changed=true），生效点在
   // UpdateFeedService.publishBatch——关掉的域整批丢弃（不投递/不红点/不通知）、
   // 系统通知总开关只掐通知不掐红点。harness 里没有投递方（订阅检查、漫画刷新、

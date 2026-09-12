@@ -291,6 +291,7 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
     required Rect selectionRect,
     int? overrideMaximumTerms,
     bool deferDisplay = false,
+    bool hasExplicitBoundary = false,
   }) async {
     overrideMaximumTerms ??= appModel.maximumTerms;
 
@@ -303,10 +304,16 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
         _isSearchingNotifier.value = true;
       }
 
-      final dictionaryResult = await appModel.searchDictionary(
-        searchTerm: searchTerm,
-        searchWithWildcards: false,
-        overrideMaximumTerms: overrideMaximumTerms,
+      final dictionaryResult = appModel.applyAiFallback(
+        await appModel.searchDictionary(
+          searchTerm: searchTerm,
+          searchWithWildcards: false,
+          overrideMaximumTerms: overrideMaximumTerms,
+        ),
+        // 默认 false 是**有意保守**：这条路既有拖选（边界明确），也有点按取扫描窗
+        // （边界是猜的）。在日语上拿扫描窗当词去兜底，正好会造出参考实现用语言黑名单
+        // 防的那种「半句话当一个词」+ 高亮错位。调用点自己确认边界明确了再传 true。
+        hasExplicitBoundary: hasExplicitBoundary,
       );
 
       if (_searchGeneration != gen) return 0;
@@ -743,6 +750,14 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
     );
   }
 
+
+  /// BYOK AI 解释的 `{{sentence}}` 上下文（docs/agent/ai-explanation.md §6.2）。
+  ///
+  /// 默认空串：没有上下文是合法状态，模型照样能解释一个孤立的词，只是不结合语境。
+  /// 有句子的宿主覆写它，指到自己已有的那个字段即可——不必新造状态，那只会多一处
+  /// 要同步的真相。
+  String get aiSentenceContext => '';
+
   Widget _buildPopupLayer(
     List<DictionaryPopupEntry> stack,
     int index,
@@ -792,6 +807,7 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
       screen: screen,
       child: DictionaryPopupLayer(
         result: item.result,
+        aiSentence: aiSentenceContext,
         webViewKey: item.webViewKey,
         keepWebViewWarm: item.isWarmSlot,
         // TODO-869：本层有后代弹窗时注入 __hasChildPopup，点卡片本体留白才能关子窗。
@@ -881,6 +897,8 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
           final count = await searchDictionaryResult(
             searchTerm: query,
             selectionRect: childRect,
+            // 边界明确：点的是词头 / 链接目标，整串就是那个词，不是扫描窗。
+            hasExplicitBoundary: true,
           );
           if (count > 0) {
             // BUG-2054：与 onTextSelected 对称（含两道身份门）。

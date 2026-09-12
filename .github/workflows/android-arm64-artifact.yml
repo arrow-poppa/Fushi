@@ -1,0 +1,178 @@
+name: Android arm64 artifact (unsigned)
+
+# 手动产出一个**可下载的** arm64-v8a release APK，不发布任何东西。
+#
+# 为什么单独开一条而不是复用现有的：
+#
+# * `release.yml` 会发布（GitHub Release + update manifest），且假定仓库配了签名
+#   secrets。在没有 secrets 的 fork 上它的 "Decode keystore" 写的是
+#   `echo "" | base64 -d`——一个空 keystore，构建随即无声死掉。给它加兜底等于动
+#   发布链路，那条链路有自己的策略守卫（`tool/check_release_policy.ps1`）。
+# * `main.yml` 有 throwaway keystore 兜底，但它的 release 构建步骤是
+#   `if: github.event_name == 'pull_request'`，而且它**不上传 APK**——它只验证
+#   R8/proguard/native 能过，产物随 runner 一起丢掉。
+#
+# 所以这条的定位很窄：临时签名、只出 arm64、只上传 artifact、绝不发布。
+# 产物**不可分发**（签名是每次构建现生成的一次性 key）。
+
+# 触发方式两条：
+#
+# * `workflow_dispatch` —— 文件进了默认分支之后的常规入口。
+# * 给 PR 打 `build-arm64` 标签 —— 在文件还没进默认分支时唯一可用的入口
+#   （GitHub 要求 workflow_dispatch 的定义位于默认分支）。用 `types: [labeled]`
+#   而不是裸 `pull_request`，是为了不给每一条无关 PR 都挂上一次 Android 全量构建。
+on:
+  workflow_dispatch:
+  pull_request:
+    types: [labeled]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    if: >-
+      github.event_name == 'workflow_dispatch'
+      || github.event.label.name == 'build-arm64'
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          # versionCode 由提交计数派生，浅克隆会把它截短（与 main.yml / release.yml
+          # 的 fetch-depth: 0 同源理由，见 TODO-414）。
+          fetch-depth: 0
+
+      - name: Resolve shared release sequence
+        shell: bash
+        run: |
+          set -euo pipefail
+          RELEASE_SEQUENCE=$(bash tool/release_sequence.sh)
+          if ! [[ "$RELEASE_SEQUENCE" =~ ^[0-9]+$ ]] || [ "$RELEASE_SEQUENCE" -le 0 ]; then
+            echo "::error title=Invalid release sequence::Expected positive git rev-list count, got $RELEASE_SEQUENCE"
+            exit 1
+          fi
+          echo "RELEASE_SEQUENCE=$RELEASE_SEQUENCE" >> "$GITHUB_ENV"
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: zulu
+          java-version: '17'
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.44.0'
+          channel: stable
+
+      - name: Remove local proxy from gradle.properties
+        working-directory: fushi/android
+        run: |
+          sed -i '/systemProp\.http\.proxyHost/d' gradle.properties
+          sed -i '/systemProp\.http\.proxyPort/d' gradle.properties
+          sed -i '/systemProp\.https\.proxyHost/d' gradle.properties
+          sed -i '/systemProp\.https\.proxyPort/d' gradle.properties
+          sed -i '/systemProp\.http\.nonProxyHosts/d' gradle.properties
+
+      # 烘进包里的密钥走同一个 composite action（BUG-1588：逐字抄进各 job 会漂）。
+      - name: Provide baked-in secret stubs
+        uses: ./.github/actions/provide-baked-secrets
+        with:
+          google-oauth-client-secret: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
+          log-upload-endpoint: ${{ secrets.LOG_UPLOAD_ENDPOINT }}
+          log-upload-token: ${{ secrets.LOG_UPLOAD_TOKEN }}
+          dandanplay-app-id: ${{ secrets.DANDANPLAY_APP_ID }}
+          dandanplay-app-secret: ${{ secrets.DANDANPLAY_APP_SECRET }}
+          tmdb-api-key: ${{ secrets.TMDB_API_KEY }}
+          opensubtitles-api-key: ${{ secrets.OPENSUBTITLES_API_KEY }}
+
+      # 刻意**不缓存 Gradle**：三条既有 workflow 的 cache path+key 必须逐字相同
+      # （守卫 fushi/test/build/workflow_cache_quota_guard_test.dart，理由见
+      # docs/agent/build.md「CI 缓存配额」）。这条是偶尔手动跑的产物工具，为它多开
+      # 一份 GB 级缓存条目不值当，宁可慢。
+      - name: Remove aliyun mirrors from gradle files
+        working-directory: fushi/android
+        run: |
+          sed -i "/maven.*aliyun/d" build.gradle
+          sed -i "/maven.*aliyun/d" settings.gradle
+
+      - name: Flutter pub get
+        working-directory: fushi
+        run: flutter pub get
+
+      - name: Apply pub cache patches
+        run: |
+          chmod +x ci/apply-patches.sh
+          bash ci/apply-patches.sh
+
+      # build.gradle 拒绝 debug 签名的 release APK，所以必须有一个 keystore。
+      #
+      # 优先用 fork 自己配的固定 keystore（`KEYSTORE_BASE64` 等四个 secret，名字沿用
+      # release.yml 的约定）。理由是 Android 不允许换签名覆盖安装：每次现生成一次性
+      # keystore，装新包前就得先卸载旧的，连带清掉词典、统计、profile。固定签名之后
+      # 后续每一份产物都能直接覆盖上一份。
+      #
+      # secrets 没配就退回一次性 keystore，并**显式告警**——静默退回等于把「要先卸载」
+      # 这件事藏起来，等用户装到一半才发现。
+      #
+      # 这里的 base64 只是传输编码，**不是加密**；真正的保密由 GitHub Secrets 负责。
+      - name: Prepare signing keystore
+        working-directory: fushi/android
+        shell: bash
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+        run: |
+          set -euo pipefail
+          if [ -n "${KEYSTORE_BASE64:-}" ]; then
+            printf '%s' "$KEYSTORE_BASE64" | base64 -d > fushi-release.jks
+            # 空 keystore 是 release.yml 在没有 secrets 的 fork 上翻车的原形
+            # （`echo "" | base64 -d` 写出 0 字节，构建随后无声死掉）。宁可在这里停。
+            test -s fushi-release.jks
+            {
+              echo "storePassword=$KEYSTORE_PASSWORD"
+              echo "keyPassword=$KEY_PASSWORD"
+              echo "keyAlias=${KEY_ALIAS:-fushi}"
+              echo "storeFile=fushi-release.jks"
+            } > key.properties
+            echo "SIGNING_MODE=stable" >> "$GITHUB_ENV"
+          else
+            echo "::warning title=Throwaway signature::KEYSTORE_BASE64 没配，本次产物用一次性 keystore 签名：装它之前必须先卸载已装的 Fushi，数据不保留。配好四个 secret 后重跑即可获得可覆盖安装的包。"
+            keytool -genkeypair -v -keystore fushi-release.jks \
+              -storepass ci_throwaway -keypass ci_throwaway -alias ci \
+              -keyalg RSA -keysize 2048 -validity 1 \
+              -dname "CN=Fushi CI, O=CI, C=US"
+            cat > key.properties <<EOF
+          storePassword=ci_throwaway
+          keyPassword=ci_throwaway
+          keyAlias=ci
+          storeFile=fushi-release.jks
+          EOF
+            echo "SIGNING_MODE=throwaway" >> "$GITHUB_ENV"
+          fi
+
+      - name: Build arm64-v8a release APK
+        working-directory: fushi
+        run: >-
+          flutter build apk --release
+          --target-platform android-arm64 --split-per-abi
+          --build-number "$RELEASE_SEQUENCE"
+
+      - name: List build output
+        if: always()
+        working-directory: fushi
+        run: |
+          echo "signing mode: ${SIGNING_MODE:-unknown}"
+          find build/app/outputs -type f -name '*.apk' -print -exec ls -lh {} \; || true
+
+      - name: Upload arm64-v8a APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: fushi-arm64-v8a-unsigned-${{ github.sha }}
+          path: fushi/build/app/outputs/flutter-apk/*arm64-v8a*.apk
+          if-no-files-found: error
+          retention-days: 7

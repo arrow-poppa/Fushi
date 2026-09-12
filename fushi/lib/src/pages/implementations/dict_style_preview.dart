@@ -242,6 +242,10 @@ class _DictStylePreviewState extends State<DictStylePreview> {
 /// 这份名单必须覆盖 popup.html 加载的所有脚本里的 `callHandler('X')`，
 /// 守卫测试：`fushi/test/pages/dict_style_preview_handler_coverage_test.dart`。
 const List<String> kDictStylePreviewNoopHandlers = <String>[
+  // BYOK AI 解释的重新生成 / 取消。预览里没有 AI 状态（没人注入 __fushiAiState），
+  // 所以区块根本不画、按钮也不存在；但名单的契约是「popup.js 能发的每个 callHandler
+  // 都要有确定的 Dart 语义」，靠平台兜底空回复正是 BUG-1918 的崩溃路径。
+  'aiExplainAction',
   'clearSentenceDraft',
   'duplicateCheck',
   'favoriteCheck',

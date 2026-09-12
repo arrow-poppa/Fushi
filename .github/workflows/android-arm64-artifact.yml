@@ -108,21 +108,52 @@ jobs:
           bash ci/apply-patches.sh
 
       # build.gradle 拒绝 debug 签名的 release APK，所以必须有一个 keystore。
-      # 这里**永远**现生成一个一次性的：本 workflow 的产物按定义不可分发，绝不
-      # 碰仓库的真签名 secrets。
-      - name: Generate throwaway keystore
+      #
+      # 优先用 fork 自己配的固定 keystore（`KEYSTORE_BASE64` 等四个 secret，名字沿用
+      # release.yml 的约定）。理由是 Android 不允许换签名覆盖安装：每次现生成一次性
+      # keystore，装新包前就得先卸载旧的，连带清掉词典、统计、profile。固定签名之后
+      # 后续每一份产物都能直接覆盖上一份。
+      #
+      # secrets 没配就退回一次性 keystore，并**显式告警**——静默退回等于把「要先卸载」
+      # 这件事藏起来，等用户装到一半才发现。
+      #
+      # 这里的 base64 只是传输编码，**不是加密**；真正的保密由 GitHub Secrets 负责。
+      - name: Prepare signing keystore
         working-directory: fushi/android
+        shell: bash
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
         run: |
-          keytool -genkeypair -v -keystore fushi-release.jks \
-            -storepass ci_throwaway -keypass ci_throwaway -alias ci \
-            -keyalg RSA -keysize 2048 -validity 1 \
-            -dname "CN=Hibiki CI, O=CI, C=US"
-          cat > key.properties <<EOF
+          set -euo pipefail
+          if [ -n "${KEYSTORE_BASE64:-}" ]; then
+            printf '%s' "$KEYSTORE_BASE64" | base64 -d > fushi-release.jks
+            # 空 keystore 是 release.yml 在没有 secrets 的 fork 上翻车的原形
+            # （`echo "" | base64 -d` 写出 0 字节，构建随后无声死掉）。宁可在这里停。
+            test -s fushi-release.jks
+            {
+              echo "storePassword=$KEYSTORE_PASSWORD"
+              echo "keyPassword=$KEY_PASSWORD"
+              echo "keyAlias=${KEY_ALIAS:-fushi}"
+              echo "storeFile=fushi-release.jks"
+            } > key.properties
+            echo "SIGNING_MODE=stable" >> "$GITHUB_ENV"
+          else
+            echo "::warning title=Throwaway signature::KEYSTORE_BASE64 没配，本次产物用一次性 keystore 签名：装它之前必须先卸载已装的 Fushi，数据不保留。配好四个 secret 后重跑即可获得可覆盖安装的包。"
+            keytool -genkeypair -v -keystore fushi-release.jks \
+              -storepass ci_throwaway -keypass ci_throwaway -alias ci \
+              -keyalg RSA -keysize 2048 -validity 1 \
+              -dname "CN=Fushi CI, O=CI, C=US"
+            cat > key.properties <<EOF
           storePassword=ci_throwaway
           keyPassword=ci_throwaway
           keyAlias=ci
           storeFile=fushi-release.jks
           EOF
+            echo "SIGNING_MODE=throwaway" >> "$GITHUB_ENV"
+          fi
 
       - name: Build arm64-v8a release APK
         working-directory: fushi
@@ -135,6 +166,7 @@ jobs:
         if: always()
         working-directory: fushi
         run: |
+          echo "signing mode: ${SIGNING_MODE:-unknown}"
           find build/app/outputs -type f -name '*.apk' -print -exec ls -lh {} \; || true
 
       - name: Upload arm64-v8a APK

@@ -1671,6 +1671,10 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 点字符查词时即时记录，确保制卡例句是「点词那一刻的那句字幕」。
   String _lastLookupSentence = '';
 
+  /// AI 解释的句子上下文：直接指向本页已有的那个字段，不另造状态。
+  @override
+  String get aiSentenceContext => _lastLookupSentence;
+
   /// 最近一次字幕查词所在 cue。制卡可能发生在弹窗打开后数秒，此时视频播放位置可能已
   /// 变化；GIF / sasayaki 音频必须仍然导出点词那句，而不是制卡瞬间的 currentCue。
   AudioCue? _lastLookupCue;

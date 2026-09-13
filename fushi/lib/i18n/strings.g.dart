@@ -1,9 +1,9 @@
 /// Generated file. Do not edit.
 ///
 /// Locales: 17
-/// Strings: 82450 (4850 per locale)
+/// Strings: 83470 (4910 per locale)
 ///
-/// Built on 2026-09-13 at 14:51 UTC
+/// Built on 2026-09-13 at 21:59 UTC
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -6762,6 +6762,85 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
       'Drag buttons between the top and bottom bars, or remove them.';
   String get reader_control_reset_layout =>
       'Restore default reader button layout';
+  String get ai_explain_section => 'AI Explanation';
+  String get ai_explain_section_hint =>
+      'Generate a contextual explanation of the looked-up word with your own AI provider.';
+  String get ai_explain_title => 'AI Explanation';
+  String get ai_explain_provider => 'AI provider';
+  String get ai_explain_provider_hint =>
+      'Requests go directly from this device to the provider you configure.';
+  String get ai_explain_api_key => 'API key';
+  String get ai_explain_api_key_hint =>
+      'Stored on this device only. Never included in backups, profiles or sync.';
+  String get ai_explain_model => 'Model';
+  String get ai_explain_model_hint => 'Model ID sent to the provider.';
+  String get ai_explain_auto_generate => 'Auto generate on lookup';
+  String get ai_explain_auto_generate_hint =>
+      'When off, the box appears without sending a request and you generate it manually.';
+  String get ai_explain_stream => 'Real time response';
+  String get ai_explain_stream_hint =>
+      'Stream the explanation into the popup as it is written.';
+  String get ai_explain_cancel_pending => 'Cancel unfinished requests';
+  String get ai_explain_cancel_pending_hint =>
+      'Drop an explanation still being generated when the popup closes or another word is looked up.';
+  String get ai_explain_unknown_fallback => 'Fallback for unknown words';
+  String get ai_explain_unknown_fallback_hint =>
+      'Open the popup for words no dictionary contains, using the text you selected.';
+  String get ai_explain_prompt => 'Custom prompt';
+  String get ai_explain_prompt_hint =>
+      'Use {{target}} for the word and {{sentence}} for its context.';
+  String get ai_explain_system_prompt => 'System prompt';
+  String get ai_explain_system_prompt_hint =>
+      'Optional instructions sent before the user prompt. Leave empty to send none.';
+  String get ai_explain_temperature => 'Temperature';
+  String get ai_explain_temperature_hint =>
+      'Between 0 and 2. Lower is more deterministic.';
+  String get ai_explain_thinking_level => 'Thinking level';
+  String get ai_explain_thinking_mode => 'Thinking mode';
+  String get ai_explain_thinking_intensity => 'Thinking intensity';
+  String get ai_explain_thinking_value => 'Custom thinking value';
+  String get ai_explain_thinking_value_hint =>
+      'A word, a token count, or a JSON object.';
+  String get ai_explain_endpoint => 'Custom endpoint';
+  String get ai_explain_endpoint_hint =>
+      'Full URL, used exactly as entered. No path is appended.';
+  String get ai_explain_routing_mode => 'OpenRouter provider routing';
+  String get ai_explain_routing_slugs => 'OpenRouter provider slugs';
+  String get ai_explain_routing_slugs_hint =>
+      'Separated by commas or line breaks.';
+  String get ai_explain_allow_fallbacks => 'Allow OpenRouter fallbacks';
+  String get ai_explain_request_body => 'Custom request body JSON';
+  String get ai_explain_request_body_hint =>
+      'A JSON object merged over the generated request.';
+  String get ai_explain_request_body_invalid => 'Not a valid JSON object.';
+  String get ai_explain_option_default => 'Default';
+  String get ai_explain_option_minimal => 'Minimal';
+  String get ai_explain_option_low => 'Low';
+  String get ai_explain_option_medium => 'Medium';
+  String get ai_explain_option_high => 'High';
+  String get ai_explain_option_max => 'Max';
+  String get ai_explain_option_custom => 'Custom';
+  String get ai_explain_option_enabled => 'Enabled';
+  String get ai_explain_option_disabled => 'Disabled';
+  String get ai_explain_routing_prioritize => 'Prioritize listed providers';
+  String get ai_explain_routing_only => 'Only listed providers';
+  String get ai_explain_routing_ignore => 'Ignore listed providers';
+  String get ai_explain_state_generating => 'Generating explanation...';
+  String get ai_explain_state_manual =>
+      'Automatic generation is off. Use regenerate to generate it.';
+  String get ai_explain_state_not_configured =>
+      'AI explanation is not available. Configure a provider in settings.';
+  String get ai_explain_state_timed_out =>
+      'The AI request timed out. Please try again.';
+  String get ai_explain_state_failed =>
+      'Failed to generate the AI explanation.';
+  String get ai_explain_state_unavailable =>
+      'The AI service is temporarily unavailable. Please try again later.';
+  String get ai_explain_state_empty => 'No explanation available.';
+  String get ai_explain_action_generate => 'Generate explanation';
+  String get ai_explain_action_regenerate => 'Regenerate explanation';
+  String get ai_explain_action_cancel => 'Cancel';
+  String get handlebar_ai_explanation => 'AI explanation';
 }
 
 // Path: <root>
@@ -18199,6 +18278,145 @@ class _StringsAr extends _StringsEn {
   @override
   String get reader_control_reset_layout =>
       'Restore default reader button layout';
+  @override
+  String get ai_explain_section => 'AI Explanation';
+  @override
+  String get ai_explain_section_hint =>
+      'Generate a contextual explanation of the looked-up word with your own AI provider.';
+  @override
+  String get ai_explain_title => 'AI Explanation';
+  @override
+  String get ai_explain_provider => 'AI provider';
+  @override
+  String get ai_explain_provider_hint =>
+      'Requests go directly from this device to the provider you configure.';
+  @override
+  String get ai_explain_api_key => 'API key';
+  @override
+  String get ai_explain_api_key_hint =>
+      'Stored on this device only. Never included in backups, profiles or sync.';
+  @override
+  String get ai_explain_model => 'Model';
+  @override
+  String get ai_explain_model_hint => 'Model ID sent to the provider.';
+  @override
+  String get ai_explain_auto_generate => 'Auto generate on lookup';
+  @override
+  String get ai_explain_auto_generate_hint =>
+      'When off, the box appears without sending a request and you generate it manually.';
+  @override
+  String get ai_explain_stream => 'Real time response';
+  @override
+  String get ai_explain_stream_hint =>
+      'Stream the explanation into the popup as it is written.';
+  @override
+  String get ai_explain_cancel_pending => 'Cancel unfinished requests';
+  @override
+  String get ai_explain_cancel_pending_hint =>
+      'Drop an explanation still being generated when the popup closes or another word is looked up.';
+  @override
+  String get ai_explain_unknown_fallback => 'Fallback for unknown words';
+  @override
+  String get ai_explain_unknown_fallback_hint =>
+      'Open the popup for words no dictionary contains, using the text you selected.';
+  @override
+  String get ai_explain_prompt => 'Custom prompt';
+  @override
+  String get ai_explain_prompt_hint =>
+      'Use {{target}} for the word and {{sentence}} for its context.';
+  @override
+  String get ai_explain_system_prompt => 'System prompt';
+  @override
+  String get ai_explain_system_prompt_hint =>
+      'Optional instructions sent before the user prompt. Leave empty to send none.';
+  @override
+  String get ai_explain_temperature => 'Temperature';
+  @override
+  String get ai_explain_temperature_hint =>
+      'Between 0 and 2. Lower is more deterministic.';
+  @override
+  String get ai_explain_thinking_level => 'Thinking level';
+  @override
+  String get ai_explain_thinking_mode => 'Thinking mode';
+  @override
+  String get ai_explain_thinking_intensity => 'Thinking intensity';
+  @override
+  String get ai_explain_thinking_value => 'Custom thinking value';
+  @override
+  String get ai_explain_thinking_value_hint =>
+      'A word, a token count, or a JSON object.';
+  @override
+  String get ai_explain_endpoint => 'Custom endpoint';
+  @override
+  String get ai_explain_endpoint_hint =>
+      'Full URL, used exactly as entered. No path is appended.';
+  @override
+  String get ai_explain_routing_mode => 'OpenRouter provider routing';
+  @override
+  String get ai_explain_routing_slugs => 'OpenRouter provider slugs';
+  @override
+  String get ai_explain_routing_slugs_hint =>
+      'Separated by commas or line breaks.';
+  @override
+  String get ai_explain_allow_fallbacks => 'Allow OpenRouter fallbacks';
+  @override
+  String get ai_explain_request_body => 'Custom request body JSON';
+  @override
+  String get ai_explain_request_body_hint =>
+      'A JSON object merged over the generated request.';
+  @override
+  String get ai_explain_request_body_invalid => 'Not a valid JSON object.';
+  @override
+  String get ai_explain_option_default => 'Default';
+  @override
+  String get ai_explain_option_minimal => 'Minimal';
+  @override
+  String get ai_explain_option_low => 'Low';
+  @override
+  String get ai_explain_option_medium => 'Medium';
+  @override
+  String get ai_explain_option_high => 'High';
+  @override
+  String get ai_explain_option_max => 'Max';
+  @override
+  String get ai_explain_option_custom => 'Custom';
+  @override
+  String get ai_explain_option_enabled => 'Enabled';
+  @override
+  String get ai_explain_option_disabled => 'Disabled';
+  @override
+  String get ai_explain_routing_prioritize => 'Prioritize listed providers';
+  @override
+  String get ai_explain_routing_only => 'Only listed providers';
+  @override
+  String get ai_explain_routing_ignore => 'Ignore listed providers';
+  @override
+  String get ai_explain_state_generating => 'Generating explanation...';
+  @override
+  String get ai_explain_state_manual =>
+      'Automatic generation is off. Use regenerate to generate it.';
+  @override
+  String get ai_explain_state_not_configured =>
+      'AI explanation is not available. Configure a provider in settings.';
+  @override
+  String get ai_explain_state_timed_out =>
+      'The AI request timed out. Please try again.';
+  @override
+  String get ai_explain_state_failed =>
+      'Failed to generate the AI explanation.';
+  @override
+  String get ai_explain_state_unavailable =>
+      'The AI service is temporarily unavailable. Please try again later.';
+  @override
+  String get ai_explain_state_empty => 'No explanation available.';
+  @override
+  String get ai_explain_action_generate => 'Generate explanation';
+  @override
+  String get ai_explain_action_regenerate => 'Regenerate explanation';
+  @override
+  String get ai_explain_action_cancel => 'Cancel';
+  @override
+  String get handlebar_ai_explanation => 'AI explanation';
 }
 
 // Path: <root>
@@ -29862,6 +30080,145 @@ class _StringsDe extends _StringsEn {
   @override
   String get reader_control_reset_layout =>
       'Restore default reader button layout';
+  @override
+  String get ai_explain_section => 'AI Explanation';
+  @override
+  String get ai_explain_section_hint =>
+      'Generate a contextual explanation of the looked-up word with your own AI provider.';
+  @override
+  String get ai_explain_title => 'AI Explanation';
+  @override
+  String get ai_explain_provider => 'AI provider';
+  @override
+  String get ai_explain_provider_hint =>
+      'Requests go directly from this device to the provider you configure.';
+  @override
+  String get ai_explain_api_key => 'API key';
+  @override
+  String get ai_explain_api_key_hint =>
+      'Stored on this device only. Never included in backups, profiles or sync.';
+  @override
+  String get ai_explain_model => 'Model';
+  @override
+  String get ai_explain_model_hint => 'Model ID sent to the provider.';
+  @override
+  String get ai_explain_auto_generate => 'Auto generate on lookup';
+  @override
+  String get ai_explain_auto_generate_hint =>
+      'When off, the box appears without sending a request and you generate it manually.';
+  @override
+  String get ai_explain_stream => 'Real time response';
+  @override
+  String get ai_explain_stream_hint =>
+      'Stream the explanation into the popup as it is written.';
+  @override
+  String get ai_explain_cancel_pending => 'Cancel unfinished requests';
+  @override
+  String get ai_explain_cancel_pending_hint =>
+      'Drop an explanation still being generated when the popup closes or another word is looked up.';
+  @override
+  String get ai_explain_unknown_fallback => 'Fallback for unknown words';
+  @override
+  String get ai_explain_unknown_fallback_hint =>
+      'Open the popup for words no dictionary contains, using the text you selected.';
+  @override
+  String get ai_explain_prompt => 'Custom prompt';
+  @override
+  String get ai_explain_prompt_hint =>
+      'Use {{target}} for the word and {{sentence}} for its context.';
+  @override
+  String get ai_explain_system_prompt => 'System prompt';
+  @override
+  String get ai_explain_system_prompt_hint =>
+      'Optional instructions sent before the user prompt. Leave empty to send none.';
+  @override
+  String get ai_explain_temperature => 'Temperature';
+  @override
+  String get ai_explain_temperature_hint =>
+      'Between 0 and 2. Lower is more deterministic.';
+  @override
+  String get ai_explain_thinking_level => 'Thinking level';
+  @override
+  String get ai_explain_thinking_mode => 'Thinking mode';
+  @override
+  String get ai_explain_thinking_intensity => 'Thinking intensity';
+  @override
+  String get ai_explain_thinking_value => 'Custom thinking value';
+  @override
+  String get ai_explain_thinking_value_hint =>
+      'A word, a token count, or a JSON object.';
+  @override
+  String get ai_explain_endpoint => 'Custom endpoint';
+  @override
+  String get ai_explain_endpoint_hint =>
+      'Full URL, used exactly as entered. No path is appended.';
+  @override
+  String get ai_explain_routing_mode => 'OpenRouter provider routing';
+  @override
+  String get ai_explain_routing_slugs => 'OpenRouter provider slugs';
+  @override
+  String get ai_explain_routing_slugs_hint =>
+      'Separated by commas or line breaks.';
+  @override
+  String get ai_explain_allow_fallbacks => 'Allow OpenRouter fallbacks';
+  @override
+  String get ai_explain_request_body => 'Custom request body JSON';
+  @override
+  String get ai_explain_request_body_hint =>
+      'A JSON object merged over the generated request.';
+  @override
+  String get ai_explain_request_body_invalid => 'Not a valid JSON object.';
+  @override
+  String get ai_explain_option_default => 'Default';
+  @override
+  String get ai_explain_option_minimal => 'Minimal';
+  @override
+  String get ai_explain_option_low => 'Low';
+  @override
+  String get ai_explain_option_medium => 'Medium';
+  @override
+  String get ai_explain_option_high => 'High';
+  @override
+  String get ai_explain_option_max => 'Max';
+  @override
+  String get ai_explain_option_custom => 'Custom';
+  @override
+  String get ai_explain_option_enabled => 'Enabled';
+  @override
+  String get ai_explain_option_disabled => 'Disabled';
+  @override
+  String get ai_explain_routing_prioritize => 'Prioritize listed providers';
+  @override
+  String get ai_explain_routing_only => 'Only listed providers';
+  @override
+  String get ai_explain_routing_ignore => 'Ignore listed providers';
+  @override
+  String get ai_explain_state_generating => 'Generating explanation...';
+  @override
+  String get ai_explain_state_manual =>
+      'Automatic generation is off. Use regenerate to generate it.';
+  @override
+  String get ai_explain_state_not_configured =>
+      'AI explanation is not available. Configure a provider in settings.';
+  @override
+  String get ai_explain_state_timed_out =>
+      'The AI request timed out. Please try again.';
+  @override
+  String get ai_explain_state_failed =>
+      'Failed to generate the AI explanation.';
+  @override
+  String get ai_explain_state_unavailable =>
+      'The AI service is temporarily unavailable. Please try again later.';
+  @override
+  String get ai_explain_state_empty => 'No explanation available.';
+  @override
+  String get ai_explain_action_generate => 'Generate explanation';
+  @override
+  String get ai_explain_action_regenerate => 'Regenerate explanation';
+  @override
+  String get ai_explain_action_cancel => 'Cancel';
+  @override
+  String get handlebar_ai_explanation => 'AI explanation';
 }
 
 // Path: <root>
@@ -41579,6 +41936,145 @@ class _StringsEs extends _StringsEn {
   @override
   String get reader_control_reset_layout =>
       'Restore default reader button layout';
+  @override
+  String get ai_explain_section => 'AI Explanation';
+  @override
+  String get ai_explain_section_hint =>
+      'Generate a contextual explanation of the looked-up word with your own AI provider.';
+  @override
+  String get ai_explain_title => 'AI Explanation';
+  @override
+  String get ai_explain_provider => 'AI provider';
+  @override
+  String get ai_explain_provider_hint =>
+      'Requests go directly from this device to the provider you configure.';
+  @override
+  String get ai_explain_api_key => 'API key';
+  @override
+  String get ai_explain_api_key_hint =>
+      'Stored on this device only. Never included in backups, profiles or sync.';
+  @override
+  String get ai_explain_model => 'Model';
+  @override
+  String get ai_explain_model_hint => 'Model ID sent to the provider.';
+  @override
+  String get ai_explain_auto_generate => 'Auto generate on lookup';
+  @override
+  String get ai_explain_auto_generate_hint =>
+      'When off, the box appears without sending a request and you generate it manually.';
+  @override
+  String get ai_explain_stream => 'Real time response';
+  @override
+  String get ai_explain_stream_hint =>
+      'Stream the explanation into the popup as it is written.';
+  @override
+  String get ai_explain_cancel_pending => 'Cancel unfinished requests';
+  @override
+  String get ai_explain_cancel_pending_hint =>
+      'Drop an explanation still being generated when the popup closes or another word is looked up.';
+  @override
+  String get ai_explain_unknown_fallback => 'Fallback for unknown words';
+  @override
+  String get ai_explain_unknown_fallback_hint =>
+      'Open the popup for words no dictionary contains, using the text you selected.';
+  @override
+  String get ai_explain_prompt => 'Custom prompt';
+  @override
+  String get ai_explain_prompt_hint =>
+      'Use {{target}} for the word and {{sentence}} for its context.';
+  @override
+  String get ai_explain_system_prompt => 'System prompt';
+  @override
+  String get ai_explain_system_prompt_hint =>
+      'Optional instructions sent before the user prompt. Leave empty to send none.';
+  @override
+  String get ai_explain_temperature => 'Temperature';
+  @override
+  String get ai_explain_temperature_hint =>
+      'Between 0 and 2. Lower is more deterministic.';
+  @override
+  String get ai_explain_thinking_level => 'Thinking level';
+  @override
+  String get ai_explain_thinking_mode => 'Thinking mode';
+  @override
+  String get ai_explain_thinking_intensity => 'Thinking intensity';
+  @override
+  String get ai_explain_thinking_value => 'Custom thinking value';
+  @override
+  String get ai_explain_thinking_value_hint =>
+      'A word, a token count, or a JSON object.';
+  @override
+  String get ai_explain_endpoint => 'Custom endpoint';
+  @override
+  String get ai_explain_endpoint_hint =>
+      'Full URL, used exactly as entered. No path is appended.';
+  @override
+  String get ai_explain_routing_mode => 'OpenRouter provider routing';
+  @override
+  String get ai_explain_routing_slugs => 'OpenRouter provider slugs';
+  @override
+  String get ai_explain_routing_slugs_hint =>
+      'Separated by commas or line breaks.';
+  @override
+  String get ai_explain_allow_fallbacks => 'Allow OpenRouter fallbacks';
+  @override
+  String get ai_explain_request_body => 'Custom request body JSON';
+  @override
+  String get ai_explain_request_body_hint =>
+      'A JSON object merged over the generated request.';
+  @override
+  String get ai_explain_request_body_invalid => 'Not a valid JSON object.';
+  @override
+  String get ai_explain_option_default => 'Default';
+  @override
+  String get ai_explain_option_minimal => 'Minimal';
+  @override
+  String get ai_explain_option_low => 'Low';
+  @override
+  String get ai_explain_option_medium => 'Medium';
+  @override
+  String get ai_explain_option_high => 'High';
+  @override
+  String get ai_explain_option_max => 'Max';
+  @override
+  String get ai_explain_option_custom => 'Custom';
+  @override
+  String get ai_explain_option_enabled => 'Enabled';
+  @override
+  String get ai_explain_option_disabled => 'Disabled';
+  @override
+  String get ai_explain_routing_prioritize => 'Prioritize listed providers';
+  @override
+  String get ai_explain_routing_only => 'Only listed providers';
+  @override
+  String get ai_explain_routing_ignore => 'Ignore listed providers';
+  @override
+  String get ai_explain_state_generating => 'Generating explanation...';
+  @override
+  String get ai_explain_state_manual =>
+      'Automatic generation is off. Use regenerate to generate it.';
+  @override
+  String get ai_explain_state_not_configured =>
+      'AI explanation is not available. Configure a provider in settings.';
+  @override
+  String get ai_explain_state_timed_out =>
+      'The AI request timed out. Please try again.';
+  @override
+  String get ai_explain_state_failed =>
+      'Failed to generate the AI explanation.';
+  @override
+  String get ai_explain_state_unavailable =>
+      'The AI service is temporarily unavailable. Please try again later.';
+  @override
+  String get ai_explain_state_empty => 'No explanation available.';
+  @override
+  String get ai_explain_action_generate => 'Generate explanation';
+  @override
+  String get ai_explain_action_regenerate => 'Regenerate explanation';
+  @override
+  String get ai_explain_action_cancel => 'Cancel';
+  @override
+  String get handlebar_ai_explanation => 'AI explanation';
 }
 
 // Path: <root>
@@ -53329,6 +53825,145 @@ class _StringsFr extends _StringsEn {
   @override
   String get reader_control_reset_layout =>
       'Restore default reader button layout';
+  @override
+  String get ai_explain_section => 'AI Explanation';
+  @override
+  String get ai_explain_section_hint =>
+      'Generate a contextual explanation of the looked-up word with your own AI provider.';
+  @override
+  String get ai_explain_title => 'AI Explanation';
+  @override
+  String get ai_explain_provider => 'AI provider';
+  @override
+  String get ai_explain_provider_hint =>
+      'Requests go directly from this device to the provider you configure.';
+  @override
+  String get ai_explain_api_key => 'API key';
+  @override
+  String get ai_explain_api_key_hint =>
+      'Stored on this device only. Never included in backups, profiles or sync.';
+  @override
+  String get ai_explain_model => 'Model';
+  @override
+  String get ai_explain_model_hint => 'Model ID sent to the provider.';
+  @override
+  String get ai_explain_auto_generate => 'Auto generate on lookup';
+  @override
+  String get ai_explain_auto_generate_hint =>
+      'When off, the box appears without sending a request and you generate it manually.';
+  @override
+  String get ai_explain_stream => 'Real time response';
+  @override
+  String get ai_explain_stream_hint =>
+      'Stream the explanation into the popup as it is written.';
+  @override
+  String get ai_explain_cancel_pending => 'Cancel unfinished requests';
+  @override
+  String get ai_explain_cancel_pending_hint =>
+      'Drop an explanation still being generated when the popup closes or another word is looked up.';
+  @override
+  String get ai_explain_unknown_fallback => 'Fallback for unknown words';
+  @override
+  String get ai_explain_unknown_fallback_hint =>
+      'Open the popup for words no dictionary contains, using the text you selected.';
+  @override
+  String get ai_explain_prompt => 'Custom prompt';
+  @override
+  String get ai_explain_prompt_hint =>
+      'Use {{target}} for the word and {{sentence}} for its context.';
+  @override
+  String get ai_explain_system_prompt => 'System prompt';
+  @override
+  String get ai_explain_system_prompt_hint =>
+      'Optional instructions sent before the user prompt. Leave empty to send none.';
+  @override
+  String get ai_explain_temperature => 'Temperature';
+  @override
+  String get ai_explain_temperature_hint =>
+      'Between 0 and 2. Lower is more deterministic.';
+  @override
+  String get ai_explain_thinking_level => 'Thinking level';
+  @override
+  String get ai_explain_thinking_mode => 'Thinking mode';
+  @override
+  String get ai_explain_thinking_intensity => 'Thinking intensity';
+  @override
+  String get ai_explain_thinking_value => 'Custom thinking value';
+  @override
+  String get ai_explain_thinking_value_hint =>
+      'A word, a token count, or a JSON object.';
+  @override
+  String get ai_explain_endpoint => 'Custom endpoint';
+  @override
+  String get ai_explain_endpoint_hint =>
+      'Full URL, used exactly as entered. No path is appended.';
+  @override
+  String get ai_explain_routing_mode => 'OpenRouter provider routing';
+  @override
+  String get ai_explain_routing_slugs => 'OpenRouter provider slugs';
+  @override
+  String get ai_explain_routing_slugs_hint =>
+      'Separated by commas or line breaks.';
+  @override
+  String get ai_explain_allow_fallbacks => 'Allow OpenRouter fallbacks';
+  @override
+  String get ai_explain_request_body => 'Custom request body JSON';
+  @override
+  String get ai_explain_request_body_hint =>
+      'A JSON object merged over the generated request.';
+  @override
+  String get ai_explain_request_body_invalid => 'Not a valid JSON object.';
+  @override
+  String get ai_explain_option_default => 'Default';
+  @override
+  String get ai_explain_option_minimal => 'Minimal';
+  @override
+  String get ai_explain_option_low => 'Low';
+  @override
+  String get ai_explain_option_medium => 'Medium';
+  @override
+  String get ai_explain_option_high => 'High';
+  @override
+  String get ai_explain_option_max => 'Max';
+  @override
+  String get ai_explain_option_custom => 'Custom';
+  @override
+  String get ai_explain_option_enabled => 'Enabled';
+  @override
+  String get ai_explain_option_disabled => 'Disabled';
+  @override
+  String get ai_explain_routing_prioritize => 'Prioritize listed providers';
+  @override
+  String get ai_explain_routing_only => 'Only listed providers';
+  @override
+  String get ai_explain_routing_ignore => 'Ignore listed providers';
+  @override
+  String get ai_explain_state_generating => 'Generating explanation...';
+  @override
+  String get ai_explain_state_manual =>
+      'Automatic generation is off. Use regenerate to generate it.';
+  @override
+  String get ai_explain_state_not_configured =>
+      'AI explanation is not available. Configure a provider in settings.';
+  @override
+  String get ai_explain_state_timed_out =>
+      'The AI request timed out. Please try again.';
+  @override
+  String get ai_explain_state_failed =>
+      'Failed to generate the AI explanation.';
+  @override
+  String get ai_explain_state_unavailable =>
+      'The AI service is temporarily unavailable. Please try again later.';
+  @override
+  String get ai_explain_state_empty => 'No explanation available.';
+  @override
+  String get ai_explain_action_generate => 'Generate explanation';
+  @override
+  String get ai_explain_action_regenerate => 'Regenerate explanation';
+  @override
+  String get ai_explain_action_cancel => 'Cancel';
+  @override
+  String get handlebar_ai_explanation => 'AI explanation';
 }
 
 // Path: <root>
@@ -64883,6 +65518,145 @@ class _StringsId extends _StringsEn {
   @override
   String get reader_control_reset_layout =>
       'Restore default reader button layout';
+  @override
+  String get ai_explain_section => 'AI Explanation';
+  @override
+  String get ai_explain_section_hint =>
+      'Generate a contextual explanation of the looked-up word with your own AI provider.';
+  @override
+  String get ai_explain_title => 'AI Explanation';
+  @override
+  String get ai_explain_provider => 'AI provider';
+  @override
+  String get ai_explain_provider_hint =>
+      'Requests go directly from this device to the provider you configure.';
+  @override
+  String get ai_explain_api_key => 'API key';
+  @override
+  String get ai_explain_api_key_hint =>
+      'Stored on this device only. Never included in backups, profiles or sync.';
+  @override
+  String get ai_explain_model => 'Model';
+  @override
+  String get ai_explain_model_hint => 'Model ID sent to the provider.';
+  @override
+  String get ai_explain_auto_generate => 'Auto generate on lookup';
+  @override
+  String get ai_explain_auto_generate_hint =>
+      'When off, the box appears without sending a request and you generate it manually.';
+  @override
+  String get ai_explain_stream => 'Real time response';
+  @override
+  String get ai_explain_stream_hint =>
+      'Stream the explanation into the popup as it is written.';
+  @override
+  String get ai_explain_cancel_pending => 'Cancel unfinished requests';
+  @override
+  String get ai_explain_cancel_pending_hint =>
+      'Drop an explanation still being generated when the popup closes or another word is looked up.';
+  @override
+  String get ai_explain_unknown_fallback => 'Fallback for unknown words';
+  @override
+  String get ai_explain_unknown_fallback_hint =>
+      'Open the popup for words no dictionary contains, using the text you selected.';
+  @override
+  String get ai_explain_prompt => 'Custom prompt';
+  @override
+  String get ai_explain_prompt_hint =>
+      'Use {{target}} for the word and {{sentence}} for its context.';
+  @override
+  String get ai_explain_system_prompt => 'System prompt';
+  @override
+  String get ai_explain_system_prompt_hint =>
+      'Optional instructions sent before the user prompt. Leave empty to send none.';
+  @override
+  String get ai_explain_temperature => 'Temperature';
+  @override
+  String get ai_explain_temperature_hint =>
+      'Between 0 and 2. Lower is more deterministic.';
+  @override
+  String get ai_explain_thinking_level => 'Thinking level';
+  @override
+  String get ai_explain_thinking_mode => 'Thinking mode';
+  @override
+  String get ai_explain_thinking_intensity => 'Thinking intensity';
+  @override
+  String get ai_explain_thinking_value => 'Custom thinking value';
+  @override
+  String get ai_explain_thinking_value_hint =>
+      'A word, a token count, or a JSON object.';
+  @override
+  String get ai_explain_endpoint => 'Custom endpoint';
+  @override
+  String get ai_explain_endpoint_hint =>
+      'Full URL, used exactly as entered. No path is appended.';
+  @override
+  String get ai_explain_routing_mode => 'OpenRouter provider routing';
+  @override
+  String get ai_explain_routing_slugs => 'OpenRouter provider slugs';
+  @override
+  String get ai_explain_routing_slugs_hint =>
+      'Separated by commas or line breaks.';
+  @override
+  String get ai_explain_allow_fallbacks => 'Allow OpenRouter fallbacks';
+  @override
+  String get ai_explain_request_body => 'Custom request body JSON';
+  @override
+  String get ai_explain_request_body_hint =>
+      'A JSON object merged over the generated request.';
+  @override
+  String get ai_explain_request_body_invalid => 'Not a valid JSON object.';
+  @override
+  String get ai_explain_option_default => 'Default';
+  @override
+  String get ai_explain_option_minimal => 'Minimal';
+  @override
+  String get ai_explain_option_low => 'Low';
+  @override
+  String get ai_explain_option_medium => 'Medium';
+  @override
+  String get ai_explain_option_high => 'High';
+  @override
+  String get ai_explain_option_max => 'Max';
+  @override
+  String get ai_explain_option_custom => 'Custom';
+  @override
+  String get ai_explain_option_enabled => 'Enabled';
+  @override
+  String get ai_explain_option_disabled => 'Disabled';
+  @override
+  String get ai_explain_routing_prioritize => 'Prioritize listed providers';
+  @override
+  String get ai_explain_routing_only => 'Only listed providers';
+  @override
+  String get ai_explain_routing_ignore => 'Ignore listed providers';
+  @override
+  String get ai_explain_state_generating => 'Generating explanation...';
+  @override
+  String get ai_explain_state_manual =>
+      'Automatic generation is off. Use regenerate to generate it.';
+  @override
+  String get ai_explain_state_not_configured =>
+      'AI explanation is not available. Configure a provider in settings.';
+  @override
+  String get ai_explain_state_timed_out =>
+      'The AI request timed out. Please try again.';
+  @override
+  String get ai_explain_state_failed =>
+      'Failed to generate the AI explanation.';
+  @override
+  String get ai_explain_state_unavailable =>
+      'The AI service is temporarily unavailable. Please try again later.';
+  @override
+  String get ai_explain_state_empty => 'No explanation available.';
+  @override
+  String get ai_explain_action_generate => 'Generate explanation';
+  @override
+  String get ai_explain_action_regenerate => 'Regenerate explanation';
+  @override
+  String get ai_explain_action_cancel => 'Cancel';
+  @override
+  String get handlebar_ai_explanation => 'AI explanation';
 }
 
 // Path: <root>
@@ -76528,6 +77302,145 @@ class _StringsIt extends _StringsEn {
   @override
   String get reader_control_reset_layout =>
       'Restore default reader button layout';
+  @override
+  String get ai_explain_section => 'AI Explanation';
+  @override
+  String get ai_explain_section_hint =>
+      'Generate a contextual explanation of the looked-up word with your own AI provider.';
+  @override
+  String get ai_explain_title => 'AI Explanation';
+  @override
+  String get ai_explain_provider => 'AI provider';
+  @override
+  String get ai_explain_provider_hint =>
+      'Requests go directly from this device to the provider you configure.';
+  @override
+  String get ai_explain_api_key => 'API key';
+  @override
+  String get ai_explain_api_key_hint =>
+      'Stored on this device only. Never included in backups, profiles or sync.';
+  @override
+  String get ai_explain_model => 'Model';
+  @override
+  String get ai_explain_model_hint => 'Model ID sent to the provider.';
+  @override
+  String get ai_explain_auto_generate => 'Auto generate on lookup';
+  @override
+  String get ai_explain_auto_generate_hint =>
+      'When off, the box appears without sending a request and you generate it manually.';
+  @override
+  String get ai_explain_stream => 'Real time response';
+  @override
+  String get ai_explain_stream_hint =>
+      'Stream the explanation into the popup as it is written.';
+  @override
+  String get ai_explain_cancel_pending => 'Cancel unfinished requests';
+  @override
+  String get ai_explain_cancel_pending_hint =>
+      'Drop an explanation still being generated when the popup closes or another word is looked up.';
+  @override
+  String get ai_explain_unknown_fallback => 'Fallback for unknown words';
+  @override
+  String get ai_explain_unknown_fallback_hint =>
+      'Open the popup for words no dictionary contains, using the text you selected.';
+  @override
+  String get ai_explain_prompt => 'Custom prompt';
+  @override
+  String get ai_explain_prompt_hint =>
+      'Use {{target}} for the word and {{sentence}} for its context.';
+  @override
+  String get ai_explain_system_prompt => 'System prompt';
+  @override
+  String get ai_explain_system_prompt_hint =>
+      'Optional instructions sent before the user prompt. Leave empty to send none.';
+  @override
+  String get ai_explain_temperature => 'Temperature';
+  @override
+  String get ai_explain_temperature_hint =>
+      'Between 0 and 2. Lower is more deterministic.';
+  @override
+  String get ai_explain_thinking_level => 'Thinking level';
+  @override
+  String get ai_explain_thinking_mode => 'Thinking mode';
+  @override
+  String get ai_explain_thinking_intensity => 'Thinking intensity';
+  @override
+  String get ai_explain_thinking_value => 'Custom thinking value';
+  @override
+  String get ai_explain_thinking_value_hint =>
+      'A word, a token count, or a JSON object.';
+  @override
+  String get ai_explain_endpoint => 'Custom endpoint';
+  @override
+  String get ai_explain_endpoint_hint =>
+      'Full URL, used exactly as entered. No path is appended.';
+  @override
+  String get ai_explain_routing_mode => 'OpenRouter provider routing';
+  @override
+  String get ai_explain_routing_slugs => 'OpenRouter provider slugs';
+  @override
+  String get ai_explain_routing_slugs_hint =>
+      'Separated by commas or line breaks.';
+  @override
+  String get ai_explain_allow_fallbacks => 'Allow OpenRouter fallbacks';
+  @override
+  String get ai_explain_request_body => 'Custom request body JSON';
+  @override
+  String get ai_explain_request_body_hint =>
+      'A JSON object merged over the generated request.';
+  @override
+  String get ai_explain_request_body_invalid => 'Not a valid JSON object.';
+  @override
+  String get ai_explain_option_default => 'Default';
+  @override
+  String get ai_explain_option_minimal => 'Minimal';
+  @override
+  String get ai_explain_option_low => 'Low';
+  @override
+  String get ai_explain_option_medium => 'Medium';
+  @override
+  String get ai_explain_option_high => 'High';
+  @override
+  String get ai_explain_option_max => 'Max';
+  @override
+  String get ai_explain_option_custom => 'Custom';
+  @override
+  String get ai_explain_option_enabled => 'Enabled';
+  @override
+  String get ai_explain_option_disabled => 'Disabled';
+  @override
+  String get ai_explain_routing_prioritize => 'Prioritize listed providers';
+  @override
+  String get ai_explain_routing_only => 'Only listed providers';
+  @override
+  String get ai_explain_routing_ignore => 'Ignore listed providers';
+  @override
+  String get ai_explain_state_generating => 'Generating explanation...';
+  @override
+  String get ai_explain_state_manual =>
+      'Automatic generation is off. Use regenerate to generate it.';
+  @override
+  String get ai_explain_state_not_configured =>
+      'AI explanation is not available. Configure a provider in settings.';
+  @override
+  String get ai_explain_state_timed_out =>
+      'The AI request timed out. Please try again.';
+  @override
+  String get ai_explain_state_failed =>
+      'Failed to generate the AI explanation.';
+  @override
+  String get ai_explain_state_unavailable =>
+      'The AI service is temporarily unavailable. Please try again later.';
+  @override
+  String get ai_explain_state_empty => 'No explanation available.';
+  @override
+  String get ai_explain_action_generate => 'Generate explanation';
+  @override
+  String get ai_explain_action_regenerate => 'Regenerate explanation';
+  @override
+  String get ai_explain_action_cancel => 'Cancel';
+  @override
+  String get handlebar_ai_explanation => 'AI explanation';
 }
 
 // Path: <root>
@@ -87556,6 +88469,145 @@ class _StringsJa extends _StringsEn {
   @override
   String get reader_control_reset_layout =>
       'Restore default reader button layout';
+  @override
+  String get ai_explain_section => 'AI Explanation';
+  @override
+  String get ai_explain_section_hint =>
+      'Generate a contextual explanation of the looked-up word with your own AI provider.';
+  @override
+  String get ai_explain_title => 'AI Explanation';
+  @override
+  String get ai_explain_provider => 'AI provider';
+  @override
+  String get ai_explain_provider_hint =>
+      'Requests go directly from this device to the provider you configure.';
+  @override
+  String get ai_explain_api_key => 'API key';
+  @override
+  String get ai_explain_api_key_hint =>
+      'Stored on this device only. Never included in backups, profiles or sync.';
+  @override
+  String get ai_explain_model => 'Model';
+  @override
+  String get ai_explain_model_hint => 'Model ID sent to the provider.';
+  @override
+  String get ai_explain_auto_generate => 'Auto generate on lookup';
+  @override
+  String get ai_explain_auto_generate_hint =>
+      'When off, the box appears without sending a request and you generate it manually.';
+  @override
+  String get ai_explain_stream => 'Real time response';
+  @override
+  String get ai_explain_stream_hint =>
+      'Stream the explanation into the popup as it is written.';
+  @override
+  String get ai_explain_cancel_pending => 'Cancel unfinished requests';
+  @override
+  String get ai_explain_cancel_pending_hint =>
+      'Drop an explanation still being generated when the popup closes or another word is looked up.';
+  @override
+  String get ai_explain_unknown_fallback => 'Fallback for unknown words';
+  @override
+  String get ai_explain_unknown_fallback_hint =>
+      'Open the popup for words no dictionary contains, using the text you selected.';
+  @override
+  String get ai_explain_prompt => 'Custom prompt';
+  @override
+  String get ai_explain_prompt_hint =>
+      'Use {{target}} for the word and {{sentence}} for its context.';
+  @override
+  String get ai_explain_system_prompt => 'System prompt';
+  @override
+  String get ai_explain_system_prompt_hint =>
+      'Optional instructions sent before the user prompt. Leave empty to send none.';
+  @override
+  String get ai_explain_temperature => 'Temperature';
+  @override
+  String get ai_explain_temperature_hint =>
+      'Between 0 and 2. Lower is more deterministic.';
+  @override
+  String get ai_explain_thinking_level => 'Thinking level';
+  @override
+  String get ai_explain_thinking_mode => 'Thinking mode';
+  @override
+  String get ai_explain_thinking_intensity => 'Thinking intensity';
+  @override
+  String get ai_explain_thinking_value => 'Custom thinking value';
+  @override
+  String get ai_explain_thinking_value_hint =>
+      'A word, a token count, or a JSON object.';
+  @override
+  String get ai_explain_endpoint => 'Custom endpoint';
+  @override
+  String get ai_explain_endpoint_hint =>
+      'Full URL, used exactly as entered. No path is appended.';
+  @override
+  String get ai_explain_routing_mode => 'OpenRouter provider routing';
+  @override
+  String get ai_explain_routing_slugs => 'OpenRouter provider slugs';
+  @override
+  String get ai_explain_routing_slugs_hint =>
+      'Separated by commas or line breaks.';
+  @override
+  String get ai_explain_allow_fallbacks => 'Allow OpenRouter fallbacks';
+  @override
+  String get ai_explain_request_body => 'Custom request body JSON';
+  @override
+  String get ai_explain_request_body_hint =>
+      'A JSON object merged over the generated request.';
+  @override
+  String get ai_explain_request_body_invalid => 'Not a valid JSON object.';
+  @override
+  String get ai_explain_option_default => 'Default';
+  @override
+  String get ai_explain_option_minimal => 'Minimal';
+  @override
+  String get ai_explain_option_low => 'Low';
+  @override
+  String get ai_explain_option_medium => 'Medium';
+  @override
+  String get ai_explain_option_high => 'High';
+  @override
+  String get ai_explain_option_max => 'Max';
+  @override
+  String get ai_explain_option_custom => 'Custom';
+  @override
+  String get ai_explain_option_enabled => 'Enabled';
+  @override
+  String get ai_explain_option_disabled => 'Disabled';
+  @override
+  String get ai_explain_routing_prioritize => 'Prioritize listed providers';
+  @override
+  String get ai_explain_routing_only => 'Only listed providers';
+  @override
+  String get ai_explain_routing_ignore => 'Ignore listed providers';
+  @override
+  String get ai_explain_state_generating => 'Generating explanation...';
+  @override
+  String get ai_explain_state_manual =>
+      'Automatic generation is off. Use regenerate to generate it.';
+  @override
+  String get ai_explain_state_not_configured =>
+      'AI explanation is not available. Configure a provider in settings.';
+  @override
+  String get ai_explain_state_timed_out =>
+      'The AI request timed out. Please try again.';
+  @override
+  String get ai_explain_state_failed =>
+      'Failed to generate the AI explanation.';
+  @override
+  String get ai_explain_state_unavailable =>
+      'The AI service is temporarily unavailable. Please try again later.';
+  @override
+  String get ai_explain_state_empty => 'No explanation available.';
+  @override
+  String get ai_explain_action_generate => 'Generate explanation';
+  @override
+  String get ai_explain_action_regenerate => 'Regenerate explanation';
+  @override
+  String get ai_explain_action_cancel => 'Cancel';
+  @override
+  String get handlebar_ai_explanation => 'AI explanation';
 }
 
 // Path: <root>
@@ -98594,6 +99646,145 @@ class _StringsKo extends _StringsEn {
   @override
   String get reader_control_reset_layout =>
       'Restore default reader button layout';
+  @override
+  String get ai_explain_section => 'AI Explanation';
+  @override
+  String get ai_explain_section_hint =>
+      'Generate a contextual explanation of the looked-up word with your own AI provider.';
+  @override
+  String get ai_explain_title => 'AI Explanation';
+  @override
+  String get ai_explain_provider => 'AI provider';
+  @override
+  String get ai_explain_provider_hint =>
+      'Requests go directly from this device to the provider you configure.';
+  @override
+  String get ai_explain_api_key => 'API key';
+  @override
+  String get ai_explain_api_key_hint =>
+      'Stored on this device only. Never included in backups, profiles or sync.';
+  @override
+  String get ai_explain_model => 'Model';
+  @override
+  String get ai_explain_model_hint => 'Model ID sent to the provider.';
+  @override
+  String get ai_explain_auto_generate => 'Auto generate on lookup';
+  @override
+  String get ai_explain_auto_generate_hint =>
+      'When off, the box appears without sending a request and you generate it manually.';
+  @override
+  String get ai_explain_stream => 'Real time response';
+  @override
+  String get ai_explain_stream_hint =>
+      'Stream the explanation into the popup as it is written.';
+  @override
+  String get ai_explain_cancel_pending => 'Cancel unfinished requests';
+  @override
+  String get ai_explain_cancel_pending_hint =>
+      'Drop an explanation still being generated when the popup closes or another word is looked up.';
+  @override
+  String get ai_explain_unknown_fallback => 'Fallback for unknown words';
+  @override
+  String get ai_explain_unknown_fallback_hint =>
+      'Open the popup for words no dictionary contains, using the text you selected.';
+  @override
+  String get ai_explain_prompt => 'Custom prompt';
+  @override
+  String get ai_explain_prompt_hint =>
+      'Use {{target}} for the word and {{sentence}} for its context.';
+  @override
+  String get ai_explain_system_prompt => 'System prompt';
+  @override
+  String get ai_explain_system_prompt_hint =>
+      'Optional instructions sent before the user prompt. Leave empty to send none.';
+  @override
+  String get ai_explain_temperature => 'Temperature';
+  @override
+  String get ai_explain_temperature_hint =>
+      'Between 0 and 2. Lower is more deterministic.';
+  @override
+  String get ai_explain_thinking_level => 'Thinking level';
+  @override
+  String get ai_explain_thinking_mode => 'Thinking mode';
+  @override
+  String get ai_explain_thinking_intensity => 'Thinking intensity';
+  @override
+  String get ai_explain_thinking_value => 'Custom thinking value';
+  @override
+  String get ai_explain_thinking_value_hint =>
+      'A word, a token count, or a JSON object.';
+  @override
+  String get ai_explain_endpoint => 'Custom endpoint';
+  @override
+  String get ai_explain_endpoint_hint =>
+      'Full URL, used exactly as entered. No path is appended.';
+  @override
+  String get ai_explain_routing_mode => 'OpenRouter provider routing';
+  @override
+  String get ai_explain_routing_slugs => 'OpenRouter provider slugs';
+  @override
+  String get ai_explain_routing_slugs_hint =>
+      'Separated by commas or line breaks.';
+  @override
+  String get ai_explain_allow_fallbacks => 'Allow OpenRouter fallbacks';
+  @override
+  String get ai_explain_request_body => 'Custom request body JSON';
+  @override
+  String get ai_explain_request_body_hint =>
+      'A JSON object merged over the generated request.';
+  @override
+  String get ai_explain_request_body_invalid => 'Not a valid JSON object.';
+  @override
+  String get ai_explain_option_default => 'Default';
+  @override
+  String get ai_explain_option_minimal => 'Minimal';
+  @override
+  String get ai_explain_option_low => 'Low';
+  @override
+  String get ai_explain_option_medium => 'Medium';
+  @override
+  String get ai_explain_option_high => 'High';
+  @override
+  String get ai_explain_option_max => 'Max';
+  @override
+  String get ai_explain_option_custom => 'Custom';
+  @override
+  String get ai_explain_option_enabled => 'Enabled';
+  @override
+  String get ai_explain_option_disabled => 'Disabled';
+  @override
+  String get ai_explain_routing_prioritize => 'Prioritize listed providers';
+  @override
+  String get ai_explain_routing_only => 'Only listed providers';
+  @override
+  String get ai_explain_routing_ignore => 'Ignore listed providers';
+  @override
+  String get ai_explain_state_generating => 'Generating explanation...';
+  @override
+  String get ai_explain_state_manual =>
+      'Automatic generation is off. Use regenerate to generate it.';
+  @override
+  String get ai_explain_state_not_configured =>
+      'AI explanation is not available. Configure a provider in settings.';
+  @override
+  String get ai_explain_state_timed_out =>
+      'The AI request timed out. Please try again.';
+  @override
+  String get ai_explain_state_failed =>
+      'Failed to generate the AI explanation.';
+  @override
+  String get ai_explain_state_unavailable =>
+      'The AI service is temporarily unavailable. Please try again later.';
+  @override
+  String get ai_explain_state_empty => 'No explanation available.';
+  @override
+  String get ai_explain_action_generate => 'Generate explanation';
+  @override
+  String get ai_explain_action_regenerate => 'Regenerate explanation';
+  @override
+  String get ai_explain_action_cancel => 'Cancel';
+  @override
+  String get handlebar_ai_explanation => 'AI explanation';
 }
 
 // Path: <root>
@@ -110197,6 +111388,145 @@ class _StringsNl extends _StringsEn {
   @override
   String get reader_control_reset_layout =>
       'Restore default reader button layout';
+  @override
+  String get ai_explain_section => 'AI Explanation';
+  @override
+  String get ai_explain_section_hint =>
+      'Generate a contextual explanation of the looked-up word with your own AI provider.';
+  @override
+  String get ai_explain_title => 'AI Explanation';
+  @override
+  String get ai_explain_provider => 'AI provider';
+  @override
+  String get ai_explain_provider_hint =>
+      'Requests go directly from this device to the provider you configure.';
+  @override
+  String get ai_explain_api_key => 'API key';
+  @override
+  String get ai_explain_api_key_hint =>
+      'Stored on this device only. Never included in backups, profiles or sync.';
+  @override
+  String get ai_explain_model => 'Model';
+  @override
+  String get ai_explain_model_hint => 'Model ID sent to the provider.';
+  @override
+  String get ai_explain_auto_generate => 'Auto generate on lookup';
+  @override
+  String get ai_explain_auto_generate_hint =>
+      'When off, the box appears without sending a request and you generate it manually.';
+  @override
+  String get ai_explain_stream => 'Real time response';
+  @override
+  String get ai_explain_stream_hint =>
+      'Stream the explanation into the popup as it is written.';
+  @override
+  String get ai_explain_cancel_pending => 'Cancel unfinished requests';
+  @override
+  String get ai_explain_cancel_pending_hint =>
+      'Drop an explanation still being generated when the popup closes or another word is looked up.';
+  @override
+  String get ai_explain_unknown_fallback => 'Fallback for unknown words';
+  @override
+  String get ai_explain_unknown_fallback_hint =>
+      'Open the popup for words no dictionary contains, using the text you selected.';
+  @override
+  String get ai_explain_prompt => 'Custom prompt';
+  @override
+  String get ai_explain_prompt_hint =>
+      'Use {{target}} for the word and {{sentence}} for its context.';
+  @override
+  String get ai_explain_system_prompt => 'System prompt';
+  @override
+  String get ai_explain_system_prompt_hint =>
+      'Optional instructions sent before the user prompt. Leave empty to send none.';
+  @override
+  String get ai_explain_temperature => 'Temperature';
+  @override
+  String get ai_explain_temperature_hint =>
+      'Between 0 and 2. Lower is more deterministic.';
+  @override
+  String get ai_explain_thinking_level => 'Thinking level';
+  @override
+  String get ai_explain_thinking_mode => 'Thinking mode';
+  @override
+  String get ai_explain_thinking_intensity => 'Thinking intensity';
+  @override
+  String get ai_explain_thinking_value => 'Custom thinking value';
+  @override
+  String get ai_explain_thinking_value_hint =>
+      'A word, a token count, or a JSON object.';
+  @override
+  String get ai_explain_endpoint => 'Custom endpoint';
+  @override
+  String get ai_explain_endpoint_hint =>
+      'Full URL, used exactly as entered. No path is appended.';
+  @override
+  String get ai_explain_routing_mode => 'OpenRouter provider routing';
+  @override
+  String get ai_explain_routing_slugs => 'OpenRouter provider slugs';
+  @override
+  String get ai_explain_routing_slugs_hint =>
+      'Separated by commas or line breaks.';
+  @override
+  String get ai_explain_allow_fallbacks => 'Allow OpenRouter fallbacks';
+  @override
+  String get ai_explain_request_body => 'Custom request body JSON';
+  @override
+  String get ai_explain_request_body_hint =>
+      'A JSON object merged over the generated request.';
+  @override
+  String get ai_explain_request_body_invalid => 'Not a valid JSON object.';
+  @override
+  String get ai_explain_option_default => 'Default';
+  @override
+  String get ai_explain_option_minimal => 'Minimal';
+  @override
+  String get ai_explain_option_low => 'Low';
+  @override
+  String get ai_explain_option_medium => 'Medium';
+  @override
+  String get ai_explain_option_high => 'High';
+  @override
+  String get ai_explain_option_max => 'Max';
+  @override
+  String get ai_explain_option_custom => 'Custom';
+  @override
+  String get ai_explain_option_enabled => 'Enabled';
+  @override
+  String get ai_explain_option_disabled => 'Disabled';
+  @override
+  String get ai_explain_routing_prioritize => 'Prioritize listed providers';
+  @override
+  String get ai_explain_routing_only => 'Only listed providers';
+  @override
+  String get ai_explain_routing_ignore => 'Ignore listed providers';
+  @override
+  String get ai_explain_state_generating => 'Generating explanation...';
+  @override
+  String get ai_explain_state_manual =>
+      'Automatic generation is off. Use regenerate to generate it.';
+  @override
+  String get ai_explain_state_not_configured =>
+      'AI explanation is not available. Configure a provider in settings.';
+  @override
+  String get ai_explain_state_timed_out =>
+      'The AI request timed out. Please try again.';
+  @override
+  String get ai_explain_state_failed =>
+      'Failed to generate the AI explanation.';
+  @override
+  String get ai_explain_state_unavailable =>
+      'The AI service is temporarily unavailable. Please try again later.';
+  @override
+  String get ai_explain_state_empty => 'No explanation available.';
+  @override
+  String get ai_explain_action_generate => 'Generate explanation';
+  @override
+  String get ai_explain_action_regenerate => 'Regenerate explanation';
+  @override
+  String get ai_explain_action_cancel => 'Cancel';
+  @override
+  String get handlebar_ai_explanation => 'AI explanation';
 }
 
 // Path: <root>
@@ -121853,6 +123183,145 @@ class _StringsPtBr extends _StringsEn {
   @override
   String get reader_control_reset_layout =>
       'Restore default reader button layout';
+  @override
+  String get ai_explain_section => 'AI Explanation';
+  @override
+  String get ai_explain_section_hint =>
+      'Generate a contextual explanation of the looked-up word with your own AI provider.';
+  @override
+  String get ai_explain_title => 'AI Explanation';
+  @override
+  String get ai_explain_provider => 'AI provider';
+  @override
+  String get ai_explain_provider_hint =>
+      'Requests go directly from this device to the provider you configure.';
+  @override
+  String get ai_explain_api_key => 'API key';
+  @override
+  String get ai_explain_api_key_hint =>
+      'Stored on this device only. Never included in backups, profiles or sync.';
+  @override
+  String get ai_explain_model => 'Model';
+  @override
+  String get ai_explain_model_hint => 'Model ID sent to the provider.';
+  @override
+  String get ai_explain_auto_generate => 'Auto generate on lookup';
+  @override
+  String get ai_explain_auto_generate_hint =>
+      'When off, the box appears without sending a request and you generate it manually.';
+  @override
+  String get ai_explain_stream => 'Real time response';
+  @override
+  String get ai_explain_stream_hint =>
+      'Stream the explanation into the popup as it is written.';
+  @override
+  String get ai_explain_cancel_pending => 'Cancel unfinished requests';
+  @override
+  String get ai_explain_cancel_pending_hint =>
+      'Drop an explanation still being generated when the popup closes or another word is looked up.';
+  @override
+  String get ai_explain_unknown_fallback => 'Fallback for unknown words';
+  @override
+  String get ai_explain_unknown_fallback_hint =>
+      'Open the popup for words no dictionary contains, using the text you selected.';
+  @override
+  String get ai_explain_prompt => 'Custom prompt';
+  @override
+  String get ai_explain_prompt_hint =>
+      'Use {{target}} for the word and {{sentence}} for its context.';
+  @override
+  String get ai_explain_system_prompt => 'System prompt';
+  @override
+  String get ai_explain_system_prompt_hint =>
+      'Optional instructions sent before the user prompt. Leave empty to send none.';
+  @override
+  String get ai_explain_temperature => 'Temperature';
+  @override
+  String get ai_explain_temperature_hint =>
+      'Between 0 and 2. Lower is more deterministic.';
+  @override
+  String get ai_explain_thinking_level => 'Thinking level';
+  @override
+  String get ai_explain_thinking_mode => 'Thinking mode';
+  @override
+  String get ai_explain_thinking_intensity => 'Thinking intensity';
+  @override
+  String get ai_explain_thinking_value => 'Custom thinking value';
+  @override
+  String get ai_explain_thinking_value_hint =>
+      'A word, a token count, or a JSON object.';
+  @override
+  String get ai_explain_endpoint => 'Custom endpoint';
+  @override
+  String get ai_explain_endpoint_hint =>
+      'Full URL, used exactly as entered. No path is appended.';
+  @override
+  String get ai_explain_routing_mode => 'OpenRouter provider routing';
+  @override
+  String get ai_explain_routing_slugs => 'OpenRouter provider slugs';
+  @override
+  String get ai_explain_routing_slugs_hint =>
+      'Separated by commas or line breaks.';
+  @override
+  String get ai_explain_allow_fallbacks => 'Allow OpenRouter fallbacks';
+  @override
+  String get ai_explain_request_body => 'Custom request body JSON';
+  @override
+  String get ai_explain_request_body_hint =>
+      'A JSON object merged over the generated request.';
+  @override
+  String get ai_explain_request_body_invalid => 'Not a valid JSON object.';
+  @override
+  String get ai_explain_option_default => 'Default';
+  @override
+  String get ai_explain_option_minimal => 'Minimal';
+  @override
+  String get ai_explain_option_low => 'Low';
+  @override
+  String get ai_explain_option_medium => 'Medium';
+  @override
+  String get ai_explain_option_high => 'High';
+  @override
+  String get ai_explain_option_max => 'Max';
+  @override
+  String get ai_explain_option_custom => 'Custom';
+  @override
+  String get ai_explain_option_enabled => 'Enabled';
+  @override
+  String get ai_explain_option_disabled => 'Disabled';
+  @override
+  String get ai_explain_routing_prioritize => 'Prioritize listed providers';
+  @override
+  String get ai_explain_routing_only => 'Only listed providers';
+  @override
+  String get ai_explain_routing_ignore => 'Ignore listed providers';
+  @override
+  String get ai_explain_state_generating => 'Generating explanation...';
+  @override
+  String get ai_explain_state_manual =>
+      'Automatic generation is off. Use regenerate to generate it.';
+  @override
+  String get ai_explain_state_not_configured =>
+      'AI explanation is not available. Configure a provider in settings.';
+  @override
+  String get ai_explain_state_timed_out =>
+      'The AI request timed out. Please try again.';
+  @override
+  String get ai_explain_state_failed =>
+      'Failed to generate the AI explanation.';
+  @override
+  String get ai_explain_state_unavailable =>
+      'The AI service is temporarily unavailable. Please try again later.';
+  @override
+  String get ai_explain_state_empty => 'No explanation available.';
+  @override
+  String get ai_explain_action_generate => 'Generate explanation';
+  @override
+  String get ai_explain_action_regenerate => 'Regenerate explanation';
+  @override
+  String get ai_explain_action_cancel => 'Cancel';
+  @override
+  String get handlebar_ai_explanation => 'AI explanation';
 }
 
 // Path: <root>
@@ -133486,6 +134955,145 @@ class _StringsRu extends _StringsEn {
   @override
   String get reader_control_reset_layout =>
       'Restore default reader button layout';
+  @override
+  String get ai_explain_section => 'AI Explanation';
+  @override
+  String get ai_explain_section_hint =>
+      'Generate a contextual explanation of the looked-up word with your own AI provider.';
+  @override
+  String get ai_explain_title => 'AI Explanation';
+  @override
+  String get ai_explain_provider => 'AI provider';
+  @override
+  String get ai_explain_provider_hint =>
+      'Requests go directly from this device to the provider you configure.';
+  @override
+  String get ai_explain_api_key => 'API key';
+  @override
+  String get ai_explain_api_key_hint =>
+      'Stored on this device only. Never included in backups, profiles or sync.';
+  @override
+  String get ai_explain_model => 'Model';
+  @override
+  String get ai_explain_model_hint => 'Model ID sent to the provider.';
+  @override
+  String get ai_explain_auto_generate => 'Auto generate on lookup';
+  @override
+  String get ai_explain_auto_generate_hint =>
+      'When off, the box appears without sending a request and you generate it manually.';
+  @override
+  String get ai_explain_stream => 'Real time response';
+  @override
+  String get ai_explain_stream_hint =>
+      'Stream the explanation into the popup as it is written.';
+  @override
+  String get ai_explain_cancel_pending => 'Cancel unfinished requests';
+  @override
+  String get ai_explain_cancel_pending_hint =>
+      'Drop an explanation still being generated when the popup closes or another word is looked up.';
+  @override
+  String get ai_explain_unknown_fallback => 'Fallback for unknown words';
+  @override
+  String get ai_explain_unknown_fallback_hint =>
+      'Open the popup for words no dictionary contains, using the text you selected.';
+  @override
+  String get ai_explain_prompt => 'Custom prompt';
+  @override
+  String get ai_explain_prompt_hint =>
+      'Use {{target}} for the word and {{sentence}} for its context.';
+  @override
+  String get ai_explain_system_prompt => 'System prompt';
+  @override
+  String get ai_explain_system_prompt_hint =>
+      'Optional instructions sent before the user prompt. Leave empty to send none.';
+  @override
+  String get ai_explain_temperature => 'Temperature';
+  @override
+  String get ai_explain_temperature_hint =>
+      'Between 0 and 2. Lower is more deterministic.';
+  @override
+  String get ai_explain_thinking_level => 'Thinking level';
+  @override
+  String get ai_explain_thinking_mode => 'Thinking mode';
+  @override
+  String get ai_explain_thinking_intensity => 'Thinking intensity';
+  @override
+  String get ai_explain_thinking_value => 'Custom thinking value';
+  @override
+  String get ai_explain_thinking_value_hint =>
+      'A word, a token count, or a JSON object.';
+  @override
+  String get ai_explain_endpoint => 'Custom endpoint';
+  @override
+  String get ai_explain_endpoint_hint =>
+      'Full URL, used exactly as entered. No path is appended.';
+  @override
+  String get ai_explain_routing_mode => 'OpenRouter provider routing';
+  @override
+  String get ai_explain_routing_slugs => 'OpenRouter provider slugs';
+  @override
+  String get ai_explain_routing_slugs_hint =>
+      'Separated by commas or line breaks.';
+  @override
+  String get ai_explain_allow_fallbacks => 'Allow OpenRouter fallbacks';
+  @override
+  String get ai_explain_request_body => 'Custom request body JSON';
+  @override
+  String get ai_explain_request_body_hint =>
+      'A JSON object merged over the generated request.';
+  @override
+  String get ai_explain_request_body_invalid => 'Not a valid JSON object.';
+  @override
+  String get ai_explain_option_default => 'Default';
+  @override
+  String get ai_explain_option_minimal => 'Minimal';
+  @override
+  String get ai_explain_option_low => 'Low';
+  @override
+  String get ai_explain_option_medium => 'Medium';
+  @override
+  String get ai_explain_option_high => 'High';
+  @override
+  String get ai_explain_option_max => 'Max';
+  @override
+  String get ai_explain_option_custom => 'Custom';
+  @override
+  String get ai_explain_option_enabled => 'Enabled';
+  @override
+  String get ai_explain_option_disabled => 'Disabled';
+  @override
+  String get ai_explain_routing_prioritize => 'Prioritize listed providers';
+  @override
+  String get ai_explain_routing_only => 'Only listed providers';
+  @override
+  String get ai_explain_routing_ignore => 'Ignore listed providers';
+  @override
+  String get ai_explain_state_generating => 'Generating explanation...';
+  @override
+  String get ai_explain_state_manual =>
+      'Automatic generation is off. Use regenerate to generate it.';
+  @override
+  String get ai_explain_state_not_configured =>
+      'AI explanation is not available. Configure a provider in settings.';
+  @override
+  String get ai_explain_state_timed_out =>
+      'The AI request timed out. Please try again.';
+  @override
+  String get ai_explain_state_failed =>
+      'Failed to generate the AI explanation.';
+  @override
+  String get ai_explain_state_unavailable =>
+      'The AI service is temporarily unavailable. Please try again later.';
+  @override
+  String get ai_explain_state_empty => 'No explanation available.';
+  @override
+  String get ai_explain_action_generate => 'Generate explanation';
+  @override
+  String get ai_explain_action_regenerate => 'Regenerate explanation';
+  @override
+  String get ai_explain_action_cancel => 'Cancel';
+  @override
+  String get handlebar_ai_explanation => 'AI explanation';
 }
 
 // Path: <root>
@@ -144921,6 +146529,145 @@ class _StringsTh extends _StringsEn {
   @override
   String get reader_control_reset_layout =>
       'Restore default reader button layout';
+  @override
+  String get ai_explain_section => 'AI Explanation';
+  @override
+  String get ai_explain_section_hint =>
+      'Generate a contextual explanation of the looked-up word with your own AI provider.';
+  @override
+  String get ai_explain_title => 'AI Explanation';
+  @override
+  String get ai_explain_provider => 'AI provider';
+  @override
+  String get ai_explain_provider_hint =>
+      'Requests go directly from this device to the provider you configure.';
+  @override
+  String get ai_explain_api_key => 'API key';
+  @override
+  String get ai_explain_api_key_hint =>
+      'Stored on this device only. Never included in backups, profiles or sync.';
+  @override
+  String get ai_explain_model => 'Model';
+  @override
+  String get ai_explain_model_hint => 'Model ID sent to the provider.';
+  @override
+  String get ai_explain_auto_generate => 'Auto generate on lookup';
+  @override
+  String get ai_explain_auto_generate_hint =>
+      'When off, the box appears without sending a request and you generate it manually.';
+  @override
+  String get ai_explain_stream => 'Real time response';
+  @override
+  String get ai_explain_stream_hint =>
+      'Stream the explanation into the popup as it is written.';
+  @override
+  String get ai_explain_cancel_pending => 'Cancel unfinished requests';
+  @override
+  String get ai_explain_cancel_pending_hint =>
+      'Drop an explanation still being generated when the popup closes or another word is looked up.';
+  @override
+  String get ai_explain_unknown_fallback => 'Fallback for unknown words';
+  @override
+  String get ai_explain_unknown_fallback_hint =>
+      'Open the popup for words no dictionary contains, using the text you selected.';
+  @override
+  String get ai_explain_prompt => 'Custom prompt';
+  @override
+  String get ai_explain_prompt_hint =>
+      'Use {{target}} for the word and {{sentence}} for its context.';
+  @override
+  String get ai_explain_system_prompt => 'System prompt';
+  @override
+  String get ai_explain_system_prompt_hint =>
+      'Optional instructions sent before the user prompt. Leave empty to send none.';
+  @override
+  String get ai_explain_temperature => 'Temperature';
+  @override
+  String get ai_explain_temperature_hint =>
+      'Between 0 and 2. Lower is more deterministic.';
+  @override
+  String get ai_explain_thinking_level => 'Thinking level';
+  @override
+  String get ai_explain_thinking_mode => 'Thinking mode';
+  @override
+  String get ai_explain_thinking_intensity => 'Thinking intensity';
+  @override
+  String get ai_explain_thinking_value => 'Custom thinking value';
+  @override
+  String get ai_explain_thinking_value_hint =>
+      'A word, a token count, or a JSON object.';
+  @override
+  String get ai_explain_endpoint => 'Custom endpoint';
+  @override
+  String get ai_explain_endpoint_hint =>
+      'Full URL, used exactly as entered. No path is appended.';
+  @override
+  String get ai_explain_routing_mode => 'OpenRouter provider routing';
+  @override
+  String get ai_explain_routing_slugs => 'OpenRouter provider slugs';
+  @override
+  String get ai_explain_routing_slugs_hint =>
+      'Separated by commas or line breaks.';
+  @override
+  String get ai_explain_allow_fallbacks => 'Allow OpenRouter fallbacks';
+  @override
+  String get ai_explain_request_body => 'Custom request body JSON';
+  @override
+  String get ai_explain_request_body_hint =>
+      'A JSON object merged over the generated request.';
+  @override
+  String get ai_explain_request_body_invalid => 'Not a valid JSON object.';
+  @override
+  String get ai_explain_option_default => 'Default';
+  @override
+  String get ai_explain_option_minimal => 'Minimal';
+  @override
+  String get ai_explain_option_low => 'Low';
+  @override
+  String get ai_explain_option_medium => 'Medium';
+  @override
+  String get ai_explain_option_high => 'High';
+  @override
+  String get ai_explain_option_max => 'Max';
+  @override
+  String get ai_explain_option_custom => 'Custom';
+  @override
+  String get ai_explain_option_enabled => 'Enabled';
+  @override
+  String get ai_explain_option_disabled => 'Disabled';
+  @override
+  String get ai_explain_routing_prioritize => 'Prioritize listed providers';
+  @override
+  String get ai_explain_routing_only => 'Only listed providers';
+  @override
+  String get ai_explain_routing_ignore => 'Ignore listed providers';
+  @override
+  String get ai_explain_state_generating => 'Generating explanation...';
+  @override
+  String get ai_explain_state_manual =>
+      'Automatic generation is off. Use regenerate to generate it.';
+  @override
+  String get ai_explain_state_not_configured =>
+      'AI explanation is not available. Configure a provider in settings.';
+  @override
+  String get ai_explain_state_timed_out =>
+      'The AI request timed out. Please try again.';
+  @override
+  String get ai_explain_state_failed =>
+      'Failed to generate the AI explanation.';
+  @override
+  String get ai_explain_state_unavailable =>
+      'The AI service is temporarily unavailable. Please try again later.';
+  @override
+  String get ai_explain_state_empty => 'No explanation available.';
+  @override
+  String get ai_explain_action_generate => 'Generate explanation';
+  @override
+  String get ai_explain_action_regenerate => 'Regenerate explanation';
+  @override
+  String get ai_explain_action_cancel => 'Cancel';
+  @override
+  String get handlebar_ai_explanation => 'AI explanation';
 }
 
 // Path: <root>
@@ -156470,6 +158217,145 @@ class _StringsTr extends _StringsEn {
   @override
   String get reader_control_reset_layout =>
       'Restore default reader button layout';
+  @override
+  String get ai_explain_section => 'AI Explanation';
+  @override
+  String get ai_explain_section_hint =>
+      'Generate a contextual explanation of the looked-up word with your own AI provider.';
+  @override
+  String get ai_explain_title => 'AI Explanation';
+  @override
+  String get ai_explain_provider => 'AI provider';
+  @override
+  String get ai_explain_provider_hint =>
+      'Requests go directly from this device to the provider you configure.';
+  @override
+  String get ai_explain_api_key => 'API key';
+  @override
+  String get ai_explain_api_key_hint =>
+      'Stored on this device only. Never included in backups, profiles or sync.';
+  @override
+  String get ai_explain_model => 'Model';
+  @override
+  String get ai_explain_model_hint => 'Model ID sent to the provider.';
+  @override
+  String get ai_explain_auto_generate => 'Auto generate on lookup';
+  @override
+  String get ai_explain_auto_generate_hint =>
+      'When off, the box appears without sending a request and you generate it manually.';
+  @override
+  String get ai_explain_stream => 'Real time response';
+  @override
+  String get ai_explain_stream_hint =>
+      'Stream the explanation into the popup as it is written.';
+  @override
+  String get ai_explain_cancel_pending => 'Cancel unfinished requests';
+  @override
+  String get ai_explain_cancel_pending_hint =>
+      'Drop an explanation still being generated when the popup closes or another word is looked up.';
+  @override
+  String get ai_explain_unknown_fallback => 'Fallback for unknown words';
+  @override
+  String get ai_explain_unknown_fallback_hint =>
+      'Open the popup for words no dictionary contains, using the text you selected.';
+  @override
+  String get ai_explain_prompt => 'Custom prompt';
+  @override
+  String get ai_explain_prompt_hint =>
+      'Use {{target}} for the word and {{sentence}} for its context.';
+  @override
+  String get ai_explain_system_prompt => 'System prompt';
+  @override
+  String get ai_explain_system_prompt_hint =>
+      'Optional instructions sent before the user prompt. Leave empty to send none.';
+  @override
+  String get ai_explain_temperature => 'Temperature';
+  @override
+  String get ai_explain_temperature_hint =>
+      'Between 0 and 2. Lower is more deterministic.';
+  @override
+  String get ai_explain_thinking_level => 'Thinking level';
+  @override
+  String get ai_explain_thinking_mode => 'Thinking mode';
+  @override
+  String get ai_explain_thinking_intensity => 'Thinking intensity';
+  @override
+  String get ai_explain_thinking_value => 'Custom thinking value';
+  @override
+  String get ai_explain_thinking_value_hint =>
+      'A word, a token count, or a JSON object.';
+  @override
+  String get ai_explain_endpoint => 'Custom endpoint';
+  @override
+  String get ai_explain_endpoint_hint =>
+      'Full URL, used exactly as entered. No path is appended.';
+  @override
+  String get ai_explain_routing_mode => 'OpenRouter provider routing';
+  @override
+  String get ai_explain_routing_slugs => 'OpenRouter provider slugs';
+  @override
+  String get ai_explain_routing_slugs_hint =>
+      'Separated by commas or line breaks.';
+  @override
+  String get ai_explain_allow_fallbacks => 'Allow OpenRouter fallbacks';
+  @override
+  String get ai_explain_request_body => 'Custom request body JSON';
+  @override
+  String get ai_explain_request_body_hint =>
+      'A JSON object merged over the generated request.';
+  @override
+  String get ai_explain_request_body_invalid => 'Not a valid JSON object.';
+  @override
+  String get ai_explain_option_default => 'Default';
+  @override
+  String get ai_explain_option_minimal => 'Minimal';
+  @override
+  String get ai_explain_option_low => 'Low';
+  @override
+  String get ai_explain_option_medium => 'Medium';
+  @override
+  String get ai_explain_option_high => 'High';
+  @override
+  String get ai_explain_option_max => 'Max';
+  @override
+  String get ai_explain_option_custom => 'Custom';
+  @override
+  String get ai_explain_option_enabled => 'Enabled';
+  @override
+  String get ai_explain_option_disabled => 'Disabled';
+  @override
+  String get ai_explain_routing_prioritize => 'Prioritize listed providers';
+  @override
+  String get ai_explain_routing_only => 'Only listed providers';
+  @override
+  String get ai_explain_routing_ignore => 'Ignore listed providers';
+  @override
+  String get ai_explain_state_generating => 'Generating explanation...';
+  @override
+  String get ai_explain_state_manual =>
+      'Automatic generation is off. Use regenerate to generate it.';
+  @override
+  String get ai_explain_state_not_configured =>
+      'AI explanation is not available. Configure a provider in settings.';
+  @override
+  String get ai_explain_state_timed_out =>
+      'The AI request timed out. Please try again.';
+  @override
+  String get ai_explain_state_failed =>
+      'Failed to generate the AI explanation.';
+  @override
+  String get ai_explain_state_unavailable =>
+      'The AI service is temporarily unavailable. Please try again later.';
+  @override
+  String get ai_explain_state_empty => 'No explanation available.';
+  @override
+  String get ai_explain_action_generate => 'Generate explanation';
+  @override
+  String get ai_explain_action_regenerate => 'Regenerate explanation';
+  @override
+  String get ai_explain_action_cancel => 'Cancel';
+  @override
+  String get handlebar_ai_explanation => 'AI explanation';
 }
 
 // Path: <root>
@@ -167989,6 +169875,145 @@ class _StringsVi extends _StringsEn {
   @override
   String get reader_control_reset_layout =>
       'Restore default reader button layout';
+  @override
+  String get ai_explain_section => 'AI Explanation';
+  @override
+  String get ai_explain_section_hint =>
+      'Generate a contextual explanation of the looked-up word with your own AI provider.';
+  @override
+  String get ai_explain_title => 'AI Explanation';
+  @override
+  String get ai_explain_provider => 'AI provider';
+  @override
+  String get ai_explain_provider_hint =>
+      'Requests go directly from this device to the provider you configure.';
+  @override
+  String get ai_explain_api_key => 'API key';
+  @override
+  String get ai_explain_api_key_hint =>
+      'Stored on this device only. Never included in backups, profiles or sync.';
+  @override
+  String get ai_explain_model => 'Model';
+  @override
+  String get ai_explain_model_hint => 'Model ID sent to the provider.';
+  @override
+  String get ai_explain_auto_generate => 'Auto generate on lookup';
+  @override
+  String get ai_explain_auto_generate_hint =>
+      'When off, the box appears without sending a request and you generate it manually.';
+  @override
+  String get ai_explain_stream => 'Real time response';
+  @override
+  String get ai_explain_stream_hint =>
+      'Stream the explanation into the popup as it is written.';
+  @override
+  String get ai_explain_cancel_pending => 'Cancel unfinished requests';
+  @override
+  String get ai_explain_cancel_pending_hint =>
+      'Drop an explanation still being generated when the popup closes or another word is looked up.';
+  @override
+  String get ai_explain_unknown_fallback => 'Fallback for unknown words';
+  @override
+  String get ai_explain_unknown_fallback_hint =>
+      'Open the popup for words no dictionary contains, using the text you selected.';
+  @override
+  String get ai_explain_prompt => 'Custom prompt';
+  @override
+  String get ai_explain_prompt_hint =>
+      'Use {{target}} for the word and {{sentence}} for its context.';
+  @override
+  String get ai_explain_system_prompt => 'System prompt';
+  @override
+  String get ai_explain_system_prompt_hint =>
+      'Optional instructions sent before the user prompt. Leave empty to send none.';
+  @override
+  String get ai_explain_temperature => 'Temperature';
+  @override
+  String get ai_explain_temperature_hint =>
+      'Between 0 and 2. Lower is more deterministic.';
+  @override
+  String get ai_explain_thinking_level => 'Thinking level';
+  @override
+  String get ai_explain_thinking_mode => 'Thinking mode';
+  @override
+  String get ai_explain_thinking_intensity => 'Thinking intensity';
+  @override
+  String get ai_explain_thinking_value => 'Custom thinking value';
+  @override
+  String get ai_explain_thinking_value_hint =>
+      'A word, a token count, or a JSON object.';
+  @override
+  String get ai_explain_endpoint => 'Custom endpoint';
+  @override
+  String get ai_explain_endpoint_hint =>
+      'Full URL, used exactly as entered. No path is appended.';
+  @override
+  String get ai_explain_routing_mode => 'OpenRouter provider routing';
+  @override
+  String get ai_explain_routing_slugs => 'OpenRouter provider slugs';
+  @override
+  String get ai_explain_routing_slugs_hint =>
+      'Separated by commas or line breaks.';
+  @override
+  String get ai_explain_allow_fallbacks => 'Allow OpenRouter fallbacks';
+  @override
+  String get ai_explain_request_body => 'Custom request body JSON';
+  @override
+  String get ai_explain_request_body_hint =>
+      'A JSON object merged over the generated request.';
+  @override
+  String get ai_explain_request_body_invalid => 'Not a valid JSON object.';
+  @override
+  String get ai_explain_option_default => 'Default';
+  @override
+  String get ai_explain_option_minimal => 'Minimal';
+  @override
+  String get ai_explain_option_low => 'Low';
+  @override
+  String get ai_explain_option_medium => 'Medium';
+  @override
+  String get ai_explain_option_high => 'High';
+  @override
+  String get ai_explain_option_max => 'Max';
+  @override
+  String get ai_explain_option_custom => 'Custom';
+  @override
+  String get ai_explain_option_enabled => 'Enabled';
+  @override
+  String get ai_explain_option_disabled => 'Disabled';
+  @override
+  String get ai_explain_routing_prioritize => 'Prioritize listed providers';
+  @override
+  String get ai_explain_routing_only => 'Only listed providers';
+  @override
+  String get ai_explain_routing_ignore => 'Ignore listed providers';
+  @override
+  String get ai_explain_state_generating => 'Generating explanation...';
+  @override
+  String get ai_explain_state_manual =>
+      'Automatic generation is off. Use regenerate to generate it.';
+  @override
+  String get ai_explain_state_not_configured =>
+      'AI explanation is not available. Configure a provider in settings.';
+  @override
+  String get ai_explain_state_timed_out =>
+      'The AI request timed out. Please try again.';
+  @override
+  String get ai_explain_state_failed =>
+      'Failed to generate the AI explanation.';
+  @override
+  String get ai_explain_state_unavailable =>
+      'The AI service is temporarily unavailable. Please try again later.';
+  @override
+  String get ai_explain_state_empty => 'No explanation available.';
+  @override
+  String get ai_explain_action_generate => 'Generate explanation';
+  @override
+  String get ai_explain_action_regenerate => 'Regenerate explanation';
+  @override
+  String get ai_explain_action_cancel => 'Cancel';
+  @override
+  String get handlebar_ai_explanation => 'AI explanation';
 }
 
 // Path: <root>
@@ -178560,6 +180585,127 @@ class _StringsZhCn extends _StringsEn {
   String get reader_control_editor_hint => '把按钮拖到顶栏或底栏的任意位置，或移出。';
   @override
   String get reader_control_reset_layout => '恢复默认阅读器按钮布局';
+  @override
+  String get ai_explain_section => 'AI 解释';
+  @override
+  String get ai_explain_section_hint => '用你自己的 AI 服务为查到的词生成结合上下文的解释。';
+  @override
+  String get ai_explain_title => 'AI 解释';
+  @override
+  String get ai_explain_provider => 'AI 服务商';
+  @override
+  String get ai_explain_provider_hint => '请求从本设备直连你配置的服务商，不经过任何中转。';
+  @override
+  String get ai_explain_api_key => 'API 密钥';
+  @override
+  String get ai_explain_api_key_hint => '仅保存在本设备；不进备份、Profile 与同步。';
+  @override
+  String get ai_explain_model => '模型';
+  @override
+  String get ai_explain_model_hint => '发送给服务商的模型 ID。';
+  @override
+  String get ai_explain_auto_generate => '查词时自动生成';
+  @override
+  String get ai_explain_auto_generate_hint => '关闭后弹窗仍显示该区块但不发请求，改为手动生成。';
+  @override
+  String get ai_explain_stream => '实时返回';
+  @override
+  String get ai_explain_stream_hint => '边生成边写进弹窗。';
+  @override
+  String get ai_explain_cancel_pending => '取消未完成的请求';
+  @override
+  String get ai_explain_cancel_pending_hint => '弹窗关闭或查下一个词时，丢弃仍在生成的解释。';
+  @override
+  String get ai_explain_unknown_fallback => '未知词兜底';
+  @override
+  String get ai_explain_unknown_fallback_hint => '词典查不到时，用你选中的文本把弹窗开出来。';
+  @override
+  String get ai_explain_prompt => '自定义提示词';
+  @override
+  String get ai_explain_prompt_hint =>
+      '用 {{target}} 代表查询的词，{{sentence}} 代表上下文。';
+  @override
+  String get ai_explain_system_prompt => 'System 提示词';
+  @override
+  String get ai_explain_system_prompt_hint => '可选，在用户提示词之前发送；留空则不发送。';
+  @override
+  String get ai_explain_temperature => 'Temperature';
+  @override
+  String get ai_explain_temperature_hint => '取值 0~2，越低越确定。';
+  @override
+  String get ai_explain_thinking_level => '思考级别';
+  @override
+  String get ai_explain_thinking_mode => '思考模式';
+  @override
+  String get ai_explain_thinking_intensity => '思考强度';
+  @override
+  String get ai_explain_thinking_value => '自定义思考值';
+  @override
+  String get ai_explain_thinking_value_hint => '可填一个词、token 数，或一个 JSON 对象。';
+  @override
+  String get ai_explain_endpoint => '自定义端点';
+  @override
+  String get ai_explain_endpoint_hint => '完整 URL，原样使用，不会追加任何路径。';
+  @override
+  String get ai_explain_routing_mode => 'OpenRouter provider 路由';
+  @override
+  String get ai_explain_routing_slugs => 'OpenRouter provider 标识';
+  @override
+  String get ai_explain_routing_slugs_hint => '用逗号或换行分隔。';
+  @override
+  String get ai_explain_allow_fallbacks => '允许 OpenRouter 兜底';
+  @override
+  String get ai_explain_request_body => '自定义请求体 JSON';
+  @override
+  String get ai_explain_request_body_hint => '一个 JSON 对象，深合并覆盖生成的请求体。';
+  @override
+  String get ai_explain_request_body_invalid => '不是合法的 JSON 对象。';
+  @override
+  String get ai_explain_option_default => '默认';
+  @override
+  String get ai_explain_option_minimal => '最低';
+  @override
+  String get ai_explain_option_low => '低';
+  @override
+  String get ai_explain_option_medium => '中';
+  @override
+  String get ai_explain_option_high => '高';
+  @override
+  String get ai_explain_option_max => '最高';
+  @override
+  String get ai_explain_option_custom => '自定义';
+  @override
+  String get ai_explain_option_enabled => '开启';
+  @override
+  String get ai_explain_option_disabled => '关闭';
+  @override
+  String get ai_explain_routing_prioritize => '优先使用所列 provider';
+  @override
+  String get ai_explain_routing_only => '仅使用所列 provider';
+  @override
+  String get ai_explain_routing_ignore => '排除所列 provider';
+  @override
+  String get ai_explain_state_generating => '正在生成解释……';
+  @override
+  String get ai_explain_state_manual => '已关闭自动生成，点重新生成按钮手动生成。';
+  @override
+  String get ai_explain_state_not_configured => 'AI 解释不可用，请先在设置里配置服务商。';
+  @override
+  String get ai_explain_state_timed_out => 'AI 请求超时，请重试。';
+  @override
+  String get ai_explain_state_failed => '生成 AI 解释失败。';
+  @override
+  String get ai_explain_state_unavailable => 'AI 服务暂时不可用，请稍后再试。';
+  @override
+  String get ai_explain_state_empty => '没有可用的解释。';
+  @override
+  String get ai_explain_action_generate => '生成解释';
+  @override
+  String get ai_explain_action_regenerate => '重新生成解释';
+  @override
+  String get ai_explain_action_cancel => '取消';
+  @override
+  String get handlebar_ai_explanation => 'AI 解释';
 }
 
 // Path: <root>
@@ -189273,6 +191419,145 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get reader_control_reset_layout =>
       'Restore default reader button layout';
+  @override
+  String get ai_explain_section => 'AI Explanation';
+  @override
+  String get ai_explain_section_hint =>
+      'Generate a contextual explanation of the looked-up word with your own AI provider.';
+  @override
+  String get ai_explain_title => 'AI Explanation';
+  @override
+  String get ai_explain_provider => 'AI provider';
+  @override
+  String get ai_explain_provider_hint =>
+      'Requests go directly from this device to the provider you configure.';
+  @override
+  String get ai_explain_api_key => 'API key';
+  @override
+  String get ai_explain_api_key_hint =>
+      'Stored on this device only. Never included in backups, profiles or sync.';
+  @override
+  String get ai_explain_model => 'Model';
+  @override
+  String get ai_explain_model_hint => 'Model ID sent to the provider.';
+  @override
+  String get ai_explain_auto_generate => 'Auto generate on lookup';
+  @override
+  String get ai_explain_auto_generate_hint =>
+      'When off, the box appears without sending a request and you generate it manually.';
+  @override
+  String get ai_explain_stream => 'Real time response';
+  @override
+  String get ai_explain_stream_hint =>
+      'Stream the explanation into the popup as it is written.';
+  @override
+  String get ai_explain_cancel_pending => 'Cancel unfinished requests';
+  @override
+  String get ai_explain_cancel_pending_hint =>
+      'Drop an explanation still being generated when the popup closes or another word is looked up.';
+  @override
+  String get ai_explain_unknown_fallback => 'Fallback for unknown words';
+  @override
+  String get ai_explain_unknown_fallback_hint =>
+      'Open the popup for words no dictionary contains, using the text you selected.';
+  @override
+  String get ai_explain_prompt => 'Custom prompt';
+  @override
+  String get ai_explain_prompt_hint =>
+      'Use {{target}} for the word and {{sentence}} for its context.';
+  @override
+  String get ai_explain_system_prompt => 'System prompt';
+  @override
+  String get ai_explain_system_prompt_hint =>
+      'Optional instructions sent before the user prompt. Leave empty to send none.';
+  @override
+  String get ai_explain_temperature => 'Temperature';
+  @override
+  String get ai_explain_temperature_hint =>
+      'Between 0 and 2. Lower is more deterministic.';
+  @override
+  String get ai_explain_thinking_level => 'Thinking level';
+  @override
+  String get ai_explain_thinking_mode => 'Thinking mode';
+  @override
+  String get ai_explain_thinking_intensity => 'Thinking intensity';
+  @override
+  String get ai_explain_thinking_value => 'Custom thinking value';
+  @override
+  String get ai_explain_thinking_value_hint =>
+      'A word, a token count, or a JSON object.';
+  @override
+  String get ai_explain_endpoint => 'Custom endpoint';
+  @override
+  String get ai_explain_endpoint_hint =>
+      'Full URL, used exactly as entered. No path is appended.';
+  @override
+  String get ai_explain_routing_mode => 'OpenRouter provider routing';
+  @override
+  String get ai_explain_routing_slugs => 'OpenRouter provider slugs';
+  @override
+  String get ai_explain_routing_slugs_hint =>
+      'Separated by commas or line breaks.';
+  @override
+  String get ai_explain_allow_fallbacks => 'Allow OpenRouter fallbacks';
+  @override
+  String get ai_explain_request_body => 'Custom request body JSON';
+  @override
+  String get ai_explain_request_body_hint =>
+      'A JSON object merged over the generated request.';
+  @override
+  String get ai_explain_request_body_invalid => 'Not a valid JSON object.';
+  @override
+  String get ai_explain_option_default => 'Default';
+  @override
+  String get ai_explain_option_minimal => 'Minimal';
+  @override
+  String get ai_explain_option_low => 'Low';
+  @override
+  String get ai_explain_option_medium => 'Medium';
+  @override
+  String get ai_explain_option_high => 'High';
+  @override
+  String get ai_explain_option_max => 'Max';
+  @override
+  String get ai_explain_option_custom => 'Custom';
+  @override
+  String get ai_explain_option_enabled => 'Enabled';
+  @override
+  String get ai_explain_option_disabled => 'Disabled';
+  @override
+  String get ai_explain_routing_prioritize => 'Prioritize listed providers';
+  @override
+  String get ai_explain_routing_only => 'Only listed providers';
+  @override
+  String get ai_explain_routing_ignore => 'Ignore listed providers';
+  @override
+  String get ai_explain_state_generating => 'Generating explanation...';
+  @override
+  String get ai_explain_state_manual =>
+      'Automatic generation is off. Use regenerate to generate it.';
+  @override
+  String get ai_explain_state_not_configured =>
+      'AI explanation is not available. Configure a provider in settings.';
+  @override
+  String get ai_explain_state_timed_out =>
+      'The AI request timed out. Please try again.';
+  @override
+  String get ai_explain_state_failed =>
+      'Failed to generate the AI explanation.';
+  @override
+  String get ai_explain_state_unavailable =>
+      'The AI service is temporarily unavailable. Please try again later.';
+  @override
+  String get ai_explain_state_empty => 'No explanation available.';
+  @override
+  String get ai_explain_action_generate => 'Generate explanation';
+  @override
+  String get ai_explain_action_regenerate => 'Regenerate explanation';
+  @override
+  String get ai_explain_action_cancel => 'Cancel';
+  @override
+  String get handlebar_ai_explanation => 'AI explanation';
 }
 
 /// Flat map(s) containing all translations.
@@ -199276,6 +201561,126 @@ extension on _StringsEn {
         return 'Drag buttons between the top and bottom bars, or remove them.';
       case 'reader_control_reset_layout':
         return 'Restore default reader button layout';
+      case 'ai_explain_section':
+        return 'AI Explanation';
+      case 'ai_explain_section_hint':
+        return 'Generate a contextual explanation of the looked-up word with your own AI provider.';
+      case 'ai_explain_title':
+        return 'AI Explanation';
+      case 'ai_explain_provider':
+        return 'AI provider';
+      case 'ai_explain_provider_hint':
+        return 'Requests go directly from this device to the provider you configure.';
+      case 'ai_explain_api_key':
+        return 'API key';
+      case 'ai_explain_api_key_hint':
+        return 'Stored on this device only. Never included in backups, profiles or sync.';
+      case 'ai_explain_model':
+        return 'Model';
+      case 'ai_explain_model_hint':
+        return 'Model ID sent to the provider.';
+      case 'ai_explain_auto_generate':
+        return 'Auto generate on lookup';
+      case 'ai_explain_auto_generate_hint':
+        return 'When off, the box appears without sending a request and you generate it manually.';
+      case 'ai_explain_stream':
+        return 'Real time response';
+      case 'ai_explain_stream_hint':
+        return 'Stream the explanation into the popup as it is written.';
+      case 'ai_explain_cancel_pending':
+        return 'Cancel unfinished requests';
+      case 'ai_explain_cancel_pending_hint':
+        return 'Drop an explanation still being generated when the popup closes or another word is looked up.';
+      case 'ai_explain_unknown_fallback':
+        return 'Fallback for unknown words';
+      case 'ai_explain_unknown_fallback_hint':
+        return 'Open the popup for words no dictionary contains, using the text you selected.';
+      case 'ai_explain_prompt':
+        return 'Custom prompt';
+      case 'ai_explain_prompt_hint':
+        return 'Use {{target}} for the word and {{sentence}} for its context.';
+      case 'ai_explain_system_prompt':
+        return 'System prompt';
+      case 'ai_explain_system_prompt_hint':
+        return 'Optional instructions sent before the user prompt. Leave empty to send none.';
+      case 'ai_explain_temperature':
+        return 'Temperature';
+      case 'ai_explain_temperature_hint':
+        return 'Between 0 and 2. Lower is more deterministic.';
+      case 'ai_explain_thinking_level':
+        return 'Thinking level';
+      case 'ai_explain_thinking_mode':
+        return 'Thinking mode';
+      case 'ai_explain_thinking_intensity':
+        return 'Thinking intensity';
+      case 'ai_explain_thinking_value':
+        return 'Custom thinking value';
+      case 'ai_explain_thinking_value_hint':
+        return 'A word, a token count, or a JSON object.';
+      case 'ai_explain_endpoint':
+        return 'Custom endpoint';
+      case 'ai_explain_endpoint_hint':
+        return 'Full URL, used exactly as entered. No path is appended.';
+      case 'ai_explain_routing_mode':
+        return 'OpenRouter provider routing';
+      case 'ai_explain_routing_slugs':
+        return 'OpenRouter provider slugs';
+      case 'ai_explain_routing_slugs_hint':
+        return 'Separated by commas or line breaks.';
+      case 'ai_explain_allow_fallbacks':
+        return 'Allow OpenRouter fallbacks';
+      case 'ai_explain_request_body':
+        return 'Custom request body JSON';
+      case 'ai_explain_request_body_hint':
+        return 'A JSON object merged over the generated request.';
+      case 'ai_explain_request_body_invalid':
+        return 'Not a valid JSON object.';
+      case 'ai_explain_option_default':
+        return 'Default';
+      case 'ai_explain_option_minimal':
+        return 'Minimal';
+      case 'ai_explain_option_low':
+        return 'Low';
+      case 'ai_explain_option_medium':
+        return 'Medium';
+      case 'ai_explain_option_high':
+        return 'High';
+      case 'ai_explain_option_max':
+        return 'Max';
+      case 'ai_explain_option_custom':
+        return 'Custom';
+      case 'ai_explain_option_enabled':
+        return 'Enabled';
+      case 'ai_explain_option_disabled':
+        return 'Disabled';
+      case 'ai_explain_routing_prioritize':
+        return 'Prioritize listed providers';
+      case 'ai_explain_routing_only':
+        return 'Only listed providers';
+      case 'ai_explain_routing_ignore':
+        return 'Ignore listed providers';
+      case 'ai_explain_state_generating':
+        return 'Generating explanation...';
+      case 'ai_explain_state_manual':
+        return 'Automatic generation is off. Use regenerate to generate it.';
+      case 'ai_explain_state_not_configured':
+        return 'AI explanation is not available. Configure a provider in settings.';
+      case 'ai_explain_state_timed_out':
+        return 'The AI request timed out. Please try again.';
+      case 'ai_explain_state_failed':
+        return 'Failed to generate the AI explanation.';
+      case 'ai_explain_state_unavailable':
+        return 'The AI service is temporarily unavailable. Please try again later.';
+      case 'ai_explain_state_empty':
+        return 'No explanation available.';
+      case 'ai_explain_action_generate':
+        return 'Generate explanation';
+      case 'ai_explain_action_regenerate':
+        return 'Regenerate explanation';
+      case 'ai_explain_action_cancel':
+        return 'Cancel';
+      case 'handlebar_ai_explanation':
+        return 'AI explanation';
       default:
         return null;
     }
@@ -209274,6 +211679,126 @@ extension on _StringsAr {
         return 'Drag buttons between the top and bottom bars, or remove them.';
       case 'reader_control_reset_layout':
         return 'Restore default reader button layout';
+      case 'ai_explain_section':
+        return 'AI Explanation';
+      case 'ai_explain_section_hint':
+        return 'Generate a contextual explanation of the looked-up word with your own AI provider.';
+      case 'ai_explain_title':
+        return 'AI Explanation';
+      case 'ai_explain_provider':
+        return 'AI provider';
+      case 'ai_explain_provider_hint':
+        return 'Requests go directly from this device to the provider you configure.';
+      case 'ai_explain_api_key':
+        return 'API key';
+      case 'ai_explain_api_key_hint':
+        return 'Stored on this device only. Never included in backups, profiles or sync.';
+      case 'ai_explain_model':
+        return 'Model';
+      case 'ai_explain_model_hint':
+        return 'Model ID sent to the provider.';
+      case 'ai_explain_auto_generate':
+        return 'Auto generate on lookup';
+      case 'ai_explain_auto_generate_hint':
+        return 'When off, the box appears without sending a request and you generate it manually.';
+      case 'ai_explain_stream':
+        return 'Real time response';
+      case 'ai_explain_stream_hint':
+        return 'Stream the explanation into the popup as it is written.';
+      case 'ai_explain_cancel_pending':
+        return 'Cancel unfinished requests';
+      case 'ai_explain_cancel_pending_hint':
+        return 'Drop an explanation still being generated when the popup closes or another word is looked up.';
+      case 'ai_explain_unknown_fallback':
+        return 'Fallback for unknown words';
+      case 'ai_explain_unknown_fallback_hint':
+        return 'Open the popup for words no dictionary contains, using the text you selected.';
+      case 'ai_explain_prompt':
+        return 'Custom prompt';
+      case 'ai_explain_prompt_hint':
+        return 'Use {{target}} for the word and {{sentence}} for its context.';
+      case 'ai_explain_system_prompt':
+        return 'System prompt';
+      case 'ai_explain_system_prompt_hint':
+        return 'Optional instructions sent before the user prompt. Leave empty to send none.';
+      case 'ai_explain_temperature':
+        return 'Temperature';
+      case 'ai_explain_temperature_hint':
+        return 'Between 0 and 2. Lower is more deterministic.';
+      case 'ai_explain_thinking_level':
+        return 'Thinking level';
+      case 'ai_explain_thinking_mode':
+        return 'Thinking mode';
+      case 'ai_explain_thinking_intensity':
+        return 'Thinking intensity';
+      case 'ai_explain_thinking_value':
+        return 'Custom thinking value';
+      case 'ai_explain_thinking_value_hint':
+        return 'A word, a token count, or a JSON object.';
+      case 'ai_explain_endpoint':
+        return 'Custom endpoint';
+      case 'ai_explain_endpoint_hint':
+        return 'Full URL, used exactly as entered. No path is appended.';
+      case 'ai_explain_routing_mode':
+        return 'OpenRouter provider routing';
+      case 'ai_explain_routing_slugs':
+        return 'OpenRouter provider slugs';
+      case 'ai_explain_routing_slugs_hint':
+        return 'Separated by commas or line breaks.';
+      case 'ai_explain_allow_fallbacks':
+        return 'Allow OpenRouter fallbacks';
+      case 'ai_explain_request_body':
+        return 'Custom request body JSON';
+      case 'ai_explain_request_body_hint':
+        return 'A JSON object merged over the generated request.';
+      case 'ai_explain_request_body_invalid':
+        return 'Not a valid JSON object.';
+      case 'ai_explain_option_default':
+        return 'Default';
+      case 'ai_explain_option_minimal':
+        return 'Minimal';
+      case 'ai_explain_option_low':
+        return 'Low';
+      case 'ai_explain_option_medium':
+        return 'Medium';
+      case 'ai_explain_option_high':
+        return 'High';
+      case 'ai_explain_option_max':
+        return 'Max';
+      case 'ai_explain_option_custom':
+        return 'Custom';
+      case 'ai_explain_option_enabled':
+        return 'Enabled';
+      case 'ai_explain_option_disabled':
+        return 'Disabled';
+      case 'ai_explain_routing_prioritize':
+        return 'Prioritize listed providers';
+      case 'ai_explain_routing_only':
+        return 'Only listed providers';
+      case 'ai_explain_routing_ignore':
+        return 'Ignore listed providers';
+      case 'ai_explain_state_generating':
+        return 'Generating explanation...';
+      case 'ai_explain_state_manual':
+        return 'Automatic generation is off. Use regenerate to generate it.';
+      case 'ai_explain_state_not_configured':
+        return 'AI explanation is not available. Configure a provider in settings.';
+      case 'ai_explain_state_timed_out':
+        return 'The AI request timed out. Please try again.';
+      case 'ai_explain_state_failed':
+        return 'Failed to generate the AI explanation.';
+      case 'ai_explain_state_unavailable':
+        return 'The AI service is temporarily unavailable. Please try again later.';
+      case 'ai_explain_state_empty':
+        return 'No explanation available.';
+      case 'ai_explain_action_generate':
+        return 'Generate explanation';
+      case 'ai_explain_action_regenerate':
+        return 'Regenerate explanation';
+      case 'ai_explain_action_cancel':
+        return 'Cancel';
+      case 'handlebar_ai_explanation':
+        return 'AI explanation';
       default:
         return null;
     }
@@ -219317,6 +221842,126 @@ extension on _StringsDe {
         return 'Drag buttons between the top and bottom bars, or remove them.';
       case 'reader_control_reset_layout':
         return 'Restore default reader button layout';
+      case 'ai_explain_section':
+        return 'AI Explanation';
+      case 'ai_explain_section_hint':
+        return 'Generate a contextual explanation of the looked-up word with your own AI provider.';
+      case 'ai_explain_title':
+        return 'AI Explanation';
+      case 'ai_explain_provider':
+        return 'AI provider';
+      case 'ai_explain_provider_hint':
+        return 'Requests go directly from this device to the provider you configure.';
+      case 'ai_explain_api_key':
+        return 'API key';
+      case 'ai_explain_api_key_hint':
+        return 'Stored on this device only. Never included in backups, profiles or sync.';
+      case 'ai_explain_model':
+        return 'Model';
+      case 'ai_explain_model_hint':
+        return 'Model ID sent to the provider.';
+      case 'ai_explain_auto_generate':
+        return 'Auto generate on lookup';
+      case 'ai_explain_auto_generate_hint':
+        return 'When off, the box appears without sending a request and you generate it manually.';
+      case 'ai_explain_stream':
+        return 'Real time response';
+      case 'ai_explain_stream_hint':
+        return 'Stream the explanation into the popup as it is written.';
+      case 'ai_explain_cancel_pending':
+        return 'Cancel unfinished requests';
+      case 'ai_explain_cancel_pending_hint':
+        return 'Drop an explanation still being generated when the popup closes or another word is looked up.';
+      case 'ai_explain_unknown_fallback':
+        return 'Fallback for unknown words';
+      case 'ai_explain_unknown_fallback_hint':
+        return 'Open the popup for words no dictionary contains, using the text you selected.';
+      case 'ai_explain_prompt':
+        return 'Custom prompt';
+      case 'ai_explain_prompt_hint':
+        return 'Use {{target}} for the word and {{sentence}} for its context.';
+      case 'ai_explain_system_prompt':
+        return 'System prompt';
+      case 'ai_explain_system_prompt_hint':
+        return 'Optional instructions sent before the user prompt. Leave empty to send none.';
+      case 'ai_explain_temperature':
+        return 'Temperature';
+      case 'ai_explain_temperature_hint':
+        return 'Between 0 and 2. Lower is more deterministic.';
+      case 'ai_explain_thinking_level':
+        return 'Thinking level';
+      case 'ai_explain_thinking_mode':
+        return 'Thinking mode';
+      case 'ai_explain_thinking_intensity':
+        return 'Thinking intensity';
+      case 'ai_explain_thinking_value':
+        return 'Custom thinking value';
+      case 'ai_explain_thinking_value_hint':
+        return 'A word, a token count, or a JSON object.';
+      case 'ai_explain_endpoint':
+        return 'Custom endpoint';
+      case 'ai_explain_endpoint_hint':
+        return 'Full URL, used exactly as entered. No path is appended.';
+      case 'ai_explain_routing_mode':
+        return 'OpenRouter provider routing';
+      case 'ai_explain_routing_slugs':
+        return 'OpenRouter provider slugs';
+      case 'ai_explain_routing_slugs_hint':
+        return 'Separated by commas or line breaks.';
+      case 'ai_explain_allow_fallbacks':
+        return 'Allow OpenRouter fallbacks';
+      case 'ai_explain_request_body':
+        return 'Custom request body JSON';
+      case 'ai_explain_request_body_hint':
+        return 'A JSON object merged over the generated request.';
+      case 'ai_explain_request_body_invalid':
+        return 'Not a valid JSON object.';
+      case 'ai_explain_option_default':
+        return 'Default';
+      case 'ai_explain_option_minimal':
+        return 'Minimal';
+      case 'ai_explain_option_low':
+        return 'Low';
+      case 'ai_explain_option_medium':
+        return 'Medium';
+      case 'ai_explain_option_high':
+        return 'High';
+      case 'ai_explain_option_max':
+        return 'Max';
+      case 'ai_explain_option_custom':
+        return 'Custom';
+      case 'ai_explain_option_enabled':
+        return 'Enabled';
+      case 'ai_explain_option_disabled':
+        return 'Disabled';
+      case 'ai_explain_routing_prioritize':
+        return 'Prioritize listed providers';
+      case 'ai_explain_routing_only':
+        return 'Only listed providers';
+      case 'ai_explain_routing_ignore':
+        return 'Ignore listed providers';
+      case 'ai_explain_state_generating':
+        return 'Generating explanation...';
+      case 'ai_explain_state_manual':
+        return 'Automatic generation is off. Use regenerate to generate it.';
+      case 'ai_explain_state_not_configured':
+        return 'AI explanation is not available. Configure a provider in settings.';
+      case 'ai_explain_state_timed_out':
+        return 'The AI request timed out. Please try again.';
+      case 'ai_explain_state_failed':
+        return 'Failed to generate the AI explanation.';
+      case 'ai_explain_state_unavailable':
+        return 'The AI service is temporarily unavailable. Please try again later.';
+      case 'ai_explain_state_empty':
+        return 'No explanation available.';
+      case 'ai_explain_action_generate':
+        return 'Generate explanation';
+      case 'ai_explain_action_regenerate':
+        return 'Regenerate explanation';
+      case 'ai_explain_action_cancel':
+        return 'Cancel';
+      case 'handlebar_ai_explanation':
+        return 'AI explanation';
       default:
         return null;
     }
@@ -229351,6 +231996,126 @@ extension on _StringsEs {
         return 'Drag buttons between the top and bottom bars, or remove them.';
       case 'reader_control_reset_layout':
         return 'Restore default reader button layout';
+      case 'ai_explain_section':
+        return 'AI Explanation';
+      case 'ai_explain_section_hint':
+        return 'Generate a contextual explanation of the looked-up word with your own AI provider.';
+      case 'ai_explain_title':
+        return 'AI Explanation';
+      case 'ai_explain_provider':
+        return 'AI provider';
+      case 'ai_explain_provider_hint':
+        return 'Requests go directly from this device to the provider you configure.';
+      case 'ai_explain_api_key':
+        return 'API key';
+      case 'ai_explain_api_key_hint':
+        return 'Stored on this device only. Never included in backups, profiles or sync.';
+      case 'ai_explain_model':
+        return 'Model';
+      case 'ai_explain_model_hint':
+        return 'Model ID sent to the provider.';
+      case 'ai_explain_auto_generate':
+        return 'Auto generate on lookup';
+      case 'ai_explain_auto_generate_hint':
+        return 'When off, the box appears without sending a request and you generate it manually.';
+      case 'ai_explain_stream':
+        return 'Real time response';
+      case 'ai_explain_stream_hint':
+        return 'Stream the explanation into the popup as it is written.';
+      case 'ai_explain_cancel_pending':
+        return 'Cancel unfinished requests';
+      case 'ai_explain_cancel_pending_hint':
+        return 'Drop an explanation still being generated when the popup closes or another word is looked up.';
+      case 'ai_explain_unknown_fallback':
+        return 'Fallback for unknown words';
+      case 'ai_explain_unknown_fallback_hint':
+        return 'Open the popup for words no dictionary contains, using the text you selected.';
+      case 'ai_explain_prompt':
+        return 'Custom prompt';
+      case 'ai_explain_prompt_hint':
+        return 'Use {{target}} for the word and {{sentence}} for its context.';
+      case 'ai_explain_system_prompt':
+        return 'System prompt';
+      case 'ai_explain_system_prompt_hint':
+        return 'Optional instructions sent before the user prompt. Leave empty to send none.';
+      case 'ai_explain_temperature':
+        return 'Temperature';
+      case 'ai_explain_temperature_hint':
+        return 'Between 0 and 2. Lower is more deterministic.';
+      case 'ai_explain_thinking_level':
+        return 'Thinking level';
+      case 'ai_explain_thinking_mode':
+        return 'Thinking mode';
+      case 'ai_explain_thinking_intensity':
+        return 'Thinking intensity';
+      case 'ai_explain_thinking_value':
+        return 'Custom thinking value';
+      case 'ai_explain_thinking_value_hint':
+        return 'A word, a token count, or a JSON object.';
+      case 'ai_explain_endpoint':
+        return 'Custom endpoint';
+      case 'ai_explain_endpoint_hint':
+        return 'Full URL, used exactly as entered. No path is appended.';
+      case 'ai_explain_routing_mode':
+        return 'OpenRouter provider routing';
+      case 'ai_explain_routing_slugs':
+        return 'OpenRouter provider slugs';
+      case 'ai_explain_routing_slugs_hint':
+        return 'Separated by commas or line breaks.';
+      case 'ai_explain_allow_fallbacks':
+        return 'Allow OpenRouter fallbacks';
+      case 'ai_explain_request_body':
+        return 'Custom request body JSON';
+      case 'ai_explain_request_body_hint':
+        return 'A JSON object merged over the generated request.';
+      case 'ai_explain_request_body_invalid':
+        return 'Not a valid JSON object.';
+      case 'ai_explain_option_default':
+        return 'Default';
+      case 'ai_explain_option_minimal':
+        return 'Minimal';
+      case 'ai_explain_option_low':
+        return 'Low';
+      case 'ai_explain_option_medium':
+        return 'Medium';
+      case 'ai_explain_option_high':
+        return 'High';
+      case 'ai_explain_option_max':
+        return 'Max';
+      case 'ai_explain_option_custom':
+        return 'Custom';
+      case 'ai_explain_option_enabled':
+        return 'Enabled';
+      case 'ai_explain_option_disabled':
+        return 'Disabled';
+      case 'ai_explain_routing_prioritize':
+        return 'Prioritize listed providers';
+      case 'ai_explain_routing_only':
+        return 'Only listed providers';
+      case 'ai_explain_routing_ignore':
+        return 'Ignore listed providers';
+      case 'ai_explain_state_generating':
+        return 'Generating explanation...';
+      case 'ai_explain_state_manual':
+        return 'Automatic generation is off. Use regenerate to generate it.';
+      case 'ai_explain_state_not_configured':
+        return 'AI explanation is not available. Configure a provider in settings.';
+      case 'ai_explain_state_timed_out':
+        return 'The AI request timed out. Please try again.';
+      case 'ai_explain_state_failed':
+        return 'Failed to generate the AI explanation.';
+      case 'ai_explain_state_unavailable':
+        return 'The AI service is temporarily unavailable. Please try again later.';
+      case 'ai_explain_state_empty':
+        return 'No explanation available.';
+      case 'ai_explain_action_generate':
+        return 'Generate explanation';
+      case 'ai_explain_action_regenerate':
+        return 'Regenerate explanation';
+      case 'ai_explain_action_cancel':
+        return 'Cancel';
+      case 'handlebar_ai_explanation':
+        return 'AI explanation';
       default:
         return null;
     }
@@ -239394,6 +242159,126 @@ extension on _StringsFr {
         return 'Drag buttons between the top and bottom bars, or remove them.';
       case 'reader_control_reset_layout':
         return 'Restore default reader button layout';
+      case 'ai_explain_section':
+        return 'AI Explanation';
+      case 'ai_explain_section_hint':
+        return 'Generate a contextual explanation of the looked-up word with your own AI provider.';
+      case 'ai_explain_title':
+        return 'AI Explanation';
+      case 'ai_explain_provider':
+        return 'AI provider';
+      case 'ai_explain_provider_hint':
+        return 'Requests go directly from this device to the provider you configure.';
+      case 'ai_explain_api_key':
+        return 'API key';
+      case 'ai_explain_api_key_hint':
+        return 'Stored on this device only. Never included in backups, profiles or sync.';
+      case 'ai_explain_model':
+        return 'Model';
+      case 'ai_explain_model_hint':
+        return 'Model ID sent to the provider.';
+      case 'ai_explain_auto_generate':
+        return 'Auto generate on lookup';
+      case 'ai_explain_auto_generate_hint':
+        return 'When off, the box appears without sending a request and you generate it manually.';
+      case 'ai_explain_stream':
+        return 'Real time response';
+      case 'ai_explain_stream_hint':
+        return 'Stream the explanation into the popup as it is written.';
+      case 'ai_explain_cancel_pending':
+        return 'Cancel unfinished requests';
+      case 'ai_explain_cancel_pending_hint':
+        return 'Drop an explanation still being generated when the popup closes or another word is looked up.';
+      case 'ai_explain_unknown_fallback':
+        return 'Fallback for unknown words';
+      case 'ai_explain_unknown_fallback_hint':
+        return 'Open the popup for words no dictionary contains, using the text you selected.';
+      case 'ai_explain_prompt':
+        return 'Custom prompt';
+      case 'ai_explain_prompt_hint':
+        return 'Use {{target}} for the word and {{sentence}} for its context.';
+      case 'ai_explain_system_prompt':
+        return 'System prompt';
+      case 'ai_explain_system_prompt_hint':
+        return 'Optional instructions sent before the user prompt. Leave empty to send none.';
+      case 'ai_explain_temperature':
+        return 'Temperature';
+      case 'ai_explain_temperature_hint':
+        return 'Between 0 and 2. Lower is more deterministic.';
+      case 'ai_explain_thinking_level':
+        return 'Thinking level';
+      case 'ai_explain_thinking_mode':
+        return 'Thinking mode';
+      case 'ai_explain_thinking_intensity':
+        return 'Thinking intensity';
+      case 'ai_explain_thinking_value':
+        return 'Custom thinking value';
+      case 'ai_explain_thinking_value_hint':
+        return 'A word, a token count, or a JSON object.';
+      case 'ai_explain_endpoint':
+        return 'Custom endpoint';
+      case 'ai_explain_endpoint_hint':
+        return 'Full URL, used exactly as entered. No path is appended.';
+      case 'ai_explain_routing_mode':
+        return 'OpenRouter provider routing';
+      case 'ai_explain_routing_slugs':
+        return 'OpenRouter provider slugs';
+      case 'ai_explain_routing_slugs_hint':
+        return 'Separated by commas or line breaks.';
+      case 'ai_explain_allow_fallbacks':
+        return 'Allow OpenRouter fallbacks';
+      case 'ai_explain_request_body':
+        return 'Custom request body JSON';
+      case 'ai_explain_request_body_hint':
+        return 'A JSON object merged over the generated request.';
+      case 'ai_explain_request_body_invalid':
+        return 'Not a valid JSON object.';
+      case 'ai_explain_option_default':
+        return 'Default';
+      case 'ai_explain_option_minimal':
+        return 'Minimal';
+      case 'ai_explain_option_low':
+        return 'Low';
+      case 'ai_explain_option_medium':
+        return 'Medium';
+      case 'ai_explain_option_high':
+        return 'High';
+      case 'ai_explain_option_max':
+        return 'Max';
+      case 'ai_explain_option_custom':
+        return 'Custom';
+      case 'ai_explain_option_enabled':
+        return 'Enabled';
+      case 'ai_explain_option_disabled':
+        return 'Disabled';
+      case 'ai_explain_routing_prioritize':
+        return 'Prioritize listed providers';
+      case 'ai_explain_routing_only':
+        return 'Only listed providers';
+      case 'ai_explain_routing_ignore':
+        return 'Ignore listed providers';
+      case 'ai_explain_state_generating':
+        return 'Generating explanation...';
+      case 'ai_explain_state_manual':
+        return 'Automatic generation is off. Use regenerate to generate it.';
+      case 'ai_explain_state_not_configured':
+        return 'AI explanation is not available. Configure a provider in settings.';
+      case 'ai_explain_state_timed_out':
+        return 'The AI request timed out. Please try again.';
+      case 'ai_explain_state_failed':
+        return 'Failed to generate the AI explanation.';
+      case 'ai_explain_state_unavailable':
+        return 'The AI service is temporarily unavailable. Please try again later.';
+      case 'ai_explain_state_empty':
+        return 'No explanation available.';
+      case 'ai_explain_action_generate':
+        return 'Generate explanation';
+      case 'ai_explain_action_regenerate':
+        return 'Regenerate explanation';
+      case 'ai_explain_action_cancel':
+        return 'Cancel';
+      case 'handlebar_ai_explanation':
+        return 'AI explanation';
       default:
         return null;
     }
@@ -249408,6 +252293,126 @@ extension on _StringsId {
         return 'Drag buttons between the top and bottom bars, or remove them.';
       case 'reader_control_reset_layout':
         return 'Restore default reader button layout';
+      case 'ai_explain_section':
+        return 'AI Explanation';
+      case 'ai_explain_section_hint':
+        return 'Generate a contextual explanation of the looked-up word with your own AI provider.';
+      case 'ai_explain_title':
+        return 'AI Explanation';
+      case 'ai_explain_provider':
+        return 'AI provider';
+      case 'ai_explain_provider_hint':
+        return 'Requests go directly from this device to the provider you configure.';
+      case 'ai_explain_api_key':
+        return 'API key';
+      case 'ai_explain_api_key_hint':
+        return 'Stored on this device only. Never included in backups, profiles or sync.';
+      case 'ai_explain_model':
+        return 'Model';
+      case 'ai_explain_model_hint':
+        return 'Model ID sent to the provider.';
+      case 'ai_explain_auto_generate':
+        return 'Auto generate on lookup';
+      case 'ai_explain_auto_generate_hint':
+        return 'When off, the box appears without sending a request and you generate it manually.';
+      case 'ai_explain_stream':
+        return 'Real time response';
+      case 'ai_explain_stream_hint':
+        return 'Stream the explanation into the popup as it is written.';
+      case 'ai_explain_cancel_pending':
+        return 'Cancel unfinished requests';
+      case 'ai_explain_cancel_pending_hint':
+        return 'Drop an explanation still being generated when the popup closes or another word is looked up.';
+      case 'ai_explain_unknown_fallback':
+        return 'Fallback for unknown words';
+      case 'ai_explain_unknown_fallback_hint':
+        return 'Open the popup for words no dictionary contains, using the text you selected.';
+      case 'ai_explain_prompt':
+        return 'Custom prompt';
+      case 'ai_explain_prompt_hint':
+        return 'Use {{target}} for the word and {{sentence}} for its context.';
+      case 'ai_explain_system_prompt':
+        return 'System prompt';
+      case 'ai_explain_system_prompt_hint':
+        return 'Optional instructions sent before the user prompt. Leave empty to send none.';
+      case 'ai_explain_temperature':
+        return 'Temperature';
+      case 'ai_explain_temperature_hint':
+        return 'Between 0 and 2. Lower is more deterministic.';
+      case 'ai_explain_thinking_level':
+        return 'Thinking level';
+      case 'ai_explain_thinking_mode':
+        return 'Thinking mode';
+      case 'ai_explain_thinking_intensity':
+        return 'Thinking intensity';
+      case 'ai_explain_thinking_value':
+        return 'Custom thinking value';
+      case 'ai_explain_thinking_value_hint':
+        return 'A word, a token count, or a JSON object.';
+      case 'ai_explain_endpoint':
+        return 'Custom endpoint';
+      case 'ai_explain_endpoint_hint':
+        return 'Full URL, used exactly as entered. No path is appended.';
+      case 'ai_explain_routing_mode':
+        return 'OpenRouter provider routing';
+      case 'ai_explain_routing_slugs':
+        return 'OpenRouter provider slugs';
+      case 'ai_explain_routing_slugs_hint':
+        return 'Separated by commas or line breaks.';
+      case 'ai_explain_allow_fallbacks':
+        return 'Allow OpenRouter fallbacks';
+      case 'ai_explain_request_body':
+        return 'Custom request body JSON';
+      case 'ai_explain_request_body_hint':
+        return 'A JSON object merged over the generated request.';
+      case 'ai_explain_request_body_invalid':
+        return 'Not a valid JSON object.';
+      case 'ai_explain_option_default':
+        return 'Default';
+      case 'ai_explain_option_minimal':
+        return 'Minimal';
+      case 'ai_explain_option_low':
+        return 'Low';
+      case 'ai_explain_option_medium':
+        return 'Medium';
+      case 'ai_explain_option_high':
+        return 'High';
+      case 'ai_explain_option_max':
+        return 'Max';
+      case 'ai_explain_option_custom':
+        return 'Custom';
+      case 'ai_explain_option_enabled':
+        return 'Enabled';
+      case 'ai_explain_option_disabled':
+        return 'Disabled';
+      case 'ai_explain_routing_prioritize':
+        return 'Prioritize listed providers';
+      case 'ai_explain_routing_only':
+        return 'Only listed providers';
+      case 'ai_explain_routing_ignore':
+        return 'Ignore listed providers';
+      case 'ai_explain_state_generating':
+        return 'Generating explanation...';
+      case 'ai_explain_state_manual':
+        return 'Automatic generation is off. Use regenerate to generate it.';
+      case 'ai_explain_state_not_configured':
+        return 'AI explanation is not available. Configure a provider in settings.';
+      case 'ai_explain_state_timed_out':
+        return 'The AI request timed out. Please try again.';
+      case 'ai_explain_state_failed':
+        return 'Failed to generate the AI explanation.';
+      case 'ai_explain_state_unavailable':
+        return 'The AI service is temporarily unavailable. Please try again later.';
+      case 'ai_explain_state_empty':
+        return 'No explanation available.';
+      case 'ai_explain_action_generate':
+        return 'Generate explanation';
+      case 'ai_explain_action_regenerate':
+        return 'Regenerate explanation';
+      case 'ai_explain_action_cancel':
+        return 'Cancel';
+      case 'handlebar_ai_explanation':
+        return 'AI explanation';
       default:
         return null;
     }
@@ -259444,6 +262449,126 @@ extension on _StringsIt {
         return 'Drag buttons between the top and bottom bars, or remove them.';
       case 'reader_control_reset_layout':
         return 'Restore default reader button layout';
+      case 'ai_explain_section':
+        return 'AI Explanation';
+      case 'ai_explain_section_hint':
+        return 'Generate a contextual explanation of the looked-up word with your own AI provider.';
+      case 'ai_explain_title':
+        return 'AI Explanation';
+      case 'ai_explain_provider':
+        return 'AI provider';
+      case 'ai_explain_provider_hint':
+        return 'Requests go directly from this device to the provider you configure.';
+      case 'ai_explain_api_key':
+        return 'API key';
+      case 'ai_explain_api_key_hint':
+        return 'Stored on this device only. Never included in backups, profiles or sync.';
+      case 'ai_explain_model':
+        return 'Model';
+      case 'ai_explain_model_hint':
+        return 'Model ID sent to the provider.';
+      case 'ai_explain_auto_generate':
+        return 'Auto generate on lookup';
+      case 'ai_explain_auto_generate_hint':
+        return 'When off, the box appears without sending a request and you generate it manually.';
+      case 'ai_explain_stream':
+        return 'Real time response';
+      case 'ai_explain_stream_hint':
+        return 'Stream the explanation into the popup as it is written.';
+      case 'ai_explain_cancel_pending':
+        return 'Cancel unfinished requests';
+      case 'ai_explain_cancel_pending_hint':
+        return 'Drop an explanation still being generated when the popup closes or another word is looked up.';
+      case 'ai_explain_unknown_fallback':
+        return 'Fallback for unknown words';
+      case 'ai_explain_unknown_fallback_hint':
+        return 'Open the popup for words no dictionary contains, using the text you selected.';
+      case 'ai_explain_prompt':
+        return 'Custom prompt';
+      case 'ai_explain_prompt_hint':
+        return 'Use {{target}} for the word and {{sentence}} for its context.';
+      case 'ai_explain_system_prompt':
+        return 'System prompt';
+      case 'ai_explain_system_prompt_hint':
+        return 'Optional instructions sent before the user prompt. Leave empty to send none.';
+      case 'ai_explain_temperature':
+        return 'Temperature';
+      case 'ai_explain_temperature_hint':
+        return 'Between 0 and 2. Lower is more deterministic.';
+      case 'ai_explain_thinking_level':
+        return 'Thinking level';
+      case 'ai_explain_thinking_mode':
+        return 'Thinking mode';
+      case 'ai_explain_thinking_intensity':
+        return 'Thinking intensity';
+      case 'ai_explain_thinking_value':
+        return 'Custom thinking value';
+      case 'ai_explain_thinking_value_hint':
+        return 'A word, a token count, or a JSON object.';
+      case 'ai_explain_endpoint':
+        return 'Custom endpoint';
+      case 'ai_explain_endpoint_hint':
+        return 'Full URL, used exactly as entered. No path is appended.';
+      case 'ai_explain_routing_mode':
+        return 'OpenRouter provider routing';
+      case 'ai_explain_routing_slugs':
+        return 'OpenRouter provider slugs';
+      case 'ai_explain_routing_slugs_hint':
+        return 'Separated by commas or line breaks.';
+      case 'ai_explain_allow_fallbacks':
+        return 'Allow OpenRouter fallbacks';
+      case 'ai_explain_request_body':
+        return 'Custom request body JSON';
+      case 'ai_explain_request_body_hint':
+        return 'A JSON object merged over the generated request.';
+      case 'ai_explain_request_body_invalid':
+        return 'Not a valid JSON object.';
+      case 'ai_explain_option_default':
+        return 'Default';
+      case 'ai_explain_option_minimal':
+        return 'Minimal';
+      case 'ai_explain_option_low':
+        return 'Low';
+      case 'ai_explain_option_medium':
+        return 'Medium';
+      case 'ai_explain_option_high':
+        return 'High';
+      case 'ai_explain_option_max':
+        return 'Max';
+      case 'ai_explain_option_custom':
+        return 'Custom';
+      case 'ai_explain_option_enabled':
+        return 'Enabled';
+      case 'ai_explain_option_disabled':
+        return 'Disabled';
+      case 'ai_explain_routing_prioritize':
+        return 'Prioritize listed providers';
+      case 'ai_explain_routing_only':
+        return 'Only listed providers';
+      case 'ai_explain_routing_ignore':
+        return 'Ignore listed providers';
+      case 'ai_explain_state_generating':
+        return 'Generating explanation...';
+      case 'ai_explain_state_manual':
+        return 'Automatic generation is off. Use regenerate to generate it.';
+      case 'ai_explain_state_not_configured':
+        return 'AI explanation is not available. Configure a provider in settings.';
+      case 'ai_explain_state_timed_out':
+        return 'The AI request timed out. Please try again.';
+      case 'ai_explain_state_failed':
+        return 'Failed to generate the AI explanation.';
+      case 'ai_explain_state_unavailable':
+        return 'The AI service is temporarily unavailable. Please try again later.';
+      case 'ai_explain_state_empty':
+        return 'No explanation available.';
+      case 'ai_explain_action_generate':
+        return 'Generate explanation';
+      case 'ai_explain_action_regenerate':
+        return 'Regenerate explanation';
+      case 'ai_explain_action_cancel':
+        return 'Cancel';
+      case 'handlebar_ai_explanation':
+        return 'AI explanation';
       default:
         return null;
     }
@@ -269407,6 +272532,126 @@ extension on _StringsJa {
         return 'Drag buttons between the top and bottom bars, or remove them.';
       case 'reader_control_reset_layout':
         return 'Restore default reader button layout';
+      case 'ai_explain_section':
+        return 'AI Explanation';
+      case 'ai_explain_section_hint':
+        return 'Generate a contextual explanation of the looked-up word with your own AI provider.';
+      case 'ai_explain_title':
+        return 'AI Explanation';
+      case 'ai_explain_provider':
+        return 'AI provider';
+      case 'ai_explain_provider_hint':
+        return 'Requests go directly from this device to the provider you configure.';
+      case 'ai_explain_api_key':
+        return 'API key';
+      case 'ai_explain_api_key_hint':
+        return 'Stored on this device only. Never included in backups, profiles or sync.';
+      case 'ai_explain_model':
+        return 'Model';
+      case 'ai_explain_model_hint':
+        return 'Model ID sent to the provider.';
+      case 'ai_explain_auto_generate':
+        return 'Auto generate on lookup';
+      case 'ai_explain_auto_generate_hint':
+        return 'When off, the box appears without sending a request and you generate it manually.';
+      case 'ai_explain_stream':
+        return 'Real time response';
+      case 'ai_explain_stream_hint':
+        return 'Stream the explanation into the popup as it is written.';
+      case 'ai_explain_cancel_pending':
+        return 'Cancel unfinished requests';
+      case 'ai_explain_cancel_pending_hint':
+        return 'Drop an explanation still being generated when the popup closes or another word is looked up.';
+      case 'ai_explain_unknown_fallback':
+        return 'Fallback for unknown words';
+      case 'ai_explain_unknown_fallback_hint':
+        return 'Open the popup for words no dictionary contains, using the text you selected.';
+      case 'ai_explain_prompt':
+        return 'Custom prompt';
+      case 'ai_explain_prompt_hint':
+        return 'Use {{target}} for the word and {{sentence}} for its context.';
+      case 'ai_explain_system_prompt':
+        return 'System prompt';
+      case 'ai_explain_system_prompt_hint':
+        return 'Optional instructions sent before the user prompt. Leave empty to send none.';
+      case 'ai_explain_temperature':
+        return 'Temperature';
+      case 'ai_explain_temperature_hint':
+        return 'Between 0 and 2. Lower is more deterministic.';
+      case 'ai_explain_thinking_level':
+        return 'Thinking level';
+      case 'ai_explain_thinking_mode':
+        return 'Thinking mode';
+      case 'ai_explain_thinking_intensity':
+        return 'Thinking intensity';
+      case 'ai_explain_thinking_value':
+        return 'Custom thinking value';
+      case 'ai_explain_thinking_value_hint':
+        return 'A word, a token count, or a JSON object.';
+      case 'ai_explain_endpoint':
+        return 'Custom endpoint';
+      case 'ai_explain_endpoint_hint':
+        return 'Full URL, used exactly as entered. No path is appended.';
+      case 'ai_explain_routing_mode':
+        return 'OpenRouter provider routing';
+      case 'ai_explain_routing_slugs':
+        return 'OpenRouter provider slugs';
+      case 'ai_explain_routing_slugs_hint':
+        return 'Separated by commas or line breaks.';
+      case 'ai_explain_allow_fallbacks':
+        return 'Allow OpenRouter fallbacks';
+      case 'ai_explain_request_body':
+        return 'Custom request body JSON';
+      case 'ai_explain_request_body_hint':
+        return 'A JSON object merged over the generated request.';
+      case 'ai_explain_request_body_invalid':
+        return 'Not a valid JSON object.';
+      case 'ai_explain_option_default':
+        return 'Default';
+      case 'ai_explain_option_minimal':
+        return 'Minimal';
+      case 'ai_explain_option_low':
+        return 'Low';
+      case 'ai_explain_option_medium':
+        return 'Medium';
+      case 'ai_explain_option_high':
+        return 'High';
+      case 'ai_explain_option_max':
+        return 'Max';
+      case 'ai_explain_option_custom':
+        return 'Custom';
+      case 'ai_explain_option_enabled':
+        return 'Enabled';
+      case 'ai_explain_option_disabled':
+        return 'Disabled';
+      case 'ai_explain_routing_prioritize':
+        return 'Prioritize listed providers';
+      case 'ai_explain_routing_only':
+        return 'Only listed providers';
+      case 'ai_explain_routing_ignore':
+        return 'Ignore listed providers';
+      case 'ai_explain_state_generating':
+        return 'Generating explanation...';
+      case 'ai_explain_state_manual':
+        return 'Automatic generation is off. Use regenerate to generate it.';
+      case 'ai_explain_state_not_configured':
+        return 'AI explanation is not available. Configure a provider in settings.';
+      case 'ai_explain_state_timed_out':
+        return 'The AI request timed out. Please try again.';
+      case 'ai_explain_state_failed':
+        return 'Failed to generate the AI explanation.';
+      case 'ai_explain_state_unavailable':
+        return 'The AI service is temporarily unavailable. Please try again later.';
+      case 'ai_explain_state_empty':
+        return 'No explanation available.';
+      case 'ai_explain_action_generate':
+        return 'Generate explanation';
+      case 'ai_explain_action_regenerate':
+        return 'Regenerate explanation';
+      case 'ai_explain_action_cancel':
+        return 'Cancel';
+      case 'handlebar_ai_explanation':
+        return 'AI explanation';
       default:
         return null;
     }
@@ -279374,6 +282619,126 @@ extension on _StringsKo {
         return 'Drag buttons between the top and bottom bars, or remove them.';
       case 'reader_control_reset_layout':
         return 'Restore default reader button layout';
+      case 'ai_explain_section':
+        return 'AI Explanation';
+      case 'ai_explain_section_hint':
+        return 'Generate a contextual explanation of the looked-up word with your own AI provider.';
+      case 'ai_explain_title':
+        return 'AI Explanation';
+      case 'ai_explain_provider':
+        return 'AI provider';
+      case 'ai_explain_provider_hint':
+        return 'Requests go directly from this device to the provider you configure.';
+      case 'ai_explain_api_key':
+        return 'API key';
+      case 'ai_explain_api_key_hint':
+        return 'Stored on this device only. Never included in backups, profiles or sync.';
+      case 'ai_explain_model':
+        return 'Model';
+      case 'ai_explain_model_hint':
+        return 'Model ID sent to the provider.';
+      case 'ai_explain_auto_generate':
+        return 'Auto generate on lookup';
+      case 'ai_explain_auto_generate_hint':
+        return 'When off, the box appears without sending a request and you generate it manually.';
+      case 'ai_explain_stream':
+        return 'Real time response';
+      case 'ai_explain_stream_hint':
+        return 'Stream the explanation into the popup as it is written.';
+      case 'ai_explain_cancel_pending':
+        return 'Cancel unfinished requests';
+      case 'ai_explain_cancel_pending_hint':
+        return 'Drop an explanation still being generated when the popup closes or another word is looked up.';
+      case 'ai_explain_unknown_fallback':
+        return 'Fallback for unknown words';
+      case 'ai_explain_unknown_fallback_hint':
+        return 'Open the popup for words no dictionary contains, using the text you selected.';
+      case 'ai_explain_prompt':
+        return 'Custom prompt';
+      case 'ai_explain_prompt_hint':
+        return 'Use {{target}} for the word and {{sentence}} for its context.';
+      case 'ai_explain_system_prompt':
+        return 'System prompt';
+      case 'ai_explain_system_prompt_hint':
+        return 'Optional instructions sent before the user prompt. Leave empty to send none.';
+      case 'ai_explain_temperature':
+        return 'Temperature';
+      case 'ai_explain_temperature_hint':
+        return 'Between 0 and 2. Lower is more deterministic.';
+      case 'ai_explain_thinking_level':
+        return 'Thinking level';
+      case 'ai_explain_thinking_mode':
+        return 'Thinking mode';
+      case 'ai_explain_thinking_intensity':
+        return 'Thinking intensity';
+      case 'ai_explain_thinking_value':
+        return 'Custom thinking value';
+      case 'ai_explain_thinking_value_hint':
+        return 'A word, a token count, or a JSON object.';
+      case 'ai_explain_endpoint':
+        return 'Custom endpoint';
+      case 'ai_explain_endpoint_hint':
+        return 'Full URL, used exactly as entered. No path is appended.';
+      case 'ai_explain_routing_mode':
+        return 'OpenRouter provider routing';
+      case 'ai_explain_routing_slugs':
+        return 'OpenRouter provider slugs';
+      case 'ai_explain_routing_slugs_hint':
+        return 'Separated by commas or line breaks.';
+      case 'ai_explain_allow_fallbacks':
+        return 'Allow OpenRouter fallbacks';
+      case 'ai_explain_request_body':
+        return 'Custom request body JSON';
+      case 'ai_explain_request_body_hint':
+        return 'A JSON object merged over the generated request.';
+      case 'ai_explain_request_body_invalid':
+        return 'Not a valid JSON object.';
+      case 'ai_explain_option_default':
+        return 'Default';
+      case 'ai_explain_option_minimal':
+        return 'Minimal';
+      case 'ai_explain_option_low':
+        return 'Low';
+      case 'ai_explain_option_medium':
+        return 'Medium';
+      case 'ai_explain_option_high':
+        return 'High';
+      case 'ai_explain_option_max':
+        return 'Max';
+      case 'ai_explain_option_custom':
+        return 'Custom';
+      case 'ai_explain_option_enabled':
+        return 'Enabled';
+      case 'ai_explain_option_disabled':
+        return 'Disabled';
+      case 'ai_explain_routing_prioritize':
+        return 'Prioritize listed providers';
+      case 'ai_explain_routing_only':
+        return 'Only listed providers';
+      case 'ai_explain_routing_ignore':
+        return 'Ignore listed providers';
+      case 'ai_explain_state_generating':
+        return 'Generating explanation...';
+      case 'ai_explain_state_manual':
+        return 'Automatic generation is off. Use regenerate to generate it.';
+      case 'ai_explain_state_not_configured':
+        return 'AI explanation is not available. Configure a provider in settings.';
+      case 'ai_explain_state_timed_out':
+        return 'The AI request timed out. Please try again.';
+      case 'ai_explain_state_failed':
+        return 'Failed to generate the AI explanation.';
+      case 'ai_explain_state_unavailable':
+        return 'The AI service is temporarily unavailable. Please try again later.';
+      case 'ai_explain_state_empty':
+        return 'No explanation available.';
+      case 'ai_explain_action_generate':
+        return 'Generate explanation';
+      case 'ai_explain_action_regenerate':
+        return 'Regenerate explanation';
+      case 'ai_explain_action_cancel':
+        return 'Cancel';
+      case 'handlebar_ai_explanation':
+        return 'AI explanation';
       default:
         return null;
     }
@@ -289403,6 +292768,126 @@ extension on _StringsNl {
         return 'Drag buttons between the top and bottom bars, or remove them.';
       case 'reader_control_reset_layout':
         return 'Restore default reader button layout';
+      case 'ai_explain_section':
+        return 'AI Explanation';
+      case 'ai_explain_section_hint':
+        return 'Generate a contextual explanation of the looked-up word with your own AI provider.';
+      case 'ai_explain_title':
+        return 'AI Explanation';
+      case 'ai_explain_provider':
+        return 'AI provider';
+      case 'ai_explain_provider_hint':
+        return 'Requests go directly from this device to the provider you configure.';
+      case 'ai_explain_api_key':
+        return 'API key';
+      case 'ai_explain_api_key_hint':
+        return 'Stored on this device only. Never included in backups, profiles or sync.';
+      case 'ai_explain_model':
+        return 'Model';
+      case 'ai_explain_model_hint':
+        return 'Model ID sent to the provider.';
+      case 'ai_explain_auto_generate':
+        return 'Auto generate on lookup';
+      case 'ai_explain_auto_generate_hint':
+        return 'When off, the box appears without sending a request and you generate it manually.';
+      case 'ai_explain_stream':
+        return 'Real time response';
+      case 'ai_explain_stream_hint':
+        return 'Stream the explanation into the popup as it is written.';
+      case 'ai_explain_cancel_pending':
+        return 'Cancel unfinished requests';
+      case 'ai_explain_cancel_pending_hint':
+        return 'Drop an explanation still being generated when the popup closes or another word is looked up.';
+      case 'ai_explain_unknown_fallback':
+        return 'Fallback for unknown words';
+      case 'ai_explain_unknown_fallback_hint':
+        return 'Open the popup for words no dictionary contains, using the text you selected.';
+      case 'ai_explain_prompt':
+        return 'Custom prompt';
+      case 'ai_explain_prompt_hint':
+        return 'Use {{target}} for the word and {{sentence}} for its context.';
+      case 'ai_explain_system_prompt':
+        return 'System prompt';
+      case 'ai_explain_system_prompt_hint':
+        return 'Optional instructions sent before the user prompt. Leave empty to send none.';
+      case 'ai_explain_temperature':
+        return 'Temperature';
+      case 'ai_explain_temperature_hint':
+        return 'Between 0 and 2. Lower is more deterministic.';
+      case 'ai_explain_thinking_level':
+        return 'Thinking level';
+      case 'ai_explain_thinking_mode':
+        return 'Thinking mode';
+      case 'ai_explain_thinking_intensity':
+        return 'Thinking intensity';
+      case 'ai_explain_thinking_value':
+        return 'Custom thinking value';
+      case 'ai_explain_thinking_value_hint':
+        return 'A word, a token count, or a JSON object.';
+      case 'ai_explain_endpoint':
+        return 'Custom endpoint';
+      case 'ai_explain_endpoint_hint':
+        return 'Full URL, used exactly as entered. No path is appended.';
+      case 'ai_explain_routing_mode':
+        return 'OpenRouter provider routing';
+      case 'ai_explain_routing_slugs':
+        return 'OpenRouter provider slugs';
+      case 'ai_explain_routing_slugs_hint':
+        return 'Separated by commas or line breaks.';
+      case 'ai_explain_allow_fallbacks':
+        return 'Allow OpenRouter fallbacks';
+      case 'ai_explain_request_body':
+        return 'Custom request body JSON';
+      case 'ai_explain_request_body_hint':
+        return 'A JSON object merged over the generated request.';
+      case 'ai_explain_request_body_invalid':
+        return 'Not a valid JSON object.';
+      case 'ai_explain_option_default':
+        return 'Default';
+      case 'ai_explain_option_minimal':
+        return 'Minimal';
+      case 'ai_explain_option_low':
+        return 'Low';
+      case 'ai_explain_option_medium':
+        return 'Medium';
+      case 'ai_explain_option_high':
+        return 'High';
+      case 'ai_explain_option_max':
+        return 'Max';
+      case 'ai_explain_option_custom':
+        return 'Custom';
+      case 'ai_explain_option_enabled':
+        return 'Enabled';
+      case 'ai_explain_option_disabled':
+        return 'Disabled';
+      case 'ai_explain_routing_prioritize':
+        return 'Prioritize listed providers';
+      case 'ai_explain_routing_only':
+        return 'Only listed providers';
+      case 'ai_explain_routing_ignore':
+        return 'Ignore listed providers';
+      case 'ai_explain_state_generating':
+        return 'Generating explanation...';
+      case 'ai_explain_state_manual':
+        return 'Automatic generation is off. Use regenerate to generate it.';
+      case 'ai_explain_state_not_configured':
+        return 'AI explanation is not available. Configure a provider in settings.';
+      case 'ai_explain_state_timed_out':
+        return 'The AI request timed out. Please try again.';
+      case 'ai_explain_state_failed':
+        return 'Failed to generate the AI explanation.';
+      case 'ai_explain_state_unavailable':
+        return 'The AI service is temporarily unavailable. Please try again later.';
+      case 'ai_explain_state_empty':
+        return 'No explanation available.';
+      case 'ai_explain_action_generate':
+        return 'Generate explanation';
+      case 'ai_explain_action_regenerate':
+        return 'Regenerate explanation';
+      case 'ai_explain_action_cancel':
+        return 'Cancel';
+      case 'handlebar_ai_explanation':
+        return 'AI explanation';
       default:
         return null;
     }
@@ -299427,6 +302912,126 @@ extension on _StringsPtBr {
         return 'Drag buttons between the top and bottom bars, or remove them.';
       case 'reader_control_reset_layout':
         return 'Restore default reader button layout';
+      case 'ai_explain_section':
+        return 'AI Explanation';
+      case 'ai_explain_section_hint':
+        return 'Generate a contextual explanation of the looked-up word with your own AI provider.';
+      case 'ai_explain_title':
+        return 'AI Explanation';
+      case 'ai_explain_provider':
+        return 'AI provider';
+      case 'ai_explain_provider_hint':
+        return 'Requests go directly from this device to the provider you configure.';
+      case 'ai_explain_api_key':
+        return 'API key';
+      case 'ai_explain_api_key_hint':
+        return 'Stored on this device only. Never included in backups, profiles or sync.';
+      case 'ai_explain_model':
+        return 'Model';
+      case 'ai_explain_model_hint':
+        return 'Model ID sent to the provider.';
+      case 'ai_explain_auto_generate':
+        return 'Auto generate on lookup';
+      case 'ai_explain_auto_generate_hint':
+        return 'When off, the box appears without sending a request and you generate it manually.';
+      case 'ai_explain_stream':
+        return 'Real time response';
+      case 'ai_explain_stream_hint':
+        return 'Stream the explanation into the popup as it is written.';
+      case 'ai_explain_cancel_pending':
+        return 'Cancel unfinished requests';
+      case 'ai_explain_cancel_pending_hint':
+        return 'Drop an explanation still being generated when the popup closes or another word is looked up.';
+      case 'ai_explain_unknown_fallback':
+        return 'Fallback for unknown words';
+      case 'ai_explain_unknown_fallback_hint':
+        return 'Open the popup for words no dictionary contains, using the text you selected.';
+      case 'ai_explain_prompt':
+        return 'Custom prompt';
+      case 'ai_explain_prompt_hint':
+        return 'Use {{target}} for the word and {{sentence}} for its context.';
+      case 'ai_explain_system_prompt':
+        return 'System prompt';
+      case 'ai_explain_system_prompt_hint':
+        return 'Optional instructions sent before the user prompt. Leave empty to send none.';
+      case 'ai_explain_temperature':
+        return 'Temperature';
+      case 'ai_explain_temperature_hint':
+        return 'Between 0 and 2. Lower is more deterministic.';
+      case 'ai_explain_thinking_level':
+        return 'Thinking level';
+      case 'ai_explain_thinking_mode':
+        return 'Thinking mode';
+      case 'ai_explain_thinking_intensity':
+        return 'Thinking intensity';
+      case 'ai_explain_thinking_value':
+        return 'Custom thinking value';
+      case 'ai_explain_thinking_value_hint':
+        return 'A word, a token count, or a JSON object.';
+      case 'ai_explain_endpoint':
+        return 'Custom endpoint';
+      case 'ai_explain_endpoint_hint':
+        return 'Full URL, used exactly as entered. No path is appended.';
+      case 'ai_explain_routing_mode':
+        return 'OpenRouter provider routing';
+      case 'ai_explain_routing_slugs':
+        return 'OpenRouter provider slugs';
+      case 'ai_explain_routing_slugs_hint':
+        return 'Separated by commas or line breaks.';
+      case 'ai_explain_allow_fallbacks':
+        return 'Allow OpenRouter fallbacks';
+      case 'ai_explain_request_body':
+        return 'Custom request body JSON';
+      case 'ai_explain_request_body_hint':
+        return 'A JSON object merged over the generated request.';
+      case 'ai_explain_request_body_invalid':
+        return 'Not a valid JSON object.';
+      case 'ai_explain_option_default':
+        return 'Default';
+      case 'ai_explain_option_minimal':
+        return 'Minimal';
+      case 'ai_explain_option_low':
+        return 'Low';
+      case 'ai_explain_option_medium':
+        return 'Medium';
+      case 'ai_explain_option_high':
+        return 'High';
+      case 'ai_explain_option_max':
+        return 'Max';
+      case 'ai_explain_option_custom':
+        return 'Custom';
+      case 'ai_explain_option_enabled':
+        return 'Enabled';
+      case 'ai_explain_option_disabled':
+        return 'Disabled';
+      case 'ai_explain_routing_prioritize':
+        return 'Prioritize listed providers';
+      case 'ai_explain_routing_only':
+        return 'Only listed providers';
+      case 'ai_explain_routing_ignore':
+        return 'Ignore listed providers';
+      case 'ai_explain_state_generating':
+        return 'Generating explanation...';
+      case 'ai_explain_state_manual':
+        return 'Automatic generation is off. Use regenerate to generate it.';
+      case 'ai_explain_state_not_configured':
+        return 'AI explanation is not available. Configure a provider in settings.';
+      case 'ai_explain_state_timed_out':
+        return 'The AI request timed out. Please try again.';
+      case 'ai_explain_state_failed':
+        return 'Failed to generate the AI explanation.';
+      case 'ai_explain_state_unavailable':
+        return 'The AI service is temporarily unavailable. Please try again later.';
+      case 'ai_explain_state_empty':
+        return 'No explanation available.';
+      case 'ai_explain_action_generate':
+        return 'Generate explanation';
+      case 'ai_explain_action_regenerate':
+        return 'Regenerate explanation';
+      case 'ai_explain_action_cancel':
+        return 'Cancel';
+      case 'handlebar_ai_explanation':
+        return 'AI explanation';
       default:
         return null;
     }
@@ -309458,6 +313063,126 @@ extension on _StringsRu {
         return 'Drag buttons between the top and bottom bars, or remove them.';
       case 'reader_control_reset_layout':
         return 'Restore default reader button layout';
+      case 'ai_explain_section':
+        return 'AI Explanation';
+      case 'ai_explain_section_hint':
+        return 'Generate a contextual explanation of the looked-up word with your own AI provider.';
+      case 'ai_explain_title':
+        return 'AI Explanation';
+      case 'ai_explain_provider':
+        return 'AI provider';
+      case 'ai_explain_provider_hint':
+        return 'Requests go directly from this device to the provider you configure.';
+      case 'ai_explain_api_key':
+        return 'API key';
+      case 'ai_explain_api_key_hint':
+        return 'Stored on this device only. Never included in backups, profiles or sync.';
+      case 'ai_explain_model':
+        return 'Model';
+      case 'ai_explain_model_hint':
+        return 'Model ID sent to the provider.';
+      case 'ai_explain_auto_generate':
+        return 'Auto generate on lookup';
+      case 'ai_explain_auto_generate_hint':
+        return 'When off, the box appears without sending a request and you generate it manually.';
+      case 'ai_explain_stream':
+        return 'Real time response';
+      case 'ai_explain_stream_hint':
+        return 'Stream the explanation into the popup as it is written.';
+      case 'ai_explain_cancel_pending':
+        return 'Cancel unfinished requests';
+      case 'ai_explain_cancel_pending_hint':
+        return 'Drop an explanation still being generated when the popup closes or another word is looked up.';
+      case 'ai_explain_unknown_fallback':
+        return 'Fallback for unknown words';
+      case 'ai_explain_unknown_fallback_hint':
+        return 'Open the popup for words no dictionary contains, using the text you selected.';
+      case 'ai_explain_prompt':
+        return 'Custom prompt';
+      case 'ai_explain_prompt_hint':
+        return 'Use {{target}} for the word and {{sentence}} for its context.';
+      case 'ai_explain_system_prompt':
+        return 'System prompt';
+      case 'ai_explain_system_prompt_hint':
+        return 'Optional instructions sent before the user prompt. Leave empty to send none.';
+      case 'ai_explain_temperature':
+        return 'Temperature';
+      case 'ai_explain_temperature_hint':
+        return 'Between 0 and 2. Lower is more deterministic.';
+      case 'ai_explain_thinking_level':
+        return 'Thinking level';
+      case 'ai_explain_thinking_mode':
+        return 'Thinking mode';
+      case 'ai_explain_thinking_intensity':
+        return 'Thinking intensity';
+      case 'ai_explain_thinking_value':
+        return 'Custom thinking value';
+      case 'ai_explain_thinking_value_hint':
+        return 'A word, a token count, or a JSON object.';
+      case 'ai_explain_endpoint':
+        return 'Custom endpoint';
+      case 'ai_explain_endpoint_hint':
+        return 'Full URL, used exactly as entered. No path is appended.';
+      case 'ai_explain_routing_mode':
+        return 'OpenRouter provider routing';
+      case 'ai_explain_routing_slugs':
+        return 'OpenRouter provider slugs';
+      case 'ai_explain_routing_slugs_hint':
+        return 'Separated by commas or line breaks.';
+      case 'ai_explain_allow_fallbacks':
+        return 'Allow OpenRouter fallbacks';
+      case 'ai_explain_request_body':
+        return 'Custom request body JSON';
+      case 'ai_explain_request_body_hint':
+        return 'A JSON object merged over the generated request.';
+      case 'ai_explain_request_body_invalid':
+        return 'Not a valid JSON object.';
+      case 'ai_explain_option_default':
+        return 'Default';
+      case 'ai_explain_option_minimal':
+        return 'Minimal';
+      case 'ai_explain_option_low':
+        return 'Low';
+      case 'ai_explain_option_medium':
+        return 'Medium';
+      case 'ai_explain_option_high':
+        return 'High';
+      case 'ai_explain_option_max':
+        return 'Max';
+      case 'ai_explain_option_custom':
+        return 'Custom';
+      case 'ai_explain_option_enabled':
+        return 'Enabled';
+      case 'ai_explain_option_disabled':
+        return 'Disabled';
+      case 'ai_explain_routing_prioritize':
+        return 'Prioritize listed providers';
+      case 'ai_explain_routing_only':
+        return 'Only listed providers';
+      case 'ai_explain_routing_ignore':
+        return 'Ignore listed providers';
+      case 'ai_explain_state_generating':
+        return 'Generating explanation...';
+      case 'ai_explain_state_manual':
+        return 'Automatic generation is off. Use regenerate to generate it.';
+      case 'ai_explain_state_not_configured':
+        return 'AI explanation is not available. Configure a provider in settings.';
+      case 'ai_explain_state_timed_out':
+        return 'The AI request timed out. Please try again.';
+      case 'ai_explain_state_failed':
+        return 'Failed to generate the AI explanation.';
+      case 'ai_explain_state_unavailable':
+        return 'The AI service is temporarily unavailable. Please try again later.';
+      case 'ai_explain_state_empty':
+        return 'No explanation available.';
+      case 'ai_explain_action_generate':
+        return 'Generate explanation';
+      case 'ai_explain_action_regenerate':
+        return 'Regenerate explanation';
+      case 'ai_explain_action_cancel':
+        return 'Cancel';
+      case 'handlebar_ai_explanation':
+        return 'AI explanation';
       default:
         return null;
     }
@@ -319461,6 +323186,126 @@ extension on _StringsTh {
         return 'Drag buttons between the top and bottom bars, or remove them.';
       case 'reader_control_reset_layout':
         return 'Restore default reader button layout';
+      case 'ai_explain_section':
+        return 'AI Explanation';
+      case 'ai_explain_section_hint':
+        return 'Generate a contextual explanation of the looked-up word with your own AI provider.';
+      case 'ai_explain_title':
+        return 'AI Explanation';
+      case 'ai_explain_provider':
+        return 'AI provider';
+      case 'ai_explain_provider_hint':
+        return 'Requests go directly from this device to the provider you configure.';
+      case 'ai_explain_api_key':
+        return 'API key';
+      case 'ai_explain_api_key_hint':
+        return 'Stored on this device only. Never included in backups, profiles or sync.';
+      case 'ai_explain_model':
+        return 'Model';
+      case 'ai_explain_model_hint':
+        return 'Model ID sent to the provider.';
+      case 'ai_explain_auto_generate':
+        return 'Auto generate on lookup';
+      case 'ai_explain_auto_generate_hint':
+        return 'When off, the box appears without sending a request and you generate it manually.';
+      case 'ai_explain_stream':
+        return 'Real time response';
+      case 'ai_explain_stream_hint':
+        return 'Stream the explanation into the popup as it is written.';
+      case 'ai_explain_cancel_pending':
+        return 'Cancel unfinished requests';
+      case 'ai_explain_cancel_pending_hint':
+        return 'Drop an explanation still being generated when the popup closes or another word is looked up.';
+      case 'ai_explain_unknown_fallback':
+        return 'Fallback for unknown words';
+      case 'ai_explain_unknown_fallback_hint':
+        return 'Open the popup for words no dictionary contains, using the text you selected.';
+      case 'ai_explain_prompt':
+        return 'Custom prompt';
+      case 'ai_explain_prompt_hint':
+        return 'Use {{target}} for the word and {{sentence}} for its context.';
+      case 'ai_explain_system_prompt':
+        return 'System prompt';
+      case 'ai_explain_system_prompt_hint':
+        return 'Optional instructions sent before the user prompt. Leave empty to send none.';
+      case 'ai_explain_temperature':
+        return 'Temperature';
+      case 'ai_explain_temperature_hint':
+        return 'Between 0 and 2. Lower is more deterministic.';
+      case 'ai_explain_thinking_level':
+        return 'Thinking level';
+      case 'ai_explain_thinking_mode':
+        return 'Thinking mode';
+      case 'ai_explain_thinking_intensity':
+        return 'Thinking intensity';
+      case 'ai_explain_thinking_value':
+        return 'Custom thinking value';
+      case 'ai_explain_thinking_value_hint':
+        return 'A word, a token count, or a JSON object.';
+      case 'ai_explain_endpoint':
+        return 'Custom endpoint';
+      case 'ai_explain_endpoint_hint':
+        return 'Full URL, used exactly as entered. No path is appended.';
+      case 'ai_explain_routing_mode':
+        return 'OpenRouter provider routing';
+      case 'ai_explain_routing_slugs':
+        return 'OpenRouter provider slugs';
+      case 'ai_explain_routing_slugs_hint':
+        return 'Separated by commas or line breaks.';
+      case 'ai_explain_allow_fallbacks':
+        return 'Allow OpenRouter fallbacks';
+      case 'ai_explain_request_body':
+        return 'Custom request body JSON';
+      case 'ai_explain_request_body_hint':
+        return 'A JSON object merged over the generated request.';
+      case 'ai_explain_request_body_invalid':
+        return 'Not a valid JSON object.';
+      case 'ai_explain_option_default':
+        return 'Default';
+      case 'ai_explain_option_minimal':
+        return 'Minimal';
+      case 'ai_explain_option_low':
+        return 'Low';
+      case 'ai_explain_option_medium':
+        return 'Medium';
+      case 'ai_explain_option_high':
+        return 'High';
+      case 'ai_explain_option_max':
+        return 'Max';
+      case 'ai_explain_option_custom':
+        return 'Custom';
+      case 'ai_explain_option_enabled':
+        return 'Enabled';
+      case 'ai_explain_option_disabled':
+        return 'Disabled';
+      case 'ai_explain_routing_prioritize':
+        return 'Prioritize listed providers';
+      case 'ai_explain_routing_only':
+        return 'Only listed providers';
+      case 'ai_explain_routing_ignore':
+        return 'Ignore listed providers';
+      case 'ai_explain_state_generating':
+        return 'Generating explanation...';
+      case 'ai_explain_state_manual':
+        return 'Automatic generation is off. Use regenerate to generate it.';
+      case 'ai_explain_state_not_configured':
+        return 'AI explanation is not available. Configure a provider in settings.';
+      case 'ai_explain_state_timed_out':
+        return 'The AI request timed out. Please try again.';
+      case 'ai_explain_state_failed':
+        return 'Failed to generate the AI explanation.';
+      case 'ai_explain_state_unavailable':
+        return 'The AI service is temporarily unavailable. Please try again later.';
+      case 'ai_explain_state_empty':
+        return 'No explanation available.';
+      case 'ai_explain_action_generate':
+        return 'Generate explanation';
+      case 'ai_explain_action_regenerate':
+        return 'Regenerate explanation';
+      case 'ai_explain_action_cancel':
+        return 'Cancel';
+      case 'handlebar_ai_explanation':
+        return 'AI explanation';
       default:
         return null;
     }
@@ -329479,6 +333324,126 @@ extension on _StringsTr {
         return 'Drag buttons between the top and bottom bars, or remove them.';
       case 'reader_control_reset_layout':
         return 'Restore default reader button layout';
+      case 'ai_explain_section':
+        return 'AI Explanation';
+      case 'ai_explain_section_hint':
+        return 'Generate a contextual explanation of the looked-up word with your own AI provider.';
+      case 'ai_explain_title':
+        return 'AI Explanation';
+      case 'ai_explain_provider':
+        return 'AI provider';
+      case 'ai_explain_provider_hint':
+        return 'Requests go directly from this device to the provider you configure.';
+      case 'ai_explain_api_key':
+        return 'API key';
+      case 'ai_explain_api_key_hint':
+        return 'Stored on this device only. Never included in backups, profiles or sync.';
+      case 'ai_explain_model':
+        return 'Model';
+      case 'ai_explain_model_hint':
+        return 'Model ID sent to the provider.';
+      case 'ai_explain_auto_generate':
+        return 'Auto generate on lookup';
+      case 'ai_explain_auto_generate_hint':
+        return 'When off, the box appears without sending a request and you generate it manually.';
+      case 'ai_explain_stream':
+        return 'Real time response';
+      case 'ai_explain_stream_hint':
+        return 'Stream the explanation into the popup as it is written.';
+      case 'ai_explain_cancel_pending':
+        return 'Cancel unfinished requests';
+      case 'ai_explain_cancel_pending_hint':
+        return 'Drop an explanation still being generated when the popup closes or another word is looked up.';
+      case 'ai_explain_unknown_fallback':
+        return 'Fallback for unknown words';
+      case 'ai_explain_unknown_fallback_hint':
+        return 'Open the popup for words no dictionary contains, using the text you selected.';
+      case 'ai_explain_prompt':
+        return 'Custom prompt';
+      case 'ai_explain_prompt_hint':
+        return 'Use {{target}} for the word and {{sentence}} for its context.';
+      case 'ai_explain_system_prompt':
+        return 'System prompt';
+      case 'ai_explain_system_prompt_hint':
+        return 'Optional instructions sent before the user prompt. Leave empty to send none.';
+      case 'ai_explain_temperature':
+        return 'Temperature';
+      case 'ai_explain_temperature_hint':
+        return 'Between 0 and 2. Lower is more deterministic.';
+      case 'ai_explain_thinking_level':
+        return 'Thinking level';
+      case 'ai_explain_thinking_mode':
+        return 'Thinking mode';
+      case 'ai_explain_thinking_intensity':
+        return 'Thinking intensity';
+      case 'ai_explain_thinking_value':
+        return 'Custom thinking value';
+      case 'ai_explain_thinking_value_hint':
+        return 'A word, a token count, or a JSON object.';
+      case 'ai_explain_endpoint':
+        return 'Custom endpoint';
+      case 'ai_explain_endpoint_hint':
+        return 'Full URL, used exactly as entered. No path is appended.';
+      case 'ai_explain_routing_mode':
+        return 'OpenRouter provider routing';
+      case 'ai_explain_routing_slugs':
+        return 'OpenRouter provider slugs';
+      case 'ai_explain_routing_slugs_hint':
+        return 'Separated by commas or line breaks.';
+      case 'ai_explain_allow_fallbacks':
+        return 'Allow OpenRouter fallbacks';
+      case 'ai_explain_request_body':
+        return 'Custom request body JSON';
+      case 'ai_explain_request_body_hint':
+        return 'A JSON object merged over the generated request.';
+      case 'ai_explain_request_body_invalid':
+        return 'Not a valid JSON object.';
+      case 'ai_explain_option_default':
+        return 'Default';
+      case 'ai_explain_option_minimal':
+        return 'Minimal';
+      case 'ai_explain_option_low':
+        return 'Low';
+      case 'ai_explain_option_medium':
+        return 'Medium';
+      case 'ai_explain_option_high':
+        return 'High';
+      case 'ai_explain_option_max':
+        return 'Max';
+      case 'ai_explain_option_custom':
+        return 'Custom';
+      case 'ai_explain_option_enabled':
+        return 'Enabled';
+      case 'ai_explain_option_disabled':
+        return 'Disabled';
+      case 'ai_explain_routing_prioritize':
+        return 'Prioritize listed providers';
+      case 'ai_explain_routing_only':
+        return 'Only listed providers';
+      case 'ai_explain_routing_ignore':
+        return 'Ignore listed providers';
+      case 'ai_explain_state_generating':
+        return 'Generating explanation...';
+      case 'ai_explain_state_manual':
+        return 'Automatic generation is off. Use regenerate to generate it.';
+      case 'ai_explain_state_not_configured':
+        return 'AI explanation is not available. Configure a provider in settings.';
+      case 'ai_explain_state_timed_out':
+        return 'The AI request timed out. Please try again.';
+      case 'ai_explain_state_failed':
+        return 'Failed to generate the AI explanation.';
+      case 'ai_explain_state_unavailable':
+        return 'The AI service is temporarily unavailable. Please try again later.';
+      case 'ai_explain_state_empty':
+        return 'No explanation available.';
+      case 'ai_explain_action_generate':
+        return 'Generate explanation';
+      case 'ai_explain_action_regenerate':
+        return 'Regenerate explanation';
+      case 'ai_explain_action_cancel':
+        return 'Cancel';
+      case 'handlebar_ai_explanation':
+        return 'AI explanation';
       default:
         return null;
     }
@@ -339491,6 +343456,126 @@ extension on _StringsVi {
         return 'Drag buttons between the top and bottom bars, or remove them.';
       case 'reader_control_reset_layout':
         return 'Restore default reader button layout';
+      case 'ai_explain_section':
+        return 'AI Explanation';
+      case 'ai_explain_section_hint':
+        return 'Generate a contextual explanation of the looked-up word with your own AI provider.';
+      case 'ai_explain_title':
+        return 'AI Explanation';
+      case 'ai_explain_provider':
+        return 'AI provider';
+      case 'ai_explain_provider_hint':
+        return 'Requests go directly from this device to the provider you configure.';
+      case 'ai_explain_api_key':
+        return 'API key';
+      case 'ai_explain_api_key_hint':
+        return 'Stored on this device only. Never included in backups, profiles or sync.';
+      case 'ai_explain_model':
+        return 'Model';
+      case 'ai_explain_model_hint':
+        return 'Model ID sent to the provider.';
+      case 'ai_explain_auto_generate':
+        return 'Auto generate on lookup';
+      case 'ai_explain_auto_generate_hint':
+        return 'When off, the box appears without sending a request and you generate it manually.';
+      case 'ai_explain_stream':
+        return 'Real time response';
+      case 'ai_explain_stream_hint':
+        return 'Stream the explanation into the popup as it is written.';
+      case 'ai_explain_cancel_pending':
+        return 'Cancel unfinished requests';
+      case 'ai_explain_cancel_pending_hint':
+        return 'Drop an explanation still being generated when the popup closes or another word is looked up.';
+      case 'ai_explain_unknown_fallback':
+        return 'Fallback for unknown words';
+      case 'ai_explain_unknown_fallback_hint':
+        return 'Open the popup for words no dictionary contains, using the text you selected.';
+      case 'ai_explain_prompt':
+        return 'Custom prompt';
+      case 'ai_explain_prompt_hint':
+        return 'Use {{target}} for the word and {{sentence}} for its context.';
+      case 'ai_explain_system_prompt':
+        return 'System prompt';
+      case 'ai_explain_system_prompt_hint':
+        return 'Optional instructions sent before the user prompt. Leave empty to send none.';
+      case 'ai_explain_temperature':
+        return 'Temperature';
+      case 'ai_explain_temperature_hint':
+        return 'Between 0 and 2. Lower is more deterministic.';
+      case 'ai_explain_thinking_level':
+        return 'Thinking level';
+      case 'ai_explain_thinking_mode':
+        return 'Thinking mode';
+      case 'ai_explain_thinking_intensity':
+        return 'Thinking intensity';
+      case 'ai_explain_thinking_value':
+        return 'Custom thinking value';
+      case 'ai_explain_thinking_value_hint':
+        return 'A word, a token count, or a JSON object.';
+      case 'ai_explain_endpoint':
+        return 'Custom endpoint';
+      case 'ai_explain_endpoint_hint':
+        return 'Full URL, used exactly as entered. No path is appended.';
+      case 'ai_explain_routing_mode':
+        return 'OpenRouter provider routing';
+      case 'ai_explain_routing_slugs':
+        return 'OpenRouter provider slugs';
+      case 'ai_explain_routing_slugs_hint':
+        return 'Separated by commas or line breaks.';
+      case 'ai_explain_allow_fallbacks':
+        return 'Allow OpenRouter fallbacks';
+      case 'ai_explain_request_body':
+        return 'Custom request body JSON';
+      case 'ai_explain_request_body_hint':
+        return 'A JSON object merged over the generated request.';
+      case 'ai_explain_request_body_invalid':
+        return 'Not a valid JSON object.';
+      case 'ai_explain_option_default':
+        return 'Default';
+      case 'ai_explain_option_minimal':
+        return 'Minimal';
+      case 'ai_explain_option_low':
+        return 'Low';
+      case 'ai_explain_option_medium':
+        return 'Medium';
+      case 'ai_explain_option_high':
+        return 'High';
+      case 'ai_explain_option_max':
+        return 'Max';
+      case 'ai_explain_option_custom':
+        return 'Custom';
+      case 'ai_explain_option_enabled':
+        return 'Enabled';
+      case 'ai_explain_option_disabled':
+        return 'Disabled';
+      case 'ai_explain_routing_prioritize':
+        return 'Prioritize listed providers';
+      case 'ai_explain_routing_only':
+        return 'Only listed providers';
+      case 'ai_explain_routing_ignore':
+        return 'Ignore listed providers';
+      case 'ai_explain_state_generating':
+        return 'Generating explanation...';
+      case 'ai_explain_state_manual':
+        return 'Automatic generation is off. Use regenerate to generate it.';
+      case 'ai_explain_state_not_configured':
+        return 'AI explanation is not available. Configure a provider in settings.';
+      case 'ai_explain_state_timed_out':
+        return 'The AI request timed out. Please try again.';
+      case 'ai_explain_state_failed':
+        return 'Failed to generate the AI explanation.';
+      case 'ai_explain_state_unavailable':
+        return 'The AI service is temporarily unavailable. Please try again later.';
+      case 'ai_explain_state_empty':
+        return 'No explanation available.';
+      case 'ai_explain_action_generate':
+        return 'Generate explanation';
+      case 'ai_explain_action_regenerate':
+        return 'Regenerate explanation';
+      case 'ai_explain_action_cancel':
+        return 'Cancel';
+      case 'handlebar_ai_explanation':
+        return 'AI explanation';
       default:
         return null;
     }
@@ -349412,6 +353497,126 @@ extension on _StringsZhCn {
         return '把按钮拖到顶栏或底栏的任意位置，或移出。';
       case 'reader_control_reset_layout':
         return '恢复默认阅读器按钮布局';
+      case 'ai_explain_section':
+        return 'AI 解释';
+      case 'ai_explain_section_hint':
+        return '用你自己的 AI 服务为查到的词生成结合上下文的解释。';
+      case 'ai_explain_title':
+        return 'AI 解释';
+      case 'ai_explain_provider':
+        return 'AI 服务商';
+      case 'ai_explain_provider_hint':
+        return '请求从本设备直连你配置的服务商，不经过任何中转。';
+      case 'ai_explain_api_key':
+        return 'API 密钥';
+      case 'ai_explain_api_key_hint':
+        return '仅保存在本设备；不进备份、Profile 与同步。';
+      case 'ai_explain_model':
+        return '模型';
+      case 'ai_explain_model_hint':
+        return '发送给服务商的模型 ID。';
+      case 'ai_explain_auto_generate':
+        return '查词时自动生成';
+      case 'ai_explain_auto_generate_hint':
+        return '关闭后弹窗仍显示该区块但不发请求，改为手动生成。';
+      case 'ai_explain_stream':
+        return '实时返回';
+      case 'ai_explain_stream_hint':
+        return '边生成边写进弹窗。';
+      case 'ai_explain_cancel_pending':
+        return '取消未完成的请求';
+      case 'ai_explain_cancel_pending_hint':
+        return '弹窗关闭或查下一个词时，丢弃仍在生成的解释。';
+      case 'ai_explain_unknown_fallback':
+        return '未知词兜底';
+      case 'ai_explain_unknown_fallback_hint':
+        return '词典查不到时，用你选中的文本把弹窗开出来。';
+      case 'ai_explain_prompt':
+        return '自定义提示词';
+      case 'ai_explain_prompt_hint':
+        return '用 {{target}} 代表查询的词，{{sentence}} 代表上下文。';
+      case 'ai_explain_system_prompt':
+        return 'System 提示词';
+      case 'ai_explain_system_prompt_hint':
+        return '可选，在用户提示词之前发送；留空则不发送。';
+      case 'ai_explain_temperature':
+        return 'Temperature';
+      case 'ai_explain_temperature_hint':
+        return '取值 0~2，越低越确定。';
+      case 'ai_explain_thinking_level':
+        return '思考级别';
+      case 'ai_explain_thinking_mode':
+        return '思考模式';
+      case 'ai_explain_thinking_intensity':
+        return '思考强度';
+      case 'ai_explain_thinking_value':
+        return '自定义思考值';
+      case 'ai_explain_thinking_value_hint':
+        return '可填一个词、token 数，或一个 JSON 对象。';
+      case 'ai_explain_endpoint':
+        return '自定义端点';
+      case 'ai_explain_endpoint_hint':
+        return '完整 URL，原样使用，不会追加任何路径。';
+      case 'ai_explain_routing_mode':
+        return 'OpenRouter provider 路由';
+      case 'ai_explain_routing_slugs':
+        return 'OpenRouter provider 标识';
+      case 'ai_explain_routing_slugs_hint':
+        return '用逗号或换行分隔。';
+      case 'ai_explain_allow_fallbacks':
+        return '允许 OpenRouter 兜底';
+      case 'ai_explain_request_body':
+        return '自定义请求体 JSON';
+      case 'ai_explain_request_body_hint':
+        return '一个 JSON 对象，深合并覆盖生成的请求体。';
+      case 'ai_explain_request_body_invalid':
+        return '不是合法的 JSON 对象。';
+      case 'ai_explain_option_default':
+        return '默认';
+      case 'ai_explain_option_minimal':
+        return '最低';
+      case 'ai_explain_option_low':
+        return '低';
+      case 'ai_explain_option_medium':
+        return '中';
+      case 'ai_explain_option_high':
+        return '高';
+      case 'ai_explain_option_max':
+        return '最高';
+      case 'ai_explain_option_custom':
+        return '自定义';
+      case 'ai_explain_option_enabled':
+        return '开启';
+      case 'ai_explain_option_disabled':
+        return '关闭';
+      case 'ai_explain_routing_prioritize':
+        return '优先使用所列 provider';
+      case 'ai_explain_routing_only':
+        return '仅使用所列 provider';
+      case 'ai_explain_routing_ignore':
+        return '排除所列 provider';
+      case 'ai_explain_state_generating':
+        return '正在生成解释……';
+      case 'ai_explain_state_manual':
+        return '已关闭自动生成，点重新生成按钮手动生成。';
+      case 'ai_explain_state_not_configured':
+        return 'AI 解释不可用，请先在设置里配置服务商。';
+      case 'ai_explain_state_timed_out':
+        return 'AI 请求超时，请重试。';
+      case 'ai_explain_state_failed':
+        return '生成 AI 解释失败。';
+      case 'ai_explain_state_unavailable':
+        return 'AI 服务暂时不可用，请稍后再试。';
+      case 'ai_explain_state_empty':
+        return '没有可用的解释。';
+      case 'ai_explain_action_generate':
+        return '生成解释';
+      case 'ai_explain_action_regenerate':
+        return '重新生成解释';
+      case 'ai_explain_action_cancel':
+        return '取消';
+      case 'handlebar_ai_explanation':
+        return 'AI 解释';
       default:
         return null;
     }
@@ -359353,6 +363558,126 @@ extension on _StringsZhHk {
         return 'Drag buttons between the top and bottom bars, or remove them.';
       case 'reader_control_reset_layout':
         return 'Restore default reader button layout';
+      case 'ai_explain_section':
+        return 'AI Explanation';
+      case 'ai_explain_section_hint':
+        return 'Generate a contextual explanation of the looked-up word with your own AI provider.';
+      case 'ai_explain_title':
+        return 'AI Explanation';
+      case 'ai_explain_provider':
+        return 'AI provider';
+      case 'ai_explain_provider_hint':
+        return 'Requests go directly from this device to the provider you configure.';
+      case 'ai_explain_api_key':
+        return 'API key';
+      case 'ai_explain_api_key_hint':
+        return 'Stored on this device only. Never included in backups, profiles or sync.';
+      case 'ai_explain_model':
+        return 'Model';
+      case 'ai_explain_model_hint':
+        return 'Model ID sent to the provider.';
+      case 'ai_explain_auto_generate':
+        return 'Auto generate on lookup';
+      case 'ai_explain_auto_generate_hint':
+        return 'When off, the box appears without sending a request and you generate it manually.';
+      case 'ai_explain_stream':
+        return 'Real time response';
+      case 'ai_explain_stream_hint':
+        return 'Stream the explanation into the popup as it is written.';
+      case 'ai_explain_cancel_pending':
+        return 'Cancel unfinished requests';
+      case 'ai_explain_cancel_pending_hint':
+        return 'Drop an explanation still being generated when the popup closes or another word is looked up.';
+      case 'ai_explain_unknown_fallback':
+        return 'Fallback for unknown words';
+      case 'ai_explain_unknown_fallback_hint':
+        return 'Open the popup for words no dictionary contains, using the text you selected.';
+      case 'ai_explain_prompt':
+        return 'Custom prompt';
+      case 'ai_explain_prompt_hint':
+        return 'Use {{target}} for the word and {{sentence}} for its context.';
+      case 'ai_explain_system_prompt':
+        return 'System prompt';
+      case 'ai_explain_system_prompt_hint':
+        return 'Optional instructions sent before the user prompt. Leave empty to send none.';
+      case 'ai_explain_temperature':
+        return 'Temperature';
+      case 'ai_explain_temperature_hint':
+        return 'Between 0 and 2. Lower is more deterministic.';
+      case 'ai_explain_thinking_level':
+        return 'Thinking level';
+      case 'ai_explain_thinking_mode':
+        return 'Thinking mode';
+      case 'ai_explain_thinking_intensity':
+        return 'Thinking intensity';
+      case 'ai_explain_thinking_value':
+        return 'Custom thinking value';
+      case 'ai_explain_thinking_value_hint':
+        return 'A word, a token count, or a JSON object.';
+      case 'ai_explain_endpoint':
+        return 'Custom endpoint';
+      case 'ai_explain_endpoint_hint':
+        return 'Full URL, used exactly as entered. No path is appended.';
+      case 'ai_explain_routing_mode':
+        return 'OpenRouter provider routing';
+      case 'ai_explain_routing_slugs':
+        return 'OpenRouter provider slugs';
+      case 'ai_explain_routing_slugs_hint':
+        return 'Separated by commas or line breaks.';
+      case 'ai_explain_allow_fallbacks':
+        return 'Allow OpenRouter fallbacks';
+      case 'ai_explain_request_body':
+        return 'Custom request body JSON';
+      case 'ai_explain_request_body_hint':
+        return 'A JSON object merged over the generated request.';
+      case 'ai_explain_request_body_invalid':
+        return 'Not a valid JSON object.';
+      case 'ai_explain_option_default':
+        return 'Default';
+      case 'ai_explain_option_minimal':
+        return 'Minimal';
+      case 'ai_explain_option_low':
+        return 'Low';
+      case 'ai_explain_option_medium':
+        return 'Medium';
+      case 'ai_explain_option_high':
+        return 'High';
+      case 'ai_explain_option_max':
+        return 'Max';
+      case 'ai_explain_option_custom':
+        return 'Custom';
+      case 'ai_explain_option_enabled':
+        return 'Enabled';
+      case 'ai_explain_option_disabled':
+        return 'Disabled';
+      case 'ai_explain_routing_prioritize':
+        return 'Prioritize listed providers';
+      case 'ai_explain_routing_only':
+        return 'Only listed providers';
+      case 'ai_explain_routing_ignore':
+        return 'Ignore listed providers';
+      case 'ai_explain_state_generating':
+        return 'Generating explanation...';
+      case 'ai_explain_state_manual':
+        return 'Automatic generation is off. Use regenerate to generate it.';
+      case 'ai_explain_state_not_configured':
+        return 'AI explanation is not available. Configure a provider in settings.';
+      case 'ai_explain_state_timed_out':
+        return 'The AI request timed out. Please try again.';
+      case 'ai_explain_state_failed':
+        return 'Failed to generate the AI explanation.';
+      case 'ai_explain_state_unavailable':
+        return 'The AI service is temporarily unavailable. Please try again later.';
+      case 'ai_explain_state_empty':
+        return 'No explanation available.';
+      case 'ai_explain_action_generate':
+        return 'Generate explanation';
+      case 'ai_explain_action_regenerate':
+        return 'Regenerate explanation';
+      case 'ai_explain_action_cancel':
+        return 'Cancel';
+      case 'handlebar_ai_explanation':
+        return 'AI explanation';
       default:
         return null;
     }

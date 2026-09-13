@@ -400,6 +400,9 @@ extension _ReaderChrome on _ReaderFushiPageState {
           await searchDictionaryResult(
             searchTerm: selectedText,
             selectionRect: rect,
+            // 边界明确：菜单是在**原生选区**上弹出的（同级还有 'copy'），
+            // 选中的那一段就是用户要问的东西。
+            hasExplicitBoundary: true,
           );
           if (mounted) _checkFavoriteStatus();
           return;

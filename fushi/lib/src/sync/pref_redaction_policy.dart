@@ -36,8 +36,9 @@ import 'package:fushi/src/sync/sync_repository.dart';
 abstract final class PrefRedactionPolicy {
   /// 形状兜底：key 含这些子串即视为凭据，**不限前缀**。
   ///
-  /// 已核对全仓 128 个真实 pref key：命中者只有 `yomitan_api_key` /
-  /// `jimaku_api_key` / `manga_cloud_ocr_api_key`（外加白名单里的 `sync_*`
+  /// 已核对全仓真实 pref key：命中者只有 `yomitan_api_key` /
+  /// `jimaku_api_key` / `manga_cloud_ocr_api_key` / BYOK AI 的四个
+  /// `ai_explain_*_api_key`（外加白名单里的 `sync_*`
   /// 家族），全是真凭据，零误伤。其余同形状字符串都是 i18n 标签
   /// （`settings_secret_hide`、`video_setting_qb_password` 等），永远不落
   /// `preferences` 表，与本谓词无交集。
@@ -77,6 +78,13 @@ abstract final class PrefRedactionPolicy {
     'manga_cloud_ocr_api_key',
     'video_scraper_tmdb_api_key',
     'video_metadata_fanart_api_key',
+    // BYOK AI Explanation 的四家 provider key（见 docs/agent/ai-explanation.md
+    // §9）。同样被 `api_key` 子串兜住，显式点名是本清单的既定纪律：审计时一眼
+    // 看全，且将来谁改了子串规则也不会把它们放出去。
+    'ai_explain_openai_api_key',
+    'ai_explain_gemini_api_key',
+    'ai_explain_deepseek_api_key',
+    'ai_explain_custom_api_key',
     'video_metadata_bangumi_token',
     'video_metadata_douban_authorized_token',
     // Bangumi 追番同步 access token（media_tracking_service.dart）。此前只靠
@@ -90,6 +98,12 @@ abstract final class PrefRedactionPolicy {
     // 必须显式点名。两者也在 deviceLocalPrefKeys 中，双重声明便于安全审计。
     'video_resource_torznab_config',
     'video_subtitle_opensubtitles_config',
+    // 同形：BYOK AI 的自定义端点与自定义请求体 JSON。**这两个是形状兜底真正
+    // 漏掉的**——键名里既没有 api_key 也没有 token/secret，而端点可能是私有服务
+    // 地址或自带 query credential，请求体 JSON 里可以直接写着 key。少了这两行，
+    // 四个 provider key 拦住了、用户的自定义配置照样随备份/Profile 分享出境。
+    'ai_explain_custom_endpoint',
+    'ai_explain_custom_body_json',
     // 同形：JSON 内含 base64 的 OPDS 服务器密码，键名本身没有 credential 形状。
     // 也在 deviceLocalPrefKeys 中，双重声明便于安全审计。
     'discovery_opds_servers',

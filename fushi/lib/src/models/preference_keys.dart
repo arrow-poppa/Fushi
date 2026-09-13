@@ -20,6 +20,60 @@ library;
 /// 已知的静态偏好键全集（守卫强制）。按字母序。
 const Set<String> kKnownPreferenceKeys = <String>{
   'active_profile_id',
+  // ===== BYOK AI Explanation（docs/agent/ai-explanation.md）=====
+  // bool：查词打开时自动生成解释。关 = 弹窗照常出 AI 区块但**不发请求**，
+  // 由用户点重新生成按钮手动触发。
+  'ai_explain_auto_generate',
+  // bool：弹窗关闭 / 查下一个词时中止仍在生成的请求。关 = 请求跑完进缓存，
+  // 但永远不会画到另一个词的弹窗上。
+  'ai_explain_cancel_pending',
+  // 🔴 String：自定义 OpenAI 兼容端点的 API key。
+  'ai_explain_custom_api_key',
+  // 🔴 String（JSON 对象）：深合并进生成请求体的自定义字段。**值里可能裹着
+  // key**（形如 {"api_key": ...}），键名本身没有凭据形状，必须点名脱敏。
+  'ai_explain_custom_body_json',
+  // 🔴 String：自定义端点完整 URL（不追加任何路径）。可能是私有服务地址，也
+  // 可能自带 query credential，键名无凭据形状，必须点名脱敏。
+  'ai_explain_custom_endpoint',
+  'ai_explain_custom_model',
+  // bool：OpenRouter allow_fallbacks。默认 true。
+  'ai_explain_custom_routing_allow_fallbacks',
+  // String：'' | 'order' | 'only' | 'ignore'，OpenRouter provider 路由策略。
+  'ai_explain_custom_routing_mode',
+  // String：逗号或换行分隔的 OpenRouter provider slug。
+  'ai_explain_custom_routing_slugs',
+  // String：'' | 'high' | 'max' | 'custom'。
+  'ai_explain_custom_thinking_intensity',
+  // String：'' | 'enabled' | 'disabled'。
+  'ai_explain_custom_thinking_mode',
+  // String：thinking intensity 选 custom 时的自由值（词 / 整数 / JSON 对象）。
+  'ai_explain_custom_thinking_value',
+  // 🔴 String：DeepSeek API key。
+  'ai_explain_deepseek_api_key',
+  'ai_explain_deepseek_model',
+  'ai_explain_deepseek_thinking_intensity',
+  'ai_explain_deepseek_thinking_mode',
+  // 🔴 String：Gemini API key。**注意 Gemini 把 key 放在 URL query 里**，
+  // 完整 URL 一律不得落日志。
+  'ai_explain_gemini_api_key',
+  'ai_explain_gemini_model',
+  // String：'' | 'MINIMAL' | 'LOW' | 'MEDIUM' | 'HIGH'（大写是 Gemini API 口径）。
+  'ai_explain_gemini_thinking_level',
+  // 🔴 String：OpenAI API key。
+  'ai_explain_openai_api_key',
+  'ai_explain_openai_model',
+  // String：用户提示词模板，支持 {{target}} / {{sentence}} 占位符。
+  'ai_explain_prompt',
+  // String：'openai' | 'gemini' | 'deepseek' | 'custom'。
+  'ai_explain_provider',
+  // bool：流式返回（SSE），边生成边写进弹窗。
+  'ai_explain_stream',
+  // String：system 提示词，同样支持占位符；空 = 不发 system 消息。
+  'ai_explain_system_prompt',
+  // double：0~2，默认 0.7。
+  'ai_explain_temperature',
+  // bool：词典查不到时合成一条 `AI Fallback` 结果把弹窗开出来。
+  'ai_explain_unknown_fallback',
   'app_locale',
   'app_ui_scale',
   'asr_transcribe_language',
@@ -339,6 +393,14 @@ const List<String> kKnownPreferenceKeyPrefixes = <String>[
 /// 🔴 凭据键：值为 base64 敏感凭据，不进日志 / 不进明文导出。
 /// （`media_source_secret_<id>` 前缀族见 [kKnownPreferenceKeyPrefixes]。）
 const Set<String> kCredentialPreferenceKeys = <String>{
+  // BYOK AI Explanation：四家 provider 的 API key，外加两个「名字不像凭据但值
+  // 里可能有凭据」的键（自定义端点 URL 与自定义请求体 JSON）。
+  'ai_explain_custom_api_key',
+  'ai_explain_custom_body_json',
+  'ai_explain_custom_endpoint',
+  'ai_explain_deepseek_api_key',
+  'ai_explain_gemini_api_key',
+  'ai_explain_openai_api_key',
   // 每条 OPDS 服务器记录里带 base64 的 passwordB64。
   'discovery_opds_servers',
   'jimaku_api_key',

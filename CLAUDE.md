@@ -110,11 +110,13 @@
 - 批量删 key 后**必须按精确键名复核**（`grep '"<key>"'` 带引号）：裸子串会被同前缀的 key 假阳性命中（如 `..._favorites` 命中 `..._favorites_empty`）。
 - `--remove` + `--add` **不等于**改名：它会把 16 种语言的既有翻译降级成英文值并把 key 挪到文件末尾。改名只能用 `--rename`（逐语言保留原翻译、原位替换）。
 - 改完 key 跑 `dart run slang` 重新生成 `strings.g.dart`，再 `dart format` 生成文件；不要手改生成文件。
+- 🔴 **格式化 `strings.g.dart` 必须加 `--language-version=3.6`**：入库的那份是 Dart 3.7 之前的工具链产出的**旧风格**，而 Dart ≥3.7 的 `dart format` 默认用新的 tall 风格，会把整个生成文件重排——实测在只加 60 个 key 的改动上多出 12673 增 / 6934 删的纯格式噪声，且下一个用旧工具链的人重新生成时又会翻回去，来回抖。带上该 flag 后同一改动是 4327 增 / **2 删**（两行是头部的 string 计数与构建时间）。CI 不校验格式，所以这条不会变红，只会把 PR diff 淹掉、并和并发 agent 抢冲突。
 
 ## 验证
 
 - 文档改动：至少 `git diff --cached --check`，不必跑 Flutter 测试。
 - Dart/Flutter 改动（在 `fushi/` 下）：`dart format` 改动文件 + push 前全量 `flutter analyze`（含 test 目录，CI 把 warning 当致命）+ **按爆炸半径分级的测试**——分支上跑改动覆盖 + 相邻功能的定向 `flutter test <目标> --no-pub`，全量套件由 PR CI 兜底（真单测门是 Build Release APK 的 Run unit tests）；**本地不跑全量测试门**（用户 2026-09-06 拍板：合入 `develop` 前**不再**本地跑 `dart run tool/flutter_test_failures.dart --no-pub` 或裸 `flutter test` 全量，太慢；以后任何任务都不要主动跑，也不要拿它当合并前置条件），本地只跑定向测试。定向跑也**判绿只认退出码 + 实际执行数**：裸 `flutter test ... | tail -N` 的退出码是 `tail` 的、恒为 0，构建失败时零测试执行会被伪装成通过（BUG-1157）。分级判据见 [docs/agent/fast-workflow.md](docs/agent/fast-workflow.md)。**测试红了不等于代码坏了**：本机 5~10 个 agent 并发，实测有三类并发伪红（互抢 `sqlite3.dll` / 宿主 IPC 崩溃致 suite 装载失败 / 结果文件被抢致零输出），**遇红先分型再动手**，且**不许拿「可能是伪红」当借口跳过真红**、**零测试执行的红也不算红**——症状、定性办法和三条判别纪律见 [docs/agent/fast-workflow.md](docs/agent/fast-workflow.md) 的「并发伪红判别」。（工具链钉定：本地 `.fvmrc` 3.41.6，CI 3.44.0；本机 flutter 不在 PATH 就把完整路径写进 `CLAUDE.local.md`。）
+- 🔴 **`dart format` 只格式化本轮新建的文件，不要顺手格式化存量文件**：本仓存量 Dart 是 Dart 3.7 之前的短风格，而 3.7+ 的 `dart format` 默认 tall 风格会把整份文件重排。实测在 `app_model.dart` 上只加 14 行，却产出 958 增 / 785 删，并且**把源码扫描型守卫直接打红**——`dict_engine_max_results_alignment_test.dart` 按字面量找 `dictRepo.getCachedFfiLookup(ffiCacheKey)`，重排把它折成三行后这条守卫失配。存量文件确需格式化时加 `--language-version=3.6` 对齐旧风格；生成文件同理（见「i18n 纪律」）。**换 Flutter 版本解决不了这个问题**——实测 Flutter 3.41.6 带 Dart 3.11.4、3.44.0 带 Dart 3.12.0，两者都 ≥3.7、都是 tall，产出同样的重排；入库源码是 Dart ≤3.6 时代留下的。在 `app_model.dart` 上逐版本量过：`--language-version` 取 3.5 / 3.6 与入库文件**逐行相同（差 0 行）**，3.7 差 1996 行，3.8 与 latest 差 1729 行。所以对齐旧风格只能靠这个 flag，别去找「和 app 同版本」的 SDK。
 - **每条 PR 合入 `develop` 后固定加跑「目录枚举型守卫」整批**（51 条，一条命令 ~62 秒）——这批守卫用 `listSync(recursive: true)` 扫 `lib/` / `test/` / `integration_test/` 全树，**新 PR 的新文件自动落进它们的扫描面，而定向测试按功能域挑，结构上永远挑不到它们**。实测代价：不跑就是「刚合的 PR 把红带进 develop」，一天翻车四次、其中一条在 develop 上躺了一整天跨 5 条 PR；跑了之后累计 30 条合并零红。完整清单、单条命令、以及「清单过期了怎么按行为反向枚举重新推导」见 [docs/agent/fast-workflow.md](docs/agent/fast-workflow.md) 的「合并后必跑：目录枚举型守卫清单」。
 - Android 资源/manifest/Gradle/权限/通知/前台服务/打包改动：再加 `gradlew :app:assembleRelease`（在 `fushi/android/`；Windows 用 `.\gradlew.bat`）。
 - 阅读器/导入/播放/布局问题，声明「修好了」前必须用真实模拟器或用户指定设备复测原始失败路径并留证据（见 [docs/agent/integration-testing.md](docs/agent/integration-testing.md)）。
@@ -146,6 +148,14 @@
 | 全量快捷键 / 手柄 / 鼠标绑定盘点快照（2026-06-11） | [docs/agent/shortcuts-inventory.md](docs/agent/shortcuts-inventory.md) |
 | 学习统计域（v90）：唯一事实表 `study_segments` / `StudyClock` / `loadStatFacts` / `StatWindow` / 同步 wire v2 / legacy 冻结规则 | [docs/agent/statistics.md](docs/agent/statistics.md) |
 | Galgame 用户报告 / 脱敏 probe / adapter 骨架 / 离线 replay / 双架构验证 / 真机证据 | [docs/agent/galgame-hooking.md](docs/agent/galgame-hooking.md) |
+| BYOK AI 解释：provider 契约 / 提示词占位符 / SSE 流式 / 缓存与取消 / 弹窗状态 / 未知词兜底 / Anki 标记 / 凭据脱敏 | [docs/agent/ai-explanation.md](docs/agent/ai-explanation.md) |
+
+## AI Explanation
+
+- 动 BYOK AI Explanation 相关代码前，**先完整读** [docs/agent/ai-explanation.md](docs/agent/ai-explanation.md)：它是这条功能的目标、范围、非目标、与上游扩展的**逐条对照矩阵**、架构、永久决策、provider 契约、凭据安全、弹窗与 Anki 接线、未知词兜底和验收标准的唯一真相源。功能的架构决策、永久要求或**可观察契约**发生变化时，同步更新该文档。
+- 硬边界：AI 逻辑**一律在 Dart 层**（provider / 提示词 / 缓存 / 流式 / 取消），不进 `native/fushidicts/`；`AI Fallback` 是 Dart 侧合成结果，不写进词典索引。出站必须走 `createAppHttpIoClient()`（裸 client 会被 `fushi/test/tools/outbound_http_discipline_guard_test.dart` 判红）。
+- 凭据（各 provider 的 API key、custom endpoint、custom body JSON）必须登记进 `fushi/lib/src/sync/pref_redaction_policy.dart` 的 `sensitiveKeys`：备份、Profile 快照、Profile 分享三条出境通道共用那一个谓词。**绝不记录** Authorization header、bearer token、完整请求体，以及带 key 的完整 Gemini URL。
+- 临时进度写 [docs/agent/ai-explanation-handoff.md](docs/agent/ai-explanation-handoff.md)，不要写进本文件。
 
 ## 模块索引
 

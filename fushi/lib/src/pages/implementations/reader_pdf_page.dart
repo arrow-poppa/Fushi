@@ -101,6 +101,10 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
 
   /// 最近一次查词命中的句子与词在句中的偏移，喂制卡（[AnkiMiningContext]）。
   String _lastSentence = '';
+
+  /// AI 解释的句子上下文：直接指向本页已有的那个字段，不另造状态。
+  @override
+  String get aiSentenceContext => _lastSentence;
   int _lastSentenceOffset = 0;
 
   /// 命中判定容差（PDF point）。点在字符矩形外但足够近仍算命中；超出即视为点在

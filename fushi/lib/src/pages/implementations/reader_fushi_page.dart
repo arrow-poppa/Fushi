@@ -3840,6 +3840,13 @@ $liveConfigJs
   /// 同一 reader 页 / currentSentence 链路，区别只在裁句子音频。
   final MiningSentenceDraft _miningDraft = MiningSentenceDraft();
 
+  /// AI 解释的句子上下文：与制卡取的是**同一个**来源
+  /// （`mining.part.dart` 的 `currentSentence`），不另开一条链路——两条链路迟早会
+  /// 在「草稿里加了上下句」这类地方漂开，而用户看到的解释和制出的卡就对不上了。
+  @override
+  String get aiSentenceContext =>
+      appModel.currentMediaSource?.currentSentence.text ?? '';
+
   /// TODO-644 / BUG-357：制卡串行化队列。`onMineFromPopup` / `onUpdateFromPopup` 都把
   /// 自己的 prepare→mine 工作经 [SerialTaskQueue.enqueue] 挂到队列尾，保证同一时刻只跑
   /// 一张卡的制卡序列。快速连制两张卡（来自两个 mine button，popup.js 的 per-button

@@ -706,6 +706,14 @@ mixin DictionaryPageMixin {
 
   /// Builds the [Positioned] popup layer widget for the entry at [index] in
   /// [controller].entries.
+
+  /// BYOK AI 解释的 `{{sentence}}` 上下文（docs/agent/ai-explanation.md §6.2）。
+  ///
+  /// 默认空串：没有上下文是合法状态，模型照样能解释一个孤立的词，只是不结合语境。
+  /// 有句子的宿主覆写它，指到自己已有的那个字段即可——不必新造状态，那只会多一处
+  /// 要同步的真相。
+  String get aiSentenceContext => '';
+
   Widget buildNestedPopupLayer({
     required int index,
     required Size screen,
@@ -745,6 +753,7 @@ mixin DictionaryPageMixin {
       child: DictionaryPopupLayer(
         result: entry.result,
         restoreScrollTop: entry.restoreScrollTop,
+        aiSentence: aiSentenceContext,
         isSearching: entry.isSearching,
         keepWebViewWarm: entry.isWarmSlot,
         webViewKey: entry.webViewKey,
@@ -1028,10 +1037,15 @@ mixin DictionaryPageMixin {
     setState(() {});
     late final DictionarySearchResult result;
     try {
-      result = await mixinAppModel.searchDictionary(
-        searchTerm: trimmed,
-        searchWithWildcards: true,
-        overrideMaximumTerms: maxTerms,
+      result = mixinAppModel.applyAiFallback(
+        await mixinAppModel.searchDictionary(
+          searchTerm: trimmed,
+          searchWithWildcards: true,
+          overrideMaximumTerms: maxTerms,
+        ),
+        // 这条路的 query 是用户自己给的（手动搜索框输入、卡片内链接点击、字幕行
+        // 选中），整串就是他要问的东西——边界现成，不需要猜。
+        hasExplicitBoundary: true,
       );
       if (mounted && controller.entries.contains(entry)) {
         setState(() {

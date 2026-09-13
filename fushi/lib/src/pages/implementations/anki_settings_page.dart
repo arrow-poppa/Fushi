@@ -1752,6 +1752,8 @@ String _ankiHandlebarBaseLabel(String option) {
       return t.handlebar_selected_glossary;
     case '{popup-selection-text}':
       return t.handlebar_popup_selection_text;
+    case '{ai-explanation}':
+      return t.handlebar_ai_explanation;
     case '{sentence}':
       return t.handlebar_sentence;
     case '{cue-sentence}':

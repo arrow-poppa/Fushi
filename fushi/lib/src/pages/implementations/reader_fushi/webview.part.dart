@@ -1799,6 +1799,9 @@ updateLive: function(patch) {
                     await searchDictionaryResult(
                       searchTerm: text,
                       selectionRect: rect,
+                      // 边界明确：这是**原生选区**（用户拖选的那一段），
+                      // 不是点按取的扫描窗。
+                      hasExplicitBoundary: true,
                     );
                     if (mounted) _checkFavoriteStatus();
                   },

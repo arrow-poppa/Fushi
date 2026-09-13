@@ -1199,11 +1199,15 @@ mixin DictionaryPageMixin {
     final String termAtStart = entry.searchTerm;
     entry.isSearching = true;
     try {
-      final DictionarySearchResult result =
-          await mixinAppModel.searchDictionary(
-        searchTerm: trimmed,
-        searchWithWildcards: true,
-        overrideMaximumTerms: mixinAppModel.maximumTerms,
+      final DictionarySearchResult result = mixinAppModel.applyAiFallback(
+        await mixinAppModel.searchDictionary(
+          searchTerm: trimmed,
+          searchWithWildcards: true,
+          overrideMaximumTerms: mixinAppModel.maximumTerms,
+        ),
+        // 同 BaseSourcePageState.navigatePopupInPlace：只有词头 / 链接 / 汉字这一种
+        // 来路，边界明确。
+        hasExplicitBoundary: true,
       );
       if (!mounted ||
           !controller.entries.contains(entry) ||

@@ -485,10 +485,16 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
     final String termAtStart = item.searchTerm;
     item.isSearching = true;
     try {
-      final DictionarySearchResult result = await appModel.searchDictionary(
-        searchTerm: trimmed,
-        searchWithWildcards: false,
-        overrideMaximumTerms: appModel.maximumTerms,
+      final DictionarySearchResult result = appModel.applyAiFallback(
+        await appModel.searchDictionary(
+          searchTerm: trimmed,
+          searchWithWildcards: false,
+          overrideMaximumTerms: appModel.maximumTerms,
+        ),
+        // 本函数只有一种语义：弹窗内点词头 / 链接 / 汉字后的原地跳转（三个调用点
+        // 逐一核过）。点中的那一串就是那个词，边界明确——与旧 onLinkClick 传
+        // `hasExplicitBoundary: true` 等价，2.7.0 把那条路改成原地跳转时丢掉了。
+        hasExplicitBoundary: true,
       );
       if (!mounted ||
           !_popup.entries.contains(item) ||

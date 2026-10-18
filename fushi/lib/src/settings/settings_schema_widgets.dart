@@ -459,6 +459,8 @@ class SettingsSchemaItem extends StatefulWidget
           (text.secret ? TextInputType.visiblePassword : TextInputType.text),
       hintText: text.placeholder,
       debounce: text.debounce,
+      minLines: text.minLines,
+      maxLines: text.maxLines,
       resetValue: reset,
       onReset: reset == null
           ? null

@@ -20,12 +20,20 @@ class SettingsSecretField extends StatefulWidget {
     this.debounce = const Duration(milliseconds: 500),
     this.resetValue,
     this.onReset,
+    this.minLines,
+    this.maxLines = 1,
   });
 
   final String title;
   final IconData? icon;
   final String initialValue;
   final bool obscureText;
+
+  /// 多行输入的行数范围（见 [SettingsTextItem.maxLines]）。默认单行。
+  final int? minLines;
+  final int? maxLines;
+
+  bool get _multiline => (maxLines ?? 2) > 1;
 
   /// true 时在行尾提供眼睛按钮切换 [obscureText] 的显隐（SettingsTextItem 的
   /// secret 走此路径）；false 保持既有调用点行为（固定遮蔽、无切换）。
@@ -132,13 +140,20 @@ class SettingsSecretFieldState extends State<SettingsSecretField> {
       trailing: AdaptiveSettingsTextField(
         controller: _controller,
         obscureText: _obscured,
-        keyboardType: widget.keyboardType,
-        textInputAction: TextInputAction.done,
+        // 多行时回车是换行（提示词里本来就有换行），写穿靠防抖 + dispose 冲刷。
+        keyboardType: widget._multiline
+            ? TextInputType.multiline
+            : widget.keyboardType,
+        textInputAction: widget._multiline
+            ? TextInputAction.newline
+            : TextInputAction.done,
         labelText: widget.title,
         hintText: widget.hintText,
         suffixIcon: _suffix(),
         onChanged: _scheduleChanged,
         onSubmitted: _submit,
+        minLines: widget.minLines,
+        maxLines: widget.maxLines,
       ),
     );
   }

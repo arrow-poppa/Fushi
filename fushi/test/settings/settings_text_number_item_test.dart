@@ -26,6 +26,7 @@ void main() {
   // 可变后备存储：getter/setter 闭包读写这里，模拟真实 pref 写穿。
   late String textValue;
   late String secretValue;
+  late String promptValue;
   late num intValue;
   late num doubleValue;
   late List<num> intWrites;
@@ -33,6 +34,7 @@ void main() {
   setUp(() {
     textValue = 'initial-text';
     secretValue = 'initial-secret';
+    promptValue = 'Target: {{target}}\nSentence: {{sentence}}';
     intValue = 50;
     doubleValue = 1.0;
     intWrites = <num>[];
@@ -85,6 +87,17 @@ void main() {
               icon: Icons.format_size,
               value: (_) => doubleValue,
               onChanged: (_, num value) => doubleValue = value,
+            ),
+            // 多行文本项（AI 解释的提示词）：放最后，长高的输入框不会把上面的
+            // 行挤出测试视口。
+            SettingsTextItem(
+              id: 'text.multiline',
+              title: 'Custom prompt',
+              icon: Icons.chat_outlined,
+              minLines: 4,
+              maxLines: 12,
+              value: (_) => promptValue,
+              onChanged: (_, String value) => promptValue = value,
             ),
           ],
         ),
@@ -223,6 +236,55 @@ void main() {
     await tester.pump();
     expect(editable().controller.text, '100',
         reason: '失焦后必须回显已提交（夹取后）的值（审查 Finding 6）');
+  });
+
+  EditableText editableIn(WidgetTester tester, String title) =>
+      tester.widget<EditableText>(
+        find.descendant(
+          of: find.widgetWithText(AdaptiveSettingsRow, title),
+          matching: find.byType(EditableText),
+        ),
+      );
+
+  for (final bool cupertino in <bool>[false, true]) {
+    testWidgets(
+        'multiline text item renders a tall field that keeps newlines '
+        '(cupertino: $cupertino)', (WidgetTester tester) async {
+      await tester.pumpWidget(harness(cupertino: cupertino));
+      await tester.ensureVisible(rowField('Custom prompt'));
+      await tester.pump();
+
+      final EditableText prompt = editableIn(tester, 'Custom prompt');
+      expect(prompt.minLines, 4);
+      expect(prompt.maxLines, 12);
+      expect(prompt.keyboardType, TextInputType.multiline);
+      expect(prompt.textInputAction, TextInputAction.newline);
+      expect(
+          prompt.controller.text, 'Target: {{target}}\nSentence: {{sentence}}',
+          reason: '模板里的换行必须原样留在输入框里，不能被压成一行');
+
+      // 实际高度：至少比单行文本项高出好几行，提示词才看得全。
+      final double promptHeight =
+          tester.getSize(rowField('Custom prompt')).height;
+      final double singleHeight =
+          tester.getSize(rowField('Server address')).height;
+      expect(promptHeight, greaterThan(singleHeight * 2));
+
+      // 单行项不受影响。
+      final EditableText plain = editableIn(tester, 'Server address');
+      expect(plain.maxLines, 1);
+    });
+  }
+
+  testWidgets('multiline text item writes newlines through',
+      (WidgetTester tester) async {
+    await tester.pumpWidget(harness(cupertino: false));
+    await tester.ensureVisible(rowField('Custom prompt'));
+    await tester.pump();
+
+    await tester.enterText(rowField('Custom prompt'), 'Line one\nLine two');
+    await tester.pump(const Duration(milliseconds: 600));
+    expect(promptValue, 'Line one\nLine two');
   });
 
   testWidgets('secret item obscures and the eye toggle reveals',

@@ -3219,6 +3219,8 @@ class AdaptiveSettingsTextField extends StatefulWidget {
     this.onSubmitted,
     this.suffixIcon,
     this.focusId,
+    this.minLines,
+    this.maxLines = 1,
   }) : assert(controller == null || initialValue == null);
 
   final TextEditingController? controller;
@@ -3236,6 +3238,11 @@ class AdaptiveSettingsTextField extends StatefulWidget {
   /// Explicit geometric-focus id; when null a stable per-instance fallback is
   /// used so the field is always a directional-navigation anchor (see below).
   final FushiFocusId? focusId;
+
+  /// 多行输入（提示词这类长文本）：[maxLines] > 1 时输入框随内容在
+  /// [minLines]..[maxLines] 行之间长高，超出后框内滚动。默认单行，既有调用点不变。
+  final int? minLines;
+  final int? maxLines;
 
   @override
   State<AdaptiveSettingsTextField> createState() =>
@@ -3269,6 +3276,8 @@ class _AdaptiveSettingsTextFieldState extends State<AdaptiveSettingsTextField> {
       onSubmitted: widget.onSubmitted,
       suffixIcon: widget.suffixIcon,
       focusId: widget.focusId ?? _fallbackFocusId,
+      minLines: widget.minLines,
+      maxLines: widget.maxLines,
     );
   }
 }

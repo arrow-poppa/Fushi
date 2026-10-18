@@ -814,15 +814,22 @@ class SettingsTextItem extends SettingsItem {
     this.resetValue,
     this.placeholder,
     this.keyboardType,
+    this.minLines,
+    this.maxLines = 1,
     super.subtitle,
     super.icon,
     super.visible,
     super.reader,
     super.video,
-  });
+  }) : assert(!secret || maxLines == 1, 'secret 文本项只能单行（遮蔽输入不支持多行）');
 
   final SettingsValueGetter<String> value;
   final SettingsValueChanged<String> onChanged;
+
+  /// 多行文本项（提示词等长文本）：[maxLines] > 1 时输入框在 [minLines]..
+  /// [maxLines] 行之间随内容长高、回车换行。默认 1 = 单行，既有项不变。
+  final int? minLines;
+  final int? maxLines;
 
   /// true = 敏感值：明文遮蔽渲染 + 行尾眼睛按钮切换显隐（API key 等）。
   final bool secret;

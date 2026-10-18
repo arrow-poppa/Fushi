@@ -469,6 +469,9 @@ SettingsSection buildAiExplanationSection() {
         subtitle: t.ai_explain_prompt_hint,
         icon: Icons.chat_outlined,
         placeholder: kAiDefaultUserPrompt,
+        // 提示词是多行长文本：单行框既看不全，也会把默认模板里的换行压没。
+        minLines: 4,
+        maxLines: 12,
         resetValue: (SettingsContext c) => kAiDefaultUserPrompt,
         value: (SettingsContext c) => c.appModel.aiSettings.read().userPrompt,
         onChanged: (SettingsContext c, String value) async {
@@ -480,6 +483,8 @@ SettingsSection buildAiExplanationSection() {
         title: t.ai_explain_system_prompt,
         subtitle: t.ai_explain_system_prompt_hint,
         icon: Icons.rule_outlined,
+        minLines: 4,
+        maxLines: 12,
         value: (SettingsContext c) => c.appModel.aiSettings.read().systemPrompt,
         onChanged: (SettingsContext c, String value) async {
           await c.appModel.aiSettings.setSystemPrompt(value);

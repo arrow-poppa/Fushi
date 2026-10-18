@@ -33,10 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3152 条。点号进各自文件。
+> 共 3153 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-3523](bugs/BUG-3523-ai-fallback-scan-window-whole-phrase.md) | ✅ | ✅ | AI Fallback 把扫描窗整串当成一个词：屏幕 OCR 点词时解释整句后半段 |
 | [BUG-3522](bugs/BUG-3522-hyphenated-compound-lookup.md) | ✅ | ✅ | 连字符复合词：超过 16 码点查不到整词；点后一段时不会退到复合词开头 |
 | [BUG-3521](bugs/BUG-3521-screen-ocr-spaced-script-line-join.md) | ✅ | ✅ | 截屏识字：拉丁 / 西里尔 / 希腊文折行拼回时丢空格，查词窗只给被点的那一行 |
 | [BUG-3520](bugs/BUG-3520-screen-ocr-wrapped-sentence-next-line.md) | ✅ | ✅ | 截屏识字查词窗：一句折到下一行时源文本条看不到下一行、跨行的词查不全 |

@@ -3814,6 +3814,46 @@ html.eink.global-lookup body {
     -webkit-user-select: none;
 }
 
+/* 折叠开合区：箭头 + 标题。箭头与经典词典分组同一个边框三角（收起指右、展开指下），
+   只旋转不换盒子，标题不会随开合横跳（同 BUG-2049 的理由）。 */
+.ai-explanation-toggle {
+    flex: 1 1 auto;
+    display: flex;
+    align-items: center;
+    min-height: 28px;
+    color: var(--md-on-surface-variant, var(--on-surface-variant, inherit));
+    cursor: pointer;
+    user-select: none;
+    -webkit-user-select: none;
+}
+
+.ai-explanation-chevron {
+    flex: 0 0 auto;
+    display: inline-block;
+    width: 0;
+    height: 0;
+    border-top: 4px solid transparent;
+    border-bottom: 4px solid transparent;
+    border-right: 0;
+    border-left: 5px solid currentColor;
+    margin-right: 6px;
+    opacity: 0.5;
+    transform: rotate(90deg);
+}
+
+.ai-explanation[data-collapsed="true"] .ai-explanation-chevron {
+    transform: none;
+}
+
+/* 收起：只藏正文（文本节点仍在，流式写入照常），标题行下边距一并收掉。 */
+.ai-explanation[data-collapsed="true"] .ai-explanation-header {
+    margin-bottom: 0;
+}
+
+.ai-explanation[data-collapsed="true"] .ai-explanation-text {
+    display: none;
+}
+
 .ai-explanation-action {
     flex: 0 0 auto;
     /* 44px 是可点区域下限；图标本身小，但手指不小。 */

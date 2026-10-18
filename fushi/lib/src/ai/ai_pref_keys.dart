@@ -16,6 +16,10 @@ abstract final class AiPrefKeys {
   static const String stream = 'ai_explain_stream';
   static const String cancelPending = 'ai_explain_cancel_pending';
   static const String unknownFallback = 'ai_explain_unknown_fallback';
+
+  /// Whether the popup's AI box starts collapsed, like a collapsed dictionary.
+  /// Popup presentation only: it never changes whether or what is requested.
+  static const String collapsed = 'ai_explain_collapsed';
   static const String prompt = 'ai_explain_prompt';
   static const String systemPrompt = 'ai_explain_system_prompt';
   static const String temperature = 'ai_explain_temperature';

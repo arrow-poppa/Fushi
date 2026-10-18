@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/ai/ai_credential_store.dart';
+import 'package:fushi/src/ai/ai_explanation_cache.dart';
 import 'package:fushi/src/ai/ai_pref_keys.dart';
 import 'package:fushi/src/ai/ai_provider_config.dart';
 import 'package:fushi/src/ai/ai_settings_store.dart';
@@ -162,6 +163,34 @@ void main() {
     test('an unknown enum wire value falls back to unset', () {
       prefs.values[AiPrefKeys.customThinkingMode] = 'sideways';
       expect(settings.read().customThinkingMode, AiThinkingMode.unset);
+    });
+  });
+
+  group('collapsed by default (popup presentation only)', () {
+    test(
+      'defaults to expanded, round-trips, and reads junk defensively',
+      () async {
+        expect(settings.readCollapsedByDefault(), isFalse);
+        await settings.setCollapsedByDefault(true);
+        expect(settings.readCollapsedByDefault(), isTrue);
+        prefs.values[AiPrefKeys.collapsed] = 'yes';
+        expect(settings.readCollapsedByDefault(), isFalse);
+      },
+    );
+
+    test('never changes the request configuration', () async {
+      // Collapsing only hides the box; it must not reach the cache key or turn
+      // generation off — the answer is ready when the user expands it.
+      String key() => buildAiExplanationCacheKey(
+        profileId: 'p',
+        target: '猫',
+        sentence: '猫がいる。',
+        config: settings.read(),
+      );
+      final String before = key();
+      await settings.setCollapsedByDefault(true);
+      expect(key(), before);
+      expect(settings.read().autoGenerateOnLookup, isTrue);
     });
   });
 

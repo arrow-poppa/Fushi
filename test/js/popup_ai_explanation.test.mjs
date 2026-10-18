@@ -245,3 +245,83 @@ test("保留换行与 Unicode", () => {
   const box = mount(win, { status: "done", text });
   assert.equal(bodyOf(box), text);
 });
+
+// ── 折叠（「默认折叠 AI 解释」设置 + 点标题开合） ─────────────────────────────
+
+const isCollapsed = (box) => box.getAttribute("data-collapsed") === "true";
+const toggleOf = (box) => box.querySelector(".ai-explanation-toggle");
+const click = (win, node) =>
+  node.dispatchEvent(new win.MouseEvent("click", { bubbles: true, cancelable: true }));
+
+test("默认展开；Dart 注入 collapsed 时画成收起，正文节点仍在", () => {
+  const { win } = createPopup();
+  const open = mount(win, { status: "done", text: "answer" });
+  assert.equal(isCollapsed(open), false);
+  assert.equal(toggleOf(open).getAttribute("aria-expanded"), "true");
+  open.remove();
+
+  win.resetAiExplanation();
+  const closed = mount(win, { status: "done", text: "answer", collapsed: true });
+  assert.equal(isCollapsed(closed), true);
+  assert.equal(toggleOf(closed).getAttribute("aria-expanded"), "false");
+  // 收起只是不显示：答案还在，制卡的 {ai-explanation} 照样能取到。
+  assert.equal(bodyOf(closed), "answer");
+  assert.equal(win.__fushiAiFinalText(), "answer");
+});
+
+test("点标题开合，且点击不冒泡（否则弹窗会当成点了卡片外）", () => {
+  const { win, calls } = createPopup();
+  const box = mount(win, { status: "done", text: "a", collapsed: true });
+  let bubbled = false;
+  win.document.getElementById("entries-container").addEventListener("click", () => {
+    bubbled = true;
+  });
+  click(win, toggleOf(box));
+  assert.equal(isCollapsed(box), false, "点一下展开");
+  click(win, box.querySelector(".ai-explanation-title"));
+  assert.equal(isCollapsed(box), true, "点标题文字同样收起");
+  assert.equal(bubbled, false);
+  assert.equal(calls.length, 0, "开合是纯 JS 显示状态，不该惊动 Dart");
+});
+
+test("点动作按钮不会顺带开合", () => {
+  const { win, calls } = createPopup();
+  const box = mount(win, { status: "done", text: "a", collapsed: true });
+  click(win, box.querySelector(".ai-explanation-action"));
+  assert.equal(isCollapsed(box), true);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].payload.action, "regenerate");
+});
+
+test("用户的开合选择熬过状态类别变化时的整块重建", () => {
+  // loading → done 会整块重建；不记住的话用户刚展开，答案一到又收回去了。
+  const { win } = createPopup();
+  const box = mount(win, { status: "loading", collapsed: true });
+  click(win, toggleOf(box));
+  win.__fushiAiUpdate({ status: "done", text: "final", collapsed: true });
+  const rebuilt = win.document.querySelector(".ai-explanation");
+  assert.notEqual(rebuilt, box, "确实重建了");
+  assert.equal(isCollapsed(rebuilt), false, "仍按用户的选择展开");
+  assert.equal(bodyOf(rebuilt), "final");
+});
+
+test("换词后按设置重新开始，不沿用上一个词的开合", () => {
+  const { win } = createPopup();
+  const box = mount(win, { status: "done", text: "a", collapsed: true });
+  click(win, toggleOf(box));
+  box.remove();
+  win.resetAiExplanation();
+  const next = mount(win, { status: "done", text: "b", collapsed: true });
+  assert.equal(isCollapsed(next), true);
+});
+
+test("收起时流式照常写进同一个文本节点", async () => {
+  const { win } = createPopup();
+  const box = mount(win, { status: "streaming", text: "Hel", collapsed: true });
+  const node = box.querySelector('[data-ai-role="text"]');
+  win.__fushiAiUpdate({ status: "streaming", text: "Hello", collapsed: true });
+  await new Promise((r) => win.requestAnimationFrame(() => r()));
+  assert.equal(win.document.querySelector('[data-ai-role="text"]'), node);
+  assert.equal(node.textContent, "Hello");
+  assert.equal(isCollapsed(box), true);
+});

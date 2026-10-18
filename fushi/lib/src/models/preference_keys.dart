@@ -32,6 +32,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // bool：弹窗关闭 / 查下一个词时中止仍在生成的请求。关 = 请求跑完进缓存，
   // 但永远不会画到另一个词的弹窗上。
   'ai_explain_cancel_pending',
+  // bool：查词弹窗里的 AI 区块默认折叠（与折叠的词典同一观感，点标题展开）。只管
+  // 显示，不影响要不要发请求、发什么。默认 false。
+  'ai_explain_collapsed',
   // 🔴 String：自定义 OpenAI 兼容端点的 API key。
   'ai_explain_custom_api_key',
   // 🔴 String（JSON 对象）：深合并进生成请求体的自定义字段。**值里可能裹着

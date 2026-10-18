@@ -162,6 +162,22 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
     }
   }
 
+  /// 源文本条上的原文：被点的那一行；那一行最后一句折到下面几行时，把这句剩下的
+  /// 部分接上（[ocrLineWithSentenceContinuation]）——否则跨行的词查不全，条上也看不到
+  /// 下一行。接上的部分只在行尾之后，行内下标（[PopupDictionaryPage.sourceCharIndex]）
+  /// 原样有效。
+  static String _sourceTextOf(PopupDictionaryPage page) {
+    final String line = page.searchTerm;
+    final String? block = page.sourceBlock;
+    if (page.sourceCharIndex < 0 || block == null) return line;
+    return ocrLineWithSentenceContinuation(
+          block,
+          page.sourceBlockOffset,
+          line,
+        ) ??
+        line;
+  }
+
   static String _sentenceOf(PopupDictionaryPage page) =>
       page.sourceCharIndex >= 0
       ? _sentenceAtLineUnit(page, page.sourceCharIndex)
@@ -169,17 +185,22 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
 
   /// 行内 UTF-16 下标 [unitInLine] 那个字所在的整句（BUG-3487）：有所属块就从块里截，
   /// 块与行对不上 / 截不出（无标点的超长块）时回落为整行。
+  ///
+  /// 下标落在行尾之后（源文本条接上的下一行部分，见 [_sourceTextOf]）时，那部分按
+  /// 构造就属于行尾那一句，按行内最后一个非空白字取句子。
   static String _sentenceAtLineUnit(PopupDictionaryPage page, int unitInLine) {
     final String line = page.searchTerm;
     final String? block = page.sourceBlock;
     final int offset = page.sourceBlockOffset;
+    final int lastUnit = line.trimRight().length - 1;
+    final int unit = unitInLine > lastUnit ? lastUnit : unitInLine;
     if (block != null &&
         offset >= 0 &&
-        unitInLine >= 0 &&
-        unitInLine < line.length &&
+        unit >= 0 &&
+        unit < line.length &&
         offset + line.length <= block.length &&
         block.substring(offset, offset + line.length) == line) {
-      final String? sentence = ocrBlockSentenceAt(block, offset + unitInLine);
+      final String? sentence = ocrBlockSentenceAt(block, offset + unit);
       if (sentence != null) return sentence;
     }
     return line.trim();
@@ -188,7 +209,7 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
   /// 宿主推来的这一次查词：整串入口直接查整串；带被点字下标的整行入口（BUG-2899）
   /// 把整行放上源文本条，从被点字起扫描查词——与在条上点那个字同一条路径。
   void _lookupWidgetSource() {
-    final String text = widget.searchTerm;
+    final String text = _sourceTextOf(widget);
     final int unitIndex = widget.sourceCharIndex;
     final ({String suffix, int start})? scan = unitIndex < 0
         ? null
@@ -344,7 +365,7 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
   Future<void> _lookupFromSourceStrip(String query, Rect rect, int charIndex) {
     if (_sourceSentence.isNotEmpty && widget.sourceBlock != null) {
       // BUG-3487：条上点的是同一行的别的字，它可能落在块里的另一句。
-      final String line = widget.searchTerm;
+      final String line = _sourceTextOf(widget);
       final int leading = line.length - line.trimLeft().length;
       final int unit =
           leading + line.trim().characters.take(charIndex).toString().length;
@@ -445,6 +466,18 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
       ...fields,
       'sentence': resolveMineSentence(fields, _sourceSentence),
     };
+  }
+
+  /// BYOK AI 解释的 `{{sentence}}`（docs/agent/ai-explanation.md §6.2）：与制卡补
+  /// `{sentence}` 同一判据（[_withSourceSentence]）——基础层当前词条仍出自外部入口那
+  /// 一行时给那一句，原地跳到释义里的别的词、嵌套层、搜索栏另查都给空串。
+  ///
+  /// 此前本页不传，AI 收到的句子恒为空：截屏识字查词时模型只看得到孤立的词。
+  String _aiSentenceFor(int index, DictionaryPopupEntry entry) {
+    if (index != 0 || _sourceSentence.isEmpty || _sourceLineQuery.isEmpty) {
+      return '';
+    }
+    return entry.searchTerm.trim() == _sourceLineQuery ? _sourceSentence : '';
   }
 
   Future<MinePopupResult> _mineBaseEntry(Map<String, String> fields) =>
@@ -777,6 +810,7 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
       transparentDocumentBackground: true,
       result: entry.result,
       restoreScrollTop: entry.restoreScrollTop,
+      aiSentence: _aiSentenceFor(index, entry),
       isSearching: entry.isSearching,
       // TODO-951 症状C：常驻热槽（isWarmSlot）的 WebView 全程挂载、冷加载一次后复用，
       // 消除「每次查词重建弹窗 WebView 露白屏一瞬」。与 reader/video/首页查词同口径。

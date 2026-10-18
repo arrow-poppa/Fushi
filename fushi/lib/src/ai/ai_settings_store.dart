@@ -93,6 +93,18 @@ class AiSettingsStore {
     );
   }
 
+  /// Whether the popup's AI box starts collapsed.
+  ///
+  /// Kept out of [AiProviderConfig] on purpose: it is presentation, not request
+  /// configuration, so it must not reach the cache key or the request builder.
+  /// Collapsing never stops a request — with auto generation on, the answer is
+  /// ready the moment the user expands the box.
+  bool readCollapsedByDefault() =>
+      _bool(AiPrefKeys.collapsed, AiDefaults.collapsedByDefault);
+
+  Future<void> setCollapsedByDefault(bool value) =>
+      _prefs.setPref(AiPrefKeys.collapsed, value);
+
   Future<void> setProvider(AiProvider value) =>
       _prefs.setPref(AiPrefKeys.provider, value.wire);
 

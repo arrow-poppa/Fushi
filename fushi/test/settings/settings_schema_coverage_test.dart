@@ -69,6 +69,12 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'lookup/Auto generate on lookup':
       'test/ai/ai_explanation_controller_test.dart（关闭时**一个请求都不发**，'
           '改由重新生成按钮触发）',
+  // 「默认折叠 AI 解释」：生效点在查词弹窗 WebView 里的 popup.js（harness 没有
+  // WebView）。持久化与「不碰请求配置」由 store 用例咬住，收起 / 展开、点标题开合、
+  // 用户的选择熬过状态重建、换词按设置重来由 jsdom 真 DOM 用例咬住。
+  'lookup/Collapse AI explanation by default':
+      'test/ai/ai_settings_store_test.dart + '
+          'test/js/popup_ai_explanation.test.mjs（收起 / 展开与开合）',
   'lookup/Fallback for unknown words':
       'test/ai/app_model_ai_fallback_test.dart（开关门、真结果不被顶替、'
           '有边界才合成）+ test/ai/ai_fallback_entry_test.dart（分词器与合成结果）',

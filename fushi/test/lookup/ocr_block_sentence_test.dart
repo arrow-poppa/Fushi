@@ -90,4 +90,69 @@ void main() {
     expect(ocrBlockSentenceAt('あいう', -1), isNull);
     expect(ocrBlockSentenceAt('あいう', 3), isNull);
   });
+
+  // 查词窗源文本条：被点那一行 + 行尾那一句在下面几行里剩下的部分。
+  group('ocrLineWithSentenceContinuation', () {
+    test('a sentence wrapped onto the next line is continued there', () {
+      // 「天気」被折成两行：只给第一行时扫描查词只能查到「天」。
+      const String block = '今日は良い天\n気なので散歩に行った。\n次の文。';
+      const String line = '今日は良い天';
+      expect(
+        ocrLineWithSentenceContinuation(block, 0, line),
+        '今日は良い天気なので散歩に行った。',
+      );
+    });
+
+    test(
+      'the continuation spans several lines but stops at the sentence end',
+      () {
+        const String block = '吾輩は\n猫で\nある。名前は\nまだ無い。';
+        expect(ocrLineWithSentenceContinuation(block, 0, '吾輩は'), '吾輩は猫である。');
+      },
+    );
+
+    test('the line keeps its own text as an unchanged prefix', () {
+      // 行内下标原样有效：开头必须逐字是原行（去掉行尾空白）。
+      const String block = '  良い天気 \nですね。';
+      const String line = '  良い天気 ';
+      final String? joined = ocrLineWithSentenceContinuation(block, 0, line);
+      expect(joined, '  良い天気ですね。');
+      expect(joined!.startsWith(line.trimRight()), isTrue);
+    });
+
+    test('latin words broken across lines get a space back', () {
+      const String block = 'The weather is\nnice today. Next one.';
+      expect(
+        ocrLineWithSentenceContinuation(block, 0, 'The weather is'),
+        'The weather is nice today.',
+      );
+    });
+
+    test('a line whose last sentence already ends on it is left alone', () {
+      const String block = 'もう行く。\n今日は雨';
+      expect(ocrLineWithSentenceContinuation(block, 0, 'もう行く。'), isNull);
+    });
+
+    test('the last line of the block has nothing to continue', () {
+      const String block = 'まだ早い。\nもう行く。今日は雨';
+      expect(
+        ocrLineWithSentenceContinuation(
+          block,
+          indexOf(block, 'もう'),
+          'もう行く。今日は雨',
+        ),
+        isNull,
+      );
+    });
+
+    test('an offset that does not match the line is rejected', () {
+      expect(ocrLineWithSentenceContinuation('まだ早い\nもう行く。', 1, 'まだ早い'), isNull);
+      expect(ocrLineWithSentenceContinuation('まだ早い', -1, 'まだ早い'), isNull);
+    });
+
+    test('an unpunctuated block longer than the cap is not glued together', () {
+      final String block = '${'メニュー' * 40}\n${'項目' * 40}';
+      expect(ocrLineWithSentenceContinuation(block, 0, 'メニュー' * 40), isNull);
+    });
+  });
 }

@@ -1672,14 +1672,24 @@ JSON.stringify((function(){
     );
   }
 
-  static String _aiStateJson(AiExplanationResult result) => jsonEncode(
+  String _aiStateJson(AiExplanationResult result) => jsonEncode(
         <String, Object?>{
           'status': result.status.name,
           'text': result.text,
           // provider 自己写的那句（已脱敏）比通用文案有用得多。
           if (result.providerMessage != null) 'detail': result.providerMessage,
+          // 「默认折叠 AI 解释」：只管 popup.js 把盒子画成收起还是展开，用户在这次
+          // 查词里手动开合过就以用户为准（见 popup.js __fushiAiOpen）。随每次状态
+          // 下发而不是放静态段：静态段按输入 memo，偏好变了不一定重发。
+          if (_aiCollapsedByDefault) 'collapsed': true,
         },
       );
+
+  bool get _aiCollapsedByDefault {
+    final AppModel model = ref.read(appProvider);
+    return model.isPreferencesReady &&
+        model.aiSettings.readCollapsedByDefault();
+  }
 
   /// 换词时重新决定要不要问、问什么。
   ///
@@ -1709,6 +1719,18 @@ JSON.stringify((function(){
     return 'window.__fushiAiState = ${_aiStateJson(initial)};';
   }
 
+  /// 句子变了、结果没变时重新决定 AI 解释（见 [didUpdateWidget]）。
+  ///
+  /// [_beginAiLookupJs] 经 [_onAiResult] 把新状态推进 WebView；控制器按新的
+  /// (词, 句子) 换缓存键，按「取消未完成请求」设置放弃旧请求，旧请求的结果也画不上来。
+  /// 还没推过结果（WebView 未就绪 / 仍在查）时什么都不做：下一次 [_pushResults]
+  /// 本来就会读到新句子。
+  void _restartAiForSentence() {
+    if (_controller == null || !_ready || widget.lookupPending) return;
+    if (_aiTerm.isEmpty) return;
+    _beginAiLookupJs();
+  }
+
   // ===== end BYOK AI Explanation ============================================
 
   // No dispose() override that disposes _controller here.
@@ -1733,6 +1755,11 @@ JSON.stringify((function(){
       // 停驻 / 结果前被关掉时翻 false。只比结果身份会漏掉这两次，页面要么收不到
       // 「真的在查」，要么停驻后加载动画一直转。占位渲染很轻（空盒子），全量推即可。
       _pushResults();
+    } else if (oldWidget.aiSentence != widget.aiSentence) {
+      // 同一个结果、句子晚到（宿主在结果推送之后才定下句子）：AI 解释此前是按旧句子
+      // （常常是空串）问的，不重新问的话用户得再查一次同一个词才拿到带语境的解释。
+      // 只重启 AI 这一块，不重渲染词条。
+      _restartAiForSentence();
     }
     // TODO-869：独立比较，不搭 result 便车——子弹窗增减时 result 可能没变（卡片内容
     // 不变），但 hasChildPopup 翻转必须重新注入，否则父窗点卡片关不掉刚 push 的子窗。

@@ -1122,6 +1122,7 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
     window.i18nAiActionGenerate = ${jsonEncode(t.ai_explain_action_generate)};
     window.i18nAiActionRegenerate = ${jsonEncode(t.ai_explain_action_regenerate)};
     window.i18nAiActionCancel = ${jsonEncode(t.ai_explain_action_cancel)};
+    window.i18nAiActionToggle = ${jsonEncode(t.ai_explain_action_toggle)};
     window.i18nMinedCardTitle = ${jsonEncode(t.anki_mined_card_title)};
     window.i18nMinedCardSubtitle = ${jsonEncode(t.anki_mined_card_subtitle)};
     window.i18nMinedMultipleMatches = ${jsonEncode(t.anki_mined_multiple_matches(count: '{count}'))};

@@ -565,6 +565,89 @@ void main() {
   );
 
   testWidgets(
+    'a screen-OCR sentence wrapped onto the next line continues on the strip, '
+    'the scan crosses the line break and the AI gets the whole sentence',
+    (WidgetTester tester) async {
+      final _SourceLineAppModel appModel = _SourceLineAppModel();
+      final _RecordingAnkiRepo repo = _RecordingAnkiRepo();
+      // 「天気」被 ML Kit 折成两行；用户点的是第一行行尾的「天」（下标 5）。
+      const String block = '今日は良い天\n気ですね。\n次の文。';
+      const String line = '今日は良い天';
+      await tester.pumpWidget(
+        _buildApp(
+          appModel: appModel,
+          repo: repo,
+          text: line,
+          charIndex: 5,
+          sourceBlock: block,
+          sourceBlockOffset: 0,
+        ),
+      );
+      await _settle(tester);
+
+      expect(appModel.searched, <String>[
+        '天気ですね。',
+      ], reason: '扫描查词跨过 OCR 折行接到下一行，否则只能查到「天」');
+      final SourceLookupTextPanel panel = tester.widget(
+        find.byType(SourceLookupTextPanel),
+      );
+      expect(panel.text, '今日は良い天気ですね。', reason: '条上要看得到这句在下一行的部分');
+      expect(panel.highlight?.start, 5, reason: '行内下标不随接上的部分变');
+      expect(
+        _baseLayer(tester).aiSentence,
+        '今日は良い天気ですね。',
+        reason: 'AI 解释的 {{sentence}} 与制卡句子同源，首查就带上',
+      );
+      expect(await _mineSentence(tester, repo), '今日は良い天気ですね。');
+
+      // 条上点接上来的那部分（下一行的「気」）：仍是同一句。
+      await tester.tap(find.text('気'));
+      await _settle(tester);
+      expect(appModel.searched.last, '気ですね。');
+      expect(await _mineSentence(tester, repo), '今日は良い天気ですね。');
+      expect(_baseLayer(tester).aiSentence, '今日は良い天気ですね。');
+    },
+  );
+
+  testWidgets(
+    'the AI sentence follows the same rule as the mined sentence: whole-string '
+    'entries and search-bar lookups send none',
+    (WidgetTester tester) async {
+      final _SourceLineAppModel appModel = _SourceLineAppModel();
+      await tester.pumpWidget(
+        _buildApp(
+          appModel: appModel,
+          repo: _RecordingAnkiRepo(),
+          text: '天気',
+          charIndex: -1,
+        ),
+      );
+      await _settle(tester);
+      expect(_baseLayer(tester).aiSentence, '');
+
+      final ValueNotifier<_Push> push = ValueNotifier<_Push>(
+        const _Push('今日は良い天気ですね', 5, 1),
+      );
+      await tester.pumpWidget(
+        _buildHostedApp(
+          appModel: appModel,
+          repo: _RecordingAnkiRepo(),
+          push: push,
+        ),
+      );
+      await _settle(tester);
+      expect(_baseLayer(tester).aiSentence, '今日は良い天気ですね');
+
+      // 搜索栏另查别的词：结果与那一行无关了。
+      await tester.enterText(find.byType(TextField).first, '雨');
+      await tester.testTextInput.receiveAction(TextInputAction.search);
+      await _settle(tester);
+      expect(appModel.searched.last, '雨');
+      expect(_baseLayer(tester).aiSentence, '');
+    },
+  );
+
+  testWidgets(
     'BUG-2899: PopupDictApp hands the whole line from the native channel to '
     'the page without cutting it into a word',
     (WidgetTester tester) async {

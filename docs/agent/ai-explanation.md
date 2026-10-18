@@ -78,6 +78,7 @@ Fushi-idiomatic mechanism; `diverge` = deliberate difference (always justified i
 | Real time response | `settings.html:2521` | streams into the popup | `ai.streamResponse`, default `false` | `ai_explain_stream` | port | unit | todo |
 | Cancel unfinished requests | `settings.html:2549` | abort on close / new lookup / hide | `ai.cancelPendingRequests`, default `true` | `ai_explain_cancel_pending` | port | unit | todo |
 | Fallback for unknown words | `settings.html:2580` | opens popup for words in no dictionary | `ai.unknownWordFallback`, default `false` | `ai_explain_unknown_fallback` | adapt (§8.5) | unit | todo |
+| Collapse by default | — (Fushi-only) | box starts collapsed like a collapsed dictionary; tapping its title expands it. Presentation only: requests, cache key and `{ai-explanation}` are unchanged | — | `ai_explain_collapsed`, default `false` | diverge (§8.9) | unit+jsdom | done |
 | Custom prompt | `settings.html:2602` | user prompt template | `ai.customPrompt`, default = §5.2 | `ai_explain_prompt` | port | unit | todo |
 | System prompt | `settings.html:2625` | optional system message | `ai.systemPrompt`, default `""` | `ai_explain_system_prompt` | port | unit | todo |
 | Temperature | `settings.html:2650` | clamp `[0,2]`, default `0.7`, `,`→`.` | `ai.temperature` | `ai_explain_temperature` (double) | port | unit | todo |
@@ -309,9 +310,15 @@ Verified carriers; surfaces without context pass `''` (never invalid JSON):
 | Floating lyric | yes | host lyric line |
 | Global lookup (desktop) | yes | `_currentSentence` via `extractSentenceAt` |
 | Galgame overlay | yes | `sentenceContext` |
+| Out-of-app lookup window (Android screen OCR, floating subtitle tap) | yes | `_sourceSentence` (sentence cut from the OCR text block), same predicate as the mined `{sentence}` — base layer only, and only while its entry still comes from the source line |
 | Home Dictionary tab | **no** | — |
 | Floating dict window | **no** | hardcoded `sentence: ''` |
 | Nested popup | **no** | child inherits nothing |
+
+The popup WebView reads `aiSentence` when a result is pushed **and** again when only the
+sentence changes for the same result: a host that settles its sentence after the result
+arrived restarts the AI request with the new context (the controller supersedes the old
+request) instead of leaving the context-free answer on screen until the next lookup.
 
 `fields['sentence']` is **not** emitted by `popup.js` (`buildMinePayload` never sets it);
 hosts inject it Dart-side. The AI layer therefore takes the sentence from the Dart host
@@ -396,6 +403,12 @@ The reference has no user-facing cancel control and its intermediate regenerate 
 has no click listener. Fushi exposes an explicit cancel action while a request is in
 flight, as required.
 
+### 8.9 Collapsible box
+Not in the reference. Requested so the box can be tucked away like a collapsed
+dictionary. Collapsing never cancels or suppresses a request: with auto generation on,
+the answer is ready the moment the box is expanded. Turning generation off is still the
+job of "Auto generate on lookup".
+
 ## 9. Credential security
 
 - API keys are **device-local**. They are never included in backup archives, profile
@@ -421,8 +434,8 @@ flight, as required.
 States: not configured, auto-generation disabled (manual), loading, streaming, done,
 error, timeout, cancelled.
 
-Actions: generate, regenerate, cancel (while in flight), select, copy, export via the
-existing Anki flow.
+Actions: generate, regenerate, cancel (while in flight), collapse / expand, select, copy,
+export via the existing Anki flow.
 
 Requirements:
 - Text is genuinely selectable; copy works on Android and the supported desktops.
@@ -434,6 +447,14 @@ Requirements:
 - Normal popup scrolling is preserved.
 - Streaming updates only the explanation text node; no full DOM rebuild, no flicker,
   no loss of selection; visual updates are throttled if needed.
+
+Collapse: the title row (chevron + title) toggles `data-collapsed` on the box; the text
+node stays in the DOM, so streaming, selection and `{ai-explanation}` keep working while
+collapsed. The initial state comes from `ai_explain_collapsed` (sent as `collapsed` in
+every state payload); a manual toggle wins for the rest of that lookup, survives the
+state-class rebuilds (loading → done), and is cleared by `resetAiExplanation()` on the next
+word. It is a plain element, not `<details>/<summary>`, so it never takes DOM focus
+(BUG-2447). A tap on the box no longer falls through to the popup's `tapOutside`.
 
 ## 11. Anki integration
 

@@ -1,7 +1,7 @@
 /// Generated file. Do not edit.
 ///
 /// Locales: 17
-/// Strings: 143463 (8439 per locale)
+/// Strings: 143514 (8442 per locale)
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -234,6 +234,7 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get ai_explain_action_cancel => 'Cancel';
   String get ai_explain_action_generate => 'Generate explanation';
   String get ai_explain_action_regenerate => 'Regenerate explanation';
+  String get ai_explain_action_toggle => 'Show or hide AI explanation';
   String get ai_explain_allow_fallbacks => 'Allow OpenRouter fallbacks';
   String get ai_explain_api_key => 'API key';
   String get ai_explain_api_key_hint =>
@@ -244,6 +245,9 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get ai_explain_cancel_pending => 'Cancel unfinished requests';
   String get ai_explain_cancel_pending_hint =>
       'Drop an explanation still being generated when the popup closes or another word is looked up.';
+  String get ai_explain_collapsed => 'Collapse AI explanation by default';
+  String get ai_explain_collapsed_hint =>
+      'Start the AI explanation box collapsed, like a collapsed dictionary. Tap its title to expand it. The explanation is still generated in the background.';
   String get ai_explain_endpoint => 'Custom endpoint';
   String get ai_explain_endpoint_hint =>
       'Full URL, used exactly as entered. No path is appended.';
@@ -12255,6 +12259,8 @@ class _StringsAr extends _StringsEn {
   @override
   String get ai_explain_action_regenerate => 'Regenerate explanation';
   @override
+  String get ai_explain_action_toggle => 'Show or hide AI explanation';
+  @override
   String get ai_explain_allow_fallbacks => 'Allow OpenRouter fallbacks';
   @override
   String get ai_explain_api_key => 'API key';
@@ -12271,6 +12277,11 @@ class _StringsAr extends _StringsEn {
   @override
   String get ai_explain_cancel_pending_hint =>
       'Drop an explanation still being generated when the popup closes or another word is looked up.';
+  @override
+  String get ai_explain_collapsed => 'Collapse AI explanation by default';
+  @override
+  String get ai_explain_collapsed_hint =>
+      'Start the AI explanation box collapsed, like a collapsed dictionary. Tap its title to expand it. The explanation is still generated in the background.';
   @override
   String get ai_explain_endpoint => 'Custom endpoint';
   @override
@@ -32647,6 +32658,8 @@ class _StringsDe extends _StringsEn {
   @override
   String get ai_explain_action_regenerate => 'Regenerate explanation';
   @override
+  String get ai_explain_action_toggle => 'Show or hide AI explanation';
+  @override
   String get ai_explain_allow_fallbacks => 'Allow OpenRouter fallbacks';
   @override
   String get ai_explain_api_key => 'API key';
@@ -32663,6 +32676,11 @@ class _StringsDe extends _StringsEn {
   @override
   String get ai_explain_cancel_pending_hint =>
       'Drop an explanation still being generated when the popup closes or another word is looked up.';
+  @override
+  String get ai_explain_collapsed => 'Collapse AI explanation by default';
+  @override
+  String get ai_explain_collapsed_hint =>
+      'Start the AI explanation box collapsed, like a collapsed dictionary. Tap its title to expand it. The explanation is still generated in the background.';
   @override
   String get ai_explain_endpoint => 'Custom endpoint';
   @override
@@ -53428,6 +53446,8 @@ class _StringsEs extends _StringsEn {
   @override
   String get ai_explain_action_regenerate => 'Regenerate explanation';
   @override
+  String get ai_explain_action_toggle => 'Show or hide AI explanation';
+  @override
   String get ai_explain_allow_fallbacks => 'Allow OpenRouter fallbacks';
   @override
   String get ai_explain_api_key => 'API key';
@@ -53444,6 +53464,11 @@ class _StringsEs extends _StringsEn {
   @override
   String get ai_explain_cancel_pending_hint =>
       'Drop an explanation still being generated when the popup closes or another word is looked up.';
+  @override
+  String get ai_explain_collapsed => 'Collapse AI explanation by default';
+  @override
+  String get ai_explain_collapsed_hint =>
+      'Start the AI explanation box collapsed, like a collapsed dictionary. Tap its title to expand it. The explanation is still generated in the background.';
   @override
   String get ai_explain_endpoint => 'Custom endpoint';
   @override
@@ -74266,6 +74291,8 @@ class _StringsFr extends _StringsEn {
   @override
   String get ai_explain_action_regenerate => 'Regenerate explanation';
   @override
+  String get ai_explain_action_toggle => 'Show or hide AI explanation';
+  @override
   String get ai_explain_allow_fallbacks => 'Allow OpenRouter fallbacks';
   @override
   String get ai_explain_api_key => 'API key';
@@ -74282,6 +74309,11 @@ class _StringsFr extends _StringsEn {
   @override
   String get ai_explain_cancel_pending_hint =>
       'Drop an explanation still being generated when the popup closes or another word is looked up.';
+  @override
+  String get ai_explain_collapsed => 'Collapse AI explanation by default';
+  @override
+  String get ai_explain_collapsed_hint =>
+      'Start the AI explanation box collapsed, like a collapsed dictionary. Tap its title to expand it. The explanation is still generated in the background.';
   @override
   String get ai_explain_endpoint => 'Custom endpoint';
   @override
@@ -95185,6 +95217,8 @@ class _StringsId extends _StringsEn {
   @override
   String get ai_explain_action_regenerate => 'Regenerate explanation';
   @override
+  String get ai_explain_action_toggle => 'Show or hide AI explanation';
+  @override
   String get ai_explain_allow_fallbacks => 'Allow OpenRouter fallbacks';
   @override
   String get ai_explain_api_key => 'API key';
@@ -95201,6 +95235,11 @@ class _StringsId extends _StringsEn {
   @override
   String get ai_explain_cancel_pending_hint =>
       'Drop an explanation still being generated when the popup closes or another word is looked up.';
+  @override
+  String get ai_explain_collapsed => 'Collapse AI explanation by default';
+  @override
+  String get ai_explain_collapsed_hint =>
+      'Start the AI explanation box collapsed, like a collapsed dictionary. Tap its title to expand it. The explanation is still generated in the background.';
   @override
   String get ai_explain_endpoint => 'Custom endpoint';
   @override
@@ -115760,6 +115799,8 @@ class _StringsIt extends _StringsEn {
   @override
   String get ai_explain_action_regenerate => 'Regenerate explanation';
   @override
+  String get ai_explain_action_toggle => 'Show or hide AI explanation';
+  @override
   String get ai_explain_allow_fallbacks => 'Allow OpenRouter fallbacks';
   @override
   String get ai_explain_api_key => 'API key';
@@ -115776,6 +115817,11 @@ class _StringsIt extends _StringsEn {
   @override
   String get ai_explain_cancel_pending_hint =>
       'Drop an explanation still being generated when the popup closes or another word is looked up.';
+  @override
+  String get ai_explain_collapsed => 'Collapse AI explanation by default';
+  @override
+  String get ai_explain_collapsed_hint =>
+      'Start the AI explanation box collapsed, like a collapsed dictionary. Tap its title to expand it. The explanation is still generated in the background.';
   @override
   String get ai_explain_endpoint => 'Custom endpoint';
   @override
@@ -136496,6 +136542,8 @@ class _StringsJa extends _StringsEn {
   @override
   String get ai_explain_action_regenerate => 'Regenerate explanation';
   @override
+  String get ai_explain_action_toggle => 'Show or hide AI explanation';
+  @override
   String get ai_explain_allow_fallbacks => 'Allow OpenRouter fallbacks';
   @override
   String get ai_explain_api_key => 'API key';
@@ -136512,6 +136560,11 @@ class _StringsJa extends _StringsEn {
   @override
   String get ai_explain_cancel_pending_hint =>
       'Drop an explanation still being generated when the popup closes or another word is looked up.';
+  @override
+  String get ai_explain_collapsed => 'Collapse AI explanation by default';
+  @override
+  String get ai_explain_collapsed_hint =>
+      'Start the AI explanation box collapsed, like a collapsed dictionary. Tap its title to expand it. The explanation is still generated in the background.';
   @override
   String get ai_explain_endpoint => 'Custom endpoint';
   @override
@@ -156215,6 +156268,8 @@ class _StringsKo extends _StringsEn {
   @override
   String get ai_explain_action_regenerate => 'Regenerate explanation';
   @override
+  String get ai_explain_action_toggle => 'Show or hide AI explanation';
+  @override
   String get ai_explain_allow_fallbacks => 'Allow OpenRouter fallbacks';
   @override
   String get ai_explain_api_key => 'API key';
@@ -156231,6 +156286,11 @@ class _StringsKo extends _StringsEn {
   @override
   String get ai_explain_cancel_pending_hint =>
       'Drop an explanation still being generated when the popup closes or another word is looked up.';
+  @override
+  String get ai_explain_collapsed => 'Collapse AI explanation by default';
+  @override
+  String get ai_explain_collapsed_hint =>
+      'Start the AI explanation box collapsed, like a collapsed dictionary. Tap its title to expand it. The explanation is still generated in the background.';
   @override
   String get ai_explain_endpoint => 'Custom endpoint';
   @override
@@ -175982,6 +176042,8 @@ class _StringsNl extends _StringsEn {
   @override
   String get ai_explain_action_regenerate => 'Regenerate explanation';
   @override
+  String get ai_explain_action_toggle => 'Show or hide AI explanation';
+  @override
   String get ai_explain_allow_fallbacks => 'Allow OpenRouter fallbacks';
   @override
   String get ai_explain_api_key => 'API key';
@@ -175998,6 +176060,11 @@ class _StringsNl extends _StringsEn {
   @override
   String get ai_explain_cancel_pending_hint =>
       'Drop an explanation still being generated when the popup closes or another word is looked up.';
+  @override
+  String get ai_explain_collapsed => 'Collapse AI explanation by default';
+  @override
+  String get ai_explain_collapsed_hint =>
+      'Start the AI explanation box collapsed, like a collapsed dictionary. Tap its title to expand it. The explanation is still generated in the background.';
   @override
   String get ai_explain_endpoint => 'Custom endpoint';
   @override
@@ -196669,6 +196736,8 @@ class _StringsPtBr extends _StringsEn {
   @override
   String get ai_explain_action_regenerate => 'Regenerate explanation';
   @override
+  String get ai_explain_action_toggle => 'Show or hide AI explanation';
+  @override
   String get ai_explain_allow_fallbacks => 'Allow OpenRouter fallbacks';
   @override
   String get ai_explain_api_key => 'API key';
@@ -196685,6 +196754,11 @@ class _StringsPtBr extends _StringsEn {
   @override
   String get ai_explain_cancel_pending_hint =>
       'Drop an explanation still being generated when the popup closes or another word is looked up.';
+  @override
+  String get ai_explain_collapsed => 'Collapse AI explanation by default';
+  @override
+  String get ai_explain_collapsed_hint =>
+      'Start the AI explanation box collapsed, like a collapsed dictionary. Tap its title to expand it. The explanation is still generated in the background.';
   @override
   String get ai_explain_endpoint => 'Custom endpoint';
   @override
@@ -217423,6 +217497,8 @@ class _StringsRu extends _StringsEn {
   @override
   String get ai_explain_action_regenerate => 'Regenerate explanation';
   @override
+  String get ai_explain_action_toggle => 'Show or hide AI explanation';
+  @override
   String get ai_explain_allow_fallbacks => 'Allow OpenRouter fallbacks';
   @override
   String get ai_explain_api_key => 'API key';
@@ -217439,6 +217515,11 @@ class _StringsRu extends _StringsEn {
   @override
   String get ai_explain_cancel_pending_hint =>
       'Drop an explanation still being generated when the popup closes or another word is looked up.';
+  @override
+  String get ai_explain_collapsed => 'Collapse AI explanation by default';
+  @override
+  String get ai_explain_collapsed_hint =>
+      'Start the AI explanation box collapsed, like a collapsed dictionary. Tap its title to expand it. The explanation is still generated in the background.';
   @override
   String get ai_explain_endpoint => 'Custom endpoint';
   @override
@@ -238123,6 +238204,8 @@ class _StringsTh extends _StringsEn {
   @override
   String get ai_explain_action_regenerate => 'Regenerate explanation';
   @override
+  String get ai_explain_action_toggle => 'Show or hide AI explanation';
+  @override
   String get ai_explain_allow_fallbacks => 'Allow OpenRouter fallbacks';
   @override
   String get ai_explain_api_key => 'API key';
@@ -238139,6 +238222,11 @@ class _StringsTh extends _StringsEn {
   @override
   String get ai_explain_cancel_pending_hint =>
       'Drop an explanation still being generated when the popup closes or another word is looked up.';
+  @override
+  String get ai_explain_collapsed => 'Collapse AI explanation by default';
+  @override
+  String get ai_explain_collapsed_hint =>
+      'Start the AI explanation box collapsed, like a collapsed dictionary. Tap its title to expand it. The explanation is still generated in the background.';
   @override
   String get ai_explain_endpoint => 'Custom endpoint';
   @override
@@ -258503,6 +258591,8 @@ class _StringsTr extends _StringsEn {
   @override
   String get ai_explain_action_regenerate => 'Regenerate explanation';
   @override
+  String get ai_explain_action_toggle => 'Show or hide AI explanation';
+  @override
   String get ai_explain_allow_fallbacks => 'Allow OpenRouter fallbacks';
   @override
   String get ai_explain_api_key => 'API key';
@@ -258519,6 +258609,11 @@ class _StringsTr extends _StringsEn {
   @override
   String get ai_explain_cancel_pending_hint =>
       'Drop an explanation still being generated when the popup closes or another word is looked up.';
+  @override
+  String get ai_explain_collapsed => 'Collapse AI explanation by default';
+  @override
+  String get ai_explain_collapsed_hint =>
+      'Start the AI explanation box collapsed, like a collapsed dictionary. Tap its title to expand it. The explanation is still generated in the background.';
   @override
   String get ai_explain_endpoint => 'Custom endpoint';
   @override
@@ -279084,6 +279179,8 @@ class _StringsVi extends _StringsEn {
   @override
   String get ai_explain_action_regenerate => 'Regenerate explanation';
   @override
+  String get ai_explain_action_toggle => 'Show or hide AI explanation';
+  @override
   String get ai_explain_allow_fallbacks => 'Allow OpenRouter fallbacks';
   @override
   String get ai_explain_api_key => 'API key';
@@ -279100,6 +279197,11 @@ class _StringsVi extends _StringsEn {
   @override
   String get ai_explain_cancel_pending_hint =>
       'Drop an explanation still being generated when the popup closes or another word is looked up.';
+  @override
+  String get ai_explain_collapsed => 'Collapse AI explanation by default';
+  @override
+  String get ai_explain_collapsed_hint =>
+      'Start the AI explanation box collapsed, like a collapsed dictionary. Tap its title to expand it. The explanation is still generated in the background.';
   @override
   String get ai_explain_endpoint => 'Custom endpoint';
   @override
@@ -299587,6 +299689,8 @@ class _StringsZhCn extends _StringsEn {
   @override
   String get ai_explain_action_regenerate => '重新生成解释';
   @override
+  String get ai_explain_action_toggle => '展开或收起 AI 解释';
+  @override
   String get ai_explain_allow_fallbacks => '允许 OpenRouter 兜底';
   @override
   String get ai_explain_api_key => 'API 密钥';
@@ -299600,6 +299704,11 @@ class _StringsZhCn extends _StringsEn {
   String get ai_explain_cancel_pending => '取消未完成的请求';
   @override
   String get ai_explain_cancel_pending_hint => '弹窗关闭或查下一个词时，丢弃仍在生成的解释。';
+  @override
+  String get ai_explain_collapsed => '默认折叠 AI 解释';
+  @override
+  String get ai_explain_collapsed_hint =>
+      '查词弹窗里的 AI 解释区块默认收起，与折叠的词典一样，点标题展开。解释照常在后台生成。';
   @override
   String get ai_explain_endpoint => '自定义端点';
   @override
@@ -318326,6 +318435,8 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get ai_explain_action_regenerate => 'Regenerate explanation';
   @override
+  String get ai_explain_action_toggle => 'Show or hide AI explanation';
+  @override
   String get ai_explain_allow_fallbacks => 'Allow OpenRouter fallbacks';
   @override
   String get ai_explain_api_key => 'API key';
@@ -318342,6 +318453,11 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get ai_explain_cancel_pending_hint =>
       'Drop an explanation still being generated when the popup closes or another word is looked up.';
+  @override
+  String get ai_explain_collapsed => 'Collapse AI explanation by default';
+  @override
+  String get ai_explain_collapsed_hint =>
+      'Start the AI explanation box collapsed, like a collapsed dictionary. Tap its title to expand it. The explanation is still generated in the background.';
   @override
   String get ai_explain_endpoint => 'Custom endpoint';
   @override
@@ -337440,6 +337556,8 @@ extension on _StringsEn {
         return 'Generate explanation';
       case 'ai_explain_action_regenerate':
         return 'Regenerate explanation';
+      case 'ai_explain_action_toggle':
+        return 'Show or hide AI explanation';
       case 'ai_explain_allow_fallbacks':
         return 'Allow OpenRouter fallbacks';
       case 'ai_explain_api_key':
@@ -337454,6 +337572,10 @@ extension on _StringsEn {
         return 'Cancel unfinished requests';
       case 'ai_explain_cancel_pending_hint':
         return 'Drop an explanation still being generated when the popup closes or another word is looked up.';
+      case 'ai_explain_collapsed':
+        return 'Collapse AI explanation by default';
+      case 'ai_explain_collapsed_hint':
+        return 'Start the AI explanation box collapsed, like a collapsed dictionary. Tap its title to expand it. The explanation is still generated in the background.';
       case 'ai_explain_endpoint':
         return 'Custom endpoint';
       case 'ai_explain_endpoint_hint':
@@ -354952,6 +355074,8 @@ extension on _StringsAr {
         return 'Generate explanation';
       case 'ai_explain_action_regenerate':
         return 'Regenerate explanation';
+      case 'ai_explain_action_toggle':
+        return 'Show or hide AI explanation';
       case 'ai_explain_allow_fallbacks':
         return 'Allow OpenRouter fallbacks';
       case 'ai_explain_api_key':
@@ -354966,6 +355090,10 @@ extension on _StringsAr {
         return 'Cancel unfinished requests';
       case 'ai_explain_cancel_pending_hint':
         return 'Drop an explanation still being generated when the popup closes or another word is looked up.';
+      case 'ai_explain_collapsed':
+        return 'Collapse AI explanation by default';
+      case 'ai_explain_collapsed_hint':
+        return 'Start the AI explanation box collapsed, like a collapsed dictionary. Tap its title to expand it. The explanation is still generated in the background.';
       case 'ai_explain_endpoint':
         return 'Custom endpoint';
       case 'ai_explain_endpoint_hint':
@@ -372459,6 +372587,8 @@ extension on _StringsDe {
         return 'Generate explanation';
       case 'ai_explain_action_regenerate':
         return 'Regenerate explanation';
+      case 'ai_explain_action_toggle':
+        return 'Show or hide AI explanation';
       case 'ai_explain_allow_fallbacks':
         return 'Allow OpenRouter fallbacks';
       case 'ai_explain_api_key':
@@ -372473,6 +372603,10 @@ extension on _StringsDe {
         return 'Cancel unfinished requests';
       case 'ai_explain_cancel_pending_hint':
         return 'Drop an explanation still being generated when the popup closes or another word is looked up.';
+      case 'ai_explain_collapsed':
+        return 'Collapse AI explanation by default';
+      case 'ai_explain_collapsed_hint':
+        return 'Start the AI explanation box collapsed, like a collapsed dictionary. Tap its title to expand it. The explanation is still generated in the background.';
       case 'ai_explain_endpoint':
         return 'Custom endpoint';
       case 'ai_explain_endpoint_hint':
@@ -390041,6 +390175,8 @@ extension on _StringsEs {
         return 'Generate explanation';
       case 'ai_explain_action_regenerate':
         return 'Regenerate explanation';
+      case 'ai_explain_action_toggle':
+        return 'Show or hide AI explanation';
       case 'ai_explain_allow_fallbacks':
         return 'Allow OpenRouter fallbacks';
       case 'ai_explain_api_key':
@@ -390055,6 +390191,10 @@ extension on _StringsEs {
         return 'Cancel unfinished requests';
       case 'ai_explain_cancel_pending_hint':
         return 'Drop an explanation still being generated when the popup closes or another word is looked up.';
+      case 'ai_explain_collapsed':
+        return 'Collapse AI explanation by default';
+      case 'ai_explain_collapsed_hint':
+        return 'Start the AI explanation box collapsed, like a collapsed dictionary. Tap its title to expand it. The explanation is still generated in the background.';
       case 'ai_explain_endpoint':
         return 'Custom endpoint';
       case 'ai_explain_endpoint_hint':
@@ -407605,6 +407745,8 @@ extension on _StringsFr {
         return 'Generate explanation';
       case 'ai_explain_action_regenerate':
         return 'Regenerate explanation';
+      case 'ai_explain_action_toggle':
+        return 'Show or hide AI explanation';
       case 'ai_explain_allow_fallbacks':
         return 'Allow OpenRouter fallbacks';
       case 'ai_explain_api_key':
@@ -407619,6 +407761,10 @@ extension on _StringsFr {
         return 'Cancel unfinished requests';
       case 'ai_explain_cancel_pending_hint':
         return 'Drop an explanation still being generated when the popup closes or another word is looked up.';
+      case 'ai_explain_collapsed':
+        return 'Collapse AI explanation by default';
+      case 'ai_explain_collapsed_hint':
+        return 'Start the AI explanation box collapsed, like a collapsed dictionary. Tap its title to expand it. The explanation is still generated in the background.';
       case 'ai_explain_endpoint':
         return 'Custom endpoint';
       case 'ai_explain_endpoint_hint':
@@ -425186,6 +425332,8 @@ extension on _StringsId {
         return 'Generate explanation';
       case 'ai_explain_action_regenerate':
         return 'Regenerate explanation';
+      case 'ai_explain_action_toggle':
+        return 'Show or hide AI explanation';
       case 'ai_explain_allow_fallbacks':
         return 'Allow OpenRouter fallbacks';
       case 'ai_explain_api_key':
@@ -425200,6 +425348,10 @@ extension on _StringsId {
         return 'Cancel unfinished requests';
       case 'ai_explain_cancel_pending_hint':
         return 'Drop an explanation still being generated when the popup closes or another word is looked up.';
+      case 'ai_explain_collapsed':
+        return 'Collapse AI explanation by default';
+      case 'ai_explain_collapsed_hint':
+        return 'Start the AI explanation box collapsed, like a collapsed dictionary. Tap its title to expand it. The explanation is still generated in the background.';
       case 'ai_explain_endpoint':
         return 'Custom endpoint';
       case 'ai_explain_endpoint_hint':
@@ -442713,6 +442865,8 @@ extension on _StringsIt {
         return 'Generate explanation';
       case 'ai_explain_action_regenerate':
         return 'Regenerate explanation';
+      case 'ai_explain_action_toggle':
+        return 'Show or hide AI explanation';
       case 'ai_explain_allow_fallbacks':
         return 'Allow OpenRouter fallbacks';
       case 'ai_explain_api_key':
@@ -442727,6 +442881,10 @@ extension on _StringsIt {
         return 'Cancel unfinished requests';
       case 'ai_explain_cancel_pending_hint':
         return 'Drop an explanation still being generated when the popup closes or another word is looked up.';
+      case 'ai_explain_collapsed':
+        return 'Collapse AI explanation by default';
+      case 'ai_explain_collapsed_hint':
+        return 'Start the AI explanation box collapsed, like a collapsed dictionary. Tap its title to expand it. The explanation is still generated in the background.';
       case 'ai_explain_endpoint':
         return 'Custom endpoint';
       case 'ai_explain_endpoint_hint':
@@ -460273,6 +460431,8 @@ extension on _StringsJa {
         return 'Generate explanation';
       case 'ai_explain_action_regenerate':
         return 'Regenerate explanation';
+      case 'ai_explain_action_toggle':
+        return 'Show or hide AI explanation';
       case 'ai_explain_allow_fallbacks':
         return 'Allow OpenRouter fallbacks';
       case 'ai_explain_api_key':
@@ -460287,6 +460447,10 @@ extension on _StringsJa {
         return 'Cancel unfinished requests';
       case 'ai_explain_cancel_pending_hint':
         return 'Drop an explanation still being generated when the popup closes or another word is looked up.';
+      case 'ai_explain_collapsed':
+        return 'Collapse AI explanation by default';
+      case 'ai_explain_collapsed_hint':
+        return 'Start the AI explanation box collapsed, like a collapsed dictionary. Tap its title to expand it. The explanation is still generated in the background.';
       case 'ai_explain_endpoint':
         return 'Custom endpoint';
       case 'ai_explain_endpoint_hint':
@@ -477707,6 +477871,8 @@ extension on _StringsKo {
         return 'Generate explanation';
       case 'ai_explain_action_regenerate':
         return 'Regenerate explanation';
+      case 'ai_explain_action_toggle':
+        return 'Show or hide AI explanation';
       case 'ai_explain_allow_fallbacks':
         return 'Allow OpenRouter fallbacks';
       case 'ai_explain_api_key':
@@ -477721,6 +477887,10 @@ extension on _StringsKo {
         return 'Cancel unfinished requests';
       case 'ai_explain_cancel_pending_hint':
         return 'Drop an explanation still being generated when the popup closes or another word is looked up.';
+      case 'ai_explain_collapsed':
+        return 'Collapse AI explanation by default';
+      case 'ai_explain_collapsed_hint':
+        return 'Start the AI explanation box collapsed, like a collapsed dictionary. Tap its title to expand it. The explanation is still generated in the background.';
       case 'ai_explain_endpoint':
         return 'Custom endpoint';
       case 'ai_explain_endpoint_hint':
@@ -495151,6 +495321,8 @@ extension on _StringsNl {
         return 'Generate explanation';
       case 'ai_explain_action_regenerate':
         return 'Regenerate explanation';
+      case 'ai_explain_action_toggle':
+        return 'Show or hide AI explanation';
       case 'ai_explain_allow_fallbacks':
         return 'Allow OpenRouter fallbacks';
       case 'ai_explain_api_key':
@@ -495165,6 +495337,10 @@ extension on _StringsNl {
         return 'Cancel unfinished requests';
       case 'ai_explain_cancel_pending_hint':
         return 'Drop an explanation still being generated when the popup closes or another word is looked up.';
+      case 'ai_explain_collapsed':
+        return 'Collapse AI explanation by default';
+      case 'ai_explain_collapsed_hint':
+        return 'Start the AI explanation box collapsed, like a collapsed dictionary. Tap its title to expand it. The explanation is still generated in the background.';
       case 'ai_explain_endpoint':
         return 'Custom endpoint';
       case 'ai_explain_endpoint_hint':
@@ -512709,6 +512885,8 @@ extension on _StringsPtBr {
         return 'Generate explanation';
       case 'ai_explain_action_regenerate':
         return 'Regenerate explanation';
+      case 'ai_explain_action_toggle':
+        return 'Show or hide AI explanation';
       case 'ai_explain_allow_fallbacks':
         return 'Allow OpenRouter fallbacks';
       case 'ai_explain_api_key':
@@ -512723,6 +512901,10 @@ extension on _StringsPtBr {
         return 'Cancel unfinished requests';
       case 'ai_explain_cancel_pending_hint':
         return 'Drop an explanation still being generated when the popup closes or another word is looked up.';
+      case 'ai_explain_collapsed':
+        return 'Collapse AI explanation by default';
+      case 'ai_explain_collapsed_hint':
+        return 'Start the AI explanation box collapsed, like a collapsed dictionary. Tap its title to expand it. The explanation is still generated in the background.';
       case 'ai_explain_endpoint':
         return 'Custom endpoint';
       case 'ai_explain_endpoint_hint':
@@ -530256,6 +530438,8 @@ extension on _StringsRu {
         return 'Generate explanation';
       case 'ai_explain_action_regenerate':
         return 'Regenerate explanation';
+      case 'ai_explain_action_toggle':
+        return 'Show or hide AI explanation';
       case 'ai_explain_allow_fallbacks':
         return 'Allow OpenRouter fallbacks';
       case 'ai_explain_api_key':
@@ -530270,6 +530454,10 @@ extension on _StringsRu {
         return 'Cancel unfinished requests';
       case 'ai_explain_cancel_pending_hint':
         return 'Drop an explanation still being generated when the popup closes or another word is looked up.';
+      case 'ai_explain_collapsed':
+        return 'Collapse AI explanation by default';
+      case 'ai_explain_collapsed_hint':
+        return 'Start the AI explanation box collapsed, like a collapsed dictionary. Tap its title to expand it. The explanation is still generated in the background.';
       case 'ai_explain_endpoint':
         return 'Custom endpoint';
       case 'ai_explain_endpoint_hint':
@@ -547811,6 +547999,8 @@ extension on _StringsTh {
         return 'Generate explanation';
       case 'ai_explain_action_regenerate':
         return 'Regenerate explanation';
+      case 'ai_explain_action_toggle':
+        return 'Show or hide AI explanation';
       case 'ai_explain_allow_fallbacks':
         return 'Allow OpenRouter fallbacks';
       case 'ai_explain_api_key':
@@ -547825,6 +548015,10 @@ extension on _StringsTh {
         return 'Cancel unfinished requests';
       case 'ai_explain_cancel_pending_hint':
         return 'Drop an explanation still being generated when the popup closes or another word is looked up.';
+      case 'ai_explain_collapsed':
+        return 'Collapse AI explanation by default';
+      case 'ai_explain_collapsed_hint':
+        return 'Start the AI explanation box collapsed, like a collapsed dictionary. Tap its title to expand it. The explanation is still generated in the background.';
       case 'ai_explain_endpoint':
         return 'Custom endpoint';
       case 'ai_explain_endpoint_hint':
@@ -565321,6 +565515,8 @@ extension on _StringsTr {
         return 'Generate explanation';
       case 'ai_explain_action_regenerate':
         return 'Regenerate explanation';
+      case 'ai_explain_action_toggle':
+        return 'Show or hide AI explanation';
       case 'ai_explain_allow_fallbacks':
         return 'Allow OpenRouter fallbacks';
       case 'ai_explain_api_key':
@@ -565335,6 +565531,10 @@ extension on _StringsTr {
         return 'Cancel unfinished requests';
       case 'ai_explain_cancel_pending_hint':
         return 'Drop an explanation still being generated when the popup closes or another word is looked up.';
+      case 'ai_explain_collapsed':
+        return 'Collapse AI explanation by default';
+      case 'ai_explain_collapsed_hint':
+        return 'Start the AI explanation box collapsed, like a collapsed dictionary. Tap its title to expand it. The explanation is still generated in the background.';
       case 'ai_explain_endpoint':
         return 'Custom endpoint';
       case 'ai_explain_endpoint_hint':
@@ -582861,6 +583061,8 @@ extension on _StringsVi {
         return 'Generate explanation';
       case 'ai_explain_action_regenerate':
         return 'Regenerate explanation';
+      case 'ai_explain_action_toggle':
+        return 'Show or hide AI explanation';
       case 'ai_explain_allow_fallbacks':
         return 'Allow OpenRouter fallbacks';
       case 'ai_explain_api_key':
@@ -582875,6 +583077,10 @@ extension on _StringsVi {
         return 'Cancel unfinished requests';
       case 'ai_explain_cancel_pending_hint':
         return 'Drop an explanation still being generated when the popup closes or another word is looked up.';
+      case 'ai_explain_collapsed':
+        return 'Collapse AI explanation by default';
+      case 'ai_explain_collapsed_hint':
+        return 'Start the AI explanation box collapsed, like a collapsed dictionary. Tap its title to expand it. The explanation is still generated in the background.';
       case 'ai_explain_endpoint':
         return 'Custom endpoint';
       case 'ai_explain_endpoint_hint':
@@ -600385,6 +600591,8 @@ extension on _StringsZhCn {
         return '生成解释';
       case 'ai_explain_action_regenerate':
         return '重新生成解释';
+      case 'ai_explain_action_toggle':
+        return '展开或收起 AI 解释';
       case 'ai_explain_allow_fallbacks':
         return '允许 OpenRouter 兜底';
       case 'ai_explain_api_key':
@@ -600399,6 +600607,10 @@ extension on _StringsZhCn {
         return '取消未完成的请求';
       case 'ai_explain_cancel_pending_hint':
         return '弹窗关闭或查下一个词时，丢弃仍在生成的解释。';
+      case 'ai_explain_collapsed':
+        return '默认折叠 AI 解释';
+      case 'ai_explain_collapsed_hint':
+        return '查词弹窗里的 AI 解释区块默认收起，与折叠的词典一样，点标题展开。解释照常在后台生成。';
       case 'ai_explain_endpoint':
         return '自定义端点';
       case 'ai_explain_endpoint_hint':
@@ -617702,6 +617914,8 @@ extension on _StringsZhHk {
         return 'Generate explanation';
       case 'ai_explain_action_regenerate':
         return 'Regenerate explanation';
+      case 'ai_explain_action_toggle':
+        return 'Show or hide AI explanation';
       case 'ai_explain_allow_fallbacks':
         return 'Allow OpenRouter fallbacks';
       case 'ai_explain_api_key':
@@ -617716,6 +617930,10 @@ extension on _StringsZhHk {
         return 'Cancel unfinished requests';
       case 'ai_explain_cancel_pending_hint':
         return 'Drop an explanation still being generated when the popup closes or another word is looked up.';
+      case 'ai_explain_collapsed':
+        return 'Collapse AI explanation by default';
+      case 'ai_explain_collapsed_hint':
+        return 'Start the AI explanation box collapsed, like a collapsed dictionary. Tap its title to expand it. The explanation is still generated in the background.';
       case 'ai_explain_endpoint':
         return 'Custom endpoint';
       case 'ai_explain_endpoint_hint':

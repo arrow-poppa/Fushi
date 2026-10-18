@@ -140,6 +140,9 @@ abstract final class AiDefaults {
   static const bool streamResponse = false;
   static const bool cancelPendingRequests = true;
   static const bool unknownWordFallback = false;
+
+  /// The popup's AI box starts expanded unless the user asks otherwise.
+  static const bool collapsedByDefault = false;
   static const bool providerAllowFallbacks = true;
   static const String userPrompt = kAiDefaultUserPrompt;
   static const String systemPrompt = '';

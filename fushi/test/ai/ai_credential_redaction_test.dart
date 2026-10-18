@@ -37,6 +37,7 @@ void main() {
     'ai_explain_auto_generate',
     'ai_explain_stream',
     'ai_explain_cancel_pending',
+    'ai_explain_collapsed',
     'ai_explain_unknown_fallback',
     'ai_explain_prompt',
     'ai_explain_system_prompt',

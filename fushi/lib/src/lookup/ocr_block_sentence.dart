@@ -111,14 +111,9 @@ String _joinLines(String segment) {
   return out.toString();
 }
 
-/// 块全文 [block] 里包含 UTF-16 下标 [index] 那个字的整句（已拼掉 OCR 折行、去首尾
-/// 空白）。下标越界、截出空串或长于 [maxLength] 时返回 null。
-String? ocrBlockSentenceAt(
-  String block,
-  int index, {
-  int maxLength = kOcrBlockSentenceMaxLength,
-}) {
-  if (block.isEmpty || index < 0 || index >= block.length) return null;
+/// 块全文 [block] 里包含 UTF-16 下标 [index] 那个字的那一句的 [start, end)（块内下标，
+/// 未拼行、未去空白）。调用方保证 [index] 在块内。
+({int start, int end}) _sentenceBoundsAt(String block, int index) {
   int start = 0;
   int end = block.length;
   int i = 0;
@@ -135,7 +130,55 @@ String? ocrBlockSentenceAt(
     start = sentenceEnd;
     i = sentenceEnd;
   }
-  final String sentence = _joinLines(block.substring(start, end));
+  return (start: start, end: end);
+}
+
+/// 块全文 [block] 里包含 UTF-16 下标 [index] 那个字的整句（已拼掉 OCR 折行、去首尾
+/// 空白）。下标越界、截出空串或长于 [maxLength] 时返回 null。
+String? ocrBlockSentenceAt(
+  String block,
+  int index, {
+  int maxLength = kOcrBlockSentenceMaxLength,
+}) {
+  if (block.isEmpty || index < 0 || index >= block.length) return null;
+  final ({int start, int end}) bounds = _sentenceBoundsAt(block, index);
+  final String sentence = _joinLines(block.substring(bounds.start, bounds.end));
   if (sentence.isEmpty || sentence.length > maxLength) return null;
   return sentence;
+}
+
+/// 截屏识字被点的那一行 [line]（位于块全文 [block] 的 UTF-16 偏移 [lineOffset] 处）
+/// 加上**行尾那一句在下面几行里的剩余部分**，按 OCR 折行规则拼成一串。
+///
+/// 一句话折到下一行时，只给被点的那一行会让查词窗既看不到下一行，也查不出跨行的
+/// 词（「天」在行尾、「気」在下一行行首时只能查到「天」）。返回值以 [line] 去掉
+/// 行尾空白后的原文开头——行内的 UTF-16 下标原样有效，调用方点字 / 扫描查词的
+/// 下标不用换算。
+///
+/// 返回 null（调用方保持整行不变）的情形：块与行对不上、行尾那一句在本行内就已
+/// 结束、后面没有内容，或拼出来超过 [maxLength] 个 UTF-16 码元（多半是没有标点的
+/// 菜单 / 列表）。
+String? ocrLineWithSentenceContinuation(
+  String block,
+  int lineOffset,
+  String line, {
+  int maxLength = kOcrBlockSentenceMaxLength,
+}) {
+  final String head = line.trimRight();
+  if (head.isEmpty || lineOffset < 0) return null;
+  final int lineEnd = lineOffset + line.length;
+  if (lineEnd > block.length || block.substring(lineOffset, lineEnd) != line) {
+    return null;
+  }
+  final int lastUnit = lineOffset + head.length - 1;
+  final int sentenceEnd = _sentenceBoundsAt(block, lastUnit).end;
+  if (sentenceEnd <= lineEnd) return null;
+  final String continuation = _joinLines(block.substring(lineEnd, sentenceEnd));
+  if (continuation.isEmpty) return null;
+  final bool space =
+      _isLatinWordChar(head[head.length - 1]) &&
+      _isLatinWordChar(continuation[0]);
+  final String joined = '$head${space ? ' ' : ''}$continuation';
+  if (joined.length > maxLength) return null;
+  return joined;
 }

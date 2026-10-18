@@ -427,6 +427,18 @@ SettingsSection buildAiExplanationSection() {
         },
       ),
       SettingsSwitchItem(
+        id: 'lookup.ai_explain.collapsed',
+        title: t.ai_explain_collapsed,
+        subtitle: t.ai_explain_collapsed_hint,
+        icon: FushiIcons.expandLess,
+        value: (SettingsContext c) =>
+            c.appModel.aiSettings.readCollapsedByDefault(),
+        onChanged: (SettingsContext c, bool value) async {
+          await c.appModel.aiSettings.setCollapsedByDefault(value);
+          c.refresh();
+        },
+      ),
+      SettingsSwitchItem(
         id: 'lookup.ai_explain.stream',
         title: t.ai_explain_stream,
         subtitle: t.ai_explain_stream_hint,

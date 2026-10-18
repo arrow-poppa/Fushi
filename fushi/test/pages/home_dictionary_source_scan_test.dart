@@ -1,10 +1,12 @@
 import 'dart:io';
 
 import 'package:material_ui/material_ui.dart';
+import 'package:flutter/rendering.dart' show ScrollDirection;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/models.dart';
+import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';
 import 'package:fushi/src/pages/implementations/home_dictionary_page.dart';
 import 'package:fushi/src/sync/desktop_lookup_service.dart';
 import 'package:fushi/src/utils/components/clipboard_lookup_text_panel.dart';
@@ -25,6 +27,12 @@ class _ScanAppModel extends AppModel {
   _ScanAppModel() : super(testPlatformServices());
 
   final List<String> searchedTerms = <String>[];
+
+  /// 「默认折叠源文本」偏好。
+  bool sourceCollapsedDefault = false;
+
+  @override
+  bool get sourceTextCollapsedByDefault => sourceCollapsedDefault;
   final List<int?> searchedLimits = <int?>[];
 
   @override
@@ -257,5 +265,80 @@ void main() {
     // 结果卡内部选词 / 点链是另一条入口，仍然走弹窗栈——别把它一起摘了。
     expect(page.contains('Future<int> _pushNestedPopup('), isTrue,
         reason: '结果 WebView 内部取词仍需嵌套浮层。');
+  });
+
+  testWidgets('源文本条按「默认折叠源文本」开页即折成一行，箭头开合', (
+    WidgetTester tester,
+  ) async {
+    final _ScanAppModel appModel = _ScanAppModel()
+      ..sourceCollapsedDefault = true;
+    await tester.pumpWidget(_wrap(appModel));
+    await tester.pump();
+    await _settle(tester, _debug(tester).debugSearch('と言いつつ'));
+
+    expect(find.byType(SourceLookupTextPanel), findsNothing);
+    expect(
+      find.byKey(const ValueKey<String>('source_lookup_strip_preview')),
+      findsOneWidget,
+    );
+    expect(appModel.searchedTerms, <String>['と言いつつ'], reason: '折叠只管显示。');
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('source_lookup_strip_toggle')),
+    );
+    await tester.pumpAndSettle();
+    expect(_panel(tester).text, 'と言いつつ');
+  });
+
+  testWidgets('结果往下滚时源文本条跟着滚走，回到顶部再出现；通知继续冒到外壳', (
+    WidgetTester tester,
+  ) async {
+    final _ScanAppModel appModel = _ScanAppModel();
+    int shellUpdates = 0;
+    await tester.pumpWidget(
+      NotificationListener<ScrollUpdateNotification>(
+        onNotification: (_) {
+          shellUpdates++;
+          return false;
+        },
+        child: _wrap(appModel),
+      ),
+    );
+    await tester.pump();
+    await _settle(tester, _debug(tester).debugSearch('と言いつつ'));
+    expect(find.byType(SourceLookupTextPanel), findsOneWidget);
+
+    final BuildContext results = tester.element(
+      find.byType(DictionaryPopupWebView).first,
+    );
+    void scrollResultsTo(double pixels) {
+      final FixedScrollMetrics metrics = FixedScrollMetrics(
+        minScrollExtent: 0,
+        maxScrollExtent: 2000,
+        pixels: pixels,
+        viewportDimension: 400,
+        axisDirection: AxisDirection.down,
+        devicePixelRatio: 1,
+      );
+      UserScrollNotification(
+        metrics: metrics,
+        context: results,
+        direction: ScrollDirection.reverse,
+      ).dispatch(results);
+      ScrollUpdateNotification(
+        metrics: metrics,
+        context: results,
+        scrollDelta: 10,
+      ).dispatch(results);
+    }
+
+    scrollResultsTo(80);
+    await tester.pumpAndSettle();
+    expect(find.byType(SourceLookupTextPanel), findsNothing);
+    expect(shellUpdates, 1, reason: '底栏随下滑收起还靠这条通知（BUG-3064）。');
+
+    scrollResultsTo(0);
+    await tester.pumpAndSettle();
+    expect(find.byType(SourceLookupTextPanel), findsOneWidget);
   });
 }

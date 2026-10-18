@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:cupertino_ui/cupertino_ui.dart' show CupertinoIcons;
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_feedback.dart';
+import 'package:flutter/rendering.dart' show ScrollDirection;
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart' show Clipboard, KeyDownEvent, KeyEvent;
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
@@ -28,6 +29,7 @@ import 'package:fushi/src/sync/sync_progress_banner.dart';
 import 'package:fushi/src/utils/misc/lookup_dismiss_barrier.dart';
 import 'package:fushi/src/utils/components/clipboard_lookup_text_panel.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
+import 'package:fushi/src/utils/components/source_lookup_strip.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/overlay_entry_lifecycle.dart';
 import 'package:fushi/src/utils/components/fushi_deferred_loading.dart';
@@ -197,6 +199,14 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
   String _sourceLookupText = '';
   int _searchGeneration = 0;
 
+  /// 源文本条折成一行预览（进页时按「默认折叠源文本」偏好，之后由用户开合）。
+  late bool _sourceCollapsed = _readSourceCollapsedDefault();
+
+  /// 结果正文往下滚时源文本条跟着滚走，回到顶部再出现（同独立查词窗）。
+  final SourceStripScrollAway _sourceScrollAway = SourceStripScrollAway();
+  final GlobalKey _sourceStripKey = GlobalKey();
+  bool _resultScrollUserDriven = false;
+
   /// 源文本条上「这次查的是哪几个字」的 Yomitan 式扫描高亮。
   ///
   /// 查词是「从被点的字到串尾」的整段后缀交给引擎最长匹配（BUG-1478），所以查询串
@@ -236,6 +246,34 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
   /// 仅测试可见：最近一次派发的查词 future（[debugSearch] 返回它以便
   /// await 失败路径）。生产路径仍 fire-and-forget，不改变行为。
   Future<void>? _lastDispatchedSearch;
+
+  bool _readSourceCollapsedDefault() {
+    try {
+      return appModel.sourceTextCollapsedByDefault;
+    } on Object {
+      // 偏好还没加载（早帧 / 测试桩）：照旧展开。
+      return false;
+    }
+  }
+
+  /// 结果 WebView 的滚动（forwardScrollToHost 冒泡上来的）。返回 false：通知还要
+  /// 继续冒到外壳，底栏随下滑收起靠它（BUG-3064）。方向 idle = 程序滚动，不带走条。
+  bool _onResultScroll(ScrollNotification notification) {
+    if (notification is UserScrollNotification) {
+      _resultScrollUserDriven =
+          notification.direction != ScrollDirection.idle;
+      return false;
+    }
+    if (notification is! ScrollUpdateNotification) return false;
+    final bool changed = _sourceScrollAway.update(
+      pixels: notification.metrics.pixels,
+      maxScrollExtent: notification.metrics.maxScrollExtent,
+      stripHeight: _sourceStripKey.currentContext?.size?.height ?? 0,
+      userDriven: _resultScrollUserDriven,
+    );
+    if (changed && mounted) setState(() {});
+    return false;
+  }
 
   @override
   void initState() {
@@ -1787,10 +1825,30 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
       clipBehavior: Clip.none,
       child: Column(
         children: [
-          if (hasSourceText) ...<Widget>[
+          if (hasSourceText)
+            // 卡头（上边距 + 源文本条 + 分隔线）整块随结果滚走、回顶出现。
+            ClipRect(
+              key: _sourceStripKey,
+              child: AnimatedSize(
+                duration: fushiMotionDuration(context, FushiMotion.medium),
+                curve: Curves.easeOutCubic,
+                alignment: Alignment.topCenter,
+                child: _sourceScrollAway.hidden
+                    ? const SizedBox(width: double.infinity, height: 0)
+                    : Column(
+                        children: <Widget>[
             Padding(
               padding: EdgeInsets.only(top: tokens.spacing.gap),
-              child: SourceLookupTextPanel(
+              child: SourceLookupStrip(
+                text: _sourceLookupText,
+                collapsed: _sourceCollapsed,
+                // 滚走由外层整块卡头负责（连同分隔线）。
+                scrolledAway: false,
+                // 长句不能把结果挤出卡片：超过这个高度就在条内滚。
+                maxExpandedHeight: MediaQuery.sizeOf(context).height * 0.3,
+                onToggleCollapsed: () =>
+                    setState(() => _sourceCollapsed = !_sourceCollapsed),
+                panel: SourceLookupTextPanel(
                 text: _sourceLookupText,
                 // 与下方结果 WebView 同一口径：Material（非玻璃 / 非墨水屏）挂
                 // html.fushi-m3e，卡内命中走 primaryContainer，本条同色。
@@ -1805,13 +1863,17 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
                 // 都随之退场。结果卡内部选词 / 点链才继续走弹窗栈（见下方 WebView）。
                 onLookup: (String query, Rect _, int charIndex) =>
                     _lookupFromSourceStrip(query, charIndex),
+                ),
               ),
             ),
             Padding(
               padding: EdgeInsets.symmetric(horizontal: tokens.spacing.page),
               child: const FushiDivider(),
             ),
-          ],
+                        ],
+                      ),
+              ),
+            ),
           // 根因修复（BUG-054）：结果区 WebView 仍整块在中和器下渲染（净缩放=1），否则被全局
           // 「界面大小」FittedBox 拉糊。源文本条是普通 app UI，留在中和器外继续吃界面大小。
           // TODO-617：嵌套弹窗栈不再挂在此页内 Stack（会被结果子区域 / DesktopContentLayout
@@ -1824,7 +1886,9 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
                 bodySideInset,
                 tokens.spacing.gap,
               ),
-              child: FushiAppUiScaleNeutralizer(
+              child: NotificationListener<ScrollNotification>(
+                onNotification: _onResultScroll,
+                child: FushiAppUiScaleNeutralizer(
                 child: Stack(
                   key: _resultStackKey,
                   children: [
@@ -1873,6 +1937,7 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
                       nudgeSurfaceOnRender: true,
                     ),
                   ],
+                ),
                 ),
               ),
             ),

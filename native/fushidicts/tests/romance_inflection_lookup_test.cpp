@@ -158,7 +158,7 @@ int main(int argc, char** argv) {
            "mantenere", "prendere", "comprendere", "mettere", "libro", "casa", "amico", "bello", "uomo", "anno",
            "guardare", "cercare", "mangiare", "comporre", "tradurre", "potere", "volere",
            // Spanish / English controls
-           "hablar", "walk"}) {
+           "hablar", "decir", "hacer", "walk"}) {
     entries.push_back({w, std::string("definition of ") + w});
   }
   ImportResult r = dictionary_importer::write_simple_dict("RomanceSimple", entries, out_dir);
@@ -267,6 +267,10 @@ int main(int argc, char** argv) {
 
     // ---- C) the other languages are unaffected ------------------------------
     expect_lemma(lk, "hablamos", "hablar", "C1 Spanish still deinflects");
+    expect_lemma(lk, "hablaba", "hablar", "C1b Spanish imperfect");
+    expect_lemma(lk, "hablaron", "hablar", "C1c Spanish preterite");
+    expect_lemma(lk, "dije", "decir", "C1d Spanish irregular preterite");
+    expect_lemma(lk, "hecho", "hacer", "C1e Spanish irregular participle");
     expect_lemma(lk, "walked", "walk", "C2 English still deinflects");
 
     // A long line of running text must still resolve quickly with ~2700 more

@@ -1,7 +1,9 @@
 import 'dart:async';
 import 'dart:io';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:path/path.dart' as p;
 import 'package:fushi/src/media/torrent/builtin_video_resource_sources.dart';
 import 'package:fushi_engine/media/torrent/torznab_client.dart';
@@ -13,6 +15,8 @@ import 'package:fushi_engine/media/video/subtitle/open_subtitles_client.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/source_toggle_section.dart';
 import 'package:fushi/utils.dart';
+import 'package:fushi/src/settings/settings_schema_widgets.dart'
+    show SettingsSectionFooter;
 import 'package:fushi/src/settings/settings_search.dart';
 import 'package:fushi_core/fushi_core.dart';
 
@@ -36,6 +40,8 @@ class VideoExternalSettingsSnapshot {
     this.openSubtitlesConfig,
     this.jimakuApiKey = '',
     this.jimakuEnabled = true,
+    this.subdlApiKey = '',
+    this.subdlEnabled = true,
     this.ajattEnabled = true,
     this.disabledBuiltinSourceIds = const <String>{},
     this.pathMappings = const <VideoDownloadBackendPathMappingConfig>[],
@@ -57,6 +63,13 @@ class VideoExternalSettingsSnapshot {
   /// **默认 true**：本开关出现之前「填了 key」即启用，默认 false 会让存量用户
   /// 升级后 Jimaku 无声失效。
   final bool jimakuEnabled;
+
+  /// SubDL 的 API key（搜索必须带 key，站点 panel 免费生成）。
+  final String subdlApiKey;
+
+  /// SubDL 是否参与字幕搜索。与 [subdlApiKey] 组成 `enabled && key` 双门控，
+  /// 形状与 Jimaku 逐字同形。默认 true：key 为空即不装配。
+  final bool subdlEnabled;
 
   /// AJATT 日语字幕库（kitsunekko 镜像）是否参与字幕搜索。零配置源，只有开关，
   /// 默认 true（没填任何 key 的用户唯一能用的源）。
@@ -82,6 +95,10 @@ abstract interface class VideoExternalSettingsStore {
   Future<void> saveJimakuApiKey(String apiKey);
 
   Future<void> saveJimakuEnabled(bool enabled);
+
+  Future<void> saveSubdlApiKey(String apiKey);
+
+  Future<void> saveSubdlEnabled(bool enabled);
 
   Future<void> saveAjattEnabled(bool enabled);
 
@@ -143,6 +160,8 @@ class AppVideoExternalSettingsStore implements VideoExternalSettingsStore {
       openSubtitlesConfig: appModel.prefsRepo.videoSubtitleOpenSubtitlesConfig,
       jimakuApiKey: appModel.jimakuApiKey,
       jimakuEnabled: appModel.jimakuEnabled,
+      subdlApiKey: appModel.videoSubtitleSubdlApiKey,
+      subdlEnabled: appModel.videoSubtitleSubdlEnabled,
       ajattEnabled: appModel.videoSubtitleAjattEnabled,
       disabledBuiltinSourceIds: appModel.videoResourceDisabledSourceIds,
       pathMappings: appModel.prefsRepo.videoDownloadBackendPathMappings,
@@ -177,6 +196,16 @@ class AppVideoExternalSettingsStore implements VideoExternalSettingsStore {
       appModel.setJimakuEnabled(enabled);
 
   @override
+  // 同上：`setVideoSubtitleSubdlApiKey` 自己重建下载流水线运行时。
+  Future<void> saveSubdlApiKey(String apiKey) =>
+      appModel.setVideoSubtitleSubdlApiKey(apiKey.trim());
+
+  @override
+  // 同上：`setVideoSubtitleSubdlEnabled` 自己重建下载流水线运行时。
+  Future<void> saveSubdlEnabled(bool enabled) =>
+      appModel.setVideoSubtitleSubdlEnabled(enabled);
+
+  @override
   // 同上：`setVideoSubtitleAjattEnabled` 自己重建下载流水线运行时。
   Future<void> saveAjattEnabled(bool enabled) =>
       appModel.setVideoSubtitleAjattEnabled(enabled);
@@ -206,7 +235,7 @@ class AppVideoExternalSettingsStore implements VideoExternalSettingsStore {
 /// （第三方 API）和下载落盘的路径映射（纯本机管道）。两者归属不同设置分区
 /// （在线服务 / 下载），布尔切不开，所以按内容命名成三段，各挂各的家。
 enum VideoExternalProviderScope {
-  /// 在线字幕来源：Jimaku + OpenSubtitles + 默认字幕语言。
+  /// 在线字幕来源：Jimaku + OpenSubtitles + SubDL + AJATT + 默认字幕语言。
   ///
   /// 两家 registry 是并列的（`video_subtitle_registry.dart`：动漫搜 Jimaku +
   /// OpenSubtitles，其余只搜 OpenSubtitles），所以两家必须并列出现在同一节里；
@@ -214,6 +243,7 @@ enum VideoExternalProviderScope {
   subtitleSources,
   jimaku,
   openSubtitles,
+  subdl,
   subtitlePreferences,
 
   /// 资源索引器：随包内置来源开关 + Torznab 索引器。
@@ -264,12 +294,15 @@ class _VideoExternalProviderSettingsSectionState
   String _preferredLanguage = '';
   String _jimakuApiKey = '';
   bool _jimakuEnabled = true;
+  String _subdlApiKey = '';
+  bool _subdlEnabled = true;
   bool _ajattEnabled = true;
   Set<String> _disabledBuiltinSources = const <String>{};
   String _suggestedBackendProfileId = '';
   Timer? _torznabSaveDebounce;
   Timer? _openSubtitlesSaveDebounce;
   Timer? _jimakuSaveDebounce;
+  Timer? _subdlSaveDebounce;
   Timer? _mappingSaveDebounce;
 
   @override
@@ -285,14 +318,17 @@ class _VideoExternalProviderSettingsSectionState
     final bool flushOpenSubtitles =
         _openSubtitlesSaveDebounce?.isActive ?? false;
     final bool flushJimaku = _jimakuSaveDebounce?.isActive ?? false;
+    final bool flushSubdl = _subdlSaveDebounce?.isActive ?? false;
     final bool flushMappings = _mappingSaveDebounce?.isActive ?? false;
     _torznabSaveDebounce?.cancel();
     _openSubtitlesSaveDebounce?.cancel();
     _jimakuSaveDebounce?.cancel();
+    _subdlSaveDebounce?.cancel();
     _mappingSaveDebounce?.cancel();
     if (flushTorznab) unawaited(_saveTorznabIfValid());
     if (flushOpenSubtitles) unawaited(_saveOpenSubtitlesIfValid());
     if (flushJimaku) unawaited(_saveJimakuApiKey());
+    if (flushSubdl) unawaited(_saveSubdlApiKey());
     if (flushMappings) unawaited(_saveMappingsIfValid());
     super.dispose();
   }
@@ -328,6 +364,8 @@ class _VideoExternalProviderSettingsSectionState
         _preferredLanguage = snapshot.preferredSubtitleLanguage;
         _jimakuApiKey = snapshot.jimakuApiKey;
         _jimakuEnabled = snapshot.jimakuEnabled;
+        _subdlApiKey = snapshot.subdlApiKey;
+        _subdlEnabled = snapshot.subdlEnabled;
         _ajattEnabled = snapshot.ajattEnabled;
         _disabledBuiltinSources = snapshot.disabledBuiltinSourceIds;
         _suggestedBackendProfileId = snapshot.suggestedBackendProfileId;
@@ -431,6 +469,22 @@ class _VideoExternalProviderSettingsSectionState
     );
   }
 
+  void _updateSubdlApiKey(String value) {
+    _subdlApiKey = value;
+    _subdlSaveDebounce?.cancel();
+    _subdlSaveDebounce = Timer(
+      const Duration(milliseconds: 500),
+      () => unawaited(_saveSubdlApiKey()),
+    );
+  }
+
+  Future<void> _saveSubdlApiKey() {
+    final String apiKey = _subdlApiKey;
+    return _save(
+      (VideoExternalSettingsStore store) => store.saveSubdlApiKey(apiKey),
+    );
+  }
+
   void _updateMapping(int index, _PathMappingDraft value) {
     setState(() => _mappings[index] = value);
     _mappingSaveDebounce?.cancel();
@@ -479,6 +533,7 @@ class _VideoExternalProviderSettingsSectionState
     final String? target = key is ValueKey<String>
         ? const <String, String>{
             'video-jimaku-api-key': 'services.jimaku.api_key',
+            'video-subdl-api-key': 'services.subdl.api_key',
             'video-opensubtitles-endpoint': 'services.opensubtitles.endpoint',
             'video-opensubtitles-api-key': 'services.opensubtitles.api_key',
             'video-opensubtitles-username': 'services.opensubtitles.username',
@@ -494,17 +549,28 @@ class _VideoExternalProviderSettingsSectionState
 
   Widget _torznabCard(ThemeData theme, int index) {
     final _TorznabDraft draft = _torznab[index];
+    // M3E：每个索引器一张描边卡（卡 20 圆角），卡头 = 形状底图标 + 启用开关 +
+    // 删除；卡间距 8 与分段列表同一节奏。
     return FushiCard(
       key: ValueKey<String>('video-torznab-${draft.id}'),
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.all(12),
+      variant: FushiCardVariant.outlined,
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.fromLTRB(16, 12, 12, 16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
           Row(
             children: <Widget>[
+              FushiListLeadingIcon(
+                FushiIcons.travelExplore,
+                shape: FushiLeadingShape.square,
+                tone: draft.enabled
+                    ? FushiCardTone.primary
+                    : FushiCardTone.secondary,
+              ),
+              const SizedBox(width: 12),
               Expanded(
-                child: SwitchListTile.adaptive(
+                child: FushiSwitchListTile.adaptive(
                   key: ValueKey<String>('video-torznab-$index-enabled'),
                   contentPadding: EdgeInsets.zero,
                   dense: true,
@@ -514,14 +580,14 @@ class _VideoExternalProviderSettingsSectionState
                       _updateTorznab(index, draft.copyWith(enabled: value)),
                 ),
               ),
-              IconButton(
+              FushiIconButtonControl(
                 key: ValueKey<String>('video-torznab-$index-remove'),
                 tooltip: t.video_external_remove,
                 onPressed: () {
                   setState(() => _torznab.removeAt(index));
                   _saveTorznabIfValid();
                 },
-                icon: const Icon(Icons.remove_circle_outline),
+                icon: const FushiIcon(FushiIcons.delete),
               ),
             ],
           ),
@@ -588,7 +654,7 @@ class _VideoExternalProviderSettingsSectionState
               ),
             ],
           ),
-          SwitchListTile.adaptive(
+          FushiSwitchListTile.adaptive(
             key: ValueKey<String>('video-torznab-$index-insecure-http'),
             contentPadding: EdgeInsets.zero,
             dense: true,
@@ -608,7 +674,7 @@ class _VideoExternalProviderSettingsSectionState
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
-        SwitchListTile.adaptive(
+        FushiSwitchListTile.adaptive(
           key: const ValueKey<String>('video-opensubtitles-enabled'),
           contentPadding: EdgeInsets.zero,
           dense: true,
@@ -681,7 +747,7 @@ class _VideoExternalProviderSettingsSectionState
           onChanged: (String value) =>
               _updateOpenSubtitles(draft.copyWith(userAgent: value)),
         ),
-        SwitchListTile.adaptive(
+        FushiSwitchListTile.adaptive(
           key: const ValueKey<String>('video-opensubtitles-insecure-http'),
           contentPadding: EdgeInsets.zero,
           dense: true,
@@ -706,7 +772,7 @@ class _VideoExternalProviderSettingsSectionState
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
-        SwitchListTile.adaptive(
+        FushiSwitchListTile.adaptive(
           key: const ValueKey<String>('video-jimaku-enabled'),
           contentPadding: EdgeInsets.zero,
           dense: true,
@@ -733,6 +799,38 @@ class _VideoExternalProviderSettingsSectionState
     );
   }
 
+  /// SubDL：开关 + API key，与 [_jimakuFields] 逐字同形（同一种双门控）。
+  Widget _subdlFields() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        FushiSwitchListTile.adaptive(
+          key: const ValueKey<String>('video-subdl-enabled'),
+          contentPadding: EdgeInsets.zero,
+          dense: true,
+          title: Text(t.video_external_enabled),
+          subtitle: Text(t.video_subdl_enabled_hint, maxLines: 3),
+          value: _subdlEnabled,
+          onChanged: (bool value) {
+            setState(() => _subdlEnabled = value);
+            _save(
+              (VideoExternalSettingsStore store) =>
+                  store.saveSubdlEnabled(value),
+            );
+          },
+        ),
+        _field(
+          key: const ValueKey<String>('video-subdl-api-key'),
+          label: t.video_external_api_key,
+          initialValue: _subdlApiKey,
+          helper: t.video_subdl_api_key_hint,
+          secret: true,
+          onChanged: _updateSubdlApiKey,
+        ),
+      ],
+    );
+  }
+
   /// 默认字幕语言：两家 provider 共用的**一个**偏好（存量键名
   /// `jimaku_default_language` 冻结不追改），所以它属于「字幕来源」这一节，
   /// 而不是某一家的卡片内字段——此前它长在 OpenSubtitles 块里，读起来像
@@ -742,7 +840,7 @@ class _VideoExternalProviderSettingsSectionState
       padding: const EdgeInsets.only(bottom: 8),
       child: SizedBox(
         width: double.infinity,
-        child: DropdownButtonFormField<String>(
+        child: FushiDropdownButtonFormField<String>(
           key: const ValueKey<String>('video-subtitle-default-language'),
           initialValue: _preferredLanguage,
           // `isExpanded` + 逐项省略：不加的话 DropdownButton 按**内容固有宽度**
@@ -801,22 +899,30 @@ class _VideoExternalProviderSettingsSectionState
         // 品牌名，不进 i18n（同设置页 TMDB 的处理）。
         'Jimaku',
         t.video_jimaku_scope_hint,
-        icon: Icons.subtitles_outlined,
+        icon: FushiIcons.subtitles,
       ),
       _jimakuFields(),
       _sectionHeading(
         theme,
         t.video_opensubtitles_settings_title,
         t.video_opensubtitles_settings_hint,
-        icon: Icons.subtitles_outlined,
+        icon: FushiIcons.subtitles,
       ),
       _openSubtitlesFields(),
       _sectionHeading(
         theme,
         // 品牌名，不进 i18n（同 Jimaku）。
+        'SubDL',
+        t.video_subdl_settings_hint,
+        icon: FushiIcons.subtitles,
+      ),
+      _subdlFields(),
+      _sectionHeading(
+        theme,
+        // 品牌名，不进 i18n（同 Jimaku）。
         'AJATT',
         t.video_ajatt_settings_hint,
-        icon: Icons.subtitles_outlined,
+        icon: FushiIcons.subtitles,
       ),
       _ajattFields(),
       _subtitleLanguageField(),
@@ -825,7 +931,7 @@ class _VideoExternalProviderSettingsSectionState
 
   /// AJATT 只有一个开关：零配置、无 key、无配额（见 `ajatt_catalog.dart` 文件头）。
   Widget _ajattFields() {
-    return SwitchListTile.adaptive(
+    return FushiSwitchListTile.adaptive(
       key: const ValueKey<String>('video-ajatt-enabled'),
       contentPadding: EdgeInsets.zero,
       dense: true,
@@ -859,7 +965,7 @@ class _VideoExternalProviderSettingsSectionState
           theme,
           t.video_builtin_sources_title,
           t.video_builtin_sources_hint,
-          icon: Icons.verified_outlined,
+          icon: FushiIcons.verified,
         ),
         SourceToggleList(
           keyPrefix: 'video-builtin-source',
@@ -893,61 +999,6 @@ class _VideoExternalProviderSettingsSectionState
     );
   }
 
-  Widget _mappingCard(int index) {
-    final _PathMappingDraft draft = _mappings[index];
-    return FushiCard(
-      key: ValueKey<String>('video-path-mapping-${draft.id}'),
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.all(12),
-      child: Column(
-        children: <Widget>[
-          Align(
-            alignment: Alignment.centerRight,
-            child: IconButton(
-              key: ValueKey<String>('video-path-mapping-$index-remove'),
-              tooltip: t.video_external_remove,
-              onPressed: () {
-                setState(() => _mappings.removeAt(index));
-                _saveMappingsIfValid();
-              },
-              icon: const Icon(Icons.remove_circle_outline),
-            ),
-          ),
-          _field(
-            key: ValueKey<String>('video-path-mapping-$index-profile'),
-            label: t.video_download_backend_profile_id,
-            initialValue: draft.backendProfileId,
-            errorText: draft.backendProfileId.trim().isEmpty
-                ? t.video_download_path_mapping_invalid
-                : null,
-            onChanged: (String value) =>
-                _updateMapping(index, draft.copyWith(backendProfileId: value)),
-          ),
-          _field(
-            key: ValueKey<String>('video-path-mapping-$index-remote'),
-            label: t.video_download_remote_root,
-            initialValue: draft.remoteRoot,
-            errorText: draft.remoteRoot.trim().isEmpty
-                ? t.video_download_path_mapping_invalid
-                : null,
-            onChanged: (String value) =>
-                _updateMapping(index, draft.copyWith(remoteRoot: value)),
-          ),
-          _field(
-            key: ValueKey<String>('video-path-mapping-$index-local'),
-            label: t.video_download_local_root,
-            initialValue: draft.localRoot,
-            errorText: p.isAbsolute(draft.localRoot.trim())
-                ? null
-                : t.video_download_path_mapping_invalid,
-            onChanged: (String value) =>
-                _updateMapping(index, draft.copyWith(localRoot: value)),
-          ),
-        ],
-      ),
-    );
-  }
-
   /// 把整段落到与普通设置行同一条 16px 左右基线上，正文吃满剩下的宽度。
   ///
   /// 这一段此前三种行各有一套左右边界：输入框自己缩到 480；`SwitchListTile`
@@ -975,30 +1026,41 @@ class _VideoExternalProviderSettingsSectionState
   }
 
   Widget _saveFailedBanner(ThemeData theme) => Padding(
-    padding: const EdgeInsets.only(top: 8),
-    child: Text(
-      t.video_external_save_error,
-      style: theme.textTheme.bodySmall?.copyWith(
-        color: theme.colorScheme.error,
-      ),
+    padding: const EdgeInsets.only(top: 8, bottom: 8),
+    child: FushiInlineNotice(
+      message: t.video_external_save_error,
+      severity: FushiNoticeSeverity.error,
+      icon: FushiIcons.error,
     ),
   );
 
   @override
   Widget build(BuildContext context) {
     if (_loading) {
-      return const Padding(
-        padding: EdgeInsets.all(16),
-        child: Center(child: CircularProgressIndicator()),
-      );
+      return const FushiLoadingView();
     }
     if (_store == null) return const SizedBox.shrink();
     final ThemeData theme = Theme.of(context);
+    // 下载落盘管道是「下载设置」里的一页：渲染成真正的设置分组（MD3 分段卡 /
+    // Apple inset grouped），分组自己承接行基线，不再套本组件的表单基线。
+    if (widget.scope == VideoExternalProviderScope.downloadRouting) {
+      return Column(
+        key: ValueKey<VideoExternalProviderScope>(widget.scope),
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          if (_saveFailed)
+            _alignSectionBaseline(context, _saveFailedBanner(theme)),
+          ..._downloadRoutingGroups(theme),
+        ],
+      );
+    }
     final List<Widget> blocks = switch (widget.scope) {
       VideoExternalProviderScope.jimaku => <Widget>[_jimakuFields()],
       VideoExternalProviderScope.openSubtitles => <Widget>[
         _openSubtitlesFields(),
       ],
+      VideoExternalProviderScope.subdl => <Widget>[_subdlFields()],
       VideoExternalProviderScope.subtitlePreferences => <Widget>[
         _sectionHeading(theme, 'AJATT', t.video_ajatt_settings_hint),
         _ajattFields(),
@@ -1014,9 +1076,8 @@ class _VideoExternalProviderSettingsSectionState
       VideoExternalProviderScope.resourceSources => _resourceSourceBlocks(
         theme,
       ),
-      VideoExternalProviderScope.downloadRouting => _downloadRoutingBlocks(
-        theme,
-      ),
+      // 上面已提前返回分组形态。
+      VideoExternalProviderScope.downloadRouting => const <Widget>[],
     };
     return _alignSectionBaseline(
       context,
@@ -1036,7 +1097,7 @@ class _VideoExternalProviderSettingsSectionState
   List<Widget> _resourceSourceBlocks(ThemeData theme) {
     return <Widget>[
       _builtinSourcesBlock(theme),
-      const Divider(height: 32),
+      const FushiDividerControl(height: 32),
       ..._torznabBlocks(theme),
     ];
   }
@@ -1047,84 +1108,181 @@ class _VideoExternalProviderSettingsSectionState
         theme,
         t.video_torznab_settings_title,
         t.video_torznab_settings_hint,
-        icon: Icons.travel_explore_outlined,
+        icon: FushiIcons.travelExplore,
       ),
       for (int index = 0; index < _torznab.length; index++)
         _torznabCard(theme, index),
       Align(
         alignment: Alignment.centerLeft,
-        child: OutlinedButton.icon(
+        child: FushiFilledButton.tonalIcon(
           key: const ValueKey<String>('video-torznab-add'),
           onPressed: () => setState(
             () => _torznab.add(_TorznabDraft.empty(_newDraftId('torznab'))),
           ),
-          icon: const Icon(Icons.add),
+          icon: const FushiIcon(FushiIcons.add),
           label: Text(t.video_torznab_add),
         ),
       ),
     ];
   }
 
-  /// 下载落盘管道：路径映射 + 下载目标视频来源。
-  List<Widget> _downloadRoutingBlocks(ThemeData theme) {
-    return <Widget>[
-      SettingsSearchTarget(
-        id: 'downloads.path_mappings',
-        child: _sectionHeading(
-          theme,
-          t.video_download_path_mappings_title,
-          t.video_download_path_mappings_hint,
-          icon: Icons.route_outlined,
-        ),
-      ),
+  /// 下载落盘管道：路径映射 + 下载目标视频来源，每块都是真正的设置分组。
+  ///
+  /// 每条映射是一个独立分组（三个输入行 + 删除行），「添加映射」是映射分组之后
+  /// 的一个动作分组，分组标题只挂在第一个分组上、说明落在脚注里——不再是卡片
+  /// 套卡片 + 自绘小节标题 + 硬分割线。
+  List<Widget> _downloadRoutingGroups(ThemeData theme) {
+    final String mappingsTitle = t.video_download_path_mappings_title;
+    final List<Widget> mappingGroups = <Widget>[
       for (int index = 0; index < _mappings.length; index++)
-        _mappingCard(index),
-      Align(
-        alignment: Alignment.centerLeft,
-        child: OutlinedButton.icon(
-          key: const ValueKey<String>('video-path-mapping-add'),
-          onPressed: () => setState(
-            () => _mappings.add(
-              _PathMappingDraft.empty(
-                _newDraftId('mapping'),
-                suggestedBackendProfileId: _suggestedBackendProfileId,
+        _mappingGroup(index, title: index == 0 ? mappingsTitle : null),
+      AdaptiveSettingsSection(
+        key: const ValueKey<String>('video-path-mapping-add-group'),
+        title: _mappings.isEmpty ? mappingsTitle : null,
+        children: <Widget>[
+          AdaptiveSettingsRow(
+            key: const ValueKey<String>('video-path-mapping-add'),
+            title: t.video_download_path_mapping_add,
+            icon: FushiIcons.add,
+            showIcon: true,
+            onTap: () => setState(
+              () => _mappings.add(
+                _PathMappingDraft.empty(
+                  _newDraftId('mapping'),
+                  suggestedBackendProfileId: _suggestedBackendProfileId,
+                ),
               ),
             ),
           ),
-          icon: const Icon(Icons.add),
-          label: Text(t.video_download_path_mapping_add),
-        ),
+        ],
       ),
-      const Divider(height: 32),
-      _sectionHeading(
-        theme,
-        t.video_download_target_source_title,
-        t.video_download_target_source_hint,
-        icon: Icons.video_library_outlined,
+      SettingsSectionFooter(t.video_download_path_mappings_hint),
+    ];
+    return <Widget>[
+      SettingsSearchTarget(
+        id: 'downloads.path_mappings',
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: mappingGroups,
+        ),
       ),
       SettingsSearchTarget(
         id: 'downloads.target_source',
-        child: _targetSourceField(theme),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            AdaptiveSettingsSection(
+              title: t.video_download_target_source_title,
+              children: <Widget>[
+                if (_sources.isEmpty)
+                  AdaptiveSettingsRow(
+                    title: t.video_download_target_source_none,
+                    subtitle: t.video_download_target_source_empty,
+                  )
+                else
+                  Padding(
+                    padding: EdgeInsets.symmetric(
+                      horizontal:
+                          FushiDesignTokens.of(context).spacing.rowHorizontal,
+                      vertical: 10,
+                    ),
+                    child: _targetSourceField(theme),
+                  ),
+              ],
+            ),
+            SettingsSectionFooter(t.video_download_target_source_hint),
+          ],
+        ),
       ),
     ];
   }
 
-  Widget _targetSourceField(ThemeData theme) {
-    if (_sources.isEmpty) {
-      return Text(
-        t.video_download_target_source_empty,
-        style: theme.textTheme.bodySmall?.copyWith(
-          color: theme.colorScheme.onSurfaceVariant,
+  /// 一条路径映射的分组：三个输入行（标题在上、输入框在下撑满行宽）+ 删除行。
+  /// 非法值的提示挂在输入框自己的错误态上。
+  Widget _mappingGroup(int index, {String? title}) {
+    final _PathMappingDraft draft = _mappings[index];
+    Widget input({
+      required String keySuffix,
+      required String label,
+      required String initialValue,
+      required String? errorText,
+      required ValueChanged<String> onChanged,
+    }) {
+      return AdaptiveSettingsRow(
+        title: label,
+        controlBelow: true,
+        trailing: FushiTextFormFieldControl(
+          key: ValueKey<String>('video-path-mapping-$index-$keySuffix'),
+          initialValue: initialValue,
+          decoration: InputDecoration(
+            errorText: errorText,
+            isDense: true,
+            border: const OutlineInputBorder(),
+          ),
+          onChanged: onChanged,
         ),
       );
     }
-    return DropdownButtonFormField<int>(
+
+    return AdaptiveSettingsSection(
+      key: ValueKey<String>('video-path-mapping-${draft.id}'),
+      title: title,
+      children: <Widget>[
+        input(
+          keySuffix: 'profile',
+          label: t.video_download_backend_profile_id,
+          initialValue: draft.backendProfileId,
+          errorText: draft.backendProfileId.trim().isEmpty
+              ? t.video_download_path_mapping_invalid
+              : null,
+          onChanged: (String value) =>
+              _updateMapping(index, draft.copyWith(backendProfileId: value)),
+        ),
+        input(
+          keySuffix: 'remote',
+          label: t.video_download_remote_root,
+          initialValue: draft.remoteRoot,
+          errorText: draft.remoteRoot.trim().isEmpty
+              ? t.video_download_path_mapping_invalid
+              : null,
+          onChanged: (String value) =>
+              _updateMapping(index, draft.copyWith(remoteRoot: value)),
+        ),
+        input(
+          keySuffix: 'local',
+          label: t.video_download_local_root,
+          initialValue: draft.localRoot,
+          errorText: p.isAbsolute(draft.localRoot.trim())
+              ? null
+              : t.video_download_path_mapping_invalid,
+          onChanged: (String value) =>
+              _updateMapping(index, draft.copyWith(localRoot: value)),
+        ),
+        AdaptiveSettingsRow(
+          key: ValueKey<String>('video-path-mapping-$index-remove'),
+          title: t.video_external_remove,
+          icon: FushiIcons.delete,
+          showIcon: true,
+
+          onTap: () {
+            setState(() => _mappings.removeAt(index));
+            _saveMappingsIfValid();
+          },
+        ),
+      ],
+    );
+  }
+
+  Widget _targetSourceField(ThemeData theme) {
+    return FushiDropdownButtonFormField<int>(
       key: ValueKey<String>('video-target-source-${_targetSourceId ?? 'none'}'),
       initialValue: _targetSourceId ?? 0,
-      decoration: InputDecoration(
-        labelText: t.video_download_target_source_none,
+      // 分组标题已经说明这是什么，下拉框自己不再挂浮动标签。
+      decoration: const InputDecoration(
         isDense: true,
-        border: const OutlineInputBorder(),
+        border: OutlineInputBorder(),
       ),
       isExpanded: true,
       items: <DropdownMenuItem<int>>[
@@ -1153,8 +1311,71 @@ class _VideoExternalProviderSettingsSectionState
   }
 }
 
-String _newDraftId(String prefix) =>
+String _newDraftId(String prefix) => newVideoExternalRecordId(prefix);
+
+/// 新 Torznab 索引器 / 路径映射草稿的 id。设置页与控制通道共用。
+String newVideoExternalRecordId(String prefix) =>
     '$prefix-${DateTime.now().microsecondsSinceEpoch}';
+
+/// 表单字段 → Torznab 索引器配置；任一字段不合法返回 null（端点须过 provider
+/// 自身的 HTTPS/loopback 校验、不带 query / userinfo / fragment；优先级整数；
+/// 分类逗号分隔的非负整数）。设置页与控制通道共用同一份校验。
+TorznabIndexerConfig? torznabConfigFromFields({
+  required String id,
+  required String name,
+  required String endpoint,
+  required String apiKey,
+  required bool enabled,
+  required String priority,
+  required String categories,
+  required bool allowInsecureHttp,
+}) => _TorznabDraft(
+  id: id,
+  name: name,
+  endpoint: endpoint,
+  apiKey: apiKey,
+  enabled: enabled,
+  priority: priority,
+  categories: categories,
+  allowInsecureHttp: allowInsecureHttp,
+).toConfig();
+
+/// 表单字段 → OpenSubtitles 配置；端点不合法或 User-Agent 为空返回 null。
+/// 用户名 / 密码空串 = 不登录。设置页与控制通道共用同一份校验。
+OpenSubtitlesConfig? openSubtitlesConfigFromFields({
+  required String endpoint,
+  required String apiKey,
+  required String username,
+  required String password,
+  required String userAgent,
+  required bool enabled,
+  required bool allowInsecureHttp,
+}) => _OpenSubtitlesDraft(
+  endpoint: endpoint,
+  apiKey: apiKey,
+  username: username,
+  password: password,
+  userAgent: userAgent,
+  enabled: enabled,
+  allowInsecureHttp: allowInsecureHttp,
+).toConfig();
+
+/// 表单字段 → 下载后端路径映射；三项任一为空或本机根不是绝对路径返回 null。
+/// 设置页与控制通道共用同一份校验。
+VideoDownloadBackendPathMappingConfig? videoDownloadPathMappingFromFields({
+  required String backendProfileId,
+  required String remoteRoot,
+  required String localRoot,
+}) => _PathMappingDraft(
+  id: '',
+  backendProfileId: backendProfileId,
+  remoteRoot: remoteRoot,
+  localRoot: localRoot,
+).toConfig();
+
+/// 路径映射记录的稳定 id（设置页草稿与控制通道同一写法）。
+String videoDownloadPathMappingId(VideoDownloadBackendPathMappingConfig m) =>
+    '${m.backendProfileId}:${m.remoteRoot}';
 
 @immutable
 class _TorznabDraft {
@@ -1385,7 +1606,7 @@ class _PathMappingDraft {
   factory _PathMappingDraft.fromConfig(
     VideoDownloadBackendPathMappingConfig config,
   ) => _PathMappingDraft(
-    id: '${config.backendProfileId}:${config.remoteRoot}',
+    id: videoDownloadPathMappingId(config),
     backendProfileId: config.backendProfileId,
     remoteRoot: config.remoteRoot,
     localRoot: config.localRoot,

@@ -40,7 +40,7 @@ import 'package:fushi_engine/epub/epub_book.dart';
 import 'package:fushi_engine/epub/epub_importer.dart';
 import 'package:fushi_engine/epub/epub_parser.dart';
 import 'package:fushi/src/media/manga/book_format_convert.dart';
-import 'package:fushi/src/media/manga/import/manga_archive_importer.dart';
+import 'package:fushi_engine/media/manga/manga_archive_importer.dart';
 import 'package:fushi_engine/media/manga/manga_importer.dart';
 import 'package:fushi_engine/media/manga/manga_storage.dart';
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';
@@ -247,7 +247,7 @@ abstract final class BookFormatRebuild {
     void Function(int done, int total)? onProgress,
   }) async {
     final Directory staging =
-        await Directory.systemTemp.createTemp('hibiki_book_convert_');
+        await Directory.systemTemp.createTemp('fushi_book_convert_');
     try {
       switch (sourceFormat) {
         case BookFormat.pdf:

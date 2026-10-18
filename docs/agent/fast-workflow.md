@@ -27,7 +27,7 @@
 | **B 功能 / 复杂 bug** | 跨模块、多文件、时序/状态/平台边界问题 | 主代理定根因和数据结构；机械面（样板、i18n、多文件同构、测试）拆子代理并行 | 定向 + 相邻功能测试；全量交 PR CI |
 | **C 大型 / 长周期** | 多阶段、需分批审查 | 按 claim 拆多 agent；integration owner 统一收口 | 定向 + 目录枚举型守卫整批；全量交 PR CI |
 
-**子代理纪律**（既有规则，重申）：后台派发，主代理不空等回传；每个子代理给明确文件清单，避免撞同一脏文件；强顺序依赖的步骤别硬拆；子代理回传必须核关键证据（`git diff --stat` / `test -f` / grep），不可全信叙述。
+**子代理纪律**（既有规则，重申）：后台派发，主代理不空等回传；每个子代理给明确文件清单，避免撞同一脏文件；强顺序依赖的步骤别硬拆；子代理回传必须核关键证据（`git diff --stat` / `test -f` / grep），不可全信叙述。审查 / 根因类子任务**不用 `fork`**（fork 继承整段对话连同已有倾向与猜测，失去独立性），用新开的子代理；派工 prompt **只给事实**（现象、复现步骤、文件路径、要回答的问题），不写「我怀疑是 X」「应该只要改 Y」，确有线索时标成「待证伪的线索」。
 
 ## 标准时间线（B 级功能，目标 ~12 min）
 
@@ -55,7 +55,7 @@ S/A 级同理裁剪：S 级连 worktree bootstrap 都可 `-SkipBootstrap` 到底
     实测漏网：PR#764 收口弹窗复制入口，`test/dictionary/popup_touch_copy_actionmode_guard_test.dart`
     只被 `test/lookup` 的定向测试擦肩而过，红直接进了 develop（TODO-2745）。
 - **`flutter analyze` 全量在 push 前必跑**（含 test 目录）——它本身只要秒级~1 分钟，而 CI 把 warning 当致命，省这一步只会在 CI 上浪费一轮。
-- **分支 draft PR**：定向测试绿 + 全量 analyze 绿即可 push；全量 test 由 CI 兜底（真单测门是 **Build Release APK 的 Run unit tests**，不是 Build and Test）。声明「修好了」的真机复测门槛**不变**（[integration-testing.md](integration-testing.md)）。
+- **分支 draft PR**：全量 analyze 绿即可 push（2026-10-02 起推送门只有 analyze；定向测试在开发中按需跑，不是推送前置条件）；守卫与全量 test 由 CI 兜底（真单测门是 **Build Release APK 的 Run unit tests**，不是 Build and Test）。声明「修好了」的真机复测门槛**不变**（[integration-testing.md](integration-testing.md)）。
 - **合入 `develop`**：integration owner 本地全量 analyze + 定向 test + 「目录枚举型守卫」整批；**不再本地跑全量 test**（用户 2026-09-06 拍板：`dart run tool/flutter_test_failures.dart` 全量 / 裸 `flutter test` 全量一律不跑，全量只由 PR CI 兜底）。别 `| tail` 吞退出码；重叠跑会互抢 `sqlite3.dll`，见下节。
 
 ## 并发伪红判别
@@ -71,6 +71,8 @@ S/A 级同理裁剪：S 级连 worktree bootstrap 都可 `-SkipBootstrap` 到底
 | ③ 结果文件被抢 | 跑很久**零输出、像卡死**；既没断言失败也没装载失败 | 看有没有并发进程在写同一份 `.codex-test/flutter-test/flutter_test.jsonl`（`flutter_test_failures.dart` 的默认输出目录就是 `../.codex-test/flutter-test`，所有 agent 共用） | **规避优先于诊断**：每次跑都显式给独立输出，`--output-dir=../.codex-test/flutter-test-<任务名>` |
 
 出处：② PR#716 实测（7 路并发 / 27 个 dart+flutter_tester 进程；分片对账 325 + 2602 = 2927 ≈ 2923 完成 + 4 个没装载上）；③ PR#728 实测。
+
+**2026-10-01 起这三类与下面的僵尸变体都有结构性规避**——前提是运行走了本机重活租约（`dart tool/heavy.dart -- <命令>`；`pre_push_check` / `flutter_test_failures` 已内置，见根 `CLAUDE.md`「本机重活一律走租约」）：同一 worktree 写 `build/` 的运行互斥（①③不再在同一 checkout 里重叠）、全机并发由槽位封顶（②的 7 路并发不会再出现；2026-10-03 起不再做内存准入）、Job Object 关闭时连带杀掉残留 `flutter_tester`（僵尸变体）。**所以裸跑撞上这些形态，第一反应是改成走租约重跑，而不是去分型**；走了租约仍红，才按下表分型。`dart tool/heavy.dart --status` 能直接看到本机此刻谁占着槽位。
 
 **形态 ① 有一个很具体、且不需要别人并发就能自己撞上的变体：僵尸 `flutter_tester` 锁住自己 worktree 的 `sqlite3.dll`。** 症状是
 
@@ -108,7 +110,7 @@ Get-CimInstance Win32_Process |
 
 > **定向测试按功能域挑，而目录枚举型守卫的触发面与功能域正交。**
 
-一条改视频合集 UI 的 PR，定向测试会挑 `test/media/collections/*`、`test/pages/video_*`——没有人会想到去跑 `test/settings/md3_design_system_static_test.dart`。可那条守卫扫的是 `lib/src` **全树**，合集 PR 新写的裸 `Card(` 正落在它的扫描面里。**按名字挑测试，就永远挑不到它**；漏掉不是概率问题，是必然。
+一条改视频合集 UI 的 PR，定向测试会挑 `test/media/collections/*`、`test/pages/video_*`——没有人会想到去跑 `test/settings/m3e_design_system_static_test.dart`。可那条守卫扫的是 `lib/src` **全树**，合集 PR 新写的裸 `Card(` 正落在它的扫描面里。**按名字挑测试，就永远挑不到它**；漏掉不是概率问题，是必然。
 
 补上「每条 PR 合入后固定加跑这批」之后，累计 **30 条合并零红**。
 
@@ -121,16 +123,16 @@ Get-CimInstance Win32_Process |
 | **目录枚举型** | `Directory(...).listSync(recursive: true)` 现场枚举 | **自动纳入扫描面** | ✅ 进 |
 | **点名清单型** | 源码里硬编码的文件路径常量表 | **天然在扫描集外** | ❌ 不进 |
 
-点名清单型是本仓「静态守卫」的大多数（例如 `md3_design_system_static_test.dart` 63 个 test 里有 62 个是点名的）。它们对新 PR 的新文件**零覆盖**——加进清单不会多抓到任何东西，只会让清单变长。它们由定向测试覆盖，位置正确。
+点名清单型是本仓「静态守卫」的大多数（例如 `m3e_design_system_static_test.dart` 63 个 test 里有 62 个是点名的）。它们对新 PR 的新文件**零覆盖**——加进清单不会多抓到任何东西，只会让清单变长。它们由定向测试覆盖，位置正确。
 
 **只枚举某个子树**的同样不进（`lib/src/sync` 的空 catch / PIN / TLS 三条、`lib/src/settings` 的旧 pref key、5 个媒体页根的焦点所有权……）：改动落在那个子树时，定向测试本来就会挑到它。
 
-### 清单（51 条，2026-08-02 反向枚举全量得出；TODO-2707 补入三份新语料守卫；BUG-1498 补入出站装配守卫；BUG-2064 补入分享入口守卫；2026-09-03 反向枚举复核补入 14 条）
+### 清单（52 条，2026-08-02 反向枚举全量得出；TODO-2707 补入三份新语料守卫；BUG-1498 补入出站装配守卫；BUG-2064 补入分享入口守卫；2026-09-03 反向枚举复核补入 14 条；2026-10-16 补入正式版复习构建通道守卫）
 
 | 测试 | 扫描根 | 守什么 |
 |---|---|---|
 | `test/tools/source_guard_adoption_test.dart` | `test/` 全树 | 禁手写注释剥离，一律走 `helpers/source_guard.dart` |
-| `test/settings/md3_design_system_static_test.dart` | `lib/src` 全树（仅其中 1 个 test） | 页面 chrome 不得重开本地 MD3 决策（裸 `Card(`/`ListTile(`/`fontSize:`/`BorderRadius.circular(`…） |
+| `test/settings/m3e_design_system_static_test.dart` | `lib/src` 全树（仅其中 1 个 test） | 页面 chrome 不得重开本地 M3E 决策（裸 `Card(`/`ListTile(`/`fontSize:`/数字字面量 `BorderRadius.circular(`/不处理 Apple 分支就直读 `surfaceContainer*`…；形状走 `FushiM3eShape` 等 token、面色走 `FushiDesignTokens.surfaces`） |
 | `test/tools/dart_source_no_raw_nul_guard_test.dart` | `fushi/{lib,test}` + `packages/<非 vendored>/{lib,test}`（**磁盘枚举**，BUG-2378） | `.dart` 不得含裸 NUL（git 判 binary 会静默丢改动） |
 | `test/tools/duplicate_policy_naming_guard_test.dart` | `lib` + `test` 全树 | 7 个淘汰命名不得复活 |
 | `test/tools/media_kind_persistence_guard_test.dart` | 6 个生产 `lib` 根 | MediaKind 持久化只经 `dbValue`/`compositeKey` |
@@ -181,6 +183,7 @@ Get-CimInstance Win32_Process |
 | `test/tools/tests_for_changes_guard_test.dart` | `test/` 全树 + 全仓路径索引 | 「按触发条件加跑」的推导规则本身：索引规模 + 逐树下界 + 声明 glob 有效 |
 | `test/torrent/download_http_client_proxy_test.dart` | `lib` + 4 个 `packages/*/lib` | 下载链路的 HttpClient 必须走统一代理装配 |
 | `test/utils/net/network_image_proxy_guard_test.dart` | `lib` 全树 | 远端图片必须走 `AppHttpImage`/`AppCachedHttpImage`，裸 provider 会绕过全应用代理装配（自带 `expectScanScale` 哨兵） |
+| `test/build/prerelease_only_capability_guard_test.dart` | `lib` 全树 | 正式版屏蔽复习：构建通道判据只在 `PrereleaseOnlyCapability` 写一次，复习消费端不得自己读 `FUSHI_BUILD_VERSION` / 推通道（2026-10-16 补入，自带两处 `expectScanScale` + 合成语料自校验） |
 
 一条命令跑完，**当前基线 362 tests**（2026-09-03 反向枚举复核后实测，51 条 ~62 秒；上一基线 256 / 37 条）——比争论「这条该不该跑」便宜得多，所以**不要挑，整批跑**：
 
@@ -194,7 +197,7 @@ Get-CimInstance Win32_Process |
 | 227 | 35 | 期间合入的 PR 又补了 2 条（这一格是**事后补记**：`develop` 上实测 227，没人在改动那刻更新这张表——N 的演进链只有当场记才准） |
 | 239 | 35 | BUG-1489 给 `media_kind_persistence_guard` 补冻结迁移登记出口 + 10 条合成语料自校验 + 2 条登记自校验（3→15） |
 | 250 | 36 | BUG-1498 新增 `outbound_http_discipline_guard`（11 例：登记制 + 规模哨兵 + 陈旧检测 + 总数常量 + 5 组合成语料自校验） |
-| **252** | **36** | 又一次**事后补记**：2026-09-02 实测 252，守卫条数没变。多出的 2 例是 08-11 之后合入的 PR 往 `md3_design_system_static_test` / `path_rebase_coverage_guard_test` 这类**点名清单型**用例里补的登记（`git log --since` 可查到一串）。**定性方法值得记住**：先按 suite 数一遍每条守卫的用例数——这批没有一条是「每个被扫文件生成一个 test」的，全是固定条数，所以**新增源码文件结构上改不了 N**；N 变了只可能是守卫文件自己被改过，`git log -- <那几个守卫>` 一查即知。（此后被 BUG-2064 与 09-03 的清单复核取代） |
+| **252** | **36** | 又一次**事后补记**：2026-09-02 实测 252，守卫条数没变。多出的 2 例是 08-11 之后合入的 PR 往 `m3e_design_system_static_test` / `path_rebase_coverage_guard_test` 这类**点名清单型**用例里补的登记（`git log --since` 可查到一串）。**定性方法值得记住**：先按 suite 数一遍每条守卫的用例数——这批没有一条是「每个被扫文件生成一个 test」的，全是固定条数，所以**新增源码文件结构上改不了 N**；N 变了只可能是守卫文件自己被改过，`git log -- <那几个守卫>` 一查即知。（此后被 BUG-2064 与 09-03 的清单复核取代） |
 | 256 | 37 | BUG-2064 新增 `share_entry_point_guard`（2 例：入口唯一性 + 锚点双路径）。**+6 里只有 +2 是本条**——同一棵树上先跑旧的 36 条实测 254，250→254 的 +4 来自这期间合入的其它改动。这一格就是「N 变了要能说出是哪一行变的」的样例：不实测旧清单就会把 +6 整个记到新守卫头上 |
 | **360** | **51** | 2026-09-03 反向枚举复核（`develop@6441344d66`）：清单已过期，14 条符合判据的守卫从未被登记。**+104 的拆解**：先在同一棵树上跑旧的 37 条实测 **257**，256→257 的 **+1** 是期间漂移——PR#1152（`599bb36e86`）给 `test/pages/lookup_overlay_dialog_gate_guard_test.dart` 加了一条「恒不可见不动点真的解析出了停驻层」，4→5；剩下的 **+103** 全部来自新登记的 14 条，其中 **102 是它们本来就有的用例**、**1 是本次给 `legacy_video_scrape_surface_guard` 补的扫描规模哨兵**（`outbound_user_agent_guard` 的哨兵是并进既有用例的内联断言，不产生新用例） |
 | **362** | **51** | BUG-2099 给 `file_picker_discipline_guard` 新增 2 条（`FileType.custom` 禁止型 + 该豁免清单不得虚挂）。**守卫条数没变，+2 全部来自本条**：同一棵树上跑完 51 条实测 362，与 360 的差恰好等于新增用例数，无期间漂移 |
@@ -206,7 +209,7 @@ Get-CimInstance Win32_Process |
 ```bash
 cd fushi && dart run tool/flutter_test_failures.dart --no-pub \
   --output-dir=../.codex-test/flutter-test-guards \
-  test/tools/source_guard_adoption_test.dart test/settings/md3_design_system_static_test.dart \
+  test/tools/source_guard_adoption_test.dart test/settings/m3e_design_system_static_test.dart \
   test/tools/dart_source_no_raw_nul_guard_test.dart test/tools/duplicate_policy_naming_guard_test.dart \
   test/tools/media_kind_persistence_guard_test.dart test/tools/book_format_discipline_guard_test.dart \
   test/tools/file_picker_discipline_guard_test.dart test/tools/image_picker_usage_guard_test.dart \
@@ -343,6 +346,8 @@ dart run tool/flutter_test_failures.dart --no-pub \
   $(dart run tool/tests_for_changes.dart --base=origin/develop)
 ```
 
+> **推送前不需要跑这两条**：2026-10-02 起推送门只有全量 `flutter analyze`（CLAUDE.md「验证」节），守卫与测试交给 PR CI。想在本地先筛一遍时，`dart run tool/pre_push_check.dart`（可选，不是门）已经把它们、本节的目录枚举守卫整批、直接 import 受影响的测试、全量 analyze 与改动包测试合成一条命令，改动为空时直接退出、不会退化成跑全量。这里的手工串法留给只想看某棵树触发面的场合。
+
 ⚠️ 最后那条里 `$( )` **展开为空时不是空跑**：`flutter_test_failures.dart` 不带目标就跑全量。`--base` 选错（比如指到自己这条分支的 tip、diff 为空）会白等十几分钟，而输出看起来完全正常。跑之前先单独执行一遍上面第一条，确认它真的吐出了路径。
 
 判据一句话：
@@ -364,6 +369,14 @@ dart run tool/flutter_test_failures.dart --no-pub \
 ```
 
 规则住在拥有它的那个文件里，改守卫的人一眼看得见；守卫断言每条声明至少匹配到一个真实文件，所以声明烂掉是**响的**不是哑的。
+
+**反方向的例外：只是 fixture 的字面量。** 典型是 `bug_tool_number_pool_test.dart` / `bug_tool_renumber_scope_test.dart`：它们在临时 git 仓库里写 `docs/BUGS.md` 当 fixture，字面量恰好与真仓库的索引同名，于是每个走 BUG 流程的 PR（reindex 必改 `docs/BUGS.md`）都会把这两套起 git 子进程、单跑近 5 分钟、负载一高就 30 秒超时的测试拉进推送前检查。它们真正守的是 `tool/bug.dart`（那条引用照旧触发）。这类测试在**自己文件里**声明：
+
+```dart
+// tests-for-changes-ignore: docs/BUGS.md docs/bugs
+```
+
+忽略只作用于触发、不改提取（上面的规模哨兵不受影响）；守卫断言每条忽略都对得上本文件真被提取到的引用，并钉住「改 `docs/BUGS.md` 仍触发 `bugs_per_file_guard_test`」。只给「守的明显是另一样东西、这个字面量只是临时目录里的 fixture」的测试用——拿不准就别加，偏置仍是过度触发。
 
 ## 共享测试原语：它坏起来是静默的，改它的门也不在上面两批里
 

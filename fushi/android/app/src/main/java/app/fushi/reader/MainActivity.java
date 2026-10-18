@@ -16,6 +16,7 @@ import android.provider.DocumentsContract;
 import android.provider.MediaStore;
 import android.provider.OpenableColumns;
 import android.view.KeyEvent;
+import android.view.MotionEvent;
 import android.view.WindowManager;
 import androidx.annotation.NonNull;
 import android.net.Uri;
@@ -37,6 +38,7 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeSet;
@@ -84,6 +86,11 @@ public class MainActivity extends AudioServiceActivity {
     private AnkiChannelHandler ankiChannelHandler;
     private TtsChannelHandler ttsChannelHandler;
     private MihonChannelHandler mihonChannelHandler;
+    // 系统画中画。持有 Activity，所以是实例而不是静态注册：onDestroy 要断开它，
+    // onPictureInPictureModeChanged 要把系统的进出事件转发给它。
+    private PictureInPictureChannelHandler pictureInPictureChannelHandler;
+    // 互联配对链接写 NFC 贴纸：读卡模式挂在 Activity 上，同样是实例、onDestroy 断开。
+    private NfcTagWriterChannelHandler nfcTagWriterChannelHandler;
     private MethodChannel.Result pendingSafResult;
     private String pendingSafDestPath;
     // BUG-427/TODO-852: when API 26+ has no install permission we route the
@@ -101,29 +108,18 @@ public class MainActivity extends AudioServiceActivity {
     private volatile boolean volumeKeyIntercept = false;
     private MethodChannel volumeKeyChannel;
 
-    @Override
-    protected void attachBaseContext(Context newBase) {
-        SharedPreferences prefs = newBase.getSharedPreferences(SPLASH_PREFS, MODE_PRIVATE);
-        if (prefs.contains(PreferenceKeys.SPLASH_IS_DARK)) {
-            boolean isDark = prefs.getBoolean(PreferenceKeys.SPLASH_IS_DARK, false);
-            int currentNight = newBase.getResources().getConfiguration().uiMode
-                    & Configuration.UI_MODE_NIGHT_MASK;
-            boolean systemDark = currentNight == Configuration.UI_MODE_NIGHT_YES;
-            if (isDark != systemDark) {
-                Configuration config = new Configuration(
-                        newBase.getResources().getConfiguration());
-                config.uiMode = (config.uiMode & ~Configuration.UI_MODE_NIGHT_MASK)
-                        | (isDark ? Configuration.UI_MODE_NIGHT_YES
-                                  : Configuration.UI_MODE_NIGHT_NO);
-                super.attachBaseContext(newBase.createConfigurationContext(config));
-                return;
-            }
-        }
-        super.attachBaseContext(newBase);
-    }
+    // Controller triggers (LT / RT) reach Android only as joystick motion axes,
+    // which the Flutter engine drops on the floor; this bridge turns their
+    // press / release edges into the KEYCODE_BUTTON_L2 / R2 key events the Dart
+    // shortcut layer already binds and captures. Fed from
+    // dispatchGenericMotionEvent, emits through dispatchKeyEvent so the
+    // synthesized keys take the exact route a physical L2 / R2 button would.
+    private final GamepadTriggerKeySynthesizer gamepadTriggers =
+            new GamepadTriggerKeySynthesizer(this::dispatchKeyEvent);
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
+        // Splash 缓存只设置窗口背景；保留系统 uiMode，让 Flutter 正确跟随系统明暗。
         SharedPreferences splashPrefs = getSharedPreferences(SPLASH_PREFS, MODE_PRIVATE);
         int bgColor = splashPrefs.getInt(PreferenceKeys.SPLASH_BG_COLOR, 0);
         if (bgColor != 0) {
@@ -132,6 +128,8 @@ public class MainActivity extends AudioServiceActivity {
         context = MainActivity.this;
         ankiChannelHandler = new AnkiChannelHandler(context);
         ttsChannelHandler = new TtsChannelHandler(context);
+        pictureInPictureChannelHandler = new PictureInPictureChannelHandler(context);
+        nfcTagWriterChannelHandler = new NfcTagWriterChannelHandler(context);
         // Manga extensions are an optional subsystem. Its constructor wires up
         // Injekt, whose reified type resolution is only as sound as the R8 keep
         // rules (a stale keep rule once made this throw on every launch and
@@ -158,20 +156,66 @@ public class MainActivity extends AudioServiceActivity {
     // BUG-195: On API 26+ every View defaults to defaultFocusHighlightEnabled=true,
     // so when touch mode is exited the framework draws a system focus rectangle on
     // the currently focused View -- including the FlutterView host that hosts the
-    // whole UI. On some skins (Samsung OneUI 6.5) that system frame overlaps Hibiki's
-    // own keyboard/gamepad focus ring drawn in Flutter (see hibiki_focus_ring.dart),
+    // whole UI. On some skins (Samsung OneUI 6.5) that system frame overlaps Fushi's
+    // own keyboard/gamepad focus ring drawn in Flutter (see fushi_focus_ring.dart),
     // giving a double highlight. We disable only the Android system default highlight
     // here; the Flutter self-drawn focus ring and focus navigation are untouched.
     // Done in code on the decorView (rather than only a theme attribute) because the
     // FlutterSurfaceView host is created programmatically inside super.onCreate, so a
     // direct setDefaultFocusHighlightEnabled(false) on the window's view hierarchy is
     // the deterministic place to kill it.
+    //
+    // BUG-3485: defaultFocusHighlightEnabled is a PER-VIEW flag -- setting it on the
+    // decorView never reached the full-screen FlutterView, which is the view that
+    // actually holds focus. Once a gamepad press left touch mode, the system drew
+    // its frame around the FlutterView (= a faint ring along the screen edges) even
+    // with Fushi's own focus ring turned off. So the suppression now targets the
+    // FlutterView and, through a global focus-change listener, whatever view
+    // (e.g. a WebView platform view) takes focus later.
+    private boolean focusHighlightListenerInstalled = false;
+
     private void disableSystemFocusHighlight() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             android.view.View decorView = getWindow().getDecorView();
             if (decorView != null) {
                 decorView.setDefaultFocusHighlightEnabled(false);
+                if (!focusHighlightListenerInstalled) {
+                    decorView.getViewTreeObserver().addOnGlobalFocusChangeListener(
+                            (oldFocus, newFocus) -> {
+                                if (newFocus != null) {
+                                    newFocus.setDefaultFocusHighlightEnabled(false);
+                                }
+                            });
+                    focusHighlightListenerInstalled = true;
+                }
             }
+            android.view.View flutterView = findViewById(FLUTTER_VIEW_ID);
+            if (flutterView != null) {
+                flutterView.setDefaultFocusHighlightEnabled(false);
+            }
+            android.view.View focused = getCurrentFocus();
+            if (focused != null) {
+                focused.setDefaultFocusHighlightEnabled(false);
+            }
+        }
+    }
+
+    // BUG-3485: key events only reach Flutter through the FOCUSED view chain
+    // (ViewGroup.dispatchKeyEvent forwards to mFocused). Since API 28 a window in
+    // touch mode is not given initial focus, so after launch (or after a focused
+    // platform view went away) no view is focused: a gamepad BUTTON_B never reaches
+    // FlutterView, the app reports it unhandled, and Generic.kcm's `fallback BACK`
+    // pops the page -- bypassing the shortcut registry, so clearing every "back"
+    // binding did nothing. A and Y only "fixed" it because their fallbacks
+    // (DPAD_CENTER / SPACE) are navigation/typing keys that leave touch mode, which
+    // makes ViewRootImpl hand default focus to the FlutterView. Give the
+    // FlutterView (focusable in touch mode) focus before dispatching instead, so
+    // the very first key is decided by Flutter's own key pipeline.
+    private void ensureKeyFocusTarget() {
+        if (getCurrentFocus() != null) return;
+        android.view.View flutterView = findViewById(FLUTTER_VIEW_ID);
+        if (flutterView != null) {
+            flutterView.requestFocus();
         }
     }
 
@@ -190,6 +234,21 @@ public class MainActivity extends AudioServiceActivity {
         disableSystemFocusHighlight();
     }
 
+    // 系统画中画的**唯一**回程。用户从小窗的关闭 / 还原按钮退出时不经过我们的
+    // enter()，Dart 侧只有收到这条才知道自己已经不在 PiP 里。
+    //
+    // 进出 PiP 同时是一次配置变更：本 Activity 的 android:configChanges 已声明
+    // orientation|screenSize|smallestScreenSize|screenLayout，因此 Activity 不会被
+    // 重建、播放不会断；少任何一项都会变成 recreate，表现为切小窗时视频从头开始。
+    @Override
+    public void onPictureInPictureModeChanged(
+            boolean isInPictureInPictureMode, @NonNull Configuration newConfig) {
+        super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig);
+        if (pictureInPictureChannelHandler != null) {
+            pictureInPictureChannelHandler.notifyModeChanged(isInPictureInPictureMode);
+        }
+    }
+
     @Override
     protected void onDestroy() {
         if (ttsChannelHandler != null) {
@@ -198,6 +257,16 @@ public class MainActivity extends AudioServiceActivity {
         if (mihonChannelHandler != null) {
             mihonChannelHandler.destroy();
             mihonChannelHandler = null;
+        }
+        // Activity 销毁后再往 Dart 侧 invoke 是对死引擎说话；置空后
+        // notifyModeChanged 退化成安全 no-op。
+        if (nfcTagWriterChannelHandler != null) {
+            nfcTagWriterChannelHandler.destroy();
+            nfcTagWriterChannelHandler = null;
+        }
+        if (pictureInPictureChannelHandler != null) {
+            pictureInPictureChannelHandler.destroy();
+            pictureInPictureChannelHandler = null;
         }
         // HBK-AUDIT-057: the static floating-service channels are bound to this
         // engine's messenger; clear their handlers and null them so stale
@@ -211,6 +280,7 @@ public class MainActivity extends AudioServiceActivity {
             floatingDictChannel.setMethodCallHandler(null);
             floatingDictChannel = null;
         }
+        FloatingBallChannel.detach(getFlutterEngine());
         ioExecutor.shutdownNow();
         super.onDestroy();
     }
@@ -279,7 +349,27 @@ public class MainActivity extends AudioServiceActivity {
             adjustSystemVolume(code == KeyEvent.KEYCODE_VOLUME_UP);
             return true;
         }
+        ensureKeyFocusTarget();
         return super.dispatchKeyEvent(event);
+    }
+
+    // Controller trigger axes → L2 / R2 key events (see GamepadTriggerKeySynthesizer).
+    // Observe only, then let the event continue: the return value must stay the
+    // framework's own — a joystick MotionEvent nobody consumes is what makes
+    // ViewRootImpl synthesize the D-pad keys from the hat axes, so consuming it
+    // here would silently kill the controller's D-pad.
+    @Override
+    public boolean dispatchGenericMotionEvent(MotionEvent event) {
+        gamepadTriggers.onGenericMotionEvent(event);
+        return super.dispatchGenericMotionEvent(event);
+    }
+
+    @Override
+    protected void onPause() {
+        // A trigger still pulled when the app goes to the background (or the
+        // controller disconnects) would otherwise leave L2 / R2 stuck down.
+        gamepadTriggers.releaseAll(SystemClock.uptimeMillis());
+        super.onPause();
     }
 
     // Mirror the OS hardware-volume-key behaviour without routing the key through
@@ -409,7 +499,7 @@ public class MainActivity extends AudioServiceActivity {
         // alive (onConfigurationChanged), but onResume is still a belt-and-braces
         // path for skins that re-attach the decorView and reset
         // defaultFocusHighlightEnabled back to true, re-exposing the system focus
-        // rectangle over Hibiki own focus ring. Re-applying here (and in
+        // rectangle over Fushi own focus ring. Re-applying here (and in
         // onConfigurationChanged) keeps it killed.
         disableSystemFocusHighlight();
         // BUG-427/TODO-852: belt-and-braces for OEMs whose settings page does
@@ -443,7 +533,7 @@ public class MainActivity extends AudioServiceActivity {
                 && context.getPackageManager().canRequestPackageInstalls();
         if (!granted) {
             installResult.error("INSTALL_PERMISSION_REQUIRED",
-                "Enable installing unknown apps for Hibiki, then retry", null);
+                "Enable installing unknown apps for Fushi, then retry", null);
             return;
         }
         if (apkPath == null || apkPath.isEmpty()) {
@@ -549,8 +639,13 @@ public class MainActivity extends AudioServiceActivity {
         super.configureFlutterEngine(flutterEngine);
         FloatingDictService.initEngineGroup(getApplicationContext());
         SelectionActionChannel.registerWith(flutterEngine, this);
-        SystemOcrChannel.registerWith(flutterEngine);
+        SystemOcrChannel.registerWith(flutterEngine, this);
+        ClipboardImageChannel.registerWith(flutterEngine, getApplicationContext());
         MigrationChannelHandler.registerWith(flutterEngine, getApplicationContext());
+        DownloadKeepAliveService.registerWith(flutterEngine, getApplicationContext());
+        // 全局悬浮球（系统常驻球 + 截屏 OCR）。传 Activity：申请悬浮窗权限 / 发起截屏确认
+        // 都要从 Activity 起，不必再补 NEW_TASK。
+        FloatingBallChannel.registerWith(flutterEngine, this);
 
         volumeKeyChannel = new MethodChannel(
                 flutterEngine.getDartExecutor().getBinaryMessenger(), VOLUME_KEY_CHANNEL);
@@ -566,6 +661,12 @@ public class MainActivity extends AudioServiceActivity {
 
         ankiChannelHandler.register(flutterEngine);
         ttsChannelHandler.register(flutterEngine);
+        if (nfcTagWriterChannelHandler != null) {
+            nfcTagWriterChannelHandler.register(flutterEngine);
+        }
+        if (pictureInPictureChannelHandler != null) {
+            pictureInPictureChannelHandler.register(flutterEngine);
+        }
         if (mihonChannelHandler != null) {
             mihonChannelHandler.register(flutterEngine);
         }
@@ -591,6 +692,7 @@ public class MainActivity extends AudioServiceActivity {
                         pendingSafResult = result;
                         pendingSafDestPath = destPath;
                         Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
+                        applyTreeInitialLocation(intent, null);
                         startActivityForResult(intent, SAF_PICK_DIR_REQUEST);
                         break;
                     }
@@ -604,6 +706,7 @@ public class MainActivity extends AudioServiceActivity {
                         }
                         pendingSafResult = result;
                         Intent dirIntent = new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
+                        applyTreeInitialLocation(dirIntent, call.argument("initialDirectory"));
                         try {
                             startActivityForResult(dirIntent, SAF_PICK_REAL_DIR_REQUEST);
                         } catch (Exception e) {
@@ -696,6 +799,16 @@ public class MainActivity extends AudioServiceActivity {
                         launchApkInstaller(apkFile, result);
                     } catch (Exception e) {
                         result.error("INSTALL_ERROR", e.getMessage(), null);
+                    }
+                } else if ("installMachineId".equals(call.method)) {
+                    // 安装统计的机器标识种子（updates/install_attestation.dart）：ANDROID_ID
+                    // 在 Android 8+ 按签名密钥 + 设备 + 用户稳定，重装不变。只在本机做 HMAC 种子，
+                    // Dart 侧不上传、不落盘原值。取不到返回 null，Dart 侧回退随机种子。
+                    try {
+                        result.success(Settings.Secure.getString(
+                            getContentResolver(), Settings.Secure.ANDROID_ID));
+                    } catch (Exception e) {
+                        result.success(null);
                     }
                 } else {
                     result.notImplemented();
@@ -886,6 +999,26 @@ public class MainActivity extends AudioServiceActivity {
                 }
             });
 
+        // 查词输入法语言：Android 切不了系统输入法，这里只把用户选的语言存下来，
+        // 供两个**原生** EditText 查词框（悬浮词典 / 弹窗词典）当 hintLocales 用。
+        // Flutter 的查词框走 TextField.hintLocales 参数，不经这条。
+        new MethodChannel(
+                flutterEngine.getDartExecutor().getBinaryMessenger(),
+                ChannelNames.LOOKUP_IME)
+                .setMethodCallHandler((call, result) -> {
+                    if ("persistLanguage".equals(call.method)) {
+                        Object tag = call.arguments();
+                        LookupImeHint.store(
+                                getApplicationContext(),
+                                tag instanceof String ? (String) tag : "");
+                        result.success(null);
+                        return;
+                    }
+                    // setLanguage / probe 是桌面与 iOS 的真·切换接口，Android 没有
+                    // 对应能力，让 Dart 侧走 MissingPluginException 的静默分支。
+                    result.notImplemented();
+                });
+
         floatingDictChannel = new MethodChannel(
                 flutterEngine.getDartExecutor().getBinaryMessenger(), FLOATING_DICT_CHANNEL);
         floatingDictChannel.setMethodCallHandler((call, result) -> {
@@ -959,50 +1092,48 @@ public class MainActivity extends AudioServiceActivity {
             .setMethodCallHandler((call, result) -> {
                 if ("listSystemFonts".equals(call.method)) {
                     ioExecutor.execute(() -> {
+                        // 只从系统字体配置取「族名」：fonts.xml 的 <family name> 与 <alias name>
+                        // 正是 Skia（Flutter 引擎）与 WebView CSS 按 font-family 能解析到的名字。
+                        // Android 12+ 另有 font_fallback.xml，两份都读。不再扫 /system/fonts 目录：
+                        // 由文件名猜出的「NotoSansCJK-Regular」之类按族名谁都解析不到，是死条目。
+                        // supportsJapanese 省略：Paint.hasGlyph 走系统回退链，判不出字体本身覆盖。
                         TreeSet<String> families = new TreeSet<>(String.CASE_INSENSITIVE_ORDER);
-                        // 1) 解析 /system/etc/fonts.xml
-                        try {
-                            File xml = new File("/system/etc/fonts.xml");
-                            if (xml.exists()) {
-                                try (BufferedReader reader = new BufferedReader(
-                                        new InputStreamReader(new FileInputStream(xml)))) {
-                                    StringBuilder sb = new StringBuilder();
-                                    String line;
-                                    while ((line = reader.readLine()) != null) {
-                                        sb.append(line);
-                                    }
-                                    Pattern p = Pattern.compile("<family\\s+name=\"([^\"]+)\"");
-                                    Matcher m = p.matcher(sb.toString());
-                                    while (m.find()) {
-                                        families.add(m.group(1));
-                                    }
+                        Pattern comment = Pattern.compile("<!--.*?-->", Pattern.DOTALL);
+                        Pattern named = Pattern.compile(
+                                "<(?:family|alias)\\b[^>]*?\\bname\\s*=\\s*\"([^\"]+)\"");
+                        String[] configs = {
+                                "/system/etc/fonts.xml",
+                                "/system/etc/font_fallback.xml",
+                        };
+                        for (String path : configs) {
+                            File xml = new File(path);
+                            if (!xml.isFile()) continue;
+                            try (BufferedReader reader = new BufferedReader(
+                                    new InputStreamReader(new FileInputStream(xml),
+                                            java.nio.charset.StandardCharsets.UTF_8))) {
+                                StringBuilder sb = new StringBuilder();
+                                String line;
+                                while ((line = reader.readLine()) != null) {
+                                    sb.append(line).append('\n');
                                 }
-                            }
-                        } catch (Exception e) {
-                            android.util.Log.w("hibiki-fonts", "Failed to parse fonts.xml", e);
-                        }
-                        // 2) 扫描 /system/fonts/ 目录
-                        try {
-                            File dir = new File("/system/fonts");
-                            if (dir.exists() && dir.isDirectory()) {
-                                File[] files = dir.listFiles();
-                                if (files != null) {
-                                    for (File f : files) {
-                                        String name = f.getName();
-                                        if (name.endsWith(".ttf") || name.endsWith(".otf") || name.endsWith(".ttc")) {
-                                            String base = name.replaceAll("\\.(ttf|otf|ttc)$", "");
-                                            base = base.replaceAll("-(Regular|Bold|Italic|BoldItalic|Light|Medium|Thin|Black|SemiBold|ExtraBold|ExtraLight)$", "");
-                                            families.add(base);
-                                        }
-                                    }
+                                String body = comment.matcher(sb).replaceAll("");
+                                Matcher m = named.matcher(body);
+                                while (m.find()) {
+                                    String name = m.group(1).trim();
+                                    if (!name.isEmpty()) families.add(name);
                                 }
+                            } catch (Exception e) {
+                                android.util.Log.w("fushi-fonts", "Failed to parse " + path, e);
                             }
-                        } catch (Exception e) {
-                            android.util.Log.w("hibiki-fonts", "Failed to scan /system/fonts", e);
                         }
-                        List<String> sorted = new ArrayList<>(families);
-                        android.util.Log.d("hibiki-fonts", "Found " + sorted.size() + " fonts: " + sorted.subList(0, Math.min(5, sorted.size())));
-                        new Handler(Looper.getMainLooper()).post(() -> result.success(sorted));
+                        List<Map<String, Object>> entries = new ArrayList<>(families.size());
+                        for (String family : families) {
+                            Map<String, Object> entry = new HashMap<>();
+                            entry.put("family", family);
+                            entries.add(entry);
+                        }
+                        android.util.Log.d("fushi-fonts", "Found " + entries.size() + " font families");
+                        new Handler(Looper.getMainLooper()).post(() -> result.success(entries));
                     });
                 } else {
                     result.notImplemented();
@@ -1043,6 +1174,23 @@ public class MainActivity extends AudioServiceActivity {
                     default:
                         result.notImplemented();
                         break;
+                }
+            });
+
+        new MethodChannel(flutterEngine.getDartExecutor().getBinaryMessenger(), ChannelNames.APP_SHORTCUTS)
+            .setMethodCallHandler((call, result) -> {
+                if ("setShortcuts".equals(call.method)) {
+                    List<Map<String, String>> items = call.argument("items");
+                    String disabledMessage = call.argument("disabledMessage");
+                    List<String> moduleDisabledIds = call.argument("moduleDisabledIds");
+                    AppShortcutsHelper.setShortcuts(
+                        this,
+                        items == null ? new ArrayList<>() : items,
+                        disabledMessage,
+                        moduleDisabledIds == null ? new ArrayList<>() : moduleDisabledIds);
+                    result.success(null);
+                } else {
+                    result.notImplemented();
                 }
             });
 
@@ -1305,6 +1453,46 @@ public class MainActivity extends AudioServiceActivity {
         } catch (Exception e) {
             return null;
         }
+    }
+
+    // BUG-2646: a bare ACTION_OPEN_DOCUMENT_TREE lets DocumentsUI open wherever
+    // it likes; several ROMs (reported on a ColorOS-style DocumentsUI) land on
+    // "Recent", which in folder mode lists nothing and has no "use this folder"
+    // button, so the user cannot pick any folder at all. Always point the picker
+    // at a real browsable location: the caller's current folder when it lives on
+    // shared storage, otherwise the internal-storage root. EXTRA_INITIAL_URI is
+    // API 26+; older DocumentsUI already opens on a storage root.
+    private void applyTreeInitialLocation(Intent intent, String initialDirectory) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return;
+        final String docId = realPathToExternalStorageDocId(initialDirectory);
+        intent.putExtra(DocumentsContract.EXTRA_INITIAL_URI,
+            DocumentsContract.buildDocumentUri(
+                "com.android.externalstorage.documents",
+                docId != null ? docId : "primary:"));
+    }
+
+    // Inverse of externalStorageDocIdToPath: real absolute path -> externalstorage
+    // docId "volumeId:relative". Walks up to the nearest existing directory (the
+    // current folder may not be created yet). Returns null for paths outside
+    // shared storage (e.g. app-private /data/user/0/...), which SAF cannot show.
+    private String realPathToExternalStorageDocId(String path) {
+        if (path == null || path.trim().isEmpty()) return null;
+        File dir = new File(path.trim());
+        while (dir != null && !dir.isDirectory()) dir = dir.getParentFile();
+        if (dir == null) return null;
+        final String abs = dir.getAbsolutePath();
+        final String primary = Environment.getExternalStorageDirectory().getAbsolutePath();
+        if (abs.equals(primary)) return "primary:";
+        if (abs.startsWith(primary + "/")) {
+            return "primary:" + abs.substring(primary.length() + 1);
+        }
+        final Matcher m = Pattern.compile("^/storage/([^/]+)(?:/(.*))?$").matcher(abs);
+        if (m.matches()) {
+            final String volumeId = m.group(1);
+            if ("emulated".equals(volumeId) || "self".equals(volumeId)) return null;
+            return volumeId + ":" + (m.group(2) != null ? m.group(2) : "");
+        }
+        return null;
     }
 
     // externalstorage docId "volumeId:relative" -> real absolute path.

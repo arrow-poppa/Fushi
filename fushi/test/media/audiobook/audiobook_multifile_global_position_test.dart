@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/media/audiobook/audiobook_controller.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:just_audio_platform_interface/just_audio_platform_interface.dart';
 
@@ -80,8 +81,8 @@ void main() {
     await c.load(
       audiobook: ab(),
       audioFiles: <File>[
-        makeFile('hibiki-mf-0.mp3'),
-        makeFile('hibiki-mf-1.mp3'),
+        makeFile('fushi-mf-0.mp3'),
+        makeFile('fushi-mf-1.mp3'),
       ],
       initialPositionMs: 13000,
     );
@@ -104,8 +105,8 @@ void main() {
     await c.load(
       audiobook: ab(),
       audioFiles: <File>[
-        makeFile('hibiki-mf-2.mp3'),
-        makeFile('hibiki-mf-3.mp3'),
+        makeFile('fushi-mf-2.mp3'),
+        makeFile('fushi-mf-3.mp3'),
       ],
       initialPositionMs: 13000,
     );
@@ -153,7 +154,7 @@ void main() {
 
     await c.load(
       audiobook: ab(),
-      audioFiles: <File>[makeFile('hibiki-mf-single.mp3')],
+      audioFiles: <File>[makeFile('fushi-mf-single.mp3')],
       initialPositionMs: 13000,
     );
     expect(c.globalPosition.inMilliseconds, 13000);

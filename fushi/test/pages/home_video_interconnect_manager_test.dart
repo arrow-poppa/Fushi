@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -27,7 +27,7 @@ void main() {
   late Directory pathProviderDir;
   setUpAll(() {
     pathProviderDir =
-        Directory.systemTemp.createTempSync('hibiki_interconnect_pp');
+        Directory.systemTemp.createTempSync('fushi_interconnect_pp');
     binding.defaultBinaryMessenger.setMockMethodCallHandler(
       const MethodChannel('plugins.flutter.io/path_provider'),
       (MethodCall call) async => pathProviderDir.path,
@@ -55,7 +55,7 @@ void main() {
     final PreferencesRepository prefs = PreferencesRepository(db);
     await prefs.loadFromDb();
     final Directory storeDir =
-        Directory.systemTemp.createTempSync('hibiki_interconnect_store');
+        Directory.systemTemp.createTempSync('fushi_interconnect_store');
     appModel = AppModel(testPlatformServices())
       ..wireDatabaseForTesting(db)
       ..wireLocalAudioForTesting(prefsRepo: prefs, databaseDirectory: storeDir);
@@ -104,6 +104,11 @@ void main() {
     await tester.pumpAndSettle();
 
     // UI 巡检 PR-4：封面内嵌下载按钮已撤，下载入口 = 长按卡片弹面板 → 「下载」。
+    // BUG-2835：「全部视频」多了一行筛选，800x600 视口里卡片可能落在折线下。
+    await tester.ensureVisible(
+      find.byKey(const ValueKey<String>('remote_video_card_remote_video-1')),
+    );
+    await tester.pumpAndSettle();
     await tester.longPress(find.byKey(
       const ValueKey<String>('remote_video_card_remote_video-1'),
     ));
@@ -123,7 +128,10 @@ void main() {
     expect(manager.progressFor('remote/video-1'), 0.3);
 
     client.completer.complete();
-    await tester.pumpAndSettle();
+    // 徽章是 MD3 Expressive 波浪进度环，在场时常驻流动动画，pumpAndSettle
+    // 永远不会返回；推过收尾即可。
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
   });
 
   test('source guard: page delegates download to InterconnectDownloadManager',
@@ -169,6 +177,8 @@ class _GatedClient implements RemoteVideoClient {
     String id,
     File dest, {
     void Function(double progress)? onProgress,
+    void Function(int received, int? total)? onBytes,
+    Future<void>? cancelSignal,
   }) async {
     onProgress?.call(0.3);
     await completer.future;

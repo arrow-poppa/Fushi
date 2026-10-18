@@ -1,12 +1,15 @@
 import 'dart:convert';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:fushi/models.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
+import 'package:fushi/src/lookup/lookup_ime_binding.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_native.dart';
 import 'package:fushi/utils.dart';
 
@@ -29,6 +32,9 @@ class FloatingDictPage extends ConsumerStatefulWidget {
 class _FloatingDictPageState extends ConsumerState<FloatingDictPage> {
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _searchFocusNode = FocusNode();
+  late final LookupImeBinding _imeBinding = LookupImeBinding(
+    languageOf: () => appModel.effectiveLookupImeLanguage,
+  );
   DictionarySearchResult? _result;
   bool _isSearching = false;
   String _lastSearch = '';
@@ -49,6 +55,7 @@ class _FloatingDictPageState extends ConsumerState<FloatingDictPage> {
     _searchFocusNode.addListener(() {
       _invoke('setFocusable', _searchFocusNode.hasFocus);
     });
+    _imeBinding.attach(focusNode: _searchFocusNode);
   }
 
   @override
@@ -113,12 +120,23 @@ class _FloatingDictPageState extends ConsumerState<FloatingDictPage> {
       safeArea: false,
       body: FushiPopupSurface(
         color: tokens.surfaces.search.withValues(alpha: 0.94),
+        // 悬浮词典是独立窗口：Apple 下玻璃采不到窗口背后的其它 app，画不透明面板。
+        standaloneWindow: true,
         padding: EdgeInsets.all(tokens.spacing.gap),
         child: Column(
           children: [
             _buildTitleBar(),
             _buildSearchBar(),
-            Expanded(child: _buildResults()),
+            // 搜索中 / 无结果 / 结果三态之间淡入淡出（effects 弹簧，不过冲）。
+            Expanded(
+              child: AnimatedSwitcher(
+                duration: context.fushiMotion.effectsDefault.duration,
+                child: KeyedSubtree(
+                  key: ValueKey<String>(_resultsStateKey),
+                  child: _buildResults(),
+                ),
+              ),
+            ),
             _buildResizeHandle(),
           ],
         ),
@@ -145,18 +163,28 @@ class _FloatingDictPageState extends ConsumerState<FloatingDictPage> {
         ),
         child: Row(
           children: [
+            // M3E：标题前的语义图标（主色），标题 titleSmall emphasized；整条仍是
+            // 拖动窗口的把手。
+            FushiIcon(
+              FushiIcons.dictionary,
+              size: 18,
+              color: tokens.surfaces.primary,
+            ),
+            SizedBox(width: tokens.spacing.gap),
             Expanded(
               child: Text(
                 t.floating_dict_title,
-                style: tokens.type.listTitle,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: context.fushiType.titleSmallEmphasized,
               ),
             ),
             SizedBox(
               width: 28,
               height: 28,
-              child: IconButton(
-                icon: Icon(
-                  Icons.close,
+              child: FushiIconButtonControl(
+                icon: FushiIcon(
+                  FushiIcons.close,
                   size: 16,
                   color: tokens.surfaces.onVariant,
                 ),
@@ -183,8 +211,18 @@ class _FloatingDictPageState extends ConsumerState<FloatingDictPage> {
         focusNode: _searchFocusNode,
         hintText: t.search_ellipsis,
         onSubmit: _doSearch,
+        hintLocales: appModel.lookupImeHintLocales,
       ),
     );
+  }
+
+  /// 结果区当前处于哪一态（给 [AnimatedSwitcher] 区分子树）。
+  String get _resultsStateKey {
+    if (_isSearching) return 'searching';
+    if (_result == null || _result!.entries.isEmpty) {
+      return _lastSearch.isEmpty ? 'idle' : 'empty';
+    }
+    return 'results';
   }
 
   Widget _buildResults() {
@@ -198,11 +236,15 @@ class _FloatingDictPageState extends ConsumerState<FloatingDictPage> {
       );
     }
     if (_result == null || _result!.entries.isEmpty) {
-      final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+      if (_lastSearch.isEmpty) return const SizedBox.shrink();
+      // 无结果：M3E 空状态（色块图标 + 文案），而不是一行小灰字。
       return Center(
-        child: Text(
-          _lastSearch.isEmpty ? '' : t.no_results_found,
-          style: tokens.type.metadata,
+        child: SingleChildScrollView(
+          child: FushiPlaceholderMessage(
+            icon: FushiIcons.searchOff,
+            message: t.no_results_found,
+            iconSize: 28,
+          ),
         ),
       );
     }
@@ -236,8 +278,8 @@ class _FloatingDictPageState extends ConsumerState<FloatingDictPage> {
           width: 20,
           height: 20,
           alignment: Alignment.bottomRight,
-          child: Icon(
-            Icons.drag_handle,
+          child: FushiIcon(
+            FushiIcons.dragHandle,
             size: 14,
             color: cs.outlineVariant,
           ),
@@ -248,6 +290,7 @@ class _FloatingDictPageState extends ConsumerState<FloatingDictPage> {
 
   @override
   void dispose() {
+    _imeBinding.detach();
     _searchFocusNode.dispose();
     _searchController.dispose();
     super.dispose();

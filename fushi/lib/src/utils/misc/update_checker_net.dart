@@ -39,14 +39,22 @@ const List<String> updateCheckProxyPrefixes = kGitHubMirrorPrefixes;
 /// 让下载引擎继续回退 GitHub；不带它会由官网 302 到 GitHub，和后续直连候选重复。
 const String _kOfficialUpdateMirrorHost = 'fushi.moe';
 
+/// 官网 R2 实际收录的 tag 形状：只有正式版 `vX.Y.Z`。
+///
+/// `mirror-releases.yml` 按 release 的 isPrerelease 跳过所有预发布（beta 的
+/// `vX.Y.Z-beta.N`、debug 的 `vX.Y.Z-debug.N+sha` 与滚动 tag `fushi-debug-rolling`），
+/// 发布规则又保证正式版 tag 恒为 `vX.Y.Z`，所以这里按 tag 形状就能与镜像范围对齐。
+/// 对预发布生成 R2 候选只会换来一次必然的 404 再回退 GitHub（BUG-2855）。
+final RegExp _kOfficialMirroredTagPattern = RegExp(r'^v\d+(?:\.\d+)*$');
+
 const String updateDownloadSourceAutomatic = 'auto';
 const String updateDownloadSourceCloudflare = 'r2';
 const String updateDownloadSourceGitHub = 'github';
 const String updateDownloadSourceProxyPrefix = 'proxy:';
 
 /// 进程级更新资产首选源。设置只改变候选顺序，完整回退链始终保留。
-String Function() appUpdateDownloadSourceReader =
-    () => updateDownloadSourceAutomatic;
+String Function() appUpdateDownloadSourceReader = () =>
+    updateDownloadSourceAutomatic;
 
 String updateDownloadSourceForProxy(String prefix) =>
     '$updateDownloadSourceProxyPrefix$prefix';
@@ -55,8 +63,9 @@ String updateDownloadSourceForProxy(String prefix) =>
 ///
 /// 只接受 `https://github.com/hajisensai/fushi/releases/download/<tag>/<name>`：
 /// 旧 Hibiki 仓库、任意第三方 host、API URL 或畸形路径都返回 null，避免把不属于官网 R2
-/// 桶的文件送到受信域名。用 [Uri.pathSegments] 解码输入，再交给 [Uri] 重新编码输出，兼容
-/// debug tag 的 `+` 和资产名里的空格等字符。
+/// 桶的文件送到受信域名；预发布 tag 同样返回 null——R2 只收正式版（见
+/// [_kOfficialMirroredTagPattern]）。用 [Uri.pathSegments] 解码输入，再交给 [Uri] 重新
+/// 编码输出，兼容资产名里的空格等字符。
 @visibleForTesting
 String? officialR2UrlForUpdateAsset(String url) {
   final Uri? uri = Uri.tryParse(url);
@@ -71,7 +80,7 @@ String? officialR2UrlForUpdateAsset(String url) {
       segments[1].toLowerCase() != 'fushi' ||
       segments[2] != 'releases' ||
       segments[3] != 'download' ||
-      segments[4].isEmpty ||
+      !_kOfficialMirroredTagPattern.hasMatch(segments[4]) ||
       segments[5].isEmpty) {
     return null;
   }
@@ -125,7 +134,7 @@ class UpdateDownloadPlan {
 /// **纯函数**：生成 release 资产的下载候选计划。
 ///
 /// 官网 R2 不可变版本路径排第一，优先获得 Cloudflare/R2 的低延迟与免费出网；R2 未镜像
-/// （预发布默认不入桶、单文件超过镜像上限、工作流失败等）会快速 404，随后完整保留原来的
+/// （单文件超过镜像上限、工作流失败等）会快速 404；预发布根本不生成 R2 候选，随后完整保留原来的
 /// GitHub 直连 + 公共 gh 代理回退链。检查 manifest/API 仍使用 [updateCheckUrls]，不会把
 /// 非下载请求误送进 R2。
 ///
@@ -147,8 +156,9 @@ UpdateDownloadPlan resolveUpdateDownloadPlan(String url, {String? preference}) {
       _selectedProxyCandidate(value, url),
     _ => null,
   };
-  final String? pinned =
-      requested != null && candidates.contains(requested) ? requested : null;
+  final String? pinned = requested != null && candidates.contains(requested)
+      ? requested
+      : null;
   return UpdateDownloadPlan(
     candidates: pinned == null
         ? candidates
@@ -170,16 +180,16 @@ List<String> updateDownloadUrls(String url, {String? preference}) =>
 /// **纯函数**：下载来源值 → 用户可读标签。设置页的选项标签与「本次没用上所选来源」
 /// 通告共用这一份，避免同一个来源在两处叫不同名字。未知值按「自动」处理。
 String updateDownloadSourceLabel(String source) => switch (source) {
-      updateDownloadSourceCloudflare => t.update_download_source_cloudflare,
-      updateDownloadSourceGitHub => t.update_download_source_github,
-      String value when value.startsWith(updateDownloadSourceProxyPrefix) =>
-        t.update_download_source_proxy(
-          host: Uri.parse(
-            value.substring(updateDownloadSourceProxyPrefix.length),
-          ).host,
-        ),
-      _ => t.update_download_source_auto,
-    };
+  updateDownloadSourceCloudflare => t.update_download_source_cloudflare,
+  updateDownloadSourceGitHub => t.update_download_source_github,
+  String value when value.startsWith(updateDownloadSourceProxyPrefix) =>
+    t.update_download_source_proxy(
+      host: Uri.parse(
+        value.substring(updateDownloadSourceProxyPrefix.length),
+      ).host,
+    ),
+  _ => t.update_download_source_auto,
+};
 
 /// 所选下载来源对本资产不适用时的用户可见通告；用上了 / 没显式选 → null。
 /// 下载遮罩与诊断日志共用它，「静默降级」从此有唯一一句可展示的话。
@@ -191,8 +201,9 @@ String? _downloadSourceUnavailableNotice(UpdateDownloadPlan plan) {
 }
 
 String? _selectedProxyCandidate(String preference, String directUrl) {
-  final String prefix =
-      preference.substring(updateDownloadSourceProxyPrefix.length);
+  final String prefix = preference.substring(
+    updateDownloadSourceProxyPrefix.length,
+  );
   if (!updateCheckProxyPrefixes.contains(prefix)) return null;
   return '$prefix$directUrl';
 }
@@ -240,32 +251,32 @@ Future<String?> fetchFirstSuccessfulBody(
   required Future<String?> Function(String url) fetch,
   void Function(String host, Object? error)? onFailure,
 }) {
-  return raceFirstSuccessfulBody(
-    urls,
-    fetch: fetch,
-    onFailure: onFailure,
-  );
+  return raceFirstSuccessfulBody(urls, fetch: fetch, onFailure: onFailure);
 }
 
 /// 一个并发候选 [fetch] 的结果（检查阶段竞速用）。[url] = 被抓的候选；[body] = 合法成功
 /// 响应体（null 表示该候选失败 / 不具胜出资格）；[isDirect] = 该候选是否直连（[url] ==
-/// 候选列表首项，tie-break 直连优先用）。
+/// 候选列表首项，tie-break 直连优先用）；[isRelay] = 该候选是否中转镜像（分档用）。
 class _UpdateCheckOutcome {
   const _UpdateCheckOutcome({
     required this.url,
     required this.body,
     required this.isDirect,
+    required this.isRelay,
   });
 
   final String url;
   final String? body;
   final bool isDirect;
+  final bool isRelay;
 }
 
 /// **并发竞速取首个合法成功响应（TODO-821 核心）**。对 [urls] 里**所有**候选并发调用
-/// [fetch]，语义见 [fetchFirstSuccessfulBody]：第一个合法成功（非 null body）触发裁决——
-/// 直连立即胜出；镜像则再等 [_kCheckDirectTieBreakWindow] 做直连优先 tie-break。失败候选
-/// （null / 抛异常）经 [onFailure] 记录、不参与裁决、不中断其他候选。全失败 → null。
+/// [fetch]，语义见 [fetchFirstSuccessfulBody]：第一个合法成功（非 null body）的**首选档**
+/// 候选（非 [isGitHubMirrorUrl]）触发裁决——直连立即胜出，其它首选档再等
+/// [_kCheckDirectTieBreakWindow] 做直连优先 tie-break。**中转镜像只在首选档全部失败后
+/// 才有资格胜出**（用户 2026-10-18 拍板），成功得再早也只是先记下。失败候选（null /
+/// 抛异常）经 [onFailure] 记录、不参与裁决、不中断其他候选。全失败 → null。
 ///
 /// 与下载阶段 [raceSelectFastestCandidate] 同范式（`Future.any` + `Completer decided` +
 /// tie-break 计时器 + 落败者继续耗尽），统一两阶段并发语义、消除两套实现分裂。
@@ -290,11 +301,25 @@ Future<String?> raceFirstSuccessfulBody(
     decided.complete();
   }
 
-  // 把一个合法成功结果纳入竞速并推进裁决：直连 → 立即裁决；首个镜像 → 启动 tie-break
-  // 计时器；窗口内直连补到则由它自己的 decide() 提前裁决。
+  // 首选档还没出结果的候选数；归零且首选档无一成功时，中转镜像才有资格胜出。
+  int pendingPrimary = urls
+      .where((String url) => !isGitHubMirrorUrl(url))
+      .length;
+  var primarySucceeded = false;
+
+  bool relayUnlocked() => pendingPrimary == 0 && !primarySucceeded;
+
+  // 把一个合法成功结果纳入竞速并推进裁决：直连 → 立即裁决；首个其它首选档 → 启动
+  // tie-break 计时器；窗口内直连补到则由它自己的 decide() 提前裁决。中转只在首选档已
+  // 全部落空时立即裁决，否则只记下。
   void admit(_UpdateCheckOutcome outcome) {
     succeeded.add(outcome);
     if (decided.isCompleted) return;
+    if (outcome.isRelay) {
+      if (relayUnlocked()) decide();
+      return;
+    }
+    primarySucceeded = true;
     if (outcome.isDirect) {
       decide();
       return;
@@ -302,17 +327,33 @@ Future<String?> raceFirstSuccessfulBody(
     tieBreakTimer ??= Timer(_kCheckDirectTieBreakWindow, decide);
   }
 
+  // 一个首选档候选出结果时调用：首选档全部落空且已有中转成功 → 立即裁决用中转。
+  void primarySettled() {
+    pendingPrimary -= 1;
+    if (relayUnlocked() && succeeded.isNotEmpty) decide();
+  }
+
   Future<void> attempt(String url) async {
     final bool isDirect = url == directUrl;
+    final bool isRelay = isGitHubMirrorUrl(url);
     try {
       final String? body = await fetch(url);
       if (body != null) {
-        admit(_UpdateCheckOutcome(url: url, body: body, isDirect: isDirect));
+        admit(
+          _UpdateCheckOutcome(
+            url: url,
+            body: body,
+            isDirect: isDirect,
+            isRelay: isRelay,
+          ),
+        );
         return;
       }
       onFailure?.call(hostLabelForUpdateUrl(url), null);
     } catch (e) {
       onFailure?.call(hostLabelForUpdateUrl(url), e);
+    } finally {
+      if (!isRelay) primarySettled();
     }
   }
 
@@ -330,11 +371,15 @@ Future<String?> raceFirstSuccessfulBody(
 
 /// **纯函数（TODO-821）**：从一批合法成功的并发结果里挑胜出 body。规则与下载阶段
 /// [selectRaceWinnerUrl] 一致：存在直连成功 → 直连优先（net.dart「直连恒首位」哲学）；
-/// 否则取首个到达的成功镜像（[succeeded] 按 admit 顺序，首项即最快返回的成功镜像）。
+/// 否则取首个到达的成功首选档；首选档全失败才取首个到达的成功中转镜像（[succeeded] 按
+/// admit 顺序，同档首项即最快返回者）。
 String? _selectCheckRaceWinner(List<_UpdateCheckOutcome> succeeded) {
   if (succeeded.isEmpty) return null;
   for (final _UpdateCheckOutcome outcome in succeeded) {
     if (outcome.isDirect) return outcome.body;
+  }
+  for (final _UpdateCheckOutcome outcome in succeeded) {
+    if (!outcome.isRelay) return outcome.body;
   }
   return succeeded.first.body;
 }
@@ -392,8 +437,9 @@ String describeUpdateNetworkFailureReason(Object? error) {
   }
   if (error is SocketException) {
     final OSError? os = error.osError;
-    final String osPart =
-        os != null ? ' (errno=${os.errorCode}: ${os.message})' : '';
+    final String osPart = os != null
+        ? ' (errno=${os.errorCode}: ${os.message})'
+        : '';
     final String message = error.message;
     final String lower = message.toLowerCase();
     final String category;

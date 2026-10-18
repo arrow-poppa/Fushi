@@ -40,6 +40,15 @@ class _RecordingAnkiConnectService extends AnkiConnectService {
   Future<void> updateNoteFields(int noteId, Map<String, String> fields) async {
     updatedNoteIds.add(noteId);
   }
+
+  // BUG-2606 起覆盖路径先 noteInfo 再 addTags；不覆写就打真 localhost:8765——
+  // 本机开着 Anki 时假绿、CI 上红。
+  @override
+  Future<AnkiConnectNoteInfo?> noteInfo(int noteId) async =>
+      (modelName: null, fields: <String, String>{'Expression': ''});
+
+  @override
+  Future<void> addTags(int noteId, List<String> tags) async {}
 }
 
 class _ConfiguredAnkiConnectRepository extends AnkiConnectRepository {
@@ -69,7 +78,7 @@ AnkiSettings _legacyIdOnlySettings() => AnkiSettings(
       selectedNoteTypeId: 2,
       availableDecks: const <AnkiDeck>[AnkiDeck(id: 1, name: 'Mining')],
       availableNoteTypes: const <AnkiNoteType>[
-        AnkiNoteType(id: 2, name: 'Hibiki', fields: <String>['Expression']),
+        AnkiNoteType(id: 2, name: 'Fushi', fields: <String>['Expression']),
       ],
       fieldMappings: const <String, String>{'Expression': '{expression}'},
       allowDupes: true,

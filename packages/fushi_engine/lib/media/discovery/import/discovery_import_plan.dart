@@ -67,13 +67,24 @@ enum DiscoveryImportBlocker {
   unknownFileType,
 
   /// 有声书包里没有 EPUB/文本正文。
+  ///
+  /// 分类层已不再产出它：有字幕 + 音频、没有正文的包现在是
+  /// [SubtitleAudiobookPlan]（独立字幕书）。保留枚举值给历史任务行的原因码。
   audiobookMissingText,
 
   /// 有声书包里没有字幕（对齐的必要输入——本仓有声书模型是字幕对齐驱动）。
+  ///
+  /// 分类层产出的是 [TranscribeAudiobookPlan]；本原因码由**执行转录的宿主**在
+  /// 「不自动转录」（开关关 / 本机没有 ASR / 无头服务端）时抛出，含义不变。
   audiobookMissingSubtitle,
 
   /// 有声书包里没有音频。
   audiobookMissingAudio,
+
+  /// 有声书包里的正文与库中已有书同名。自动入库不会把音频附着到既有书
+  /// （换音频/换字幕是有损操作，交互入口是有声书导入对话框），要用户手动
+  /// 关联（BUG-2775）。
+  audiobookBookAlreadyInLibrary,
 
   /// 游戏包里找不到可执行文件。
   gameNoExecutable,
@@ -83,6 +94,10 @@ enum DiscoveryImportBlocker {
 
   /// 解压失败（损坏/带密码等）。
   archiveExtractionFailed,
+
+  /// 分类出来了，但执行这一步的宿主没有对应的导入器（如无头服务端没有 PDF
+  /// 栅格化、没有游戏库）。换到 app 当 host 或本机下载即可。
+  unsupportedOnThisHost,
 }
 
 /// 自动导入被挡下（分类不出/解压工具缺失/解压失败）。队列把它落成任务
@@ -147,6 +162,31 @@ final class AlignAudiobookPlan extends DiscoveryImportPlan {
   final String contentPath;
   final String subtitlePath;
   final List<String> audioPaths;
+}
+
+/// 独立字幕书：有字幕 + 音频、没有正文。由字幕行生成 EPUB 当正文（与书导入
+/// 对话框「只选字幕」同一条路，见 `standalone_subtitle_book.dart`）。
+final class SubtitleAudiobookPlan extends DiscoveryImportPlan {
+  const SubtitleAudiobookPlan({
+    required this.subtitlePath,
+    required this.audioPaths,
+  });
+
+  final String subtitlePath;
+  final List<String> audioPaths;
+}
+
+/// 只有音频（可能带正文）、没有字幕：先设备端转录出字幕，再按有没有正文走
+/// [AlignAudiobookPlan] 或 [SubtitleAudiobookPlan]。转录要几个小时，执行它的
+/// 宿主负责排进后台队列，而不是在导入这一步里同步跑完。
+final class TranscribeAudiobookPlan extends DiscoveryImportPlan {
+  const TranscribeAudiobookPlan({
+    required this.audioPaths,
+    this.contentPath,
+  });
+
+  final List<String> audioPaths;
+  final String? contentPath;
 }
 
 /// 登记游戏 exe 进库。
@@ -289,17 +329,15 @@ DiscoveryImportPlan classifyDiscoveryDirectory(
           DiscoveryImportBlocker.audiobookMissingAudio,
         );
       }
+      // 自然序：`Part 2` 必须排在 `Part 10` 前。多文件在播放与转录里都被拼成
+      // 一条时间轴，字符串序会把正文拼乱。
+      audio.sort(compareAudioFilePath);
       if (subtitle == null) {
-        return const UnsupportedPlan(
-          DiscoveryImportBlocker.audiobookMissingSubtitle,
-        );
+        return TranscribeAudiobookPlan(audioPaths: audio, contentPath: content);
       }
       if (content == null) {
-        return const UnsupportedPlan(
-          DiscoveryImportBlocker.audiobookMissingText,
-        );
+        return SubtitleAudiobookPlan(subtitlePath: subtitle, audioPaths: audio);
       }
-      audio.sort();
       return AlignAudiobookPlan(
         contentPath: content,
         subtitlePath: subtitle,

@@ -29,10 +29,88 @@ const String kMangaOcrPagesCacheDirName = '_pages';
 // against the encoded pixel matrix while Chromium displayed the oriented page,
 // so portrait pages with orientation metadata had a shifted lookup layer.
 //
-// 这只是**坐标口径基线**，不代表模型身份：实际落盘的目录名要再接一段已安装模型
+// v3 matches manga-ocr's antialiased grayscale resize.
+// v4 retains nested regions through recognition and only removes text-confirmed
+// horizontal duplicates. Invalidate v3 caches that may have lost small body text.
+// v5 adds per-line geometry (`lines` split per column/row + `lineBoxes` →
+// mokuro `lines_coords`) so the reader overlay maps a tap to the right column
+// instead of spreading the whole block text over the block (BUG-2813). The
+// recognised text is unchanged, so v4 caches of the same model are upgraded by
+// re-laying out only (see [kMangaOcrRelayoutRevisions]).
+// v6 re-reads text: side-by-side slanted columns are no longer merged into one
+// (the per-column CTC lost a whole column), and weak detector candidates the
+// detector scored below its threshold (sparse decorative titles) are re-checked
+// by the line detector + recogniser and added back. Text changes, so v5 caches
+// are not reused.
+// v7: a detector box that geometrically holds two or more recognised blocks is
+// dropped in favour of those leaves (a page-tall frame over a profile page);
+// fragments of one row/column are no longer merged across a gap wider than
+// [kOcrFragmentMaxGapRatio] line thicknesses (two side-by-side text columns at
+// the same height became one cross-column line); and per-line CTC recognisers
+// keep token positions as per-character hit boxes (`glyphBoxes` → manga.json
+// `regions`) instead of the overlay spreading characters evenly over the line.
+// Output changes, so v6 caches are not reused.
+// 这只是**算法/坐标口径基线**，不代表模型身份：实际落盘的目录名要再接一段已安装模型
 // 的内容指纹（`manga_ocr_model_fingerprint.dart`），否则上游换模型后旧缓存被静默
 // 复用（BUG-1173）。
-const String kLocalMangaOcrEngineSignature = 'local-onnx-v2-oriented';
+const String kMangaOcrPipelineRevision = 'v7-leaf-blocks-glyph-boxes';
+const String kLocalMangaOcrEngineSignature =
+    'local-onnx-$kMangaOcrPipelineRevision';
+
+/// 整块识别（manga-ocr）文本与当前版本逐字相同、只缺行几何的旧版本：同一模型指纹
+/// 下，这些版本的逐页缓存经 `LineLayoutOcrRecognizer.layoutRecognized` 升级，不必
+/// 整卷重新识别。升级出的页与新识别同口径：整块读的块沿用缓存文本补行几何；横排走
+/// PP 逐行识别的块（v6/v7 改过读哪几行、v7 起带逐字命中格）就地重读这一块；整页
+/// 再走同一套容器块让位 / 包含去重收尾。v4 写在 v6 补检之前，但补检只在逐列 CTC
+/// 模式开（那类模型没有 v4 缓存），整块 manga-ocr 模式的新识别同样不补检。
+const List<String> kMangaOcrRelayoutRevisions = <String>[
+  'v4-antialias-text-dedup',
+];
+
+/// 由当前引擎签名推出「只补几何即可升级」的旧签名（同一模型指纹后缀）。
+///
+/// 签名形如 `local-onnx-<revision>[-<模型指纹>]`（见
+/// `resolveLocalMangaOcrEngineSignature`）；不是当前版本的本地签名就返回空。
+List<String> relayoutableMangaOcrEngineSignatures(String engineSignature) {
+  const String current = kLocalMangaOcrEngineSignature;
+  if (!engineSignature.startsWith(current)) return const <String>[];
+  final String suffix = engineSignature.substring(current.length);
+  if (suffix.isNotEmpty && !suffix.startsWith('-')) return const <String>[];
+  return <String>[
+    for (final String revision in kMangaOcrRelayoutRevisions)
+      'local-onnx-$revision$suffix',
+  ];
+}
+
+/// manga.json 的 OCR 元数据是否是「只缺行几何」的本地旧版结果——只看元数据，
+/// 所以只是**候选**；能不能由当前本地模型原地升级见 [isMangaOcrRelayoutPending]。
+bool isMangaOcrRelayoutCandidate(MangaOcrMetadata? ocr) {
+  if (ocr == null || ocr.engine != 'local_onnx') return false;
+  final String signature = ocr.engineSignature;
+  for (final String revision in kMangaOcrRelayoutRevisions) {
+    final String prefix = 'local-onnx-$revision';
+    if (signature == prefix || signature.startsWith('$prefix-')) return true;
+  }
+  return false;
+}
+
+/// [ocr] 能否由当前本地整卷任务（缓存签名 [localEngineSignature]）原地只补行几何。
+///
+/// 阅读器据此对已识别的本地卷自动排一次整卷任务：任务里逐页只补几何
+/// （[relayoutableMangaOcrEngineSignatures]），文字不重认（BUG-2813）。只看元数据
+/// 会误判：用户选的是另一个本地模型，或模型文件换过（指纹后缀不同）时，当前签名推
+/// 不出这份旧缓存，排下去的任务找不到可复用的逐页缓存，就成了一次静默的整卷重认。
+bool isMangaOcrRelayoutPending(
+  MangaOcrMetadata? ocr, {
+  required String? localEngineSignature,
+}) {
+  if (!isMangaOcrRelayoutCandidate(ocr) || localEngineSignature == null) {
+    return false;
+  }
+  return relayoutableMangaOcrEngineSignatures(
+    localEngineSignature,
+  ).contains(ocr!.engineSignature);
+}
 
 /// 产物文件名（`manga_ocr_out/manga.json`）。
 const String kMangaOcrOutputFileName = 'manga.json';
@@ -253,6 +331,41 @@ double estimateMangaFontSize(OcrBlock block) {
   return math.sqrt(block.box.area / charCount);
 }
 
+/// 行框 → mokuro `lines_coords`（每行一个顺时针四点多边形，页面像素坐标）。
+///
+/// [tilt] ≠ 0 时每个轴对齐外接框还原成按该角度旋转、内接于框的矩形
+/// （[mangaTiltedLineQuad]），覆盖层据此沿斜行切逐字命中格。
+List<List<List<double>>>? _linesCoords(List<OcrRect>? lineBoxes, double tilt) {
+  if (lineBoxes == null) return null;
+  return <List<List<double>>>[
+    for (final OcrRect r in lineBoxes) mangaTiltedLineQuad(r, tilt),
+  ];
+}
+
+/// 识别器给的逐字命中格 → manga.json `regions`（区间按块文本、页面坐标）。
+///
+/// 只在行是正立的（[OcrBlock.lineTilt] == 0）时写：字格是轴对齐框，斜行上
+/// 覆盖层按 `lines_coords` 的倾角沿斜线切字格更贴字。没有字格时返回 null，
+/// 覆盖层按行均分（`mangaEffectiveTextRegions`）。
+List<MangaOcrTextRegion>? _textRegions(OcrBlock block) {
+  final List<OcrGlyphBox>? glyphs = block.glyphBoxes;
+  if (glyphs == null || glyphs.isEmpty || block.lineBoxes == null) return null;
+  if (block.lineTilt != 0) return null;
+  return <MangaOcrTextRegion>[
+    for (final OcrGlyphBox glyph in glyphs)
+      MangaOcrTextRegion(
+        rectangle: MokuroRect.fromLTRB(
+          glyph.rect.left,
+          glyph.rect.top,
+          glyph.rect.right,
+          glyph.rect.bottom,
+        ),
+        utf16Start: glyph.start,
+        utf16End: glyph.end,
+      ),
+  ];
+}
+
 /// 把逐页 OCR 结果组装成 [MokuroPayload]（url = 原图相对路径，尺寸取自解码
 /// 时记录的像素值，块按阅读顺序赋 zIndex）。[pages] 与 [results] 必须等长且
 /// 按页序对齐。
@@ -276,11 +389,18 @@ MokuroPayload buildMangaPayloadFromResults(
         ),
         // Re-evaluate cached local blocks so pages produced by the older,
         // overly strict 1.5 ratio threshold gain queryable vertical regions
-        // without rerunning OCR.
-        isVertical: block.vertical || isVerticalBlock(block.box),
+        // without rerunning OCR. Blocks with line geometry already carry the
+        // orientation their lines were laid out in (BUG-2813): overriding it
+        // would spread each row's characters down the row.
+        isVertical: block.lineBoxes != null
+            ? block.vertical
+            : block.vertical || isVerticalBlock(block.box),
         fontSize: estimateMangaFontSize(block),
         zIndex: b,
         lines: block.lines,
+        linesCoords: _linesCoords(block.lineBoxes, block.lineTilt),
+        regions: _textRegions(block),
+        confidence: block.confidence,
       ));
     }
     images.add(MokuroImage(
@@ -313,8 +433,11 @@ Future<img.Image> decodeMangaPageFile(File file) async {
 ///   （[MangaOcrFilePageCache]），重跑只补缺页。
 /// - [cancelToken] 置位后在页/块边界抛 [OcrCancelledException]；已完成页
 ///   缓存保留。
-/// - [onProgress] 逐页回调（含缓存命中页）。
+/// - [onProgress] 逐页回调（含缓存命中页），带该页真实页号。
+/// - [startPage] 处理起点（页号，按 [enumerateMangaPages] 的自然序）：从它起向后、
+///   再绕回开头（[mangaOcrPageOrder]）。产物 manga.json 内容与页序与起点无关。
 /// - [decodePage] 可注入（测试免真图解码）。
+/// - [takeFocus] 运行中改道（读者翻页，语义见 `MangaOcrPipeline.processBook`）。
 /// - [engineSignature] 逐页缓存子目录名 + 产物元数据里的引擎签名。**必须**由调用
 ///   方按已安装模型解析（见 `manga_ocr_model_fingerprint.dart`）：这里不给默认值，
 ///   免得新调用方漏传一个手维护常量又把不同模型的结果混进同一卷（BUG-1173）。
@@ -323,15 +446,32 @@ Future<String> runMangaOcrFolderJob({
   required OcrDetector detector,
   required OcrRecognizer recognizer,
   required String engineSignature,
+  OcrPageTextSweeper? sweeper,
+  List<String>? relativeUrls,
+  int startPage = 0,
   OcrCancelToken? cancelToken,
   OcrProgressCallback? onProgress,
   Future<img.Image> Function(File file)? decodePage,
+  int? Function()? takeFocus,
 }) async {
   final Directory root = Directory(imageDirPath);
   if (!root.existsSync()) {
     throw ArgumentError('image directory does not exist: $imageDirPath');
   }
-  final List<MangaOcrPageFile> pages = enumerateMangaPages(root);
+  final List<MangaOcrPageFile> allPages = enumerateMangaPages(root);
+  final Set<String>? requested = relativeUrls?.map(normalizeMangaUrl).toSet();
+  final List<MangaOcrPageFile> pages = requested == null
+      ? allPages
+      : allPages
+          .where(
+            (MangaOcrPageFile page) => requested.contains(page.relativeUrl),
+          )
+          .toList();
+  if (requested != null && pages.length != requested.length) {
+    throw ArgumentError(
+      'Requested OCR page is outside the managed image directory',
+    );
+  }
   if (pages.isEmpty) {
     throw StateError('no images found in $imageDirPath');
   }
@@ -346,17 +486,36 @@ Future<String> runMangaOcrFolderJob({
   );
   await cacheDir.create(recursive: true);
 
+  final List<String> pageNames = <String>[
+    for (final MangaOcrPageFile page in pages) page.relativeUrl
+  ];
+  final List<File> pageFiles = <File>[
+    for (final MangaOcrPageFile page in pages) page.file
+  ];
   final MangaOcrFilePageCache cache = MangaOcrFilePageCache(
     cacheDir: cacheDir,
-    pageNames: <String>[
-      for (final MangaOcrPageFile page in pages) page.relativeUrl
-    ],
-    pageFiles: <File>[for (final MangaOcrPageFile page in pages) page.file],
+    pageNames: pageNames,
+    pageFiles: pageFiles,
   );
+  // 同一模型、只缺行几何的旧版缓存（BUG-2813）：缺页时只补几何，不重新识别。
+  final List<OcrPageCache> legacyCaches = <OcrPageCache>[
+    for (final String legacy
+        in relayoutableMangaOcrEngineSignatures(engineSignature))
+      if (Directory(p.join(outDir.path, kMangaOcrPagesCacheDirName, legacy))
+          .existsSync())
+        MangaOcrFilePageCache(
+          cacheDir: Directory(
+            p.join(outDir.path, kMangaOcrPagesCacheDirName, legacy),
+          ),
+          pageNames: pageNames,
+          pageFiles: pageFiles,
+        ),
+  ];
   final MangaOcrPipeline pipeline = MangaOcrPipeline(
     detector: detector,
     recognizer: recognizer,
     cache: cache,
+    sweeper: sweeper,
   );
   final Future<img.Image> Function(File file) decode =
       decodePage ?? decodeMangaPageFile;
@@ -364,9 +523,15 @@ Future<String> runMangaOcrFolderJob({
     bookId: 'manga_ocr',
     pageCount: pages.length,
     loadPage: (int pageIndex) => decode(pages[pageIndex].file),
+    startPage: startPage,
     cancelToken: cancelToken,
     onProgress: onProgress,
+    legacyCaches: legacyCaches,
+    takeFocus: takeFocus,
   );
+
+  // Reader requests own page caches, never the complete volume output.
+  if (requested != null) return cacheDir.path;
 
   final MokuroPayload generated = buildMangaPayloadFromResults(pages, results);
   final MokuroPayload payload = MokuroPayload(

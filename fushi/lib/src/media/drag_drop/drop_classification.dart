@@ -1,3 +1,5 @@
+import 'package:fushi_engine/media/video/bluray/bluray_disc.dart'
+    show blurayDiscRootForFile;
 import 'package:path/path.dart' as p;
 
 /// 书籍扩展名（不带点，小写）。= epub + pdf + TextToEpub.supportedExtensions。
@@ -108,6 +110,32 @@ const Set<String> kDragImageArchiveProbeExtensions = <String>{
   'zip',
 };
 
+/// 落点**偏好漫画**（漫画库）时额外开包定性的扩展名（不带点，小写）。
+///
+/// 书架上拖 `.epub` 不开包：它默认就是一本书，书籍导入框收下路径时会再真读包，
+/// 认出扫描版就提示转交漫画。但用户已经站在漫画库里时，先进书籍框再被告知「这看起来
+/// 是漫画」是倒过来的——落点本身已经回答了「用户想导什么」。所以漫画库把 `.epub`
+/// 也纳入同一个判据（与 [kDragImageArchiveProbeExtensions] 同一个 `isImageArchive`），
+/// 图片型 EPUB 直接归漫画；文字 EPUB 判据为假，照旧归书（不收窄漫画库拖文字书
+/// 自动导去书架的既有能力）。
+const Set<String> kDragMangaSurfaceProbeExtensions = <String>{
+  ...kDragImageArchiveProbeExtensions,
+  'epub',
+};
+
+/// 落点偏好漫画时**直接**归漫画的扩展名（不带点，小写）：`pdf`。
+///
+/// 一卷扫描版漫画常就是一份 PDF，漫画导入框把它逐页栅格化成漫画
+/// （`ImportCarrier.pdf` → `importPdfAsManga`）。PDF 没有便宜的「是不是页图」判据，
+/// 在漫画库里就按落点意图走漫画；书架上它仍是一本 PDF 书。
+const Set<String> kDragMangaSurfaceDirectExtensions = <String>{'pdf'};
+
+/// [classifyDroppedFiles] / `probeDroppedImageArchives` 按落点取开包扩展名。
+Set<String> dragImageArchiveProbeExtensionsFor({required bool preferManga}) =>
+    preferManga
+        ? kDragMangaSurfaceProbeExtensions
+        : kDragImageArchiveProbeExtensions;
+
 /// 看得出是漫画包、但当前**导入器不支持**的扩展名（不带点，小写）。
 ///
 /// `archive` 包不解 RAR，故 cbr/cb7/rar 无法导入。单列一类只为一件事：让落点
@@ -129,7 +157,17 @@ const Set<String> kDragAudioExtensions = <String>{
   'wma',
   'ac3',
   'eac3',
+  'aiff',
+  'aif',
   'mp4',
+};
+
+/// BT 种子扩展名（不带点，小写）。拖入后走下载中心「添加任务」对话框
+/// （`ManualDownloadTaskDialog`）预填种子——与该对话框「选 .torrent 文件」按钮
+/// 同一条入库路径，不在拖放层另解 metainfo。磁力链接不经此处：它是字符串不是
+/// 文件，桌面拖放通道也不会把它当路径送进来。
+const Set<String> kDragTorrentExtensions = <String>{
+  'torrent',
 };
 
 /// 拖入文件按扩展名分类的结果。一个路径可同时落入多个类（如 .mp4 既是视频又是音频），
@@ -147,6 +185,8 @@ class DroppedFiles {
     this.mangas = const <String>[],
     this.unsupportedMangas = const <String>[],
     this.directories = const <String>[],
+    this.torrents = const <String>[],
+    this.blurayDiscs = const <String>[],
   });
 
   final List<String> books;
@@ -179,7 +219,49 @@ class DroppedFiles {
   /// 路径中甄别出来落到本类（TODO-1306），由落点决策路由到流媒体导入 [_importStreamUrl]。
   final List<String> urls;
 
+  /// BT 种子文件（`.torrent`），见 [kDragTorrentExtensions]。任何表面拖入都路由到
+  /// 下载中心的添加任务对话框，落点表面只决定预填的内容类型（书架→小说、漫画库→
+  /// 漫画、视频页→视频）。
+  final List<String> torrents;
+
   final List<String> unknown;
+
+  /// 拖入物所属蓝光盘的**盘根**（含 `BDMV` 的那层目录），去重、按出现顺序。
+  ///
+  /// 盘根不是拖进来的那个东西本身，而是从它反推出来的：盘根目录、`BDMV` 目录、
+  /// `index.bdmv` / `MovieObject.bdmv`、`PLAYLIST/*.mpls`、`STREAM/*.m2ts`、
+  /// `CLIPINF/*.clpi` 都指向同一张盘。一张盘只有整张扫才有意义——单拿一段 m2ts
+  /// 入库是一条叫 `00001` 的碎片，拿 `index.bdmv` 更是什么也导不了（此前它落
+  /// [unknown]，视频页拖进去毫无反应）。与其余分类交叠：盘里的 m2ts 仍记进
+  /// [videos]，要不要按盘处理由 [decideDropIntent] 按落点表面决定。
+  final List<String> blurayDiscs;
+
+  /// 视频页要登记成来源库的目录：先是各张盘的盘根，再是其余拖入的普通目录。
+  ///
+  /// 拖进来的若是盘根本身或它的 `BDMV` 目录，已由对应盘根代表，不再重复登记——
+  /// 尤其不能把 `BDMV` 目录本身登记成来源：盘根在来源之外，库对账与扫描边界都会错位。
+  List<String> get videoSourceFolders => <String>[
+    ...blurayDiscs,
+    for (final String dir in directories)
+      if (!_representedByDisc(dir)) dir,
+  ];
+
+  bool _representedByDisc(String directory) {
+    final String normalized = p.normalize(directory);
+    if (blurayDiscs.contains(normalized)) return true;
+    return p.basename(normalized) == 'BDMV' &&
+        blurayDiscs.contains(p.dirname(normalized));
+  }
+
+  /// 视频库能收录的媒体：全部视频 + 不是视频的纯音频（`.mp4` 两类都在，只算一次）。
+  ///
+  /// 纯音频在视频页按「无画面的视频」入库（专辑曲目等）；书架表面仍把音频当有声书
+  /// 素材（挂到书卡），不走这里。
+  List<String> get videoLibraryMedia => <String>[
+    ...videos,
+    for (final String audio in audios)
+      if (!videos.contains(audio)) audio,
+  ];
 
   /// 是否有任何可被本功能识别（非 unknown）的文件。
   bool get hasAny =>
@@ -191,7 +273,9 @@ class DroppedFiles {
       dictionaries.isNotEmpty ||
       urls.isNotEmpty ||
       mangas.isNotEmpty ||
-      unsupportedMangas.isNotEmpty;
+      unsupportedMangas.isNotEmpty ||
+      torrents.isNotEmpty ||
+      blurayDiscs.isNotEmpty;
 }
 
 String _ext(String path) {
@@ -221,11 +305,22 @@ bool isImportableDropUrl(String candidate) {
 /// 纯扩展名分类无法与「无扩展名的文件」区分，而本函数不碰文件系统。调用方
 /// （widget 层）传 `(pth) => Directory(pth).existsSync()`，测试注入假谓词。
 /// 不传（默认 null）时行为与历史逐字节一致——目录会落进 [DroppedFiles.unknown]。
+///
+/// [blurayDiscRootForDirectory] 同理由 widget 层注入（`bluray_disc.dart` 的同名函数，
+/// 要看目录下有没有 `BDMV/PLAYLIST`）；盘内**文件**只看路径形状，本函数自己认。
+///
+/// [preferManga]：落点是漫画库。图片型 `.epub` 经 [isImageArchive] 归漫画、`.pdf`
+/// 直接归漫画（见 [kDragMangaSurfaceProbeExtensions] / [kDragMangaSurfaceDirectExtensions]）。
+/// 默认 false，书架与其它落点的分类与历史逐字节一致。
 DroppedFiles classifyDroppedFiles(
   List<String> paths, {
   bool Function(String path)? isDirectory,
   bool Function(String path)? isImageArchive,
+  String? Function(String directory)? blurayDiscRootForDirectory,
+  bool preferManga = false,
 }) {
+  final Set<String> probeExtensions =
+      dragImageArchiveProbeExtensionsFor(preferManga: preferManga);
   final List<String> books = <String>[];
   final List<String> videos = <String>[];
   final List<String> subtitles = <String>[];
@@ -236,7 +331,9 @@ DroppedFiles classifyDroppedFiles(
   final List<String> mangas = <String>[];
   final List<String> unsupportedMangas = <String>[];
   final List<String> directories = <String>[];
+  final List<String> torrents = <String>[];
   final List<String> unknown = <String>[];
+  final Set<String> blurayDiscs = <String>{};
 
   for (final String path in paths) {
     // URL（浏览器地址栏/链接拖入）不是文件路径，先按 scheme 甄别，命中即归 urls 并
@@ -250,17 +347,25 @@ DroppedFiles classifyDroppedFiles(
     if (isDirectory != null && isDirectory(path)) {
       directories.add(path);
       mangas.add(path);
+      final String? discRoot = blurayDiscRootForDirectory?.call(path);
+      if (discRoot != null) blurayDiscs.add(discRoot);
       continue;
     }
     final String ext = _ext(path);
-    bool matched = false;
+    final String? discRoot = blurayDiscRootForFile(path);
+    if (discRoot != null) blurayDiscs.add(discRoot);
+    bool matched = discRoot != null;
     // 图片包（`.zip`）：光看扩展名与词典包同形，必须真读包——同 isDirectory，判据
     // 由 widget 层注入。命中即**只**归 mangas（不再落 dictionaries），否则图片型
     // zip 会走到 books 分支的 `files.hasAny` 兜底、回「本页面不支持」，而导入对话框
     // 明明导得了它。与对话框同一判据，两条入口的回答因此必然一致。
     if (isImageArchive != null &&
-        kDragImageArchiveProbeExtensions.contains(ext) &&
+        probeExtensions.contains(ext) &&
         isImageArchive(path)) {
+      mangas.add(path);
+      continue;
+    }
+    if (preferManga && kDragMangaSurfaceDirectExtensions.contains(ext)) {
       mangas.add(path);
       continue;
     }
@@ -296,6 +401,10 @@ DroppedFiles classifyDroppedFiles(
       dictionaries.add(path);
       matched = true;
     }
+    if (kDragTorrentExtensions.contains(ext)) {
+      torrents.add(path);
+      matched = true;
+    }
     if (!matched) unknown.add(path);
   }
 
@@ -310,7 +419,9 @@ DroppedFiles classifyDroppedFiles(
     mangas: mangas,
     unsupportedMangas: unsupportedMangas,
     directories: directories,
+    torrents: torrents,
     unknown: unknown,
+    blurayDiscs: blurayDiscs.toList(),
   );
 }
 

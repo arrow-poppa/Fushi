@@ -6,7 +6,7 @@ import 'dart:io';
 import 'package:archive/archive.dart';
 import 'package:drift/drift.dart' show Value;
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path_provider/path_provider.dart';
@@ -99,6 +99,7 @@ Future<void> openBookViaProductionPath(
 Future<String> seedReaderBook(
   WidgetTester tester, {
   String fileName = 'test_library.epub',
+  bool withRealImages = false,
 }) async {
   final AppModel appModel = await readyAppModel(tester);
   await showBooksTab(tester);
@@ -106,7 +107,8 @@ Future<String> seedReaderBook(
     tester.element(find.byType(MaterialApp).first),
   );
 
-  final Uint8List bytes = EpubGenerator().generate();
+  final Uint8List bytes =
+      EpubGenerator(withRealImages: withRealImages).generate();
   final String bookKey = await EpubImporter.import(
     db: appModel.database,
     bytes: bytes,
@@ -257,7 +259,7 @@ ArchiveFile _jsonFile(String name, Object json) {
 Future<Directory> _fixturesDir() async {
   const String testRoot = String.fromEnvironment('FUSHI_TEST_ROOT');
   final Directory dir = testRoot.isEmpty
-      ? await Directory.systemTemp.createTemp('hibiki_fixtures_')
+      ? await Directory.systemTemp.createTemp('fushi_fixtures_')
       : Directory('$testRoot${Platform.pathSeparator}fixtures');
   await dir.create(recursive: true);
   return dir;
@@ -274,7 +276,7 @@ Future<Directory> _fixturesDir() async {
 /// （与 [seedReaderBook] 同一 [fushiBooksProvider] 列表）。
 Future<String> seedAudiobook(
   WidgetTester tester, {
-  String title = 'Hibiki Test Audiobook',
+  String title = 'Fushi Test Audiobook',
   Duration audioDuration = const Duration(seconds: 3),
   int cueCount = 5,
 }) async {
@@ -353,7 +355,7 @@ Future<String> seedAudiobook(
 /// 仅作 best-effort，未见也只 warning 返回 uid，不阻断 seed。
 Future<String> seedVideo(
   WidgetTester tester, {
-  String title = 'Hibiki Test Video',
+  String title = 'Fushi Test Video',
 }) async {
   final AppModel appModel = await readyAppModel(tester);
   final ProviderContainer container = ProviderScope.containerOf(

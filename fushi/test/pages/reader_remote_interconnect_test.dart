@@ -5,8 +5,9 @@ import 'package:archive/archive.dart';
 import 'package:fushi_engine/epub/epub_storage.dart';
 import 'package:fushi/src/sync/interconnect_download_manager.dart';
 
+import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -17,6 +18,8 @@ import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/home_page.dart'
     show homeShellTabNotifier, HomeTab;
 import 'package:fushi/src/pages/implementations/reader_fushi_history_page.dart';
+import 'package:fushi/src/pages/implementations/media_collection_grid_detail_page.dart';
+import 'package:fushi/src/pages/implementations/series_shelf_card.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 import 'package:fushi/src/sync/remote_book_client.dart';
 import 'package:fushi/src/sync/remote_library_source.dart';
@@ -25,6 +28,7 @@ import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 import '../helpers/test_platform_services.dart';
+import '../helpers/glass_unwrap.dart';
 
 void main() {
   final TestWidgetsFlutterBinding binding =
@@ -33,7 +37,7 @@ void main() {
   late Directory pathProviderDir;
   setUpAll(() {
     pathProviderDir =
-        Directory.systemTemp.createTempSync('hibiki_remote_book_pp');
+        Directory.systemTemp.createTempSync('fushi_remote_book_pp');
     binding.defaultBinaryMessenger.setMockMethodCallHandler(
       const MethodChannel('plugins.flutter.io/path_provider'),
       (MethodCall call) async => pathProviderDir.path,
@@ -68,16 +72,17 @@ void main() {
   // 用来观测两阶段下载空窗期本地卡的加载覆盖层）。
   late List<SrtBook> shelfSrtBooks;
   Completer<void>? audiobookDownloadGate;
+  late PreferencesRepository prefs;
 
   setUp(() async {
     useRealImporter = false;
     failNextAudiobook = false;
     LocaleSettings.setLocale(AppLocale.en);
     db = FushiDatabase.forTesting(NativeDatabase.memory());
-    final PreferencesRepository prefs = PreferencesRepository(db);
+    prefs = PreferencesRepository(db);
     await prefs.loadFromDb();
     final Directory storeDir =
-        Directory.systemTemp.createTempSync('hibiki_remote_book_store');
+        Directory.systemTemp.createTempSync('fushi_remote_book_store');
     remoteBookCover = File('${storeDir.path}/remote-book-cover.png')
       ..writeAsBytesSync(_tinyPngBytes);
     appModel = AppModel(testPlatformServices())
@@ -213,20 +218,32 @@ void main() {
         ),
         downloadBytes: _collectionDownloadFixture(manga: manga),
       );
+      // 占位卡归属合集：成员折进合集格子不外露（整行展开已移除），下载入口在合集
+      // 详情页——点格子进详情页，再点占位卡 = 下载入库（详情页卡片手势统一经
+      // onOpenMember）。这条同时钉住「详情页里远端占位书确实能下载」。
       await tester.pumpWidget(buildApp(mangaOnly: manga));
       await tester.pumpAndSettle();
+      await tester.tap(find.byType(SeriesShelfCard));
+      await tester.pumpAndSettle();
+      expect(find.byType(MediaCollectionGridDetailPage), findsOneWidget,
+          reason: '前置：点合集格子进详情页');
       final InterconnectDownloadManager manager = ProviderScope.containerOf(
-        tester.element(find.byType(ReaderFushiHistoryPage)),
+        // 书架在详情页之下（offstage），默认 finder 看不到它。
+        tester.element(
+            find.byType(ReaderFushiHistoryPage, skipOffstage: false)),
       ).read(interconnectDownloadManagerProvider);
-      final VoidCallback retryDownload = tester.widget<IconButton>(find.byKey(
+      final VoidCallback retryDownload = tester.widget<IconButton>(glassUnwrap<IconButton>(find.byKey(
         const ValueKey<String>('remote_book_download_Download_fixture'),
-      )).onPressed!;
+      ))).onPressed!;
+      final Finder remoteMember = find.byKey(
+        const ValueKey<String>('remote_book_card_Download_fixture'),
+      );
+      await tester.ensureVisible(remoteMember);
+      await tester.pumpAndSettle();
       await tester.runAsync(() async {
-        await tester.tap(
-          find.byKey(
-            const ValueKey<String>('remote_book_download_Download_fixture'),
-          ),
-        );
+        // 详情页成员卡包在 IgnorePointer 里，点击由外层格子接管（命中点不在卡本体上，
+        // 属预期，故关掉「未命中」告警）。
+        await tester.tap(remoteMember, warnIfMissed: false);
         final Stopwatch watch = Stopwatch()..start();
         while (watch.elapsed < const Duration(seconds: 15)) {
           await Future<void>.delayed(const Duration(milliseconds: 10));
@@ -269,6 +286,11 @@ void main() {
       expect(importedAudiobooks, hasLength(1), reason: '重试必须继续下载有声书');
       expect((await db.getAllEpubBooks()).map((EpubBookRow row) => row.uid),
           <String>[rows.single.uid], reason: '重试不能生成带后缀的第二本书');
+      // 先退出详情页再整棵换掉（详情页开着换根会在卸载帧里重建它）。
+      Navigator.of(
+        tester.element(find.byType(MediaCollectionGridDetailPage)),
+      ).pop();
+      await tester.pumpAndSettle();
       await tester.pumpWidget(wrapScope(const SizedBox.shrink()));
       await tester.pumpWidget(buildApp(mangaOnly: manga));
       await tester.pumpAndSettle();
@@ -983,8 +1005,15 @@ void main() {
       chaptersJson: '["a"]',
       importedAt: 0,
     ));
+    // BUG-2551：这一行原本既没有 audioRoot 也没有 audioPathsJson——是一本**零音频**
+    // 的有声书行，却被用来代表「本端已有有声书」。判据改成问磁盘之后它就是「缺音频」，
+    // 该露补拉入口（见下一条用例）。本条要验的是「真有有声书就不露」，所以音频得真在。
+    final File localTrack = File('${pathProviderDir.path}/local_track01.mp3')
+      ..writeAsStringSync('audio bytes');
     await db.upsertAudiobook(AudiobooksCompanion.insert(
       bookKey: localKey,
+      audioRoot: Value(pathProviderDir.path),
+      audioPathsJson: Value(jsonEncode(<String>[localTrack.path])),
       alignmentFormat: 'srt',
       alignmentPath: '${pathProviderDir.path}/a.srt',
     ));
@@ -1033,6 +1062,72 @@ void main() {
         reason: '已经有有声书的书不该再露补拉入口');
     // 既有的本地导入入口仍在（菜单其余部分不受影响）。
     expect(find.text(t.audiobook_import), findsOneWidget);
+  });
+
+  testWidgets('BUG-2551: 本端有声书行零音频时书卡菜单仍露「从对端下载有声书」',
+      (WidgetTester tester) async {
+    const String title = 'Remote Book';
+    final String localKey = sanitizeTtuFilename(title);
+    await db.insertEpubBook(EpubBooksCompanion.insert(
+      bookKey: localKey,
+      title: title,
+      epubPath: '${pathProviderDir.path}/remote_book3.epub',
+      extractDir: pathProviderDir.path,
+      chapterCount: 1,
+      chaptersJson: '["a"]',
+      importedAt: 0,
+    ));
+    // 一次没下成功留下的形状：Audiobooks 行在、字幕在、音频是空的。旧判据只看
+    // 「有没有这行」，于是补拉入口连同远端卡一起消失，用户再也下不了第二次。
+    await db.upsertAudiobook(AudiobooksCompanion.insert(
+      bookKey: localKey,
+      audioPathsJson: const Value('[]'),
+      alignmentFormat: 'srt',
+      alignmentPath: '${pathProviderDir.path}/a.srt',
+    ));
+    remoteClient = _FakeRemoteBookClient(
+      coverPath: remoteBookCover.path,
+      title: title,
+      hasAudiobook: true,
+    );
+    final MediaItem localItem = MediaItem(
+      mediaIdentifier: ReaderFushiSource.mediaIdentifierFor(localKey),
+      title: title,
+      mediaTypeIdentifier: ReaderFushiSource.instance.mediaType.uniqueKey,
+      mediaSourceIdentifier: ReaderFushiSource.instance.uniqueKey,
+      position: 0,
+      duration: 100,
+      canDelete: true,
+      canEdit: true,
+    );
+    await tester.pumpWidget(ProviderScope(
+      overrides: <Override>[
+        appProvider.overrideWith((ref) => appModel),
+        fushiBooksProvider.overrideWith(
+          (ref, language) => Future<List<MediaItem>>.value(
+            <MediaItem>[localItem],
+          ),
+        ),
+        srtBooksProvider.overrideWith(
+          (ref) => Future<List<SrtBook>>.value(shelfSrtBooks),
+        ),
+      ],
+      child: TranslationProvider(
+        child: MaterialApp(
+          builder: (BuildContext context, Widget? child) =>
+              child ?? const SizedBox.shrink(),
+          home: Scaffold(body: buildPage()),
+        ),
+      ),
+    ));
+    await tester.pumpAndSettle();
+
+    await tester.longPress(find.byKey(
+      ValueKey<String>('book_entry_${localItem.mediaIdentifier}'),
+    ));
+    await tester.pumpAndSettle();
+    expect(find.text(t.remote_book_audiobook_download), findsOneWidget,
+        reason: '有行但没音频 = 还没真拿到有声书，补拉入口必须还在');
   });
 }
 

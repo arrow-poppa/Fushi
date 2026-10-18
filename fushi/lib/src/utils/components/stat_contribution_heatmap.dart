@@ -1,5 +1,8 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/pages/implementations/stat_activity.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 /// 每屏**最少**列数（周数）。见 [StatContributionHeatmap.weeks]。
@@ -240,16 +243,24 @@ int maxHeatmapPageOffset({
   required double spacing,
   required int cols,
 }) {
-  if (local.dx < 0 || local.dy < 0) return null;
+  if (local.dx < 0 || local.dy < 0 || cols <= 0) return null;
   final double step = cell + spacing;
-  final int col = local.dx ~/ step;
-  final int row = local.dy ~/ step;
-  if (col < 0 || col >= cols || row < 0 || row >= 7) return null;
-  // 落在格子内部而非右/下侧间隙。
-  if (local.dx - col * step > cell) return null;
-  if (local.dy - row * step > cell) return null;
+  final double gridW = cols * cell + (cols - 1) * spacing;
+  final double gridH = 7 * cell + 6 * spacing;
+  if (local.dx > gridW || local.dy > gridH) return null;
+  // 2026-10 体验优化：格间缝也算命中，取最近的格子。旧实现落在 3dp 缝里直接
+  // 判空白、收起气泡——手机上格子只有 12dp，手指点到缝里的概率很高，表现为
+  // 「点了没反应 / 刚弹的气泡又没了」。格 i 与格 i+1 的分界在缝的正中
+  // （i*step + cell + spacing/2），所以按 (x + spacing/2) / step 取整即最近格。
+  final int col =
+      ((local.dx + spacing / 2) / step).floor().clamp(0, cols - 1).toInt();
+  final int row = ((local.dy + spacing / 2) / step).floor().clamp(0, 6).toInt();
   return (col: col, row: row);
 }
+
+/// 翻页箭头的最小命中边长（2026-10 体验优化：旧箭头只有 26×22，手机上很难点中；
+/// 视觉图标不变，命中区扩到 ≥40）。
+const double kStatHeatmapArrowHitSize = 40;
 
 /// GitHub 式贡献热力图组件：自适应可用宽度铺 [weeks] 列小方格，颜色由 [baseColor]
 /// 按等级 0..4 加深。
@@ -374,34 +385,57 @@ class _StatContributionHeatmapState extends State<StatContributionHeatmap> {
     }
   }
 
+  /// [disabledColor] 为 null（eink）时禁用态不画图标只占位：38% alpha 的灰箭头
+  /// 在墨水屏上是抖动噪点，而前景色又与可用态无异，索性不显示。
   Widget _arrow(
     IconData icon,
     bool enabled,
     VoidCallback onTap,
     Color activeColor,
-    Color disabledColor,
+    Color? disabledColor,
   ) {
+    if (!enabled && disabledColor == null) {
+      return const SizedBox(
+        width: kStatHeatmapArrowHitSize,
+        height: kStatHeatmapArrowHitSize,
+      );
+    }
+    // Apple：翻页箭头是强调色的纯图标按钮（无水波，系统 UIButton.plain 观感）；
+    // MD3 保留 onSurfaceVariant + 圆形水波。
+    final bool apple = isGlassDesign(context);
     return SizedBox(
-      width: 26,
-      height: _headerHeight,
+      width: kStatHeatmapArrowHitSize,
+      height: kStatHeatmapArrowHitSize,
       child: InkResponse(
-        radius: 16,
+        radius: kStatHeatmapArrowHitSize / 2,
+        splashFactory: apple ? NoSplash.splashFactory : null,
+        highlightColor: apple ? Colors.transparent : null,
         onTap: enabled ? onTap : null,
-        child: Icon(
+        child: FushiIcon(
           icon,
           size: 18,
-          color: enabled ? activeColor : disabledColor,
+          color: enabled
+              ? (apple ? appleColorsOf(context).accent : activeColor)
+              : disabledColor!,
         ),
       ),
     );
   }
 
   Widget _bubbleChip(ThemeData theme, String text) {
+    // eink：surfaceContainerHighest 塌成页面底色，气泡只剩一行悬空的字；描边。
+    // Apple：tertiarySystemFill 胶囊（中性灰，不是 tonal 色块）。
+    final bool apple = isGlassDesign(context);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
       decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceContainerHighest,
+        color: apple
+            ? appleColorsOf(context).tertiaryFill
+            : theme.colorScheme.surfaceContainerHighest,
         borderRadius: const BorderRadius.all(Radius.circular(10)),
+        border: isEinkTheme(context)
+            ? Border.all(color: theme.colorScheme.outline)
+            : null,
       ),
       child: Text(
         text,
@@ -425,8 +459,9 @@ class _StatContributionHeatmapState extends State<StatContributionHeatmap> {
     final String? bubble = sel == null
         ? null
         : widget.valueLabel(sel, widget.valueByDateKey[sel] ?? 0);
+    // 有翻页箭头时顶部行随箭头命中区加高到 40，否则保持原 22。
     return SizedBox(
-      height: _headerHeight,
+      height: showArrows ? kStatHeatmapArrowHitSize : _headerHeight,
       child: Row(
         children: <Widget>[
           Expanded(
@@ -443,14 +478,14 @@ class _StatContributionHeatmapState extends State<StatContributionHeatmap> {
               offset < maxOffset,
               () => _page(1, maxOffset, stepWeeks),
               theme.colorScheme.onSurfaceVariant,
-              theme.disabledColor,
+              isEinkTheme(context) ? null : theme.disabledColor,
             ),
             _arrow(
               Icons.chevron_right,
               offset > 0,
               () => _page(-1, maxOffset, stepWeeks),
               theme.colorScheme.onSurfaceVariant,
-              theme.disabledColor,
+              isEinkTheme(context) ? null : theme.disabledColor,
             ),
           ],
         ],
@@ -527,6 +562,7 @@ class _StatContributionHeatmapState extends State<StatContributionHeatmap> {
                   spacing: widget.spacing,
                   selectedDateKey: _selectedDateKey,
                   selectedBorderColor: theme.colorScheme.onSurface,
+                  eink: isEinkTheme(context),
                 ),
               ),
             ),
@@ -562,6 +598,7 @@ class _HeatmapPainter extends CustomPainter {
     required this.spacing,
     required this.selectedDateKey,
     required this.selectedBorderColor,
+    this.eink = false,
   });
 
   final StatHeatmapModel model;
@@ -573,8 +610,18 @@ class _HeatmapPainter extends CustomPainter {
   final String? selectedDateKey;
   final Color selectedBorderColor;
 
-  /// 等级 0..4 → 颜色。0 用 [emptyColor]；1..4 用 [baseColor] 按不透明度加深。
+  /// 墨水屏：等级不再用不透明度编码（35%/55%/78% 的 [baseColor] 在灰阶屏上是
+  /// 三档抖动噪点，且 baseColor 已塌成前景色），改用**尺寸**编码——1..3 级画
+  /// 逐级变大的实心内方块并描一圈边，4 级满格；全部纯前景色、零 alpha。
+  final bool eink;
+
+  /// eink 各等级内方块相对格边的内缩比例（0 = 满格）。
+  static const List<double> _einkInset = <double>[0, 0.36, 0.24, 0.12, 0];
+
+  /// 等级 0..4 → 颜色。0 用 [emptyColor]；1..4 用 [baseColor] 按不透明度加深
+  /// （eink 下 1..4 一律实心 [baseColor]，深浅交给 [_einkInset]）。
   Color _colorFor(int level) {
+    if (eink && level > 0) return baseColor;
     switch (level) {
       case 0:
         return emptyColor;
@@ -598,6 +645,8 @@ class _HeatmapPainter extends CustomPainter {
     final Radius radius = Radius.circular(cell * 0.25);
     final List<Path> byLevel = List<Path>.generate(5, (_) => Path());
     final Path emptyBorderPath = Path();
+    // eink：非空格的外框，一条 Path 一次描（与空格描边同样只多 1 个 op）。
+    final Path einkLevelBorderPath = Path();
     Rect? selectedRect;
     for (int w = 0; w < model.weeks.length; w++) {
       final List<StatHeatmapCell> col = model.weeks[w];
@@ -608,7 +657,14 @@ class _HeatmapPainter extends CustomPainter {
         if (c.dateKey == null) continue;
         final double y = d * (cell + spacing);
         final Rect rect = Rect.fromLTWH(x, y, cell, cell);
-        byLevel[c.level].addRRect(RRect.fromRectAndRadius(rect, radius));
+        final Rect fillRect =
+            eink ? rect.deflate(cell * _einkInset[c.level]) : rect;
+        byLevel[c.level].addRRect(RRect.fromRectAndRadius(fillRect, radius));
+        if (eink && c.level > 0) {
+          einkLevelBorderPath.addRRect(
+            RRect.fromRectAndRadius(rect.deflate(0.5), radius),
+          );
+        }
         if (c.level == 0 && emptyBorderColor != null) {
           emptyBorderPath.addRRect(
             RRect.fromRectAndRadius(rect.deflate(0.5), radius),
@@ -633,6 +689,15 @@ class _HeatmapPainter extends CustomPainter {
           ..color = emptyBorderColor!,
       );
     }
+    if (eink) {
+      canvas.drawPath(
+        einkLevelBorderPath,
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1
+          ..color = baseColor,
+      );
+    }
     // 选中格描边画在最后，避免被相邻格覆盖。
     if (selectedRect != null) {
       canvas.drawRRect(
@@ -654,5 +719,6 @@ class _HeatmapPainter extends CustomPainter {
       old.cell != cell ||
       old.spacing != spacing ||
       old.selectedDateKey != selectedDateKey ||
-      old.selectedBorderColor != selectedBorderColor;
+      old.selectedBorderColor != selectedBorderColor ||
+      old.eink != eink;
 }

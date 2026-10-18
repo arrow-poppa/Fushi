@@ -76,6 +76,10 @@ void main() {
   });
 
   test('原地跳转（词头 / 链接 / 汉字）经过 AI 兜底且声明边界明确', () {
+    // 查词调用有两种写法：阅读器家族直接调 `appModel.searchDictionary(`，mixin
+    // 家族（3.0.0 起）经可覆写的 `searchPopupDictionary(` 注入点（远端结果宿主
+    // 会把它换成问另一台设备）。两种都是同一次查词，守卫都要认。
+    final RegExp searchCall = RegExp(r'search(Popup)?Dictionary\(');
     final List<String> offenders = <String>[];
     for (final MapEntry<String, String> entry in inPlaceNavigators.entries) {
       final String body = bodyOf(read(entry.key), entry.value);
@@ -84,7 +88,7 @@ void main() {
       // 此时下面的断言全部失去意义，要报 bodyOf 的错而不是报业务代码的错。
       expect(
         body,
-        contains('searchDictionary('),
+        contains(searchCall),
         reason: '${entry.key}: bodyOf 截出来的不是函数体',
       );
 
@@ -102,7 +106,7 @@ void main() {
         );
       }
       final int fallbackAt = body.indexOf('applyAiFallback(');
-      final int searchAt = body.indexOf('searchDictionary(');
+      final int searchAt = body.indexOf(searchCall);
       if (searchAt >= 0 && fallbackAt > searchAt) {
         offenders.add(
           '  ${entry.key}: applyAiFallback 在 searchDictionary 之后，'

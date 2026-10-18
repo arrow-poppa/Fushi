@@ -2,7 +2,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:drift/native.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
@@ -22,6 +22,7 @@ import 'package:fushi_engine/epub/epub_storage.dart';
 import 'package:path/path.dart' as p;
 
 import '../../helpers/test_platform_services.dart';
+import '../../helpers/glass_unwrap.dart';
 
 /// BUG-2479：锁定章（源站要登录并购买）点了不能默默入队然后必败——先弹引导。
 ///
@@ -301,7 +302,7 @@ void main() {
       await openPage(tester, _LoginAdapter());
       expect(find.byKey(appBarLoginKey), findsOneWidget);
       expect(
-        tester.widget<IconButton>(find.byKey(appBarLoginKey)).onPressed,
+        tester.widget<IconButton>(glassUnwrap<IconButton>(find.byKey(appBarLoginKey))).onPressed,
         isNotNull,
       );
     });
@@ -314,7 +315,10 @@ void main() {
     });
   });
 
-  testWidgets('未锁定章不弹窗、直接入队', (WidgetTester tester) async {
+  // #1659（2026-09-26 所有者撤回设计稿 2026-09-12 §1.1「先下载再读」）：点未锁定
+  // 的未下载章是开读（在线直读），不再入队；单章下载走章节行溢出菜单的「下载」
+  // （见 manga_series_page_phase_c_test）。锁定章仍先弹引导（上面几条）。
+  testWidgets('未锁定章不弹窗、开读而不入队', (WidgetTester tester) async {
     late String bookKey;
     await tester.runAsync(() async {
       bookKey = await openPage(tester, _FakeAdapter());
@@ -323,8 +327,9 @@ void main() {
       expect(find.byKey(dialogKey), findsNothing);
     });
     expect(
-      (await jobFor(bookKey, '/chapter/1'))?.status,
-      MangaDownloadJobStatus.queued,
+      await jobFor(bookKey, '/chapter/1'),
+      isNull,
+      reason: '点章节是开读；入队只走菜单「下载」/「下载全部」',
     );
   });
 

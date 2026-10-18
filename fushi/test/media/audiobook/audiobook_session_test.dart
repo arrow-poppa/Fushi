@@ -3,9 +3,13 @@ import 'dart:io';
 
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:drift/native.dart';
+import 'package:fushi/src/media/audiobook/audiobook_controller.dart';
 import 'package:fushi/src/media/audiobook/audiobook_session.dart';
+import 'package:fushi/src/utils/misc/fushi_audio_handler.dart';
 import 'package:fushi/src/media/audiobook/floating_lyric_channel.dart';
 import 'package:fushi_audio/fushi_audio.dart';
+import 'package:fushi_core/fushi_core.dart';
 import 'package:just_audio_platform_interface/just_audio_platform_interface.dart';
 
 /// TODO-291 阶段2 行为守卫：[AudiobookSession] 是进程级常驻控制器持有者。
@@ -69,12 +73,12 @@ void main() {
     FloatingLyricChannel.platformOverride = null;
   });
 
-  AudiobookSession makeSession() {
+  AudiobookSession makeSession({FushiDatabase? db}) {
     return AudiobookSession(
       audioHandler: () => null,
       showFloatingLyric: () => false,
       showMediaNotification: () => false,
-      floatingLyricContextLines: () => 0,
+      floatingLyricVisibleLines: () => 1,
       floatingLyricStyle: () => const FloatingLyricStyle(
         fontSize: 16,
         textColor: 0,
@@ -87,12 +91,16 @@ void main() {
       floatingLyricClickLookup: () => false,
       onFloatingLyricLookup: (_, __, ___) {},
       controlStreams: AudioControlStreams(
-        playStream: const Stream<void>.empty(),
+        playIntentStream: const Stream<MediaPlayIntent>.empty(),
         seekStream: const Stream<Duration>.empty(),
         skipNextStream: const Stream<void>.empty(),
         skipPreviousStream: const Stream<void>.empty(),
         toggleFloatingLyricStream: const Stream<void>.empty(),
       ),
+      // BUG-2558：库给 null = 不建后台听书时钟（默认装置不碰统计）；只有验统计的
+      // 用例传内存库进来。
+      database: () => db,
+      studyIdleTimeout: () => const Duration(minutes: 10),
     );
   }
 
@@ -118,9 +126,10 @@ void main() {
     String key, {
     List<AudioCue> cues = const <AudioCue>[],
     int positionMs = 0,
+    FushiDatabase? db,
   }) async {
     installPlatform();
-    final AudiobookSession session = makeSession();
+    final AudiobookSession session = makeSession(db: db);
     addTearDown(session.dispose);
     await session.start(
       info: SessionBookInfo(
@@ -129,7 +138,7 @@ void main() {
         title: 'Book $key',
         mediaIdentifier: 'fushi://book/$key',
       ),
-      audioFiles: <File>[makeFile('hibiki-session-$key.mp3')],
+      audioFiles: <File>[makeFile('fushi-session-$key.mp3')],
       prefs: SessionPrefs(
         followAudio: true,
         delayMs: 0,
@@ -240,7 +249,7 @@ void main() {
         title: 'Book b',
         mediaIdentifier: 'fushi://book/b',
       ),
-      audioFiles: <File>[makeFile('hibiki-session-b.mp3')],
+      audioFiles: <File>[makeFile('fushi-session-b.mp3')],
       prefs: prefs(),
       persist: persist(),
     );
@@ -258,6 +267,145 @@ void main() {
     expect(session.book, isNull);
   });
 
+  group('BUG-2558：退出阅读器后台听书期间的学习统计', () {
+    // 根因：阅读器那只 StudyClock 随 reader 页 dispose 一起 detach，于是「退出书籍页
+    // → 锁屏 → 经媒体中心继续听」整段没有任何统计写入方。会话自己补一只，与阅读器
+    // 那只**互斥**（判据含 hasReaderAttached），两只同时跑就是同一段时间记两遍。
+    FushiDatabase memoryDb() {
+      final FushiDatabase db =
+          FushiDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(db.close);
+      return db;
+    }
+
+    test('reader 在场不起表、reader 一走接手、重进书再交回（互斥交接）', () async {
+      final AudiobookSession session =
+          await startedSession('a', db: memoryDb());
+      final AudiobookPlayerController c = session.controller!;
+      final _FakeReader reader = _FakeReader(section: 0);
+
+      session.attachReader(reader);
+      await c.play();
+      await pumpEventQueue();
+      expect(
+        session.debugBackgroundStudyClockRunning,
+        isFalse,
+        reason: 'reader 在场时统计归阅读器那只时钟，会话这只必须停着',
+      );
+
+      session.detachReader(reader);
+      expect(
+        session.debugBackgroundStudyClockRunning,
+        isTrue,
+        reason: '「退出书籍页继续听」这一段过去完全没有统计写入方',
+      );
+
+      session.attachReader(reader);
+      expect(
+        session.debugBackgroundStudyClockRunning,
+        isFalse,
+        reason: '重进书交回阅读器那只时钟，不得两只并行',
+      );
+    });
+
+    test('后台暂停即停表、再播即续表（用户要的「关了有声书就关统计」）', () async {
+      final AudiobookSession session =
+          await startedSession('a', db: memoryDb());
+      final AudiobookPlayerController c = session.controller!;
+      final _FakeReader reader = _FakeReader(section: 0);
+      session.attachReader(reader);
+      session.detachReader(reader);
+
+      await c.play();
+      await pumpEventQueue();
+      expect(session.debugBackgroundStudyClockRunning, isTrue);
+
+      await c.pause();
+      await pumpEventQueue();
+      expect(
+        session.debugBackgroundStudyClockRunning,
+        isFalse,
+        reason: '媒体中心 / 耳机键暂停后会话仍在（通知还挂着），但那不是学习时间',
+      );
+
+      await c.play();
+      await pumpEventQueue();
+      expect(
+        session.debugBackgroundStudyClockRunning,
+        isTrue,
+        reason: '后台按播放要立刻续表，不能等回前台',
+      );
+    });
+
+    test('没在播时 reader 离场不起表（退书时本来就是暂停态）', () async {
+      final AudiobookSession session =
+          await startedSession('a', db: memoryDb());
+      final _FakeReader reader = _FakeReader(section: 0);
+      session.attachReader(reader);
+      session.detachReader(reader);
+      expect(
+        session.debugBackgroundStudyClockRunning,
+        isFalse,
+        reason: '会话活着 ≠ 在学习；判据要的是「真在出声」',
+      );
+    });
+
+    test('停会话结算并放掉时钟', () async {
+      final AudiobookSession session =
+          await startedSession('a', db: memoryDb());
+      final AudiobookPlayerController c = session.controller!;
+      final _FakeReader reader = _FakeReader(section: 0);
+      session.attachReader(reader);
+      session.detachReader(reader);
+      await c.play();
+      await pumpEventQueue();
+      expect(session.debugBackgroundStudyClockRunning, isTrue);
+
+      await session.stop();
+      expect(
+        session.debugBackgroundStudyClockRunning,
+        isFalse,
+        reason: '换书 / 显式停会话必须在 _book 被清空前把这只时钟结算掉',
+      );
+    });
+
+    test('库不可用时不建时钟，播放本身照常（默认装置即此形态）', () async {
+      final AudiobookSession session = await startedSession('a');
+      final AudiobookPlayerController c = session.controller!;
+      final _FakeReader reader = _FakeReader(section: 0);
+      session.attachReader(reader);
+      session.detachReader(reader);
+      await c.play();
+      await pumpEventQueue();
+      expect(session.debugBackgroundStudyClockRunning, isFalse);
+      expect(c.isPlaying, isTrue, reason: '统计不可用不得影响播放');
+    });
+
+    test('统计身份回退：statsMediaKey 缺席时用 bookKey', () {
+      // launcher 两条分支都会显式填 statsMediaKey（SRT 分支的 bookKey 是 srt_books.uid，
+      // 与阅读器用的身份不是同一个串）；旧构造点 / 测试缺席时回退 bookKey。
+      expect(
+        SessionBookInfo(
+          bookKey: 'uid-1',
+          audiobook: ab('uid-1'),
+          title: 'T',
+          mediaIdentifier: 'fushi://book/k',
+          statsMediaKey: 'book-key-1',
+        ).studyMediaKey,
+        'book-key-1',
+      );
+      expect(
+        SessionBookInfo(
+          bookKey: 'uid-1',
+          audiobook: ab('uid-1'),
+          title: 'T',
+          mediaIdentifier: 'fushi://book/uid-1',
+        ).studyMediaKey,
+        'uid-1',
+      );
+    });
+  });
+
   test('BUG-1240 a new session waits for the old generation to release',
       () async {
     final _FakePlatform platform = installPlatform();
@@ -270,7 +418,7 @@ void main() {
         title: 'Old',
         mediaIdentifier: 'fushi://book/old',
       ),
-      audioFiles: <File>[makeFile('hibiki-session-old-generation.mp3')],
+      audioFiles: <File>[makeFile('fushi-session-old-generation.mp3')],
       prefs: prefs(),
       persist: persist(),
     );
@@ -286,7 +434,7 @@ void main() {
         title: 'New',
         mediaIdentifier: 'fushi://book/new',
       ),
-      audioFiles: <File>[makeFile('hibiki-session-new-generation.mp3')],
+      audioFiles: <File>[makeFile('fushi-session-new-generation.mp3')],
       prefs: prefs(),
       persist: persist(),
     );
@@ -299,6 +447,151 @@ void main() {
     await startNew;
     expect(session.book?.bookKey, 'new');
     expect(session.controller, isNotNull);
+  });
+
+  test('BUG-3197 stop re-encodes the live position against the replaced cues',
+      () async {
+    // 会话期间字幕被整组替换（阅读器内重新导入字幕 -> forceReload 先 stop 旧会话）：
+    // stop 落库的全书毫秒必须按**库里新 cue** 推出的文件时长编码，否则下次开书按
+    // 新 cue 一拆，听书断点落到别的文件 / 偏移。
+    AudioCue fileCue(int index, int file, int endMs) => AudioCue()
+      ..id = index + 1
+      ..bookKey = 'a'
+      ..chapterHref = 'chapter'
+      ..sentenceIndex = index
+      ..textFragmentId = 'cue-$index'
+      ..text = 'cue $index'
+      ..startMs = 0
+      ..endMs = endMs
+      ..audioFileIndex = file;
+
+    final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
+    addTearDown(db.close);
+    // 库里已经是新字幕：文件 0 的末句结束于 12s（旧字幕是 10s）。
+    await AudiobookRepository(db).saveCues(
+      bookKey: 'a',
+      cues: <AudioCue>[fileCue(0, 0, 12000), fileCue(1, 1, 25000)],
+    );
+
+    installPlatform();
+    final AudiobookSession session = makeSession(db: db);
+    addTearDown(session.dispose);
+    final List<int> writes = <int>[];
+    await session.start(
+      info: SessionBookInfo(
+        bookKey: 'a',
+        audiobook: ab('a'),
+        title: 'Book a',
+        mediaIdentifier: 'fushi://book/a',
+      ),
+      audioFiles: <File>[
+        makeFile('fushi-session-bug3197-0.mp3'),
+        makeFile('fushi-session-bug3197-1.mp3'),
+      ],
+      // 旧字幕编码下的「文件 1 第 3 秒」= 10000 + 3000。
+      prefs: const SessionPrefs(
+        followAudio: true,
+        delayMs: 0,
+        speed: 1.0,
+        positionMs: 13000,
+        imagePauseSec: 0,
+        volume: 1.0,
+      ),
+      persist: SessionPersistCallbacks(
+        onPositionWrite: (_, int ms) async => writes.add(ms),
+        onDelayPersist: (_) async {},
+        onSpeedPersist: (_) async {},
+        onVolumePersist: (_) async {},
+        onImagePausePersist: (_) async {},
+        onFollowAudioPersist: (_) async {},
+      ),
+      cues: <AudioCue>[fileCue(0, 0, 10000), fileCue(1, 1, 20000)],
+    );
+    final AudiobookPlayerController c = session.controller!;
+    expect(c.globalPosition.inMilliseconds, 13000,
+        reason: 'precondition: restored to file 1 at 3s under the old cues');
+
+    writes.clear();
+    await session.stop();
+
+    expect(writes, isNotEmpty);
+    expect(writes.last, 12000 + 3000,
+        reason: 'file 1 at 3s, encoded with the new per-file cue durations');
+  });
+
+  test(
+      'BUG-3251 replacing the cues while playing switches periodic writes '
+      'to the new encoding at once', () async {
+    // 书架 / 互联「只更新字幕」在会话**播放中**换掉库里的 cue：此前要等到 stop 才
+    // 换编码，期间 app 被直接杀掉，库里留下的就是旧编码。
+    AudioCue fileCue(int index, int file, int endMs) => AudioCue()
+      ..id = index + 1
+      ..bookKey = 'a'
+      ..chapterHref = 'chapter'
+      ..sentenceIndex = index
+      ..textFragmentId = 'cue-$index'
+      ..text = 'cue $index'
+      ..startMs = 0
+      ..endMs = endMs
+      ..audioFileIndex = file;
+
+    final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
+    addTearDown(db.close);
+    final List<AudioCue> oldCues = <AudioCue>[
+      fileCue(0, 0, 10000),
+      fileCue(1, 1, 20000),
+    ];
+    await AudiobookRepository(db).saveCues(bookKey: 'a', cues: oldCues);
+
+    installPlatform();
+    final AudiobookSession session = makeSession(db: db);
+    addTearDown(session.dispose);
+    await session.start(
+      info: SessionBookInfo(
+        bookKey: 'a',
+        audiobook: ab('a'),
+        title: 'Book a',
+        mediaIdentifier: 'fushi://book/a',
+      ),
+      audioFiles: <File>[
+        makeFile('fushi-session-bug3251-0.mp3'),
+        makeFile('fushi-session-bug3251-1.mp3'),
+      ],
+      prefs: const SessionPrefs(
+        followAudio: true,
+        delayMs: 0,
+        speed: 1.0,
+        positionMs: 13000,
+        imagePauseSec: 0,
+        volume: 1.0,
+      ),
+      persist: SessionPersistCallbacks(
+        onPositionWrite: (_, int ms) async {},
+        onDelayPersist: (_) async {},
+        onSpeedPersist: (_) async {},
+        onVolumePersist: (_) async {},
+        onImagePausePersist: (_) async {},
+        onFollowAudioPersist: (_) async {},
+      ),
+      cues: oldCues,
+    );
+    final AudiobookPlayerController c = session.controller!;
+    expect(c.globalPosition.inMilliseconds, 13000,
+        reason: 'precondition: file 1 at 3s under the old cues');
+
+    // 播放中换字幕：文件 0 的末句改为 12s 结束。
+    await AudiobookRepository(db).saveCues(
+      bookKey: 'a',
+      cues: <AudioCue>[fileCue(0, 0, 12000), fileCue(1, 1, 25000)],
+    );
+    for (int i = 0;
+        i < 50 && c.globalPosition.inMilliseconds != 15000;
+        i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+    }
+    expect(c.globalPosition.inMilliseconds, 12000 + 3000,
+        reason: 'the live controller adopts the new cues before any stop, so '
+            'periodic writes are encoded with the new per-file durations');
   });
 }
 

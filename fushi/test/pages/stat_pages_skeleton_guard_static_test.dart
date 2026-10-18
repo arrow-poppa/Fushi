@@ -4,13 +4,16 @@ import 'package:flutter_test/flutter_test.dart';
 
 import '../helpers/source_guard.dart';
 
-/// 三个域统计页同一骨架（用户 2026-09-08「统计全改成游戏那种」）的源码守卫：
+/// 三个域统计页与总览同一骨架（2026-10 统计中心重设计，`StatDashboardBody`）的
+/// 源码守卫：
 ///
-///   时段卡 `_buildSummaryCards()` → 每日图 `buildStatDailyDurationChartSection(`
-///   → 最近会话 `buildStatSessionSection(` → 按媒体列表（每行 `buildStatMediaRow(`）。
+///   学习日历（含「过去一周」火苗，2026-10-09 取代目标卡 + 四张指标卡）→ 趋势栏
+///   `_buildRangeSection()`（范围条 → 范围时长图 → 所选范围卡）→ 明细栏：最近沉浸
+///   `buildStatSessionSection(` → 按媒体列表（每行 `buildStatMediaRow(`）。时段卡
+///   （「时段明细」）2026-10-09 删除——与所选范围卡重复。
 ///
-/// 阅读页额外在会话之后挂目标卡与「分析」折叠（`StatAnalysisFold(`），视频页把小时分布
-/// 折进折叠区；三页的 `_buildContent` 里不许再有各自手搓的 tile / 进度条排行。
+/// 阅读页「分析」折叠（`StatAnalysisFold(`）接在趋势栏末尾，视频页把小时分布折进
+/// 折叠区；三页的 `_buildContent` 里不许再有各自手搓的 tile / 进度条排行。
 const Map<String, String> _pages = <String, String>{
   'reading': 'lib/src/pages/implementations/reading_statistics_page.dart',
   'video': 'lib/src/pages/implementations/video_statistics_page.dart',
@@ -40,45 +43,76 @@ void main() {
       );
       final String content = methodBody(src, 'Widget _buildContent()');
 
-      test('骨架顺序：时段卡 → 每日图 → 最近会话 → 按媒体列表', () {
-        final int cards = content.indexOf('_buildSummaryCards()');
-        final int daily = content.indexOf('buildStatDailyDurationChartSection(');
+      test('骨架顺序：学习日历 → 范围区块 → 最近沉浸 → 按媒体列表', () {
+        expect(content.contains('StatDashboardBody('), isTrue,
+            reason: '${e.key} 不走共享骨架');
+        final int calendar = src.contains('Widget _buildCalendarSection()')
+            ? content.indexOf('_buildCalendarSection()')
+            : content.indexOf('buildStatRangeCalendarSection(');
+        final int range = content.indexOf('_buildRangeSection()');
         final int sessions = content.indexOf('buildStatSessionSection(');
         final int list = content.indexOf('SliverList(');
-        expect(cards, isNonNegative);
-        expect(daily, greaterThan(cards));
-        expect(sessions, greaterThan(daily));
+        expect(calendar, isNonNegative);
+        expect(range, greaterThan(calendar));
+        expect(sessions, greaterThan(range));
         expect(list, greaterThan(sessions));
+        for (final String gone in <String>[
+          'StatHero(',
+          'StatGoalPanel(',
+          '_buildSummaryCards()',
+          'buildStatKpiTiles(',
+        ]) {
+          expect(content.contains(gone), isFalse,
+              reason: '${e.key} 还留着 $gone（2026-10-09 已删）');
+        }
+      });
+
+      test('范围区块齐全：范围条 / 范围时长图 / 所选范围卡；不再写死近 30 天', () {
+        final String range =
+            methodBody(src, 'List<Widget> _buildRangeSection()');
+        for (final String block in <String>[
+          'StatRangeBar(',
+          'buildStatRangeChartSection(',
+          'buildStatRangeSummary(',
+        ]) {
+          expect(range.contains(block), isTrue, reason: '${e.key} 缺 $block');
+        }
+        expect(
+          src.contains('lastDayKeys(30)'),
+          isFalse,
+          reason: '${e.key} 又写死了近 30 天窗口，图表必须跟随范围',
+        );
       });
 
       test('按媒体一行走共享 buildStatMediaRow，不再手搓进度条排行', () {
         expect(containsIdentifier(src, 'buildStatMediaRow'), isTrue);
         expect(
           'LinearProgressIndicator('.allMatches(src).length,
-          e.key == 'reading' ? 1 : 0,
-          reason: '阅读页只剩目标卡的进度条；视频 / 游戏页零进度条',
+          0,
+          reason: '目标进度条在共享目标面板里；三个域页零进度条',
         );
       });
     });
   }
 
-  test('阅读页：目标卡在会话之后、「分析」折叠在按书列表之前；折叠里装齐五个下沉区块', () {
+  test('阅读页：「分析」折叠在趋势栏末尾；折叠里装齐五个下沉区块', () {
     final String src = maskComments(
       File(_pages['reading']!).readAsStringSync().replaceAll('\r\n', '\n'),
     );
     final String content = methodBody(src, 'Widget _buildContent()');
-    final int sessions = content.indexOf('buildStatSessionSection(');
-    final int goal = content.indexOf('_buildGoalPanel()');
-    final int fold = content.indexOf('_buildAnalysisFold(');
+    final int range = content.indexOf('_buildRangeSection()');
+    final int fold = content.indexOf('_buildAnalysisFold()');
+    final int details = content.indexOf('details:');
     final int header = content.indexOf('_buildByBookHeader()');
-    expect(goal, greaterThan(sessions));
-    expect(fold, greaterThan(goal));
-    expect(header, greaterThan(fold));
-    final String foldBody = methodBody(src, 'Widget _buildAnalysisFold(bool wide)');
+    expect(range, isNonNegative);
+    expect(fold, greaterThan(range));
+    expect(details, greaterThan(fold), reason: '折叠在趋势栏，不在明细栏');
+    expect(header, greaterThan(details));
+    final String foldBody = methodBody(src, 'Widget _buildAnalysisFold()');
     for (final String block in <String>[
       '_buildKpiStrip()',
       '_buildTrendPanel()',
-      '_buildMidSection(wide)',
+      '_buildMidSection()',
       '_buildSourceBreakdown()',
       'buildStatHourlyFormatChartSection(context, _hourly)',
     ]) {
@@ -115,6 +149,35 @@ void main() {
     }
   });
 
+  /// 会话行封面（用户 2026-10-03「统计中心的会话也支持封面」）：总览三域混排，
+  /// 单看标题认不出作品时封面是最快的辨认线索。四个挂会话区块的页面一个都不能
+  /// 漏传封面解析器，否则那一页的会话行又只剩一颗小图标。
+  test('四个页面的会话区块都传 coverOf', () {
+    const Map<String, String> pagesWithSessions = <String, String>{
+      ..._pages,
+      'center': 'lib/src/pages/implementations/statistics_center_page.dart',
+    };
+    for (final MapEntry<String, String> e in pagesWithSessions.entries) {
+      final String src = maskComments(
+        File(e.value).readAsStringSync().replaceAll('\r\n', '\n'),
+      );
+      for (final String call in <String>[
+        'buildStatSessionSection(',
+        'showStatSessionsSheet(',
+      ]) {
+        int at = src.indexOf(call);
+        while (at >= 0) {
+          expect(
+            _callArguments(src, at + call.length - 1).contains('coverOf:'),
+            isTrue,
+            reason: '${e.key} 的 $call 漏传封面解析器',
+          );
+          at = src.indexOf(call, at + call.length);
+        }
+      }
+    }
+  });
+
   test('视频页：小时分布折进「分析」', () {
     final String src = maskComments(
       File(_pages['video']!).readAsStringSync().replaceAll('\r\n', '\n'),
@@ -122,7 +185,9 @@ void main() {
     final String content = methodBody(src, 'Widget _buildContent()');
     final int fold = content.indexOf('StatAnalysisFold(');
     final int hourly = content.indexOf('buildStatHourlyChartSection(');
+    final int details = content.indexOf('details:');
     expect(fold, isNonNegative);
     expect(hourly, greaterThan(fold));
+    expect(details, greaterThan(hourly), reason: '折叠在趋势栏末尾');
   });
 }

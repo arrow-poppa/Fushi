@@ -1,25 +1,42 @@
 /// `/api/admin/*`：WebUI 的 JSON 面。鉴权在 [AdminServer] 的 middleware。
 library;
 
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
 import 'package:fushi_asr_core/asr_core.dart' as asr;
+import 'package:fushi_anki/fushi_anki_core.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/ai/ai_provider_config.dart';
+import 'package:fushi_engine/anki_sync/anki_box_landing.dart';
+import 'package:fushi_engine/anki_sync/anki_sync_session.dart';
 import 'package:fushi_engine/ocr/manga_ocr_service.dart';
 import 'package:fushi_engine/media/video/download/video_download_pipeline_service.dart'
     show VideoDownloadPipelineActionRequired;
+import 'package:fushi_engine/media/source_library/book_library_prune.dart';
+import 'package:fushi_engine/media/source_library/library_prune_guard.dart';
+import 'package:fushi_engine/media/source_library/source_library_row.dart';
+import 'package:fushi_engine/media/video/video_book_repository.dart';
+import 'package:fushi_engine/media/video/video_library_prune.dart';
 import 'package:fushi_engine/sync/downloads/host_download_host.dart';
+import 'package:fushi_engine/sync/fushi_sync_server.dart';
 import 'package:fushi_engine/sync/host_jobs/host_job.dart';
 import 'package:fushi_engine/sync/subscriptions/host_subscription_host.dart';
 import 'package:fushi_engine/sync/subscriptions/host_subscription_routes.dart' show HostSubscriptionRejected;
 import 'package:fushi_server/src/admin/admin_context.dart';
+import 'package:fushi_server/src/admin/resource_indexer_settings.dart';
+import 'package:fushi_server/src/anki_landing.dart';
 import 'package:fushi_server/src/admin/upload_store.dart';
+import 'package:fushi_server/src/config/server_ai_config.dart';
 import 'package:fushi_server/src/config/server_config.dart';
+import 'package:fushi_server/src/download_host.dart';
 import 'package:fushi_server/src/headless_host.dart';
 import 'package:fushi_server/src/host_bindings.dart';
 import 'package:fushi_server/src/library_scanner.dart';
 import 'package:fushi_server/src/native_libs.dart';
+import 'package:fushi_server/src/profile_hub.dart';
+import 'package:fushi_server/src/video_scrape_host.dart';
 import 'package:path/path.dart' as p;
 import 'package:shelf/shelf.dart' as shelf;
 
@@ -58,6 +75,8 @@ class AdminApi {
       return await _route(method, path, request);
     } on FormatException catch (e) {
       return _err(400, e.message);
+    } on ArgumentError catch (e) {
+      return _err(400, '${e.message}');
     } on UploadRejected catch (e) {
       return _err(e.status, e.message);
     } on VideoDownloadPipelineActionRequired catch (e) {
@@ -85,9 +104,12 @@ class AdminApi {
       case ('POST', '/api/admin/libraries'):
         return _addLibrary(await _body(request));
       case ('DELETE', _) when path.startsWith('/api/admin/libraries/'):
-        return _removeLibrary(Uri.decodeComponent(path.substring('/api/admin/libraries/'.length)));
+        return _removeLibrary(
+          Uri.decodeComponent(path.substring('/api/admin/libraries/'.length)),
+          purge: request.url.queryParameters['purge'] == 'true',
+        );
       case ('POST', '/api/admin/scan'):
-        return _scan();
+        return _scan(await _body(request));
       case ('GET', '/api/admin/jobs'):
         return _jobs();
       case ('DELETE', _) when path.startsWith('/api/admin/jobs/'):
@@ -103,6 +125,11 @@ class AdminApi {
       case ('POST', _) when path.startsWith('/api/admin/downloads/') && path.endsWith('/retry'):
         await _downloadsHost().retryJob(_segment(path, '/api/admin/downloads/', '/retry'));
         return _json(const <String, Object?>{'ok': true});
+      case ('GET', _) when path.startsWith('/api/admin/downloads/') && path.endsWith('/subtitles'):
+        final List<VideoDownloadJobSubtitleRow>? subtitles =
+            await _downloadsHost().listJobSubtitles(_segment(path, '/api/admin/downloads/', '/subtitles'));
+        if (subtitles == null) return _err(404, 'unknown download job');
+        return _json(<String, Object?>{'subtitles': subtitles.map(videoDownloadJobSubtitleToWire).toList()});
       case ('DELETE', _) when path.startsWith('/api/admin/downloads/'):
         await _downloadsHost().deleteJob(path.substring('/api/admin/downloads/'.length));
         return _json(const <String, Object?>{'ok': true});
@@ -126,6 +153,10 @@ class AdminApi {
       case ('DELETE', _) when path.startsWith('/api/admin/subscriptions/'):
         await _subscriptionsHost().delete(Uri.decodeComponent(path.substring('/api/admin/subscriptions/'.length)));
         return _json(const <String, Object?>{'ok': true});
+      case ('GET', '/api/admin/resource-indexers'):
+        return _resourceIndexers();
+      case ('PUT', '/api/admin/resource-indexers'):
+        return _putResourceIndexers(await _body(request));
       case ('GET', '/api/admin/models'):
         return _models();
       case ('POST', '/api/admin/models/pull'):
@@ -134,12 +165,103 @@ class AdminApi {
         return _settings();
       case ('PUT', '/api/admin/settings'):
         return _putSettings(await _body(request));
+      case ('GET', '/api/admin/anki'):
+        return _anki();
+      case ('POST', '/api/admin/anki/login'):
+        return _ankiLogin(await _body(request));
+      case ('POST', '/api/admin/anki/logout'):
+        final Map<String, dynamic> body = await _body(request);
+        try {
+          await _ankiSession().signOut(discardUnsynced: body['discardUnsynced'] == true);
+        } on AnkiSyncHasUnsyncedNotes catch (e) {
+          return _err(409, 'unsynced:${e.count}');
+        }
+        return _json(const <String, Object?>{'ok': true});
+      case ('POST', '/api/admin/anki/sync'):
+        final AnkiSyncState synced = await _ankiSession().syncNow();
+        return _json(<String, Object?>{'phase': synced.phase.name});
+      case ('POST', '/api/admin/anki/refresh'):
+        return _json(<String, Object?>{'ok': await _ankiLanding().refreshMeta()});
+      case ('PUT', '/api/admin/anki/settings'):
+        return _putAnkiSettings(await _body(request));
+      case ('POST', '/api/admin/anki/landing'):
+        final Map<String, dynamic> body = await _body(request);
+        await _ankiLanding().setLandingEnabled(body['enabled'] == true);
+        return _json(const <String, Object?>{'ok': true});
+      case ('POST', '/api/admin/anki/run'):
+        await _ankiLanding().runNow();
+        return _json(const <String, Object?>{'ok': true});
+      case ('POST', '/api/admin/anki/retry'):
+        return _json(<String, Object?>{'retried': await _ankiLanding().retryFailed()});
+      case ('GET', '/api/admin/profiles'):
+        return _profiles();
+      case ('POST', _) when path.startsWith('/api/admin/profiles/') && path.endsWith('/share'):
+        return _profileAction(_segment(path, '/api/admin/profiles/', '/share'), ctx.host.profiles.pin);
+      case ('DELETE', _) when path.startsWith('/api/admin/profiles/'):
+        return _profileAction(Uri.decodeComponent(path.substring('/api/admin/profiles/'.length)), ctx.host.profiles.delete);
+      case ('GET', '/api/admin/p2p'):
+        return _json(ctx.host.p2pStatus());
       case ('GET', '/api/admin/upload'):
         return _uploadStatus(request);
       case ('PUT', '/api/admin/upload'):
         return _upload(request);
+      case ('GET', '/api/admin/scrape/pending'):
+        final ServerVideoScrape? scrape = ctx.host.videoScrape;
+        if (scrape == null) return _err(503, 'video scrape is not running');
+        return _json(<String, Object?>{'works': await scrape.pendingWorks()});
+      case ('POST', '/api/admin/scrape/sweep'):
+        final ServerVideoScrape? scrape = ctx.host.videoScrape;
+        if (scrape == null) return _err(503, 'video scrape is not running');
+        // 不 await：一轮补刮可能很久，结果看 status.scrape / scrape/pending。
+        unawaited(scrape.sweep().catchError((Object e, StackTrace st) => ctx.log.log('AdminApi.scrape.sweep', e, st)));
+        return _json(const <String, Object?>{'started': true});
+      case ('POST', '/api/admin/scrape/ai-identify'):
+        final ServerVideoScrape? scrape = ctx.host.videoScrape;
+        if (scrape == null) return _err(503, 'video scrape is not running');
+        final String id = ((await _body(request))['id'] ?? '').toString();
+        if (id.isEmpty) throw const FormatException('id required (a pending work id)');
+        // 先同步校验，免得「已开始」之后才在日志里报找不到。
+        if (!(await scrape.pendingWorks()).any((Map<String, Object?> w) => w['id'] == id)) {
+          return _err(404, 'work "$id" is not in the pending list');
+        }
+        // AI 识别要多轮请求，同样不阻塞；结果落库后 pending 清单会少一条。
+        unawaited(scrape
+            .identifyPendingWithAi(id)
+            .then((Map<String, Object?> r) => ctx.log.info('scrape ai-identify $id: $r'))
+            .catchError((Object e, StackTrace st) => ctx.log.log('AdminApi.scrape.aiIdentify', e, st)));
+        return _json(<String, Object?>{'started': true, 'id': id});
+      case (_, _) when path.startsWith(_hostProxyPrefix):
+        return _hostProxy(request, path.substring(_hostProxyPrefix.length));
     }
     return _err(404, 'unknown admin route $method $path');
+  }
+
+  static const String _hostProxyPrefix = '/api/admin/host/';
+
+  /// `/api/admin/host/<rest>` → 互联的 `/api/<rest>`，以 host 身份进程内调用。
+  ///
+  /// 互联的库 / 刮削 / 进度 / 任务等接口只对已配对 peer 开放，管理员自己反而没有
+  /// 入口；这里让 `fushi_server ctl` 与 WebUI 直接复用那一套，而不是在 admin 面
+  /// 另写同功能路由（两份实现必然漂移）。管理员凭据已由 [AdminServer] 验过。
+  ///
+  /// 配对路由依赖对端地址与人工确认，代调没有意义也不安全，一律拒绝。
+  Future<shelf.Response> _hostProxy(shelf.Request request, String rest) async {
+    if (rest == 'pair' || rest.startsWith('pair/')) {
+      return _err(403, 'pairing routes are not available through the admin proxy');
+    }
+    final FushiSyncServer? server = ctx.host.syncServer;
+    if (server == null) return _err(503, 'the interconnect host is not running');
+    final Uri target = Uri(
+      scheme: 'http',
+      host: 'localhost',
+      path: '/api/$rest',
+      query: request.requestedUri.hasQuery ? request.requestedUri.query : null,
+    );
+    final Map<String, String> headers = <String, String>{
+      for (final MapEntry<String, String> e in request.headers.entries)
+        if (e.key.toLowerCase() != 'authorization' && e.key.toLowerCase() != 'cookie') e.key: e.value,
+    };
+    return server.handleInProcess(shelf.Request(request.method, target, headers: headers, body: request.read()));
   }
 
   String _segment(String path, String prefix, String suffix) =>
@@ -173,7 +295,9 @@ class AdminApi {
       'libraries': ctx.config.libraries.length,
       'scanning': ctx.scanning,
       'lastScan': ctx.lastScan?.toString(),
+      'lastScanNotes': ctx.lastScan?.pruneNotes ?? const <String>[],
       'lastScanAt': ctx.lastScanAt?.toIso8601String(),
+      'scrape': ctx.host.videoScrape?.status(),
       'downloads': await ctx.host.downloads?.capability(),
       'subscriptions': await ctx.host.subscriptions?.capability(),
       'subscriptionCount': (await ctx.host.subscriptions?.list())?.length,
@@ -186,6 +310,7 @@ class AdminApi {
             },
       'uploadUsedBytes': await uploads.used(),
       'uploadQuotaBytes': ctx.config.uploadQuotaBytes,
+      'p2p': ctx.host.p2pStatus(),
     });
   }
 
@@ -223,7 +348,9 @@ class AdminApi {
 
   // ── 库 ─────────────────────────────────────────────────────────────
 
-  shelf.Response _libraries() => _json(<String, Object?>{
+  shelf.Response _libraries() => _json(_librariesJson());
+
+  Map<String, Object?> _librariesJson() => <String, Object?>{
         'libraries': <Object?>[
           for (final LibraryRootConfig lib in ctx.config.libraries)
             <String, Object?>{
@@ -231,7 +358,7 @@ class AdminApi {
               'exists': Directory(lib.path).existsSync(),
             },
         ],
-      });
+      };
 
   Future<shelf.Response> _addLibrary(Map<String, dynamic> body) async {
     final String path = (body['path'] ?? '').toString().trim();
@@ -252,17 +379,87 @@ class AdminApi {
     return _libraries();
   }
 
-  Future<shelf.Response> _removeLibrary(String id) async {
+  /// 移除一个库根。
+  ///
+  /// [purge] 为真时，**在移除配置前**对该根跑一次对账（视频根 `pruneMissingVideoRows`、
+  /// 书 / 漫画根 `pruneMissingBookRows`），回收「行还在、源文件已消失」的条目及其刮削
+  /// 资料 / 正文副本。不删任何用户文件。
+  ///
+  /// 这是显式的用户意图，所以用 `force`：扫描时的推测性护栏（库根不存在 / 空挂载点 /
+  /// 失效占比）在这里不拦——最常见的用法恰恰是「整个目录已经删了，把它连库一起清掉」。
+  /// 判据仍只有「文件确实不存在」。对账没做成（租约被占 / 删除出错）就**不移除**
+  /// 配置、回 409：移除后这些行不在任何库根下，再也没有机会被清理。
+  ///
+  /// 书 / 漫画根只认本服务端扫描时记进来源索引的书（`BookSourceIndex`）；该根从没被
+  /// 扫描过（没有来源行）就没有可清理的条目。
+  Future<shelf.Response> _removeLibrary(String id, {bool purge = false}) async {
+    final LibraryRootConfig? library = ctx.config.libraries
+        .cast<LibraryRootConfig?>()
+        .firstWhere((LibraryRootConfig? l) => l!.id == id, orElse: () => null);
+    if (library == null) return _err(404, 'unknown library $id');
+    Map<String, Object?>? purgeResult;
+    if (purge) {
+      final LibraryPruneReport report = await _purgeRoot(library);
+      purgeResult = <String, Object?>{
+        'considered': report.considered,
+        'missing': report.missing,
+        'deleted': report.deleted,
+        'skipped': report.skipped,
+        if (report.skipReason != null) 'reason': report.skipReason,
+        if (report.errors.isNotEmpty) 'errors': report.errors,
+      };
+      if (report.skipped || report.errors.isNotEmpty) {
+        final String why = report.skipReason ?? report.errors.join('; ');
+        return _json(<String, Object?>{
+          'error': 'purge incomplete ($why); library root kept',
+          ..._librariesJson(),
+          'purge': purgeResult,
+        }, status: 409);
+      }
+    }
     await ctx.updateConfig(ctx.config.copyWith(
       libraries: ctx.config.libraries.where((LibraryRootConfig l) => l.id != id).toList(),
     ));
-    return _libraries();
+    return _json(<String, Object?>{
+      ..._librariesJson(),
+      if (purgeResult != null) 'purge': purgeResult,
+    });
   }
 
-  shelf.Response _scan() {
+  /// 按库根 kind 分派的 force 对账（见 [_removeLibrary]）。
+  Future<LibraryPruneReport> _purgeRoot(LibraryRootConfig library) async {
+    final SourceLibraryKind? kind = SourceLibraryKind.tryParse(library.kind);
+    switch (kind) {
+      case SourceLibraryKind.video:
+        return pruneMissingVideoRows(
+          repository: VideoBookRepository(ctx.db),
+          root: Directory(library.path),
+          force: true,
+        );
+      case SourceLibraryKind.book:
+      case SourceLibraryKind.manga:
+        final SourceLibraryRow? source = await LibraryScanner.findLocalSource(ctx.db, library.path, kind!);
+        if (source == null) return const LibraryPruneReport(considered: 0, missing: 0, deleted: 0);
+        return pruneMissingBookRows(
+          db: ctx.db,
+          sourceId: source.id,
+          root: Directory(library.path),
+          kind: kind,
+          force: true,
+        );
+      case null:
+        throw FormatException('library "${library.id}" has unsupported kind=${library.kind}');
+    }
+  }
+
+  shelf.Response _scan(Map<String, dynamic> body) {
+    final Object? raw = body['prune'];
+    if (raw != null && raw is! bool) {
+      throw const FormatException('prune must be a boolean');
+    }
     if (ctx.scanning) return _json(const <String, Object?>{'started': false, 'scanning': true});
     // 不 await：扫描可能很久，WebUI 轮询 status 看结果。
-    ctx.scanLibraries().catchError((Object e, StackTrace st) {
+    ctx.scanLibraries(prune: raw as bool?).catchError((Object e, StackTrace st) {
       ctx.log.log('AdminApi.scan', e, st);
       return ScanSummary();
     });
@@ -285,15 +482,10 @@ class AdminApi {
     });
   }
 
+  /// 与互联 `POST /api/downloads` 同一份请求解析（[HostDownloadAddRequest.fromJson]）：
+  /// 磁链 / .torrent（base64）+ 文件选择 + 年份 + 作品身份 + 字幕策略。
   Future<shelf.Response> _addDownload(Map<String, dynamic> body) async {
-    final String magnet = (body['magnet'] ?? '').toString().trim();
-    final String title = (body['title'] ?? '').toString().trim();
-    if (magnet.isEmpty || title.isEmpty) throw const FormatException('magnet and title required');
-    final String jobId = await _downloadsHost().addMagnet(
-      magnetUri: magnet,
-      title: title,
-      mediaKind: (body['mediaKind'] ?? 'movie').toString() == 'tv' ? 'tv' : 'movie',
-    );
+    final String jobId = await _downloadsHost().add(HostDownloadAddRequest.fromJson(body));
     return _json(<String, Object?>{'jobId': jobId});
   }
 
@@ -323,6 +515,30 @@ class AdminApi {
     final VideoDownloadSubscriptionRow row =
         await _subscriptionsHost().create(HostSubscriptionCreateRequest.fromJson(body));
     return _json(<String, Object?>{'subscription': videoDownloadSubscriptionToWire(row)});
+  }
+
+  // ── 资源索引器（内置源启停 + Torznab）─────────────────────────────────
+
+  /// `providers` = 运行中 registry 实际可用的 provider id（与订阅能力位同源）；
+  /// 互联 host 没起来时为 null。`applied`：保存会不会立刻作用到正在跑的 host。
+  shelf.Response _resourceIndexers() {
+    final ServerDownloadHost? downloads = ctx.host.downloads;
+    return _json(<String, Object?>{
+      ...resourceIndexerSettingsToJson(ctx.host.prefs),
+      'providers': downloads?.availableResourceProviderIds,
+      'applied': downloads != null,
+    });
+  }
+
+  Future<shelf.Response> _putResourceIndexers(Map<String, dynamic> body) async {
+    // 先整份校验（非法 → FormatException → 400），通过了才落库：不落半截。
+    final ResourceIndexerUpdate update = parseResourceIndexerUpdate(ctx.host.prefs, body);
+    if (!update.isEmpty) {
+      await writeResourceIndexerUpdate(ctx.host.prefs, update);
+      // 对正在跑的 host 立即生效（registry 整套换新；没起来则下次 serve 启动时读到）。
+      await ctx.host.downloads?.reloadResourceIndexers();
+    }
+    return _resourceIndexers();
   }
 
   // ── 模型 ─────────────────────────────────────────────────────────────
@@ -355,6 +571,24 @@ class AdminApi {
       }
     }
     final MangaOcrModelStatus? ocr = await ctx.host.ocrService?.modelStatus();
+    // 每个可点名的模型一行（对端在引擎下拉里选「服务端 · <模型>」，没下好的那个
+    // 会被服务端拒绝，所以这里要能逐个下载）。
+    final List<Map<String, Object?>> ocrModels = <Map<String, Object?>>[];
+    for (final MapEntry<String, MangaOcrService> entry in ctx.host.ocrModelServices.entries) {
+      try {
+        final MangaOcrModelStatus status = await entry.value.modelStatus();
+        ocrModels.add(<String, Object?>{
+          'key': entry.key,
+          'name': _ocrModelName(entry.key),
+          'ready': status.allReady,
+          'obtainedBytes': status.obtainedBytes,
+          'totalBytes': status.totalBytes,
+          'pulling': _pulling.contains('ocr:${entry.key}'),
+        });
+      } catch (e) {
+        ocrModels.add(<String, Object?>{'key': entry.key, 'name': _ocrModelName(entry.key), 'error': '$e'});
+      }
+    }
     _modelsCacheAt = DateTime.now();
     return _json(_modelsCache = <String, Object?>{
       'asr': asrModels,
@@ -367,8 +601,14 @@ class AdminApi {
               'totalBytes': ocr.totalBytes,
               'pulling': _pulling.contains('ocr'),
             },
+      'ocrModels': ocrModels,
     });
   }
+
+  static String _ocrModelName(String key) => switch (key) {
+        'manga_ctc' => '漫画 CTC（快速）',
+        _ => key,
+      };
 
   final Set<String> _pulling = <String>{};
 
@@ -379,9 +619,12 @@ class AdminApi {
     _pulling.add(which);
     Future<void> run() async {
       try {
-        if (which == 'ocr') {
-          final MangaOcrService? ocr = ctx.host.ocrService;
-          if (ocr == null) throw StateError('ocr service unavailable');
+        if (which == 'ocr' || which.startsWith('ocr:')) {
+          // `ocr` = 服务端默认模型（老 WebUI）；`ocr:<key>` = 点名的模型。
+          final MangaOcrService? ocr = which == 'ocr'
+              ? ctx.host.ocrService
+              : ctx.host.ocrModelServices[which.substring(4)];
+          if (ocr == null) throw StateError('ocr service unavailable: $which');
           await for (final MangaOcrDownloadEvent _ in ocr.downloadModels()) {}
         } else {
           final asr.AsrLanguage? language = asr.AsrLanguage.fromTag(which);
@@ -405,6 +648,26 @@ class AdminApi {
     return _json(const <String, Object?>{'started': true, 'pulling': true});
   }
 
+  // ── 互联配置文件寄存 ─────────────────────────────────────────────────
+
+  /// 寄存的配置方案 + 开关状态。`reachable` = 对端此刻能不能用这条端点（开关开着
+  /// 且 host 跑在 TLS 上；端点在明文下一律 403）。
+  Future<shelf.Response> _profiles() async => _json(<String, Object?>{
+        'enabled': ctx.config.profileTransfer,
+        'tls': ctx.config.tls,
+        'reachable': ctx.config.profileTransfer && ctx.config.tls,
+        'profiles': <Map<String, Object?>>[
+          for (final ServerProfileSummary s in await ctx.host.profiles.list()) s.toJson(),
+        ],
+      });
+
+  Future<shelf.Response> _profileAction(String rawId, Future<bool> Function(int id) action) async {
+    final int? id = int.tryParse(rawId);
+    if (id == null) throw FormatException('invalid profile id "$rawId"');
+    if (!await action(id)) return _err(404, 'profile $id not found');
+    return _profiles();
+  }
+
   // ── 设置 ─────────────────────────────────────────────────────────────
 
   shelf.Response _settings() => _json(<String, Object?>{
@@ -415,6 +678,11 @@ class AdminApi {
         'lanRequiresPin': ctx.config.lanRequiresPin,
         'subtitleLanguage': ctx.config.subtitleLanguage,
         'metadataLocale': ctx.config.metadataLocale,
+        'scanPrune': ctx.config.scanPrune,
+        'scanScrape': ctx.config.scanScrape,
+        'profileTransfer': ctx.config.profileTransfer,
+        // 与 qBittorrent 密码同样只报「设过没有」，不回显明文。
+        'tmdbApiKeySet': (ctx.config.tmdbApiKey ?? '').isNotEmpty,
         'ffmpeg': ctx.config.ffmpegPath,
         'ffprobe': ctx.config.ffprobePath,
         'onnxruntimeLibrary': ctx.config.ortLibraryPath,
@@ -431,7 +699,17 @@ class AdminApi {
           'listen': ctx.config.torrentListen,
           'embeddedLibraryFound': locateBundledLibrary(torrentLibraryName()),
         },
-        'restartRequiredKeys': const <String>['port', 'bind', 'tls', 'adminPort', 'qbittorrent', 'torrent', 'onnxruntimeLibrary', 'ffmpeg', 'ffprobe'],
+        // 远程可达三项：保存即生效，不在 restartRequiredKeys 里。
+        'publicUrls': ctx.config.publicUrls,
+        'p2p': ctx.config.p2p,
+        'p2pRelays': ctx.config.p2pRelays,
+        'p2pStatus': ctx.host.p2pStatus(),
+        // AI 提供商（「AI 下视频」助手会话用）：API key 只报「设过没有」；保存即生效。
+        // null = 没配（能力位报 no_provider，不发任何 AI 请求）。
+        'ai': ctx.config.ai?.toAdminJson(),
+        'aiPresets': <String>[for (final AiProviderPreset preset in kAiProviderPresets) preset.id, kAiCustomPresetId],
+        // 刮削协调器按启动时的配置快照构造（下载管线持有它），资料语言与 TMDB key 同重启生效。
+        'restartRequiredKeys': const <String>['port', 'bind', 'tls', 'adminPort', 'qbittorrent', 'torrent', 'onnxruntimeLibrary', 'ffmpeg', 'ffprobe', 'metadataLocale', 'tmdbApiKey'],
       });
 
   Future<shelf.Response> _putSettings(Map<String, dynamic> body) async {
@@ -444,6 +722,22 @@ class AdminApi {
         engine != ServerConfig.torrentEngineQbittorrent) {
       throw FormatException('torrent.engine must be auto / embedded / qbittorrent, got "$engine"');
     }
+    final List<String>? publicUrls = _remoteUrls(body, 'publicUrls');
+    final List<String>? p2pRelays = _remoteUrls(body, 'p2pRelays');
+    final Object? p2pRaw = body['p2p'];
+    if (p2pRaw != null && p2pRaw is! bool) throw const FormatException('p2p must be a boolean');
+    final bool? p2p = p2pRaw as bool?;
+    for (final String key in const <String>['scanPrune', 'scanScrape', 'profileTransfer']) {
+      if (body[key] != null && body[key] is! bool) throw FormatException('$key must be a boolean');
+    }
+    // 只拦「从关到开」：原本就开着（手写 yaml）时照常能保存别的项、也能关掉。
+    if (p2p == true && !ctx.config.p2p && !ctx.host.p2pAvailable) {
+      return _json(<String, Object?>{
+        'error': 'P2P 隧道不可用：没找到 libfushi_p2p（放在 bin/../lib/ 或设 FUSHI_P2P_LIB）',
+        'reason': 'p2p_unavailable',
+      }, status: 409);
+    }
+    final ({ServerAiConfig? ai, bool clear})? ai = _aiFromBody(body['ai'], ctx.config.ai);
     final ServerConfig next = ctx.config.copyWith(
       deviceName: body['deviceName']?.toString(),
       port: body['port'] is num ? (body['port'] as num).toInt() : null,
@@ -463,9 +757,91 @@ class AdminApi {
       torrentEngine: engine,
       torrentLibraryPath: torrent?['library']?.toString(),
       torrentListen: (torrent?['listen'] ?? '').toString().isEmpty ? null : torrent!['listen'].toString(),
+      publicUrls: publicUrls,
+      p2p: p2p,
+      p2pRelays: p2pRelays,
+      scanPrune: body['scanPrune'] as bool?,
+      scanScrape: body['scanScrape'] as bool?,
+      profileTransfer: body['profileTransfer'] as bool?,
+      // 空串 = 不改（与 qBittorrent 密码同口径：表单不回显旧值）。
+      tmdbApiKey: (body['tmdbApiKey'] ?? '').toString().trim().isEmpty ? null : body['tmdbApiKey'].toString().trim(),
+      ai: ai?.ai,
+      clearAi: ai?.clear ?? false,
     );
     await ctx.updateConfig(next);
     return _settings();
+  }
+
+  /// `ai`：缺省 = 不改。`preset` 为空 / null = 关掉（删掉 `ai:` 段）；缺 `preset` 键 =
+  /// 沿用当前预设。`protocol` / `baseUrl` / `model` 空 = 跟随预设；`apiKey` 空 = 不改
+  /// （与 qBittorrent 密码同口径：表单不回显旧值）。配出来不能用（未知预设、地址
+  /// 非法、非 HTTPS 又没放行明文…）整个请求 400，不落半截；只缺 key / 模型的「没配全」
+  /// 照存（能力位报 no_provider），用户可以分两次填。
+  static ({ServerAiConfig? ai, bool clear})? _aiFromBody(Object? raw, ServerAiConfig? current) {
+    if (raw == null) return null;
+    if (raw is! Map) throw const FormatException('ai must be an object');
+    final Map<String, Object?> m = <String, Object?>{for (final MapEntry<Object?, Object?> e in raw.entries) '${e.key}': e.value};
+    String? text(String key) {
+      final Object? v = m[key];
+      if (v != null && v is! String) throw FormatException('ai.$key must be a string');
+      final String t = (v as String? ?? '').trim();
+      return t.isEmpty ? null : t;
+    }
+
+    bool? flag(String key) {
+      final Object? v = m[key];
+      if (v != null && v is! bool) throw FormatException('ai.$key must be a boolean');
+      return v as bool?;
+    }
+
+    final String? preset = m.containsKey('preset') ? text('preset') : current?.preset;
+    if (preset == null) return (ai: null, clear: true);
+    final String? protocolKey = text('protocol');
+    AiWireProtocol? protocol;
+    if (protocolKey != null) {
+      protocol = AiWireProtocol.values.where((AiWireProtocol p) => p.storageKey == protocolKey).firstOrNull;
+      if (protocol == null) throw FormatException('ai.protocol "$protocolKey" is not a known protocol');
+    }
+    final String? effort = text('reasoningEffort');
+    if (effort != null && !AiReasoningEffort.values.any((AiReasoningEffort e) => e.storageKey == effort)) {
+      throw FormatException('ai.reasoningEffort "$effort" is not one of none / low / medium / high');
+    }
+    final ServerAiConfig base = current ?? ServerAiConfig(preset: preset);
+    final ServerAiConfig next = base.copyWith(
+      preset: preset,
+      protocol: protocol,
+      clearProtocol: protocol == null && m.containsKey('protocol'),
+      baseUrl: text('baseUrl'),
+      clearBaseUrl: text('baseUrl') == null && m.containsKey('baseUrl'),
+      model: text('model'),
+      clearModel: text('model') == null && m.containsKey('model'),
+      apiKey: text('apiKey'),
+      reasoningEffort: effort == null ? null : AiReasoningEffort.fromStorageKey(effort),
+      allowInsecureHttp: flag('allowInsecureHttp'),
+      webKnowledge: flag('webKnowledge'),
+    );
+    // 只缺 key / 模型算「没配全」，照存；地址 / 预设层面的错误直接拒。
+    final String? invalid = next.invalidReason();
+    if (invalid != null) throw FormatException('ai: $invalid');
+    return (ai: next, clear: false);
+  }
+
+  /// `publicUrls` / `p2pRelays`：缺省 = 不改；否则必须是字符串数组，逐条去空白、
+  /// 去空行、去重，任一条不合法整个请求 400（不落半截）。
+  static List<String>? _remoteUrls(Map<String, dynamic> body, String key) {
+    final Object? raw = body[key];
+    if (raw == null) return null;
+    if (raw is! List) throw FormatException('$key must be an array of URLs');
+    final List<String> urls = <String>[];
+    for (final Object? item in raw) {
+      if (item is! String) throw FormatException('$key must be an array of URLs');
+      final String url = item.trim();
+      if (url.isEmpty || urls.contains(url)) continue;
+      final String? problem = ServerConfig.remoteUrlProblem(url);
+      if (problem != null) throw FormatException('$key: "$url" $problem');
+      urls.add(url);
+    }
+    return urls;
   }
 
   // ── 上传 ─────────────────────────────────────────────────────────────
@@ -498,5 +874,153 @@ class AdminApi {
     );
     if (r.complete) ctx.log.info('upload complete: $target');
     return _json(<String, Object?>{'received': r.received, 'complete': r.complete});
+  }
+
+  // ── Anki 落地 ─────────────────────────────────────────────────────
+
+  ServerAnkiLanding _ankiLanding() {
+    final ServerAnkiLanding? anki = ctx.host.anki;
+    if (anki == null) throw const FormatException('the interconnect host is not running');
+    return anki;
+  }
+
+  AnkiSyncSession _ankiSession() {
+    final AnkiSyncSession? session = _ankiLanding().session;
+    if (session == null) {
+      throw const FormatException('fushi-anki-sync is not bundled with this server');
+    }
+    return session;
+  }
+
+  Future<shelf.Response> _anki() async {
+    final ServerAnkiLanding anki = _ankiLanding();
+    final AnkiSyncSession? session = anki.session;
+    final AnkiSyncAccount? account = await session?.account();
+    final AnkiSyncState? state = session == null ? null : await session.refresh();
+    final AnkiSettings s = anki.settings;
+    final AnkiNoteType? noteType = s.availableNoteTypes
+        .where((AnkiNoteType t) => t.name == s.selectedNoteTypeName)
+        .firstOrNull;
+    int pending = 0;
+    int failed = 0;
+    for (final PendingMineRow row in await anki.store.all()) {
+      if (row.status == PendingMineStatus.failed) {
+        failed++;
+      } else {
+        pending++;
+      }
+    }
+    final AnkiBoxLandingReport? r = anki.lastReport;
+    return _json(<String, Object?>{
+      'available': anki.available,
+      'account': account == null
+          ? null
+          : <String, Object?>{
+              'server': account.server,
+              'endpoint': account.endpoint,
+              'username': account.username,
+            },
+      'sync': state == null
+          ? null
+          : <String, Object?>{
+              'phase': state.phase.name,
+              'unsynced': state.unsynced,
+              'failing': state.failing,
+              'lastError': state.lastError,
+              'lastSyncAt': state.lastSyncAt,
+              'message': state.message,
+            },
+      'landing': <String, Object?>{
+        'enabled': anki.landingEnabled,
+        'pending': pending,
+        'failed': failed,
+        'lastRunAt': anki.lastRunAt,
+        'lastError': anki.lastError,
+        'lastReport': r == null
+            ? null
+            : <String, Object?>{
+                'received': r.received,
+                'delivered': r.delivered,
+                'failed': r.failed,
+                'waiting': r.waiting,
+              },
+      },
+      'settings': <String, Object?>{
+        'decks': <String>[for (final AnkiDeck d in s.availableDecks) d.name],
+        'noteTypes': <String>[for (final AnkiNoteType t in s.availableNoteTypes) t.name],
+        'deck': s.selectedDeckName,
+        'noteType': s.selectedNoteTypeName,
+        'fields': noteType?.fields ?? const <String>[],
+        'fieldMappings': s.fieldMappings,
+        'tags': s.tags,
+      },
+      'placeholders': AnkiHandlebarOptions.coreOptions,
+    });
+  }
+
+  Future<shelf.Response> _ankiLogin(Map<String, dynamic> body) async {
+    final String server = (body['endpoint'] as String? ?? '').trim();
+    final String username = (body['username'] as String? ?? '').trim();
+    final String password = body['password'] as String? ?? '';
+    if (username.isEmpty || password.isEmpty) {
+      throw const FormatException('username and password are required');
+    }
+    // AnkiWeb 的条款只允许官方客户端；WebUI 先让用户确认风险再带上这一位。
+    if (server.isEmpty && body['acceptAnkiWeb'] != true) {
+      throw const FormatException('confirm the AnkiWeb risk first');
+    }
+    try {
+      await _ankiSession().signIn(
+        endpoint: server.isEmpty ? null : server,
+        username: username,
+        password: password,
+      );
+    } on AnkiSyncHasUnsyncedNotes catch (e) {
+      return _err(409, '${e.count} card(s) have not synced yet; sync them before switching account');
+    }
+    await _ankiLanding().refreshMeta();
+    return _json(const <String, Object?>{'ok': true});
+  }
+
+  Future<shelf.Response> _putAnkiSettings(Map<String, dynamic> body) async {
+    final ServerAnkiLanding anki = _ankiLanding();
+    final AnkiSettings current = anki.settings;
+    AnkiSettings next = current;
+    final Object? deck = body['deck'];
+    if (deck is String) {
+      final AnkiDeck? d = current.availableDecks.where((AnkiDeck x) => x.name == deck).firstOrNull;
+      if (d == null) throw FormatException('unknown deck $deck');
+      next = next.copyWith(selectedDeckId: d.id, selectedDeckName: d.name);
+    }
+    final Object? noteType = body['noteType'];
+    if (noteType is String) {
+      final AnkiNoteType? t =
+          current.availableNoteTypes.where((AnkiNoteType x) => x.name == noteType).firstOrNull;
+      if (t == null) throw FormatException('unknown note type $noteType');
+      next = next.copyWith(
+        selectedNoteTypeId: t.id,
+        selectedNoteTypeName: t.name,
+        // 换了笔记类型：只保留新类型里还有的字段的映射，旧字段名不带过去。
+        fieldMappings: <String, String>{
+          for (final MapEntry<String, String> e in next.fieldMappings.entries)
+            if (t.fields.contains(e.key)) e.key: e.value,
+        },
+      );
+    }
+    final Object? mappings = body['fieldMappings'];
+    if (mappings is Map) {
+      next = next.copyWith(
+        fieldMappings: <String, String>{
+          for (final MapEntry<Object?, Object?> e in mappings.entries)
+            if (e.key is String && e.value is String) e.key! as String: e.value! as String,
+        },
+      );
+    }
+    final Object? tags = body['tags'];
+    if (tags is String) next = next.copyWith(tags: tags);
+    await anki.saveSettings(next);
+    // 刚配好：等着的卡立刻落一轮。
+    unawaited(anki.runNow());
+    return _json(const <String, Object?>{'ok': true});
   }
 }

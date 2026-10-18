@@ -14,3 +14,7 @@
     aos_sfa_.shutdown();
     unity_mono_.shutdown();
     smash_fzmedia_.shutdown();
+    yuris_.shutdown();
+    fvp_.shutdown();
+    kogado_hy_.shutdown();
+    luca_.shutdown();

@@ -35,6 +35,15 @@ Future<void> _pollUntil(
   }
 }
 
+/// libtorrent 出站连接要绑在 listen socket 上：listen 失败的 session 连
+/// connect_peer 都是 `[sock_bind] not supported`，后面只会表现成拿不到元数据。
+Future<void> _expectListening(EmbeddedTorrentSession session) => _pollUntil(
+      () => session.listenPort > 0,
+      timeout: const Duration(seconds: 10),
+      what: 'leecher listen port (a session that is not listening cannot '
+          'connect out, BUG-2023)',
+    );
+
 void main() {
   final String? explicit = _resolveLibPath();
 
@@ -77,6 +86,7 @@ void main() {
           EmbeddedTorrentSession.open(engine, listenInterfaces: '127.0.0.1:0');
       expect(leecher, isNotNull);
       addTearDown(leecher!.close);
+      await _expectListening(leecher);
 
       final Directory dlDir = Directory('${tempDir.path}/dl')..createSync();
       final FtAddResult added = leecher.addMagnet(rig.magnetUri,
@@ -284,8 +294,19 @@ void main() {
       final EmbeddedTorrentSession? leecher =
           EmbeddedTorrentSession.open(engine, listenInterfaces: '127.0.0.1:0');
       addTearDown(leecher!.close);
+      // 没在监听的 session 连不出去：下面「封锁期拿不到元数据」会平白成立，清空
+      // 过滤器后又干等 30s——CI 上那次「metadata after clearing ip_filter」就是
+      // 这个形状（BUG-2023）。先钉死在监听，同类问题再出现时报的是真原因。
+      await _expectListening(leecher);
       // 限速让 1MiB 传输持续若干秒，peer 不会秒完即断——保证下面观察到它。
-      leecher.setRateLimits(downloadBps: 64 * 1024);
+      // 必须连 local peer class 一起限：libtorrent 把 127.0.0.0/8 划进 local
+      // class，全局 download_rate_limit 管不到回环 peer——只设全局时 1MiB 在
+      // 回环上几十 ms 传完、多余连接随即被关，下面 100ms 一次的采样在 Linux CI
+      // 上一次都碰不到做种者（Windows 慢，碰巧落进窗口）。
+      expect(leecher.applyLimits(downloadBps: 64 * 1024, limitLocalPeers: true),
+          isTrue,
+          reason: 'local peer class must be rate-limited for the '
+              'observation window below to exist');
 
       // 先封整个回环段：随后 connect_peer 到做种者应被 ip_filter 拒绝，
       // 30×0.1s 窗口内拿不到元数据（若不生效，1MiB 本地传输早该几百 ms 完成）。

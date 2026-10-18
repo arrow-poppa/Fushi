@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:drift/drift.dart' show Value;
 import 'package:fushi_engine/sync/aggregate_merge_service.dart';
+import 'package:fushi_engine/sync/aggregate_peer_snapshot_cache.dart';
 import 'package:fushi_engine/sync/aggregate_snapshot.dart';
 import 'package:fushi_engine/sync/sync_asset_store.dart';
 import 'package:fushi_engine/sync/sync_channel_scope.dart';
@@ -63,9 +64,29 @@ const String _favoriteSentencesPrefKey = 'favorite_sentences';
 /// snapshot is a transient JSON asset, the local state lives in the existing
 /// statistic tables + favorite_sentences pref.
 class AggregateSyncService {
-  AggregateSyncService(this._db, {this.scope = SyncChannelScope.unscoped});
+  AggregateSyncService(
+    this._db, {
+    this.scope = SyncChannelScope.unscoped,
+    this.localApplyLock,
+    this.peerSnapshotCache,
+  });
 
   final FushiDatabase _db;
+
+  /// 对端快照的本地副本（见 [AggregatePeerSnapshotCache]）。null = 每轮都下载全部
+  /// 对端快照（测试 / 无头服务端，那里没有出站云同步）。
+  final AggregatePeerSnapshotCache? peerSnapshotCache;
+
+  /// 包住「把合并结果写回本地 DB」这一步的窄互斥（BUG-2717）。
+  ///
+  /// 本机同时是互联 host 时，对端 PUT 来的快照经 host 的
+  /// `applyAggregateSnapshot` → [foldIntoLocal] 落进同一批统计 / 收藏表；两边
+  /// 都是「materialize → MAX 折叠 → 绝对值写回」，交错就会让后写者用陈旧的
+  /// 较小值覆盖先写者（丢更新）。app 把 host 侧与这里接到同一把锁上。
+  ///
+  /// 锁只包本地步骤，绝不包网络：拉远端 / 推快照期间不持锁，否则对端写又会被
+  /// 本机慢网络拖住。null（测试 / 无头服务端，那里没有出站同步）= 不加锁。
+  final Future<void> Function(Future<void> Function() body)? localApplyLock;
 
   /// 本次同步跑的是哪条通道（BUG-1580）。「上次推上去的快照哈希」是**相对某一个
   /// 远端**的去重记录：共用一份键时，云通道推完写下的哈希会让互联通道以为对端
@@ -103,14 +124,18 @@ class AggregateSyncService {
     //    skipped (it is a stale echo of our own state; re-folding it is a no-op
     //    anyway, but skipping saves a download).
     AggregateSnapshot merged = localSnapshot;
-    for (final AssetEntry entry in children) {
-      if (entry.isFolder) continue;
-      if (!_isAggregateAsset(entry.name)) continue;
-      if (entry.name == ownAssetName) continue;
-      if (entry.name == ownLegacyAssetName) continue;
+    final List<AssetEntry> peerEntries = <AssetEntry>[
+      for (final AssetEntry entry in children)
+        if (!entry.isFolder &&
+            _isAggregateAsset(entry.name) &&
+            entry.name != ownAssetName &&
+            entry.name != ownLegacyAssetName)
+          entry,
+    ];
+    for (final AssetEntry entry in peerEntries) {
       Object? peerJson;
       try {
-        peerJson = await store.getJsonAsset(entry.id);
+        peerJson = await _readPeerSnapshot(store, entry);
       } catch (_) {
         // A single unreadable peer snapshot must not abort the sweep; skip it.
         continue;
@@ -118,10 +143,14 @@ class AggregateSyncService {
       final AggregateSnapshot peer = AggregateSnapshot.fromJson(peerJson);
       merged = mergeSnapshots(merged, peer);
     }
+    await peerSnapshotCache?.retainOnly(
+      scope.id,
+      <String>{for (final AssetEntry e in peerEntries) e.name},
+    );
 
     // 4) Apply the merged result back locally (MAX / union writes; idempotent).
     if (!identical(merged, localSnapshot)) {
-      await applySnapshotToLocal(merged);
+      await _applyMergedLocally(merged);
     }
 
     // 5) Upload this device's now-merged snapshot so peers converge next sync.
@@ -153,6 +182,19 @@ class AggregateSyncService {
     await store.putJsonAsset(ns, ownAssetName, payload);
     await _db.setPrefTyped<String>(_lastPushedHashKey, hash);
     return true;
+  }
+
+  /// 一份对端快照的内容：版本标记没变就读本地副本，否则下载并更新副本。
+  Future<Object?> _readPeerSnapshot(
+    SyncAssetStore store,
+    AssetEntry entry,
+  ) async {
+    final AggregatePeerSnapshotCache? cache = peerSnapshotCache;
+    final Object? cached = await cache?.read(scope.id, entry);
+    if (cached != null) return cached;
+    final Object? json = await store.getJsonAsset(entry.id);
+    await cache?.write(scope.id, entry, json);
+    return json;
   }
 
   /// 本端上次成功上传的聚合快照内容哈希（设备本地，纯缓存：丢了最多多传一次）。
@@ -243,7 +285,7 @@ class AggregateSyncService {
 
     // 4) Apply the merged result back locally (MAX / union writes; idempotent).
     if (!identical(merged, localSnapshot)) {
-      await applySnapshotToLocal(merged);
+      await _applyMergedLocally(merged);
     }
 
     // 5) Push the merged snapshot back so the host converges to the union.
@@ -252,7 +294,39 @@ class AggregateSyncService {
     //    Nothing to share on an all-empty merge: skip the write.
     final AggregateSnapshot outgoing = await filterTombstoned(merged);
     if (outgoing.isEmpty) return;
-    await pushMerged(outgoing.toJson());
+    // host 刚给的就是这份内容时 PUT 只是让 host 把同一批数据再折一遍（并集 / MAX，
+    // 无变化）。比较不计列表顺序：两端数据库查出来的行序天然不同，而折叠结果与
+    // 顺序无关（收藏句合并后按时间重排，其余都是按键并集）。
+    final Map<String, Object?> outgoingJson = outgoing.toJson();
+    if (unorderedSnapshotFingerprint(outgoingJson) ==
+        unorderedSnapshotFingerprint(remote.toJson())) {
+      return;
+    }
+    await pushMerged(outgoingJson);
+  }
+
+  /// 与列表顺序无关的快照内容指纹：顶层每个列表的元素各自编码后排序再拼接。
+  /// 两份快照指纹相同 ⇔ 每个家族的记录集合（含重复次数）逐条相同。
+  @visibleForTesting
+  static String unorderedSnapshotFingerprint(Map<String, Object?> json) {
+    final List<String> keys = json.keys.toList()..sort();
+    final StringBuffer buffer = StringBuffer();
+    for (final String key in keys) {
+      final Object? value = json[key];
+      buffer
+        ..write(jsonEncode(key))
+        ..write(':');
+      if (value is List) {
+        final List<String> items = <String>[
+          for (final Object? item in value) jsonEncode(item),
+        ]..sort();
+        buffer.write(jsonEncode(items));
+      } else {
+        buffer.write(jsonEncode(value));
+      }
+      buffer.write(';');
+    }
+    return _stableHash(buffer.toString());
   }
 
   /// 按本机删除墓碑裁剪一份**将要上行**的快照，规则与 [applySnapshotToLocal] 写回
@@ -285,10 +359,11 @@ class AggregateSyncService {
     // v92：本地段墓碑压制的段（`startAt < deletedAt`，BUG-2214）不上行（merged 是
     // local ∪ peer，peer 那份仍带本机已删媒体的旧段——与 BUG-1572 的 legacy 同病）；
     // 墓碑本身透传，删除才能传到对端。
+    final Map<int, String> profileNameById = await _profileNameById();
     final Map<String, int> segmentTombstoned = <String, int>{
       for (final StudySegmentTombstoneRow t
           in await _db.getStudySegmentTombstones())
-        '${t.mediaKind}|${t.mediaKey}': t.deletedAt,
+        _tombstoneRecordOf(t, profileNameById).key: t.deletedAt,
     };
     if (statTombstoned.isEmpty &&
         favWordTombstoned.isEmpty &&
@@ -803,24 +878,23 @@ class AggregateSyncService {
     final List<FavoriteSentence> favSentences = await _readFavoriteSentences();
     // v92 wire v2：事实段与按身份墓碑全量上行（uid 幂等，对端按 LWW 并集）。
     // BUG-2221：游戏段 / 碑不出本机（[AggregateMergeService.isStudyKindSyncable]）。
-    final List<StudySegmentRow> segments = await _db.getStudySegments();
+    // v105：全部 Profile 的段都上行，每条带自己 Profile 的**名字**。
+    final List<StudySegmentRow> segments =
+        await _db.getStudySegments(allProfiles: true);
     final List<StudySegmentTombstoneRow> segmentTombstones =
         await _db.getStudySegmentTombstones();
+    final Map<int, String> profileNameById = await _profileNameById();
 
     return AggregateSnapshot(
       studySegments: <StudySegmentRecord>[
         for (final StudySegmentRow s in segments)
           if (AggregateMergeService.isStudyKindSyncable(s.mediaKind))
-            _segmentRecordOf(s),
+            _segmentRecordOf(s, profileNameById),
       ],
       studySegmentTombstones: <StudyTombstoneRecord>[
         for (final StudySegmentTombstoneRow t in segmentTombstones)
           if (AggregateMergeService.isStudyKindSyncable(t.mediaKind))
-            StudyTombstoneRecord(
-              mediaKind: t.mediaKind,
-              mediaKey: t.mediaKey,
-              deletedAt: t.deletedAt,
-            ),
+            _tombstoneRecordOf(t, profileNameById),
       ],
       readingStats: <ReadingStatRecord>[
         for (final ReadingStatisticRow r in reading)
@@ -876,6 +950,7 @@ class AggregateSyncService {
             sourceType: r.sourceType,
             dateKey: r.dateKey,
             createdAt: r.createdAt,
+            sentence: r.sentence,
           ),
       ],
       favoriteSentences: favSentences,
@@ -896,7 +971,20 @@ class AggregateSyncService {
     );
   }
 
-  static StudySegmentRecord _segmentRecordOf(StudySegmentRow s) =>
+  /// v105：本机 `profiles.id` → 名字（wire 只传名字）。
+  Future<Map<int, String>> _profileNameById() async => <int, String>{
+        for (final ProfileRow p in await _db.getAllProfiles()) p.id: p.name,
+      };
+
+  /// v105：名字 → 本机 `profiles.id`（落地时反解）。
+  Future<Map<String, int>> _profileIdByName() async => <String, int>{
+        for (final ProfileRow p in await _db.getAllProfiles()) p.name: p.id,
+      };
+
+  static StudySegmentRecord _segmentRecordOf(
+    StudySegmentRow s,
+    Map<int, String> profileNameById,
+  ) =>
       StudySegmentRecord(
         uid: s.uid,
         deviceId: s.deviceId,
@@ -912,9 +1000,24 @@ class AggregateSyncService {
         chars: s.chars,
         pages: s.pages,
         updatedAt: s.updatedAt,
+        profileName: profileNameById[s.profileId] ?? '',
       );
 
-  static StudySegmentsCompanion _segmentCompanionOf(StudySegmentRecord r) =>
+  static StudyTombstoneRecord _tombstoneRecordOf(
+    StudySegmentTombstoneRow t,
+    Map<int, String> profileNameById,
+  ) =>
+      StudyTombstoneRecord(
+        mediaKind: t.mediaKind,
+        mediaKey: t.mediaKey,
+        deletedAt: t.deletedAt,
+        profileName: profileNameById[t.profileId] ?? '',
+      );
+
+  static StudySegmentsCompanion _segmentCompanionOf(
+    StudySegmentRecord r, {
+    required int profileId,
+  }) =>
       StudySegmentsCompanion.insert(
         uid: r.uid,
         deviceId: r.deviceId,
@@ -930,6 +1033,7 @@ class AggregateSyncService {
         chars: Value(r.chars),
         pages: Value(r.pages),
         updatedAt: r.updatedAt,
+        profileId: Value(profileId),
       );
 
   /// v92 wire v2 落地：**先落墓碑**（碑戳只增不减，并删本地 `startAt < deletedAt`
@@ -937,19 +1041,39 @@ class AggregateSyncService {
   /// 墓碑门（`upsertStudySegmentsIfNewer` 跳过 `startAt < deletedAt`）看不到新碑。
   /// merge 侧已仲裁掉被压制的段与游戏段（BUG-2221：旧端快照直落时这里再丢一次）。
   /// 幂等：同一快照重放，墓碑不变、段同值不覆盖。
+  ///
+  /// v105：对端 Profile **名字** → 本机同名 Profile id。段：名字为空（旧端）或本机
+  /// 没有同名 Profile → 落进当前激活 Profile（数据不丢，只是归属退化）。碑：名字
+  /// 为空 → 当前激活 Profile（旧端整机就是一个 Profile，语义一致）；名字对不上 →
+  /// **丢弃**（压错 Profile = 删别人的历史）。已有段的归属不随 LWW 改（DAO 保证）。
   Future<void> _applyStudySegments(AggregateSnapshot snapshot) async {
+    final Map<String, int> profileIdByName = await _profileIdByName();
+    final int activeProfileId = await _db.resolveActiveProfileId();
+    int? resolve(String profileName, {required bool fallbackToActive}) {
+      if (profileName.isEmpty) return activeProfileId;
+      final int? id = profileIdByName[profileName];
+      if (id != null) return id;
+      return fallbackToActive ? activeProfileId : null;
+    }
+
     for (final StudyTombstoneRecord t in snapshot.studySegmentTombstones) {
       if (!AggregateMergeService.isStudyKindSyncable(t.mediaKind)) continue;
+      final int? profileId = resolve(t.profileName, fallbackToActive: false);
+      if (profileId == null) continue;
       await _db.applyStudySegmentTombstone(
         mediaKind: t.mediaKind,
         mediaKey: t.mediaKey,
         deletedAt: t.deletedAt,
+        profileId: profileId,
       );
     }
     final List<StudySegmentsCompanion> rows = <StudySegmentsCompanion>[
       for (final StudySegmentRecord r in snapshot.studySegments)
         if (AggregateMergeService.isStudyKindSyncable(r.mediaKind))
-          _segmentCompanionOf(r),
+          _segmentCompanionOf(
+            r,
+            profileId: resolve(r.profileName, fallbackToActive: true)!,
+          ),
     ];
     if (rows.isEmpty) return;
     await _db.upsertStudySegmentsIfNewer(rows);
@@ -1147,9 +1271,27 @@ class AggregateSyncService {
         glossary: r.glossary,
         sourceType: r.sourceType,
         dateKey: r.dateKey,
+        sentence: r.sentence,
       );
     }
     await _writeFavoriteSentences(snapshot.favoriteSentences);
+  }
+
+  /// 第 4 步落库（BUG-2717）：在 [localApplyLock] 内**重新** materialize 本地再折叠
+  /// [merged]，而不是直接写回 [merged]。
+  ///
+  /// [merged] 基于第 1 步的本地快照，中间隔着一次网络往返；这段时间里互联对端可能
+  /// 已经把更大的值折进了本地（host 的 [foldIntoLocal]）。直接写回会用陈旧值覆盖它。
+  /// 锁内重读再 MAX 折叠（与 host 侧同一个 [foldIntoLocal]）让结果只增不减，且合并
+  /// 满足交换 / 幂等，本地没被改过时结果与直接写回 [merged] 逐字段相同。
+  Future<void> _applyMergedLocally(AggregateSnapshot merged) async {
+    final Future<void> Function(Future<void> Function() body)? lock =
+        localApplyLock;
+    if (lock == null) {
+      await foldIntoLocal(merged);
+      return;
+    }
+    await lock(() => foldIntoLocal(merged));
   }
 
   /// Folds an INCOMING peer snapshot into the local DB safely: materialises the

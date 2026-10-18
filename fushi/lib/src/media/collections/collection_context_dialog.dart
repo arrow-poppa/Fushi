@@ -1,12 +1,14 @@
-import 'package:flutter/material.dart';
+import 'package:fushi/src/media/tags/tag_picker_sheet.dart';
+import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/sync/deletion_disclosure.dart';
 import 'package:fushi_engine/media/collections/collection_asset_reclaim.dart';
+import 'package:fushi/src/media/collections/collection_owned_subscriptions.dart';
 import 'package:fushi/src/media/collections/collection_one_key_sort.dart';
 import 'package:fushi/src/pages/implementations/collection_name_dialog.dart'
     show showCollectionNameDialog;
 import 'package:fushi/src/pages/implementations/media_item_dialog_page.dart';
-import 'package:fushi/src/pages/implementations/tag_picker_page.dart';
+import 'package:fushi/src/pages/implementations/media_item_stats_dialog.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart';
 
@@ -31,6 +33,9 @@ import 'package:fushi_core/fushi_core.dart';
 /// 「同时删除本地文件」勾选行，其状态经 `deleteLocalFiles` 参数交给
 /// [onDeleteMembersMedia]——库里的条目删不删、磁盘上的原件删不删是两个决定，
 /// 调用方按媒体域决定是否提供后者（视频合集提供；书 / 游戏合集传 null）。
+/// [deleteMembersStatisticsSubtitle] 同款：非 null 时再多一行「同时删除统计数据」
+/// （默认不勾、不被记忆），状态经 `deleteStatistics` 参数交给
+/// [onDeleteMembersMedia]。
 /// [extraListActions] 由调用方注入媒体特有行（视频页：在线匹配封面 / 为合集
 /// 获取字幕），本对话框统一负责「先关自身再执行」，回调里不要再 pop。
 /// 排序两项内建（[applyCollectionOneKeySort]，与详情页 AppBar 排序菜单同源），
@@ -44,13 +49,29 @@ Future<void> showCollectionContextDialog({
   Future<void> Function(
     List<MediaCollectionItemRow> members,
     bool deleteLocalFiles,
+    bool deleteStatistics,
   )? onDeleteMembersMedia,
   String? deleteMembersCheckboxLabel,
   String? deleteMembersLocalFilesSubtitle,
+  String? deleteMembersStatisticsSubtitle,
   DeletionDisclosure? deleteMembersDisclosure,
   List<DialogListAction> extraListActions = const <DialogListAction>[],
   Widget? cover,
+  ImageProvider? coverImage,
 }) async {
+  // [coverImage]：合集封面图源（自设封面 / 首个有封面的成员）。只给图源时由这里
+  // 画前景（contain，整幅可见），同时作为封面块两侧的模糊垫底
+  // （[MediaItemDialogFrame.coverBackdrop]）——此前合集菜单根本没有封面，一眼
+  // 认不出是哪个合集（2026-10-04 用户截图）。
+  final ImageProvider? coverSource = coverImage;
+  final Widget? effectiveCover = cover ??
+      (coverSource == null
+          ? null
+          : Image(
+              image: coverSource,
+              fit: BoxFit.contain,
+              errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+            ));
   await showAppDialog<void>(
     context: context,
     builder: (BuildContext dialogContext) {
@@ -60,7 +81,8 @@ Future<void> showCollectionContextDialog({
       }
 
       return MediaItemDialogFrame(
-        cover: cover,
+        cover: effectiveCover,
+        coverBackdrop: coverSource,
         title: collection.name,
         // 顶部主按钮 = 打开详情（与行头/卡片单击同路径，键盘/手柄用户可达）。
         launchLabel: t.collection_view_all,
@@ -86,6 +108,18 @@ Future<void> showCollectionContextDialog({
                 context: context,
                 collection: collection,
                 onChanged: onChanged,
+              ),
+            ),
+          ),
+          // 右键 / 长按反查整个合集（全部成员身份之并）的学习统计。
+          DialogListAction(
+            label: t.media_stats_action,
+            icon: Icons.insights_outlined,
+            onPressed: () => closeThen(
+              () => _openCollectionStatistics(
+                context: context,
+                db: db,
+                collection: collection,
               ),
             ),
           ),
@@ -136,6 +170,8 @@ Future<void> showCollectionContextDialog({
                 deleteMembersCheckboxLabel: deleteMembersCheckboxLabel,
                 deleteMembersLocalFilesSubtitle:
                     deleteMembersLocalFilesSubtitle,
+                deleteMembersStatisticsSubtitle:
+                    deleteMembersStatisticsSubtitle,
                 deleteMembersDisclosure: deleteMembersDisclosure,
               ),
             ),
@@ -172,10 +208,9 @@ Future<void> _editCollectionTags({
   required MediaCollectionRow collection,
   required VoidCallback onChanged,
 }) async {
-  await Navigator.of(context).push<void>(
-    MaterialPageRoute<void>(
-      builder: (_) => TagPickerPage(collectionId: collection.id),
-    ),
+  await showTagPicker(
+    context,
+    targets: TagTargets(collectionIds: <int>[collection.id]),
   );
   onChanged();
 }
@@ -209,13 +244,17 @@ Future<void> _deleteCollection({
   required Future<void> Function(
     List<MediaCollectionItemRow> members,
     bool deleteLocalFiles,
+    bool deleteStatistics,
   )? onDeleteMembersMedia,
   required String? deleteMembersCheckboxLabel,
   required String? deleteMembersLocalFilesSubtitle,
+  required String? deleteMembersStatisticsSubtitle,
   required DeletionDisclosure? deleteMembersDisclosure,
 }) async {
   final List<MediaCollectionItemRow> members =
       await db.getCollectionItems(collection.id);
+  final CollectionOwnedSubscriptions subscriptions =
+      await CollectionOwnedSubscriptions.load(db, <int>[collection.id]);
   if (!context.mounted) return;
   final bool canDeleteMembers =
       onDeleteMembersMedia != null && members.isNotEmpty;
@@ -229,16 +268,41 @@ Future<void> _deleteCollection({
       checkboxLabel: canDeleteMembers ? deleteMembersCheckboxLabel : null,
       localFilesSubtitle:
           canDeleteMembers ? deleteMembersLocalFilesSubtitle : null,
+      statisticsSubtitle:
+          canDeleteMembers ? deleteMembersStatisticsSubtitle : null,
       checkedDisclosure: canDeleteMembers ? deleteMembersDisclosure : null,
+      deleteSubscriptionsLabel: subscriptions.deleteLabel,
     ),
   );
   if (result == null || !context.mounted) return;
+  // 订阅先于合集删：合集一没，后台下一轮轮询就可能按身份把它重建出来。
+  if (result.deleteSubscriptions) await subscriptions.delete(db);
   if (result.checked && onDeleteMembersMedia != null) {
     await onDeleteMembersMedia(
       List<MediaCollectionItemRow>.of(members),
       result.deleteLocalFiles,
+      result.deleteStatistics,
     );
   }
   await deleteMediaCollectionWithAssets(db, collection.id);
   onChanged();
+}
+
+/// 合集「查看统计」：成员身份现取（与删除 / 排序同一张成员表），合并成一个统计目标。
+Future<void> _openCollectionStatistics({
+  required BuildContext context,
+  required FushiDatabase db,
+  required MediaCollectionRow collection,
+}) async {
+  final List<MediaCollectionItemRow> members =
+      await db.getCollectionItems(collection.id);
+  if (!context.mounted) return;
+  await showMediaItemStatsDialog(
+    context,
+    database: db,
+    target: MediaItemStatsTarget.collection(
+      members: members,
+      title: collection.name,
+    ),
+  );
 }

@@ -1,5 +1,5 @@
 import 'package:drift/native.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/video/video_online_services_banner.dart';
 import 'package:fushi/src/media/video/video_online_services_preferences.dart';
@@ -9,6 +9,7 @@ import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/profile/profile_keys.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart';
+import '../../helpers/glass_unwrap.dart';
 
 void main() {
   late FushiDatabase db;
@@ -59,6 +60,26 @@ void main() {
     );
     await preferences.setPref(kVideoAniDbHashEnabledPref, false);
     expect(shouldShowVideoOnlineServicesReminder(preferences), isTrue);
+  });
+
+  // BUG-2586：AniDB 就绪与设置页状态、协调器同一判据——自定义客户端名不合规
+  // 时登录根本发不出去，不能只看账号密码填没填。
+  test('reminder stays while a custom AniDB client identity is unusable',
+      () async {
+    await preferences.setPref(kVideoAniDbHashEnabledPref, true);
+    await preferences.setPref(kVideoAniDbUsernamePref, 'tester');
+    await preferences.setPref(kVideoAniDbPasswordPref, 'password');
+    await preferences.setJimakuApiKey('jimaku-key');
+    await preferences.setVideoSubtitleOpenSubtitlesConfig(
+      OpenSubtitlesConfig(apiKey: 'subtitle-key'),
+    );
+    expect(shouldShowVideoOnlineServicesReminder(preferences), isFalse,
+        reason: '客户端留空走内置 fushiplayer，账号齐即就绪');
+    await preferences.setPref(kVideoMetadataAniDbClientNamePref, 'customapp');
+    expect(shouldShowVideoOnlineServicesReminder(preferences), isTrue,
+        reason: '自定义客户端没填版本，UDP 配置不可用');
+    await preferences.setPref(kVideoMetadataAniDbClientVersionPref, '2');
+    expect(shouldShowVideoOnlineServicesReminder(preferences), isFalse);
   });
 
   test('permanent dismissal survives reload and excludes profile snapshots',
@@ -113,10 +134,10 @@ void main() {
     expect(tester.takeException(), isNull);
     await tester.tap(find.text(t.video_online_services_setup_register));
     expect(registrations, 1);
-    final TextButton dismiss = tester.widget<TextButton>(find.ancestor(
+    final TextButton dismiss = tester.widget<TextButton>(glassUnwrap<TextButton>(find.ancestor(
       of: find.text(t.video_online_services_setup_dismiss),
       matching: find.byType(TextButton),
-    ));
+    )));
     await tester.runAsync(() async {
       await (dismiss.onPressed! as Future<void> Function())();
     });
@@ -168,10 +189,10 @@ void main() {
         ),
       ),
     ));
-    final FilledButton settings = tester.widget<FilledButton>(find.ancestor(
+    final FilledButton settings = tester.widget<FilledButton>(glassUnwrap<FilledButton>(find.ancestor(
       of: find.text(t.video_online_services_setup_settings),
       matching: find.byType(FilledButton),
-    ));
+    )));
     await tester.runAsync(() async {
       await (settings.onPressed! as Future<void> Function())();
     });

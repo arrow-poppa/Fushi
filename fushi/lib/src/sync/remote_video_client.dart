@@ -27,13 +27,35 @@ abstract class RemoteVideoSource implements RemoteLibrarySource {
 
   /// 把 [id] 对应的视频整片下载到 [dest]。
   ///
-  /// 续传口径按源写实：互联走 host live 下载引擎（Range + `.part`，中断可续）；
-  /// 云盘是整文件重下，失败清残片、无断点续传。
+  /// 续传口径按源写实：互联走 host live 下载引擎（Range + `.part` + `If-Range`
+  /// 验证器，中断可续、host 文件换了就从头下）；云盘是整文件重下，失败清残片、
+  /// 无断点续传。
+  ///
+  /// [onBytes] 报字节级进度 `(已收, 总量)`；续传时 `已收` 从断点偏移起算，总量
+  /// 未知为 null。能廉价拿到字节数的源才报。
+  ///
+  /// [cancelSignal] 完成即请求取消：支持取消的源中止传输并抛
+  /// [RemoteDownloadCancelled]（互联保留 `.part` 供下次续传）；不支持的源忽略。
   Future<void> downloadRemoteVideo(
     String id,
     File dest, {
     void Function(double progress)? onProgress,
+    void Function(int received, int? total)? onBytes,
+    Future<void>? cancelSignal,
   });
+}
+
+/// [RemoteVideoSource.downloadRemoteVideo] 被 `cancelSignal` 取消。
+///
+/// 与失败区分开：调用方据此不报错、不清断点（互联源的 `.part` 仍在，下次同一
+/// 目标路径的下载从断点续上）。
+class RemoteDownloadCancelled implements Exception {
+  const RemoteDownloadCancelled([this.message = 'remote download cancelled']);
+
+  final String message;
+
+  @override
+  String toString() => 'RemoteDownloadCancelled: $message';
 }
 
 /// 具备实时流播 / 外挂字幕 / 跨端断点的远端视频源——只有互联 host 的 live 库有这些
@@ -72,6 +94,100 @@ abstract class RemoteVideoClient extends RemoteVideoSource {
   });
 }
 
+/// 「流请求要带 HTTP 头」的可选能力（防盗链 Referer / User-Agent / Cookie 等）。
+///
+/// 播放页在 load 时把它下发到 libmpv `http-header-fields`（同时给 HLS 画质探测与
+/// 同站字幕下载用）。此前只有粘贴 URL 流（`UrlStreamVideoClient`）有这个需求，
+/// 播放页写死了 `is UrlStreamVideoClient`；视频源扩展（Aniyomi）解析出的流几乎
+/// 全部要带站点 Referer，按能力判而不是按具体类判，两者共用同一条下发路径。
+///
+/// 值以**当前已解析的流**为准：扩展的每一集、甚至每条画质候选的头都可能不同，
+/// 实现应在 [RemoteVideoClient.remoteVideoStreamUrls] 返回时把该集的头记下来，
+/// 播放页紧接着的 load 读到的就是这一份。
+abstract interface class RemoteVideoStreamHeaders {
+  Map<String, String> get httpHeaderFields;
+}
+
+/// 「host 能回传图形字幕整轨」的可选能力（互联 host：它有原文件）。
+///
+/// 图形字幕（PGS / VobSub / DVB）由 libmpv 自绘，播放页要每句的起止才能制卡锚句；
+/// host 在本机把那一条字幕轨原样抽出来（几百 KB）回传，client 不为字幕把整片再读一遍。
+/// 媒体服务器 / URL 流没有这种端点，不实现本能力（它们的整轨抽取走流地址）。
+abstract interface class RemoteVideoGraphicSubtitleTrackFetch {
+  /// 把视频 [id] 第 [embeddedStreamIndex] 条字幕轨（host 的
+  /// [RemoteVideoEmbeddedSubtitleTrack.streamIndex]）的整轨载荷下载到 [dest]。host 不支持
+  /// （老 host 404 / 没接入抽取 501 / 编码不支持 415）或抽取失败时抛错。
+  Future<void> getRemoteVideoGraphicSubtitleTrack(
+    String id,
+    File dest, {
+    required int embeddedStreamIndex,
+    int episodeIndex = 0,
+  });
+
+  /// 同一条轨的轨头（JSON：编码 + 载荷里没有的 extradata，如 VobSub 调色板 / DVB
+  /// 页号）下载到 [dest]。这条轨没有轨头（PGS）或 host 不支持时抛错——调用方据此
+  /// 只靠载荷本身解（PGS 段流自带全部信息）。
+  Future<void> getRemoteVideoGraphicSubtitleTrackHeader(
+    String id,
+    File dest, {
+    required int embeddedStreamIndex,
+    int episodeIndex = 0,
+  });
+}
+
+/// 「知道某一集的集号」的可选能力（BUG-2626）。
+///
+/// [RemoteVideoInfo] 只有 `title` 与合集内的 `sortIndex`：前者是分集标题（在线视频源
+/// 扩展给的常是 `Episode 1`），后者是**播放序**，含特别篇/OVA 或不从第 1 集开始的季度
+/// 时与集号并不相等。而字幕检索要的是集号本身。
+///
+/// 只有真正持有集号的来源才实现（在线视频源扩展的 `MihonEpisode.number`）；拿不到
+/// 集号的来源不实现，调用方回落到按文件名/标题解析，行为与本能力引入前一致。
+abstract interface class RemoteVideoEpisodeNumber {
+  /// 远端视频 [id] 的集号；不知道则 null（调用方据此回落，不要返回 0 或序号冒充）。
+  int? remoteVideoEpisodeNumber(String id);
+}
+
+/// 远端视频所属作品的**身份**（字幕检索用，BUG-3199）。
+class RemoteVideoTitleIdentity {
+  const RemoteVideoTitleIdentity({
+    this.originalTitle,
+    this.title,
+    this.externalIds = const <String, String>{},
+    this.isMovie = false,
+  });
+
+  /// 作品原名（日文原名等）。
+  final String? originalTitle;
+
+  /// 服务器上的作品显示名（常是用户语言的译名）。
+  final String? title;
+
+  /// `provider → id`，provider 名小写（`anilist` / `tmdb` / `imdb` / `anidb` …），
+  /// 与 `video_metadata_provider_identities.provider` 同口径。
+  final Map<String, String> externalIds;
+
+  final bool isMovie;
+}
+
+/// 「知道远端视频是哪部作品」的可选能力（BUG-3199）：媒体服务器的条目自带
+/// `OriginalTitle` 与 `ProviderIds`，而界面上的标题是服务器的显示名（中文用户的库里
+/// 就是中文译名），拿它去日语字幕站搜必然空手。字幕检索先按 ID / 原名搜，没有时
+/// 才回落显示名。
+abstract interface class RemoteVideoTitleIdentityFetch {
+  /// 远端视频 [id] 所属作品的身份；拿不到返回 null（调用方回落显示名）。
+  Future<RemoteVideoTitleIdentity?> remoteVideoTitleIdentity(String id);
+}
+
+/// 「远端合集就是一部作品」的标记能力（BUG-2626 审查补）。
+///
+/// 字幕检索预填番名时，只有合集语义 = 作品的来源才能拿合集名当番名：在线视频源
+/// 扩展的合集是 `anime.title`、媒体服务器的合集是 `seriesName`。互联 host 的
+/// `RemoteCollectionMembership.collectionName` 是 host 库里的 `MediaCollectionRow.name`
+/// ——用户自建的「待看」「2024 春番」也在其中，拿它当番名搜必然空手；host 那边
+/// `VideoBook.title` 本身就是番名，仍走标题路径。不实现本标记 = 合集名不参与选词。
+abstract interface class RemoteVideoCollectionIsWork {}
+
 /// 「播放真正结束」的可选能力。
 ///
 /// 只有 Jellyfin/Emby 这类有会话生命周期端点的来源需要它；周期断点上报仍由
@@ -80,6 +196,113 @@ abstract class RemoteVideoClient extends RemoteVideoSource {
 abstract interface class RemoteVideoPlaybackStop {
   /// 上报远端视频 [id] 已停止，位置单位为毫秒。
   Future<void> stopRemoteVideoPlayback(String id, int positionMs);
+}
+
+/// 「播放会话生命周期」的可选能力——[RemoteVideoPlaybackStop] 的超集。
+///
+/// Jellyfin / Emby 的会话协议是三段式：`/Sessions/Playing`（开始）→
+/// `/Sessions/Playing/Progress`（心跳，含暂停 / 继续事件）→ `/Sessions/Playing/Stopped`。
+/// 此前本仓只发后两段：服务器从没见过 Start，仪表盘「正在播放」看不到本客户端、
+/// 暂停对服务器不可见（心跳恒 `IsPaused=false`）、服务端也无法把 Progress / Stopped
+/// 关联到某一次播放。周期心跳仍走 [RemoteVideoClient.putRemoteVideoPosition]；
+/// 暂停 / 继续走 [setRemoteVideoPlaybackPaused]（即时，不受心跳节流）。
+abstract interface class RemoteVideoPlaybackSession
+    implements RemoteVideoPlaybackStop {
+  /// 本次播放真正起播时调（流已打开）。位置单位毫秒。
+  Future<void> startRemoteVideoPlayback(String id, int positionMs);
+
+  /// 暂停 / 继续即时上报。
+  Future<void> setRemoteVideoPlaybackPaused(
+    String id,
+    int positionMs, {
+    required bool paused,
+  });
+}
+
+/// [RemoteVideoPlaybackSession] 实现共用的「按条目的本地暂停意图」。
+///
+/// 周期心跳（[RemoteVideoClient.putRemoteVideoPosition]）不知道播放器此刻是否暂停，
+/// 而播放页的断点落库是异步的：后台先暂停、延迟落库后才发的那条心跳若恒报「播放中」，
+/// 服务器会把刚暂停的条目重新标成播放中（BUG：Jellyfin #2107 / Plex 同根）。心跳的
+/// 播放态因此以这里记的意图为准。
+///
+/// 契约（各实现必须同样遵守，否则时序窗口重新打开）：
+/// - [record] 在暂停 / 继续请求发出**之前**同步调用：请求在途或失败都不改变本地意图，
+///   后一条心跳负责把失败的暂停补上。
+/// - [reset] 在起播的第一个 await **之前**调用：新一次播放从「播放中」开始。
+/// - 停止**不**清除意图：路由销毁时可能在停止上报之后再落一次断点，那不是继续播放。
+/// - 意图属于条目：别的条目不受影响。
+final class RemotePlaybackPauseIntent {
+  final Set<String> _pausedIds = <String>{};
+
+  /// 记录 [id] 的暂停 / 继续意图。
+  void record(String id, {required bool paused}) {
+    if (paused) {
+      _pausedIds.add(id);
+    } else {
+      _pausedIds.remove(id);
+    }
+  }
+
+  /// 新一次播放起播：清除 [id] 的暂停意图。
+  void reset(String id) => _pausedIds.remove(id);
+
+  /// 心跳读：[id] 最近一次本地意图是否为暂停。
+  bool isPaused(String id) => _pausedIds.contains(id);
+}
+
+/// 媒体服务器串流画质档（成熟客户端的「画质」菜单：自动 / 1080p 20 Mbps / …）。
+///
+/// 选档 = 向服务器声明码率上限 + 宽度上限：原文件码率不超上限就仍直播放，超了由
+/// 服务器转码到该档。null 上限 = 自动（服务器允许时直播放原文件）。
+class MediaServerQualityPreset {
+  const MediaServerQualityPreset({
+    required this.label,
+    required this.maxBitrate,
+    required this.maxWidth,
+  });
+
+  /// 菜单文案（`1080p · 20 Mbps` 形式，纯数字与单位，不进 i18n）。
+  final String label;
+
+  /// 码率上限（bps）。
+  final int maxBitrate;
+
+  /// 宽度上限（像素），转码时按它缩。
+  final int maxWidth;
+}
+
+/// 「串流画质档」的可选能力：只有 Jellyfin / Emby 这类能按 DeviceProfile 协商
+/// 直播放 / 转码的来源有它。改档后调用方需重新取流（[RemoteVideoClient.remoteVideoStreamUrls]）。
+abstract interface class RemoteVideoQualityLimit {
+  List<MediaServerQualityPreset> get qualityPresets;
+
+  /// 当前档在 [qualityPresets] 里的下标；-1 = 自动。
+  int get qualityPresetIndex;
+  set qualityPresetIndex(int index);
+}
+
+/// 同一集的一条可播候选（视频源扩展的「线路 / 画质」：一集常给多家 hoster × 多档
+/// 画质，扩展自己排好序）。
+class RemoteVideoStreamVariant {
+  const RemoteVideoStreamVariant({required this.label});
+
+  /// 菜单文案：扩展给的画质 / 线路名（`1080p` / `Vidstream · 720p`），不进 i18n。
+  final String label;
+}
+
+/// 「同一集多条可播候选」的可选能力（视频源扩展）。
+///
+/// 起播**不问用户**：默认那条由实现自己定（扩展标的 `preferred` / 排序第一条），
+/// 播放页的画质菜单再列出 [streamVariants] 让用户换线路。改选后调用方须重新取流
+/// （[RemoteVideoClient.remoteVideoStreamUrls]），实现要把选择记到下一次取流；列表
+/// 以**当前已取流的那一集**为准，换集后随之更新。
+abstract interface class RemoteVideoStreamVariants {
+  List<RemoteVideoStreamVariant> get streamVariants;
+
+  /// 正在播的那条在 [streamVariants] 里的下标；尚未取流为 -1。
+  int get streamVariantIndex;
+  set streamVariantIndex(int index);
 }
 
 /// 「清单里省掉的重字段按需补齐」的**可选**能力（BUG-1891）。

@@ -1,14 +1,21 @@
 /// 服务端对引擎装配点的一次性接线（与 app 的 `installEngineHostBindings()` 对偶）。
+///
+/// TODO(srs-ankiconnect): 服务端还没有 SRS 装配（没有「当前 profile」的 SrsDbStore），所以
+/// AnkiConnect v6 兼容层（`fushi_engine/srs/ankiconnect/`）目前只在 app 的 Fushi API 上挂。
+/// 服务端接 SRS 后，用配置里指定的 SRS profile 构造 `SrsAnkiConnectHandler`，经
+/// `SrsAnkiConnectEndpoint.handle` 挂到 Fushi API 根路径（鉴权由端点自己做，不经中间件）。
 library;
 
 import 'dart:io';
 
 import 'package:fushi_asr_core/asr_core.dart' as asr;
 import 'package:fushi_asr_onnx_ffi/asr_onnx_ffi.dart';
+import 'package:fushi_audio/fushi_audio_core.dart' show AudiobookStorage;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/asr/fushi_asr_ffmpeg_backend.dart';
 import 'package:fushi_engine/foundation/engine_log.dart';
 import 'package:fushi_engine/foundation/engine_paths.dart';
+import 'package:fushi_engine/media/audio/flac_encoder.dart';
 import 'package:fushi_engine/media/video/ffmpeg_backend.dart';
 import 'package:fushi_engine/ocr/ocr_host_bindings.dart';
 import 'package:fushi_engine/utils/net/app_http.dart';
@@ -26,11 +33,16 @@ void installServerHostBindings({
   engineLog = log;
   fushiDebugPrint = (String? message, {int? wrapWidth}) => log.debug(message);
   enginePaths = paths;
+  // 有声书持久目录 `<documents>/audiobooks/<hash>/`（与库服务的 audioDatabaseRoot 同根）。
+  // 不装的话代下载的有声书在对齐落盘时抛 StateError（`AudiobookStorage` 的单一解析点）。
+  AudiobookStorage.documentsRootResolver = () async => paths.documents;
   // ffmpeg / ffprobe：配置文件路径装进引擎的显式覆盖（优先于 FUSHI_FFMPEG 与 PATH，
   // 语义同环境变量覆盖：不做捆绑回退、跑不起来如实抛）。必须在首个
   // resolveFfmpegBackend() 之前装——后端选择是进程级单例。
   ffmpegPathOverride = config.ffmpegPath;
   ffprobePathOverride = config.ffprobePath;
+  // AIFF 有声书落盘转 FLAC（Android 播放器不认 AIFF）。
+  installAudiobookFlacTranscoder();
   // 漫画 OCR 整卷任务的后台 isolate：FFI ONNX Runtime 工厂 + ORT 库路径引导。
   ocrSessionFactoryBuilder = buildServerOcrSessionFactory;
   ocrIsolateBootstrap = serverOcrIsolateBootstrap;

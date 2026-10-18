@@ -5,9 +5,10 @@
 ///   `detector-v4-s_int8.onnx`（11,120,765 B，Apache-2.0）——与
 ///   `text_detector.dart` 的 RT-DETR-v2 IO 规格（640 输入 / 300 query / 3 类）
 ///   同仓同规格；fp32 全量档 `detector.onnx`（168MB）刻意不下。
-/// - 识别器取 mayocream/manga-ocr-onnx（Apache-2.0）双模型导出 + 词表：
-///   `encoder_model.onnx`（343,454,249 B）/ `decoder_model.onnx`
-///   （117,480,262 B）/ `vocab.txt`（30,216 B）。
+/// - 块识别器的清单住在 `manga_ocr_local_model.dart`（逐列 CTC）；2026-10 删除了
+///   kha-white manga-ocr（mayocream/manga-ocr-onnx encoder/decoder + KV 提速组件）
+///   与 Baberu（连同只有它引用的 PP-OCRv6 small 行模型清单），本文件只剩共享的
+///   文件类型、PP-OCRv6 落盘名 / revision 与下载源规则。
 /// - 横排行路径（2026-09-13，`routing_ocr_recognizer.dart`）取 PaddlePaddle 官方
 ///   PP-OCRv6 small ONNX（Apache-2.0）：`PP-OCRv6_small_det_onnx/inference.onnx`
 ///   （9,880,512 B）/ `PP-OCRv6_small_rec_onnx/inference.onnx`（21,159,378 B）+
@@ -23,6 +24,7 @@ library;
 import 'dart:io';
 
 import 'package:fushi_asr_core/asr_core.dart';
+
 /// 模型文件归属：检测 / 识别（[MangaOcrModelStatus] 的两个就绪位分别聚合）。
 enum MangaOcrModelRole { detector, recognizer }
 
@@ -33,6 +35,7 @@ class MangaOcrModelFile implements DownloadableModelFile {
     required this.url,
     required this.expectedBytes,
     required this.role,
+    this.sha256,
   });
 
   /// 落盘文件名（与远端 basename 一致，Range 续传直接复用同 URL）。
@@ -48,60 +51,10 @@ class MangaOcrModelFile implements DownloadableModelFile {
   final int expectedBytes;
 
   final MangaOcrModelRole role;
-}
 
-/// 全套模型清单（检测器 int8 + 识别 encoder/decoder + vocab）。
-const List<MangaOcrModelFile> kMangaOcrModelManifest = <MangaOcrModelFile>[
-  MangaOcrModelFile(
-    fileName: 'detector-v4-s_int8.onnx',
-    url: 'https://huggingface.co/ogkalu/comic-text-and-bubble-detector/'
-        'resolve/main/detector-v4-s_int8.onnx',
-    expectedBytes: 11120765,
-    role: MangaOcrModelRole.detector,
-  ),
-  MangaOcrModelFile(
-    fileName: 'encoder_model.onnx',
-    url: 'https://huggingface.co/mayocream/manga-ocr-onnx/'
-        'resolve/main/encoder_model.onnx',
-    expectedBytes: 343454249,
-    role: MangaOcrModelRole.recognizer,
-  ),
-  MangaOcrModelFile(
-    fileName: 'decoder_model.onnx',
-    url: 'https://huggingface.co/mayocream/manga-ocr-onnx/'
-        'resolve/main/decoder_model.onnx',
-    expectedBytes: 117480262,
-    role: MangaOcrModelRole.recognizer,
-  ),
-  MangaOcrModelFile(
-    fileName: 'vocab.txt',
-    url: 'https://huggingface.co/mayocream/manga-ocr-onnx/'
-        'resolve/main/vocab.txt',
-    expectedBytes: 30216,
-    role: MangaOcrModelRole.recognizer,
-  ),
-  MangaOcrModelFile(
-    fileName: kPpOcrDetFileName,
-    url: 'https://huggingface.co/PaddlePaddle/PP-OCRv6_small_det_onnx/'
-        'resolve/$kPpOcrDetRevision/inference.onnx',
-    expectedBytes: 9880512,
-    role: MangaOcrModelRole.recognizer,
-  ),
-  MangaOcrModelFile(
-    fileName: kPpOcrRecFileName,
-    url: 'https://huggingface.co/PaddlePaddle/PP-OCRv6_small_rec_onnx/'
-        'resolve/$kPpOcrRecRevision/inference.onnx',
-    expectedBytes: 21159378,
-    role: MangaOcrModelRole.recognizer,
-  ),
-  MangaOcrModelFile(
-    fileName: kPpOcrRecDictFileName,
-    url: 'https://huggingface.co/PaddlePaddle/PP-OCRv6_small_rec_onnx/'
-        'resolve/$kPpOcrRecRevision/inference.yml',
-    expectedBytes: 150579,
-    role: MangaOcrModelRole.recognizer,
-  ),
-];
+  /// 钉住的 sha256（release asset 可被覆盖上传，下载后按它校验）；null = 不校验。
+  final String? sha256;
+}
 
 /// PP-OCRv6 small 三文件的落盘名（清单与 `MangaOcrModelPaths` 解析共用）。
 const String kPpOcrDetFileName = 'ppocrv6_small_det.onnx';

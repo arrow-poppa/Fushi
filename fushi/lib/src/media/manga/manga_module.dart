@@ -1,11 +1,11 @@
 import 'dart:io';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:path/path.dart' as p;
 
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/epub/book_title_conflict.dart';
-import 'package:fushi/src/media/manga/import/manga_archive_importer.dart';
+import 'package:fushi_engine/media/manga/manga_archive_importer.dart';
 import 'package:fushi/src/media/manga/import/manga_folder_batch.dart';
 import 'package:fushi/src/media/manga/import/manga_pdf_importer.dart';
 import 'package:fushi_engine/media/manga/manga_importer.dart';
@@ -50,6 +50,19 @@ abstract final class MangaModule {
   static int directoryCarrierFileCount(String path) =>
       mangaCarrierFilesIn(Directory(path)).length;
 
+  /// 目录直接子层的 `.mokuro` 数（[ImportCarrier] 的目录分支判据，BUG-2785）。
+  static int directoryMokuroFileCount(String path) =>
+      mangaMokuroFilesIn(Directory(path)).length;
+
+  /// 目录直接子层**恰好一个** `.mokuro` 时返回它的路径，否则 null。
+  ///
+  /// 载体判成 [ImportCarrier.mangaMokuro] 的目录要经它换成那个文件再导入——
+  /// `importMokuro` 吃的是 `.mokuro` 文件，不是目录。
+  static String? directorySingleMokuroPath(String path) {
+    final List<File> files = mangaMokuroFilesIn(Directory(path));
+    return files.length == 1 ? files.single.path : null;
+  }
+
   /// 一个装着整卷载体文件的目录 → 逐卷导入（BUG-1649）。一卷失败不中断整批，
   /// 每卷结局在返回的报告里，由调用方一次性汇报。
   static Future<MangaBatchImportReport> importBatchFolder({
@@ -60,6 +73,18 @@ abstract final class MangaModule {
       importMangaBatchFolder(
         db: db,
         path: path,
+        onVolumeProgress: onVolumeProgress,
+      );
+
+  /// 一组同时选中 / 拖入的漫画载体逐卷导入（见 [importMangaBatchPaths]）。
+  static Future<MangaBatchImportReport> importBatchPaths({
+    required FushiDatabase db,
+    required List<String> paths,
+    void Function(int done, int total)? onVolumeProgress,
+  }) =>
+      importMangaBatchPaths(
+        db: db,
+        paths: paths,
         onVolumeProgress: onVolumeProgress,
       );
 
@@ -151,6 +176,9 @@ abstract final class MangaModule {
   /// 对已入书架的漫画直接运行整卷 OCR。阅读器从当前页触发时，Lens 会先扫
   /// 当前页到末页，再从首页补齐；完成后原子替换本书的 `manga.json`。
   ///
+  /// [onlyMissing] 为 false 是阅读器的「重新识别本卷」：已识别过的卷整卷重跑，
+  /// 向导里可换引擎（逐页缓存按引擎签名分目录，换引擎一定真正重算）。
+  ///
   /// 引擎依赖集与 [openOcrImportWizard] **共用同一个装配点**：两个入口各自手抄
   /// 参数表时，本入口漏掉了 `remoteRunner`，「配对主机」引擎在阅读器里永久不可见
   /// （BUG-1418）。
@@ -159,6 +187,7 @@ abstract final class MangaModule {
     required FushiDatabase db,
     required EpubBookRow book,
     required int startPage,
+    bool onlyMissing = true,
     MangaOcrRemoteRunner? remoteRunnerOverride,
     bool? desktopOverride,
   }) {
@@ -175,7 +204,7 @@ abstract final class MangaModule {
         db: db,
         existingBook: book,
         startPage: startPage,
-        onlyMissing: true,
+        onlyMissing: onlyMissing,
         launchInBackground: true,
         resolveEngines: (BuildContext ctx) => MangaOcrWizardEngines.resolve(
           context: ctx,

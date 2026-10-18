@@ -7,20 +7,29 @@ import 'package:fushi_engine/models/local_audio_db_entry.dart';
 import 'package:fushi_engine/media/video/video_library_import.dart'
     show parseSubtitleCues;
 import 'package:fushi_engine/media/video/video_sidecar.dart'
-    show findSidecarSubtitle, isSidecarSubtitleSuffix, pickSidecar;
+    show
+        defaultSidecarSubtitleSuffix,
+        findSidecarSubtitle,
+        isSidecarSubtitleSuffix,
+        listSidecarSubtitles,
+        pickSidecar,
+        sidecarSuffixesDisplacedBy;
 import 'package:fushi_audio/fushi_audio_core.dart'
     show AudioCue, AudiobookStorage, readTextWithEncoding;
 import 'package:fushi_engine/media/media_pref_keys.dart';
+import 'package:fushi_engine/media/video/anime_source_video_path.dart';
 import 'package:fushi_engine/media/video/m3u8_playlist.dart'
     show PlaylistEntry;
+import 'package:fushi_engine/media/video/strm_file.dart'
+    show isNetworkOnlyVideoPath, lacksLocalMediaFile;
 import 'package:fushi_engine/media/video/metadata/video_library_scrape_sweep.dart'
     show VideoPendingScrapeWork, planScrapeWorksForCollection;
 import 'package:fushi_engine/media/video/metadata/video_metadata_database_store.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_locked_fields.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart'
-    show VideoMetadataWork;
+    show VideoMetadataMediaKind, VideoMetadataProviderKind, VideoMetadataWork;
 import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart'
-    show VideoMetadataLookup;
+    show VideoMetadataEpisodeGroupSummary, VideoMetadataLookup;
 import 'package:fushi_engine/media/video/metadata/video_metadata_work_loader.dart';
 import 'package:fushi_engine/media/video/metadata/video_scrape_operation_gate.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_task.dart'
@@ -38,6 +47,7 @@ import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi_engine/media/video/video_storage.dart';
 import 'package:fushi_engine/media/video/series_playback_prefs.dart'
     show effectiveSeriesAudioTrackId, effectiveSeriesDelayMs, effectiveSeriesSecondaryDelayMs;
+import 'package:fushi_engine/sync/online_novel_book.dart';
 import 'package:fushi_engine/sync/manga_sync_package.dart'
     show hasExportableMangaContent, kMangaPackageMarker, repackageMangaBook;
 import 'package:fushi_engine/stats/stat_facts.dart';
@@ -46,6 +56,7 @@ import 'package:fushi_engine/sync/override_title_lookup.dart';
 import 'package:fushi_engine/sync/aggregate_sync_service.dart';
 import 'package:fushi_engine/sync/collection_manifest.dart';
 import 'package:fushi_engine/sync/collection_sync_engine.dart';
+import 'package:fushi_engine/sync/tag_sync.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 import 'package:fushi_engine/sync/interconnect_service_config.dart';
 import 'package:fushi_engine/sync/interconnect_profile_transfer.dart';
@@ -59,6 +70,7 @@ import 'package:fushi_engine/utils/misc/desktop_audio_clipper.dart'
 import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
 import 'package:fushi_engine/foundation/engine_log.dart';
+import 'package:fushi_engine/media/collections/book_series_grouper.dart';
 import 'package:fushi_engine/dictionary/dictionary_engine_hooks.dart';
 import 'package:fushi_engine/sync/override_title_db.dart';
 import 'package:fushi_engine/media/manga/manga_chapter_storage.dart'
@@ -115,14 +127,21 @@ abstract class _LocalLibraryHostBase
         VideoDeletionHost,
         VideoPlaybackSyncHost,
         AudiobookDelayHost,
+        AudiobookSubtitleHost,
+        VideoSubtitleDefaultHost,
+        VideoSubtitleClearHost,
         InterconnectServiceConfigHost,
         InterconnectProfileHost,
-        VideoMetadataHost {
+        VideoMetadataHost,
+        VideoMetadataOrderingHost,
+        TagSyncHost {
   FushiDatabase get _db;
   Directory get _dictionaryResourceRoot;
   SyncAssetPackageService get _packages;
   Future<void> Function() get _refreshDictionaryCache;
   Future<void> Function(Future<void> Function() body) get _runExclusive;
+  Future<void> Function(Future<void> Function() body)
+      get _runSyncStateExclusive;
   Future<bool> Function()? get _isProfileTransferEnabled;
   Future<String> Function()? get _exportActiveProfileJson;
   Future<String> Function(String json)? get _importProfileJson;
@@ -147,7 +166,7 @@ abstract class _LocalLibraryHostBase
   Future<VideoSourceScrapeTaskController?> Function()? get _scrapeController;
 }
 
-/// 用真实 Hibiki 库（Drift DB + [SyncAssetPackageService]）实现 host 库服务。
+/// 用真实 Fushi 库（Drift DB + [SyncAssetPackageService]）实现 host 库服务。
 ///
 /// 库变动经注入的 [runExclusive] 串行（生产传 `runExclusiveWithSync`），
 /// 并经 [refreshDictionaryCache] 刷新内存词典缓存。
@@ -159,7 +178,7 @@ abstract class _LocalLibraryHostBase
 /// |---|---|---|
 /// | [importBookFromFile] | 把 .epub 导入书库的真实逻辑 | `EpubImporter.importFromPath` |
 /// | [cleanupBookOnDisk] | deleteBook 时清理 DB 行以外的磁盘资源（Audiobook persist dir 等） | `ReaderFushiSource.instance.deleteBook` 磁盘部分 |
-/// | [localAudioEntries] | 当前已注册的本地音频来源列表（T3.1）| `AppModel.localAudioEntries` |
+/// | [localAudioEntriesProvider] | 现读已注册的本地音频来源列表（T3.1 / BUG-2815；[localAudioEntries] 是旧的快照形态）| `() => AppModel.localAudioDbs` / 服务端 `LocalAudioLibraryStore.entries` |
 /// | [localAudioStagingDir] | importLocalAudio 解包用临时目录（T3.1）| `Directory.systemTemp` 或应用 temp |
 /// | [onLocalAudioImported] | 注册已解包的本地音频包（T3.1）| `AppModel.importSyncedLocalAudioDb` |
 /// | [audioDatabaseRoot] | importAudiobook 音频文件落盘根目录（T3.1）| AppModel 的 audiobook root |
@@ -183,9 +202,11 @@ class LocalLibraryHostService extends _LocalLibraryHostBase
     required SyncAssetPackageService packages,
     required Future<void> Function() refreshDictionaryCache,
     required Future<void> Function(Future<void> Function() body) runExclusive,
+    Future<void> Function(Future<void> Function() body)? runSyncStateExclusive,
     Future<String?> Function(File epubFile)? importBookFromFile,
     Future<void> Function(EpubBookRow row)? cleanupBookOnDisk,
     List<LocalAudioDbEntry> localAudioEntries = const <LocalAudioDbEntry>[],
+    List<LocalAudioDbEntry> Function()? localAudioEntriesProvider,
     Directory? localAudioStagingDir,
     Future<void> Function(LocalAudioPackageContents)? onLocalAudioImported,
     Directory? audioDatabaseRoot,
@@ -211,9 +232,11 @@ class LocalLibraryHostService extends _LocalLibraryHostBase
         _packages = packages,
         _refreshDictionaryCache = refreshDictionaryCache,
         _runExclusive = runExclusive,
+        _runSyncStateExclusive = runSyncStateExclusive ?? runExclusive,
         _importBookFromFile = importBookFromFile,
         _cleanupBookOnDisk = cleanupBookOnDisk,
-        _localAudioEntries = localAudioEntries,
+        _localAudioEntriesSnapshot = localAudioEntries,
+        _localAudioEntriesProvider = localAudioEntriesProvider,
         _localAudioStagingDir = localAudioStagingDir,
         _onLocalAudioImported = onLocalAudioImported,
         _audioDatabaseRoot = audioDatabaseRoot,
@@ -238,6 +261,20 @@ class LocalLibraryHostService extends _LocalLibraryHostBase
   final Future<void> Function() _refreshDictionaryCache;
   @override
   final Future<void> Function(Future<void> Function() body) _runExclusive;
+
+  /// 同步状态域（聚合快照折叠 / 合集清单合并）专用的**窄**互斥（BUG-2717）。
+  ///
+  /// 这两个对端写只是本机 DB 的读-改-写，唯一需要互斥的对象是「同一批表上的其它
+  /// 本地 apply 步骤」——包括本机自己作为 client 出站同步时的聚合 / 合集落库。它们
+  /// 不该排在 [_runExclusive] 后面：app 里那把是**整个自动同步轮**的互斥，本机跑一轮
+  /// （含云备份）动辄几分钟，对端 15s 内拿不到响应头就判超时。
+  ///
+  /// 生产（app）传只包住本地落库步骤的窄锁；出站同步在自己的 apply 步骤上持同一把
+  /// （见 AggregateSyncService.localApplyLock）。未注入时退回 [_runExclusive]
+  /// （无头服务端那把本来就是库专用锁，形状相同）。
+  @override
+  final Future<void> Function(Future<void> Function() body)
+      _runSyncStateExclusive;
 
   /// 互联「配置文件」（Profile）搬运的三个可选依赖（与本类其余可选能力同范式：
   /// 注入回调而不是把 ProfileRepository 的构造依赖整条拖进来）。生产由 AppModel
@@ -273,9 +310,15 @@ class LocalLibraryHostService extends _LocalLibraryHostBase
 
   // ── 本地音频（T3.1）──────────────────────────────────────────────────────
 
-  /// 当前已注册的本地音频来源列表。生产传 AppModel.localAudioEntries。
+  /// 当前已注册的本地音频来源列表：有 [localAudioEntriesProvider] 时**每次现读**
+  /// （BUG-2815：host 服务在互联启动时只构造一次，传快照会让之后新增 / 删除的
+  /// 库在清单与导出里都看不见），否则退回构造时的 [localAudioEntries] 快照。
   @override
-  final List<LocalAudioDbEntry> _localAudioEntries;
+  List<LocalAudioDbEntry> get _localAudioEntries =>
+      _localAudioEntriesProvider?.call() ?? _localAudioEntriesSnapshot;
+
+  final List<LocalAudioDbEntry> _localAudioEntriesSnapshot;
+  final List<LocalAudioDbEntry> Function()? _localAudioEntriesProvider;
 
   /// importLocalAudio 解包用临时目录。null 时用 Directory.systemTemp。
   @override
@@ -330,6 +373,24 @@ class LocalLibraryHostService extends _LocalLibraryHostBase
 /// 跨域共享的查询 helper（书 / 视频 / 有声书都用）：主合集归属一趟映射、可导出有声书键集。
 /// 方法逐字搬自 LocalLibraryHostService；各域 mixin 以 `on _LocalLibraryHostBase, _LocalLibraryHostShared` 取用。
 mixin _LocalLibraryHostShared on _LocalLibraryHostBase {
+  /// host 端删除资产后记同步删除墓碑（BUG-2945），让其它已配对设备经
+  /// `/api/tombstones` 拉到并删掉本地副本。best-effort：墓碑写失败不该把已
+  /// 完成的删除变成 HTTP 500。
+  Future<void> _writeHostSyncTombstone(
+    SyncTombstoneKind kind,
+    String itemKey,
+  ) async {
+    try {
+      await _db.writeSyncDeletionTombstone(
+        kind.dbValue,
+        itemKey,
+        DateTime.now().millisecondsSinceEpoch,
+      );
+    } catch (e, stack) {
+      engineLog.log('LocalLibraryHostService.writeHostSyncTombstone', e, stack);
+    }
+  }
+
   /// `'<mediaType>|<entryKey>'` → 该条目的**主合集归属**（多端库联合视图 §2.3
   /// 任务5.1）的一趟映射。归属跟随 [FushiDatabase.getPrimaryCollectionIdByEntry] 的
   /// 「最小 collectionId」折叠语义：一条目属多合集时只带它折进的那一张，与库网格

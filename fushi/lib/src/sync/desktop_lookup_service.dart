@@ -77,7 +77,7 @@ class DesktopLookupService extends ChangeNotifier {
     _pendingRequest = null;
   }
 
-  /// TODO-341：在桌面词典页里复制文本会让 Windows 任务栏的 Hibiki 图标高亮
+  /// TODO-341：在桌面词典页里复制文本会让 Windows 任务栏的 Fushi 图标高亮
   /// （图标闪烁/请求注意），用户得点一下 app 才能消掉。
   ///
   /// 根因：`window_manager` 的 `show()`/`focus()` 在 Windows 上都调
@@ -107,6 +107,12 @@ class DesktopLookupService extends ChangeNotifier {
       return;
     }
     try {
+      // 查词页「返回上一级」最小化过主窗（[minimizeMainWindow]）之后再按热键回来：
+      // Windows 的 focus() 自带「已最小化则 Restore」，macOS 的 makeKeyAndOrderFront
+      // **不会** deminiaturize——显式还原一次，两端同一条路径，Windows 上幂等。
+      if (await windowManager.isMinimized()) {
+        await windowManager.restore();
+      }
       await windowManager.show();
       await windowManager.focus();
     } on MissingPluginException {
@@ -119,9 +125,30 @@ class DesktopLookupService extends ChangeNotifier {
     await WindowCaptionChannel.clearTaskbarFlash();
   }
 
-  /// 判断 Hibiki 是否已经占据前台。Windows 上不能只信
+  /// [bringMainWindowToFront] 的反向出口：把主窗**最小化**，让 OS 把前台交还给
+  /// Z 序里下一个窗口——即用户按热键之前正在用的那个程序。
+  ///
+  /// 查词页「返回上一级」（默认 Esc）最小化主窗的执行体
+  /// （[AppModel.lookupPageEscapeMinimizesWindow]）。用最小化而不是 hide：hide 会让
+  /// 窗口从任务栏消失，用户找不回来（只剩热键 / 托盘一条路）；最小化仍留任务栏按钮。
+  /// 返回本次是否真的发出了最小化（非桌面 / 隐藏 runner / 插件缺席都返回 false，
+  /// 调用方据此决定要不要认领这次按键）。
+  Future<bool> minimizeMainWindow() async {
+    if (!isDesktop) return false;
+    if (DesktopForegroundGuard.isHiddenWindowsRunner) return false;
+    try {
+      await windowManager.minimize();
+    } on MissingPluginException {
+      return false;
+    } on PlatformException {
+      return false;
+    }
+    return true;
+  }
+
+  /// 判断 Fushi 是否已经占据前台。Windows 上不能只信
   /// [windowManager.isFocused]：词典 WebView/原生子窗口拿焦点时，插件可能报告
-  /// 主窗未聚焦，但 `GetForegroundWindow` 仍属于当前 Hibiki 进程。此时继续
+  /// 主窗未聚焦，但 `GetForegroundWindow` 仍属于当前 Fushi 进程。此时继续
   /// show/focus 主窗会触发任务栏请求注意态。
   Future<bool> _isFushiForeground() async {
     if (DesktopForegroundGuard.isForegroundOwnedByCurrentProcess()) {

@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:drift/native.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -34,7 +34,7 @@ void main() {
   late Directory pathProviderDir;
   setUpAll(() {
     pathProviderDir =
-        Directory.systemTemp.createTempSync('hibiki_remote_longpress_pp');
+        Directory.systemTemp.createTempSync('fushi_remote_longpress_pp');
     binding.defaultBinaryMessenger.setMockMethodCallHandler(
       const MethodChannel('plugins.flutter.io/path_provider'),
       (MethodCall call) async => pathProviderDir.path,
@@ -63,7 +63,7 @@ void main() {
     final PreferencesRepository prefs = PreferencesRepository(db);
     await prefs.loadFromDb();
     final Directory storeDir =
-        Directory.systemTemp.createTempSync('hibiki_remote_longpress_store');
+        Directory.systemTemp.createTempSync('fushi_remote_longpress_store');
     remoteCover = File('${storeDir.path}/remote-cover.png')
       ..writeAsBytesSync(_tinyPngBytes);
     appModel = AppModel(testPlatformServices())
@@ -171,6 +171,11 @@ void main() {
     await tester.pumpWidget(buildVideoTab(client));
     await tester.pumpAndSettle();
 
+    // BUG-2835：「全部视频」多了一行筛选，800x600 视口里卡片可能落在折线下。
+    await tester.ensureVisible(
+      find.byKey(const ValueKey<String>('remote_video_card_remote_video-1')),
+    );
+    await tester.pumpAndSettle();
     await tester.longPress(find.byKey(
       const ValueKey<String>('remote_video_card_remote_video-1'),
     ));
@@ -313,6 +318,8 @@ class _FakeRemoteVideoClient implements RemoteVideoClient {
     String id,
     File dest, {
     void Function(double progress)? onProgress,
+    void Function(int received, int? total)? onBytes,
+    Future<void>? cancelSignal,
   }) async {}
 
   @override

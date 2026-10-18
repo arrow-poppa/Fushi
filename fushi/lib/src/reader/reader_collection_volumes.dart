@@ -12,6 +12,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart' show compute;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/epub/epub_book.dart';
+import 'package:fushi_engine/epub/epub_image_index_cache.dart';
 import 'package:fushi_engine/epub/epub_parser.dart';
 import 'package:path/path.dart' as p;
 
@@ -120,10 +121,43 @@ List<TtuTocEntry> buildTtuTocForBook(
 
 /// isolate 入口：解析兄弟卷并把插图表也在 isolate 里算好（`EpubBook.images`
 /// 惰性解析整本章节 HTML，放主 isolate 会卡 UI；算过的缓存随对象一起传回）。
-EpubBook parseVolumeBookForPeek(String extractDir) {
-  final EpubBook book = EpubParser.parseFromExtracted(extractDir);
-  book.images; // 触发并缓存。
-  return book;
+///
+/// 缓存读写失败随结果带回（后台 isolate 没有日志装配点），由
+/// [parseVolumeBookForPeekOffUi] 在根 isolate 记日志。
+VolumePeekParse parseVolumeBookForPeek(
+  ({String extractDir, String? cacheFile}) args,
+) {
+  final EpubBook book = EpubParser.parseFromExtracted(args.extractDir);
+  // 触发并缓存；优先读盘上插图表缓存（BUG-3433），与阅读器共用同一份。
+  final String? cacheFile = args.cacheFile;
+  if (cacheFile == null) {
+    book.images;
+    return (book: book, cacheFailures: const <EpubImageIndexCacheFailure>[]);
+  }
+  final EpubImageIndexLoad load =
+      loadEpubImagesWithCache(book, File(cacheFile));
+  return (book: book, cacheFailures: load.failures);
+}
+
+/// [parseVolumeBookForPeek] 的结果：解析好的书 + 插图表缓存读写失败。
+typedef VolumePeekParse = ({
+  EpubBook book,
+  List<EpubImageIndexCacheFailure> cacheFailures,
+});
+
+/// 在后台 isolate 跑 [parseVolumeBookForPeek]。插图表缓存路径读全局装配点，只能在
+/// 根 isolate 解析，所以在这里算好再传进去；带回的缓存失败也在这里记日志。
+Future<EpubBook> parseVolumeBookForPeekOffUi(String extractDir) async {
+  final File? cacheFile = await epubImageIndexCacheFileFor(extractDir);
+  final VolumePeekParse parsed = await compute(
+    parseVolumeBookForPeek,
+    (extractDir: extractDir, cacheFile: cacheFile?.path),
+  );
+  reportEpubImageIndexCacheFailures(
+    'parseVolumeBookForPeek',
+    parsed.cacheFailures,
+  );
+  return parsed.book;
 }
 
 /// 兄弟卷 EPUB 结构缓存：同一卷只解析一次，失败不缓存（下次再试）。
@@ -133,7 +167,7 @@ class ReaderVolumeBookCache {
   Future<EpubBook> bookFor(ReaderVolume volume) {
     return _pending.putIfAbsent(volume.uid, () {
       final Future<EpubBook> parsed =
-          compute(parseVolumeBookForPeek, volume.extractDir);
+          parseVolumeBookForPeekOffUi(volume.extractDir);
       unawaited(
         parsed.then<void>((_) {}, onError: (Object _) {
           _pending.remove(volume.uid);
@@ -151,11 +185,17 @@ class ReaderVolumeBookCache {
 
 /// 兄弟卷的插图文件解析：与阅读器 `_readerImageFileForUrl` 同一越界判据
 /// （canonicalize 后必须落在该卷解压目录内），只是根目录换成该卷的。
-File? volumeImageFile(ReaderVolume volume, EpubImageRef ref) {
-  final String root = volume.extractDir;
-  if (root.isEmpty) return null;
-  final String joined = p.join(root, ref.src);
-  if (!p.isWithin(p.canonicalize(root), p.canonicalize(joined))) return null;
+File? volumeImageFile(ReaderVolume volume, EpubImageRef ref) =>
+    epubImageFileFor(volume.extractDir, ref);
+
+/// 按解压目录 [extractDir] 解析 [ref] 指向的插图文件：canonicalize 后必须落在
+/// 目录内、且文件真实存在，否则 null。兄弟卷与书架端插图册共用。
+File? epubImageFileFor(String extractDir, EpubImageRef ref) {
+  if (extractDir.isEmpty) return null;
+  final String joined = p.join(extractDir, ref.src);
+  if (!p.isWithin(p.canonicalize(extractDir), p.canonicalize(joined))) {
+    return null;
+  }
   final File file = File(p.normalize(joined));
   return file.existsSync() ? file : null;
 }

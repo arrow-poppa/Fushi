@@ -1,7 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:html/dom.dart' as html_dom;
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
@@ -54,6 +54,12 @@ window.__fushiImageBetween = function(prev, el) {
   var media = document.querySelectorAll('img, svg');
   for (var i = 0; i < media.length; i++) {
     var m = media[i];
+    // gaiji 内联小图是文字的一部分，不是插图：章首锚点（document.body）把章名 / 标题
+    // 也纳入区间后，标题里的外字不能触发图片等待，与 __fushiRevealBlurredBetween 一致。
+    if (m.classList &&
+        (m.classList.contains('gaiji') || m.classList.contains('gaiji-line'))) {
+      continue;
+    }
     if ((a.compareDocumentPosition(m) & Node.DOCUMENT_POSITION_FOLLOWING) &&
         (b.compareDocumentPosition(m) & (Node.DOCUMENT_POSITION_PRECEDING | Node.DOCUMENT_POSITION_CONTAINED_BY))) {
       return m;
@@ -173,8 +179,16 @@ window.__fushiRevealTarget = function(t) {
 // TODO-724：滚图必须受 imagePauseSec(>0) 门控。imagePauseSec=0 时图片暂停关闭，
 // 不应把视口无预兆滚到插图——返回 false 让调用方按正常 cue 跟随 reveal el。
 // 只有 imagePauseSec>0（图片暂停开启）时才滚到插图，配合 Dart 的暂停让用户看见图。
-window.__fushiImagePauseAdvance = function(el, reveal, pauseEnabled) {
+//
+// fromChapterStart：本次高亮是音频**从上一章连续读过来**、落到新章后的第一句（Dart
+// _consumeAudioChapterArrival 只在跨章到达时给一次 true）。新文档里 __fushiPrevHighlight
+// 是空的（载入后归零），__fushiImageBetween(null, el) 直接判无图——章首插图（章扉画 /
+// 合并进宿主顶部的单图片章）既不暂停也不揭遮罩。此时把 document.body 当作上一句锚点：
+// body→el 区间 = 文档开头到第一句之间，正是音频刚跨过的那段。手动跳章 / 位置恢复
+// 不带这个标记（那些不是「读过来」的，章首图没被音频读到）。
+window.__fushiImagePauseAdvance = function(el, reveal, pauseEnabled, fromChapterStart) {
   var prev = window.__fushiPrevHighlight;
+  if (fromChapterStart && document.body) prev = document.body;
   var crossed = window.__fushiImageBetween(prev, el);
   window.__fushiPrevHighlight = el;
   // TODO-1178：音频已读到（跨过）的图揭开防剧透模糊。独立于图片暂停：在下面
@@ -202,7 +216,7 @@ window.__fushiImagePauseAdvance = function(el, reveal, pauseEnabled) {
   return false;
 };
 
-window.__fushiHighlight = function(selector, reveal, pauseEnabled) {
+window.__fushiHighlight = function(selector, reveal, pauseEnabled, fromChapterStart) {
   if (reveal === undefined) reveal = true;
   document.querySelectorAll('.fushi-active').forEach(function(e) {
     e.classList.remove('fushi-active');
@@ -210,7 +224,8 @@ window.__fushiHighlight = function(selector, reveal, pauseEnabled) {
   if (!selector) { window.__fushiPrevHighlight = null; return; }
   var el = document.querySelector(selector);
   if (!el) return;
-  var revealedImage = window.__fushiImagePauseAdvance(el, reveal, pauseEnabled);
+  var revealedImage = window.__fushiImagePauseAdvance(
+      el, reveal, pauseEnabled, fromChapterStart);
   el.classList.add('fushi-active');
   if (reveal && !revealedImage) {
     window.__fushiRevealTarget(el);
@@ -315,17 +330,22 @@ window.__fushiSentenceAudioAnchorEl = function(key) {
   return null;
 };
 
-window.__fushiHighlightSentenceAudioCueById = function(key, reveal, pauseEnabled) {
+window.__fushiHighlightSentenceAudioCueById = function(key, reveal, pauseEnabled,
+                                                       fromChapterStart) {
   if (reveal === undefined) reveal = true;
   var r = window.fushiReader;
   if (!r || typeof r.highlightSentenceAudioCue !== 'function') return false;
   var anchor = window.__fushiSentenceAudioAnchorEl(key);
   var revealedImage = false;
   if (anchor && typeof window.__fushiImagePauseAdvance === 'function') {
-    revealedImage = window.__fushiImagePauseAdvance(anchor, reveal, pauseEnabled);
+    revealedImage = window.__fushiImagePauseAdvance(
+        anchor, reveal, pauseEnabled, fromChapterStart);
   }
   // 跨过插图且需 reveal 时：让 reader 只高亮不自动滚（已滚到插图）；否则正常 reveal。
-  r.highlightSentenceAudioCue(key, revealedImage ? false : reveal);
+  // BUG-3395：后两个参数只有 VN 读——VN 的插图是独立一屏、不在当前 DOM 里，上面
+  // __fushiImagePauseAdvance 看不见它，由 VN 自己判「跟随跨过了图片屏」并停在图上。
+  r.highlightSentenceAudioCue(key, revealedImage ? false : reveal,
+      pauseEnabled, fromChapterStart);
   return true;
 };
 ''';
@@ -411,7 +431,9 @@ window.__fushiAnnotate = function(chapterHref) {
   }) async {
     final String css = _buildCss(primaryColor);
     final String cssJsonStr = jsonEncode(css);
-    await controller.evaluateJavascript(source: '''
+    await controller.evaluateJavascript(
+      source:
+          '''
 (function() {
   var existing = document.getElementById('__fushi_audio_css');
   if (existing) existing.remove();
@@ -423,7 +445,8 @@ window.__fushiAnnotate = function(chapterHref) {
     parent.appendChild(s);
   }
 })();
-''');
+''',
+    );
 
     await controller.evaluateJavascript(source: _highlightFn);
     await controller.evaluateJavascript(source: _cueClickFn);
@@ -436,11 +459,17 @@ window.__fushiAnnotate = function(chapterHref) {
   ///
   /// [cue] 为 null 时清除所有高亮。textFragmentId 以 `sasayaki://` 开头时走
   /// Sasayaki 路径；否则按普通 CSS selector 处理。
+  ///
+  /// [fromChapterStart]：本次高亮是音频跨章落地后的第一句（reader 只在
+  /// `_consumeAudioChapterArrival` 命中时给一次 true）。JS 侧把 `document.body`
+  /// 当作上一句锚点，让文档开头到第一句之间的章首插图也进图片等待 + 揭遮罩区间；
+  /// 否则新文档锚点为空、章首图被静默跳过。
   static Future<void> highlight(
     InAppWebViewController controller, {
     AudioCue? cue,
     bool reveal = true,
     bool pauseEnabled = false,
+    bool fromChapterStart = false,
   }) async {
     if (cue == null || cue.textFragmentId.isEmpty) {
       await controller.evaluateJavascript(
@@ -457,9 +486,10 @@ window.__fushiAnnotate = function(chapterHref) {
     // TODO-724：pauseEnabled = imagePauseSec>0；仅它为真时跨图才滚到插图。
     if (frag != null) {
       await controller.evaluateJavascript(
-        source: 'if(typeof __fushiHighlightSentenceAudioCueById!=="undefined")'
+        source:
+            'if(typeof __fushiHighlightSentenceAudioCueById!=="undefined")'
             'window.__fushiHighlightSentenceAudioCueById('
-            '${jsonEncode(raw)}, $reveal, $pauseEnabled);',
+            '${jsonEncode(raw)}, $reveal, $pauseEnabled, $fromChapterStart);',
       );
       return;
     }
@@ -469,12 +499,14 @@ window.__fushiAnnotate = function(chapterHref) {
     // VN 实现了 highlightSelectorCue（选择器 → 字符偏移 → 翻屏），优先用它；
     // 分页/连续模式没有这个方法，回落原路径，行为零变化。
     await controller.evaluateJavascript(
-      source: 'if(window.fushiReader&&'
+      source:
+          'if(window.fushiReader&&'
           'typeof window.fushiReader.highlightSelectorCue==="function"){'
           'window.fushiReader.highlightSelectorCue('
-          '${jsonEncode(raw)}, $reveal);'
+          '${jsonEncode(raw)}, $reveal, $pauseEnabled, $fromChapterStart);'
           '}else if(typeof __fushiHighlight!=="undefined"){'
-          '__fushiHighlight(${jsonEncode(raw)}, $reveal, $pauseEnabled);}',
+          '__fushiHighlight(${jsonEncode(raw)}, $reveal, $pauseEnabled, '
+          '$fromChapterStart);}',
     );
   }
 
@@ -488,7 +520,8 @@ window.__fushiAnnotate = function(chapterHref) {
     InAppWebViewController controller,
   ) async {
     await controller.evaluateJavascript(
-      source: 'if(typeof __fushiResetPrevHighlight!=="undefined")'
+      source:
+          'if(typeof __fushiResetPrevHighlight!=="undefined")'
           '__fushiResetPrevHighlight();',
     );
   }
@@ -501,7 +534,8 @@ window.__fushiAnnotate = function(chapterHref) {
     InAppWebViewController controller,
   ) async {
     await controller.evaluateJavascript(
-      source: 'if(typeof __fushiRevealAllBlurred!=="undefined")'
+      source:
+          'if(typeof __fushiRevealAllBlurred!=="undefined")'
           '__fushiRevealAllBlurred();',
     );
   }
@@ -512,7 +546,8 @@ window.__fushiAnnotate = function(chapterHref) {
     required String selector,
   }) async {
     await controller.evaluateJavascript(
-      source: 'if(typeof __fushiHighlight!=="undefined")'
+      source:
+          'if(typeof __fushiHighlight!=="undefined")'
           '__fushiHighlight(${jsonEncode(selector)});',
     );
   }
@@ -534,8 +569,9 @@ window.__fushiAnnotate = function(chapterHref) {
   ) {
     final List<Map<String, dynamic>> payload = <Map<String, dynamic>>[];
     for (final AudioCue cue in cues) {
-      final SubtitleRematchFragment? frag =
-          SubtitleRematchCodec.tryDecode(cue.textFragmentId);
+      final SubtitleRematchFragment? frag = SubtitleRematchCodec.tryDecode(
+        cue.textFragmentId,
+      );
       if (frag == null) {
         continue;
       }
@@ -558,8 +594,10 @@ window.__fushiAnnotate = function(chapterHref) {
     required int sectionIndex,
     required List<AudioCue> cues,
   }) async {
-    final List<Map<String, dynamic>> payload =
-        buildSentenceAudioPayload(cues, sectionIndex);
+    final List<Map<String, dynamic>> payload = buildSentenceAudioPayload(
+      cues,
+      sectionIndex,
+    );
     if (payload.isEmpty) {
       return;
     }
@@ -576,7 +614,8 @@ window.__fushiAnnotate = function(chapterHref) {
     required String chapterHref,
   }) async {
     await controller.evaluateJavascript(
-      source: 'if(typeof __fushiAnnotate!=="undefined")'
+      source:
+          'if(typeof __fushiAnnotate!=="undefined")'
           '__fushiAnnotate(${jsonEncode(chapterHref)});',
     );
   }
@@ -587,7 +626,8 @@ window.__fushiAnnotate = function(chapterHref) {
     required int sectionIndex,
   }) async {
     await controller.evaluateJavascript(
-      source: '''
+      source:
+          '''
 (async function(){
   if (typeof __sentenceAudioRequestNav !== "undefined") {
     await __sentenceAudioRequestNav($sectionIndex);
@@ -692,9 +732,7 @@ window.__fushiAnnotate = function(chapterHref) {
   }
 
   static Future<({int sectionIndex, int sectionCharOffset})?>
-      getReaderCharOffset(
-    InAppWebViewController controller,
-  ) async {
+  getReaderCharOffset(InAppWebViewController controller) async {
     return null;
   }
 
@@ -739,23 +777,28 @@ List<BookSearchResult> _searchIsolate(_SearchParams params) {
       if (idx < 0) break;
 
       final int ctxStart = (idx - contextRadius).clamp(0, domText.length);
-      final int ctxEnd =
-          (idx + query.length + contextRadius).clamp(0, domText.length);
+      final int ctxEnd = (idx + query.length + contextRadius).clamp(
+        0,
+        domText.length,
+      );
       final String rawCtx = domText.substring(ctxStart, ctxEnd);
       final String rawMatch = domText.substring(idx, idx + query.length);
 
       // Fold whitespace in context for display, recalculate matchStart.
       final String context = rawCtx.replaceAll(collapseWs, ' ');
       final String matchWord = rawMatch.replaceAll(collapseWs, ' ');
-      final int matchStart =
-          context.toLowerCase().indexOf(matchWord.toLowerCase());
+      final int matchStart = context.toLowerCase().indexOf(
+        matchWord.toLowerCase(),
+      );
 
-      results.add(BookSearchResult(
-        sectionIndex: i,
-        charOffset: idx,
-        context: context,
-        matchStart: matchStart >= 0 ? matchStart : 0,
-      ));
+      results.add(
+        BookSearchResult(
+          sectionIndex: i,
+          charOffset: idx,
+          context: context,
+          matchStart: matchStart >= 0 ? matchStart : 0,
+        ),
+      );
 
       if (results.length >= maxResults) return results;
       start = idx + 1;
@@ -803,6 +846,7 @@ class TtuTocEntry {
     this.parent,
     this.depth = 0,
     this.fragment,
+    this.anchorCharOffset,
   });
 
   final int index;
@@ -814,6 +858,14 @@ class TtuTocEntry {
   /// 装整卷、目录靠锚点分节」是常见结构：那些条目的 [index] 全指向同一个 spine
   /// 章，**只有 fragment 能区分它们**。丢掉它就等于每一条都跳章首。
   final String? fragment;
+
+  /// [fragment] 锚点在章 [index] 内的字符偏移（`countStudyChars` 口径，与阅读器
+  /// 回报的章内 `charOffset` 同尺）；无锚点 / 还没算出来 / 锚点在章里找不到时为
+  /// null，判「当前读到哪一条」时按章首 0 处理（[resolveCurrentTocEntry]）。
+  final int? anchorCharOffset;
+
+  /// [anchorCharOffset] 的判位值：无锚点即章首。
+  int get charOffsetInChapter => anchorCharOffset ?? 0;
 
   bool get isHeader => index < 0;
 }
@@ -880,14 +932,14 @@ class TtuReaderSettings {
   ];
 
   static Map<String, String> get themeLabels => <String, String>{
-        'light-theme': t.reader_theme_light,
-        'ecru-theme': t.reader_theme_ecru,
-        'water-theme': t.reader_theme_water,
-        'eyecare-theme': t.reader_theme_eyecare,
-        'gray-theme': t.reader_theme_gray,
-        'dark-theme': t.reader_theme_dark,
-        'black-theme': t.reader_theme_black,
-      };
+    'light-theme': t.reader_theme_light,
+    'ecru-theme': t.reader_theme_ecru,
+    'water-theme': t.reader_theme_water,
+    'eyecare-theme': t.reader_theme_eyecare,
+    'gray-theme': t.reader_theme_gray,
+    'dark-theme': t.reader_theme_dark,
+    'black-theme': t.reader_theme_black,
+  };
 }
 
 /// 用户在 WebView 中点击有声书句子所产生的事件。

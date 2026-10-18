@@ -29,7 +29,10 @@ VideoPlayerShortcutActions _recordingActions(List<String> log) {
     previousFrame: () => log.add('previousFrame'),
     nextFrame: () => log.add('nextFrame'),
     screenshot: () => log.add('screenshot'),
+    screenshotSubtitled: () => log.add('screenshotSubtitled'),
     toggleFullscreen: () => log.add('toggleFullscreen'),
+    toggleMiniWindow: () => log.add('toggleMiniWindow'),
+    toggleMiniChrome: () => log.add('toggleMiniChrome'),
     toggleSubtitleList: () => log.add('toggleSubtitleList'),
     searchSubtitleList: () => log.add('searchSubtitleList'),
     toggleImmersiveLock: () => log.add('toggleImmersiveLock'),
@@ -69,8 +72,13 @@ MapEntry<SingleActivator, VoidCallback>? _findSingleActivator(
 }) {
   for (final MapEntry<ShortcutActivator, VoidCallback> entry
       in activators.entries) {
-    final ShortcutActivator key = entry.key;
-    if (key is! SingleActivator) continue;
+    final ShortcutActivator raw = entry.key;
+    final SingleActivator? key = raw is InputBindingActivator
+        ? raw.exact
+        : raw is SingleActivator
+            ? raw
+            : null;
+    if (key == null) continue;
     if (key.trigger != trigger) continue;
     if (key.control != control || key.shift != shift) continue;
     if (key.alt != alt || key.meta != meta) continue;

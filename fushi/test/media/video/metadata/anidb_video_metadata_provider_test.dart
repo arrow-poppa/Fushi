@@ -2,12 +2,16 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/media/video/subtitle/scraped_subtitle_targets.dart';
+import 'package:fushi/src/media/video/subtitle/subtitle_work_identity.dart';
+import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart';
 import 'package:fushi_engine/media/video/metadata/anidb_title_catalog.dart';
 import 'package:fushi_engine/media/video/metadata/anidb_video_metadata_provider.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_resolver.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_transport.dart';
+import 'package:fushi_engine/media/video/subtitle/video_subtitle_provider.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 
@@ -148,6 +152,50 @@ void main() {
   });
 
   group('AniDbVideoMetadataProvider', () {
+    test(
+      'BUG-3084: English official / romaji titles reach the subtitle identity '
+      'aliases, so an English release name matches without tmdb/imdb',
+      () async {
+        final _CatalogFixture fixture = await _catalogFixture();
+        addTearDown(fixture.dispose);
+        final AniDbVideoMetadataProvider provider = AniDbVideoMetadataProvider(
+          clientName: '',
+          clientVersion: null,
+          language: 'ja',
+          titleCatalog: fixture.catalog,
+          client: MockClient((http.Request request) async {
+            throw StateError('HTTP API must not be called without an identity');
+          }),
+        );
+        addTearDown(provider.close);
+
+        final VideoMetadataWork work = (await provider.fetchWork(
+          const VideoMetadataLookup(
+            provider: VideoMetadataProviderKind.anidb,
+            externalId: '43',
+            mediaKind: VideoMetadataMediaKind.movie,
+          ),
+        ))!;
+        expect(work.englishTitle, 'Your Name.');
+        expect(work.romajiTitle, 'Kimi no Na wa.');
+
+        final VideoMediaReference reference = scrapedMediaReference(work);
+        expect(reference.tmdbId, isNull);
+        expect(reference.imdbId, isNull);
+        expect(
+          <String?>[reference.title, ...reference.aliases],
+          containsAll(<String>['Your Name.', 'Kimi no Na wa.']),
+        );
+        expect(
+          checkSubtitleWork(
+            reference,
+            _EnglishCandidate('Your.Name.1080p.BluRay.x264-SPARKS.en.srt'),
+          ).rejected,
+          isFalse,
+        );
+      },
+    );
+
     test(
       'without a client identity returns title identity and skips HTTP API',
       () async {
@@ -429,8 +477,22 @@ void main() {
           'https://cdn.anidb.net/images/main/character.jpg',
         );
 
-        expect(work.seasons.single.episodes.length, 2);
-        expect(seasons.single.episodes.length, 2);
+        // 正片一季 + `S` 型特典落第 0 季（Shoko EpisodeType.Special）；C/T/P/O
+        // 不取。
+        expect(work.seasons.map((s) => s.seasonNumber), <int>[1, 0]);
+        expect(work.seasons.first.episodes.length, 2);
+        expect(seasons.map((s) => s.seasonNumber), <int>[1, 0]);
+        expect(seasons.first.episodes.length, 2);
+        final VideoMetadataSeason specials = seasons.last;
+        expect(specials.episodes.single.episodeNumber, 1);
+        expect(specials.episodes.single.seasonNumber, 0);
+        expect(specials.episodes.single.title, 'Special');
+        expect(specials.episodes.single.absoluteNumber, isNull);
+        expect(
+          (await provider.fetchEpisodes(lookup, seasonNumber: 0))
+              .map((VideoMetadataEpisode value) => value.title),
+          <String>['Special'],
+        );
         expect(
           episodes.map((VideoMetadataEpisode value) => value.title),
           <String>['Not a Tool', 'Never Coming Back'],
@@ -520,6 +582,51 @@ void main() {
       );
       expect(apiCalls, 1);
     });
+
+    test(
+      'title catalog outage surfaces as a network exception (TMDB fallback)',
+      () async {
+        // 空缓存目录 + 下载失败：目录抛 AniDbTitleCatalogException。它不是
+        // VideoMetadataNetworkException，resolver 不会折成 providerUnavailable
+        // ——AniDB 成默认主源后整批作品会直接 failed、永远问不到 TMDB 兜底。
+        final Directory directory = await Directory.systemTemp.createTemp(
+          'fushi-anidb-catalog-outage-',
+        );
+        addTearDown(() => directory.delete(recursive: true));
+        final AniDbTitleCatalog catalog = AniDbTitleCatalog(
+          cacheDirectory: directory,
+          client: MockClient((http.Request request) async {
+            throw const SocketException('offline');
+          }),
+        );
+        addTearDown(catalog.close);
+        final AniDbVideoMetadataProvider provider = AniDbVideoMetadataProvider(
+          clientName: 'fushitest',
+          clientVersion: 7,
+          titleCatalog: catalog,
+          client: MockClient(
+            (http.Request request) async => http.Response('', 500),
+          ),
+        );
+        addTearDown(provider.close);
+
+        await expectLater(
+          provider.search(
+            const VideoMetadataSearchRequest(
+              title: 'Violet Evergarden',
+              mediaKind: VideoMetadataMediaKind.tv,
+            ),
+          ),
+          throwsA(
+            isA<VideoMetadataNetworkException>().having(
+              (VideoMetadataNetworkException e) => e.message,
+              'message',
+              contains('AniDB 标题目录不可用'),
+            ),
+          ),
+        );
+      },
+    );
 
     test(
       'serializes provider instances across client identities by endpoint',
@@ -669,6 +776,17 @@ Future<_CatalogFixture> _catalogFixture() async {
   return _CatalogFixture(directory: directory, catalog: catalog);
 }
 
+class _EnglishCandidate extends VideoSubtitleCandidate {
+  _EnglishCandidate(String fileName)
+      : super(
+          providerId: 'opensubtitles',
+          remoteId: fileName,
+          fileName: fileName,
+          language: 'en',
+          providerPriority: 0,
+        );
+}
+
 class _CatalogFixture {
   const _CatalogFixture({required this.directory, required this.catalog});
 
@@ -691,6 +809,11 @@ const String _titleCatalogXml = '''
   </anime>
   <anime aid="2">
     <title type="main" xml:lang="x-jat">Mushoku Tensei II</title>
+  </anime>
+  <anime aid="43">
+    <title type="main" xml:lang="x-jat">Kimi no Na wa.</title>
+    <title type="official" xml:lang="ja">君の名は。</title>
+    <title type="official" xml:lang="en">Your Name.</title>
   </anime>
   <anime aid="42">
     <title type="main" xml:lang="x-jat">Violet Evergarden</title>

@@ -34,7 +34,8 @@ import '../helpers/source_guard.dart';
 /// 覆盖窗真渲染依赖 native WebView2，headless 测不了，故源码扫描钉住契约；
 /// 行为面由 node harness（global_lookup_host_test.mjs R1-R3）覆盖。
 void main() {
-  String readRaw(String p) => File(p).readAsStringSync().replaceAll('\r\n', '\n');
+  String readRaw(String p) =>
+      File(p).readAsStringSync().replaceAll('\r\n', '\n');
 
   // 语料一律**剥注释**再断言。这个文件的 needle 全是标识符与代码片段，而它扫的
   // C++/JS 里注释密度极高：不掩码时，任何一句 `// 见 GlyphAnchoredCardOrigin`
@@ -277,24 +278,50 @@ void main() {
     expect(
       compactReveal,
       contains('direct_glyph_valid_=glyph_w>0&&glyph_h>0;'),
-      reason: '字形路径的启用条件只能来自字形尺寸本身；写死成常量会让 '
+      reason:
+          '字形路径的启用条件只能来自字形尺寸本身；写死成常量会让 '
           'GlyphAnchoredCardOrigin 整条分支变成死代码',
+    );
+    // BUG-2921 — 贴字形的是**根卡**（钉住的宽高），union 由根卡位置 + bbox 偏移推出并
+    // 整体夹进客户区（两轴的夹取在 PlaceDirectUnionAroundRoot 内，由 C++ 几何单测
+    // gal_direct_card_geometry_test 逐像素钉住）。
+    expect(
+      compactReveal,
+      contains(
+        'PlaceDirectUnionAroundRoot(direct_glyph_left_,direct_glyph_top_,'
+        'direct_glyph_width_,direct_glyph_height_,direct_root_width_,'
+        'direct_root_height_,direct_root_local_left_,direct_root_local_top_,'
+        'direct_bbox_dx_,direct_bbox_dy_,screen_width,screen_height,'
+        'client_width,client_height)',
+      ),
+      reason:
+          '卡片不再是画布单位，贴附必须以字形在**屏幕**上的矩形重排；且贴的是根卡，'
+          '拿 union 尺寸贴字形会在子卡出现时把根卡整体挪走（BUG-2921）',
     );
     expect(
       compactReveal,
-      contains('GlyphAnchoredCardOrigin(direct_glyph_left_,direct_glyph_top_,'),
-      reason: '卡片不再是画布单位，贴附必须以字形在**屏幕**上的矩形重排，'
-          '直接把 anchor 乘 scale 会让卡片离命中的字 (scale-1)×卡片高',
+      isNot(contains('GlyphAnchoredCardOrigin(')),
+      reason: 'present 不得再拿 union（card_width/height）直接贴字形（BUG-2921）',
     );
     expect(
       compactReveal,
       contains('ClampDirectCardOrigin(local_x,screen_width,client_width)'),
-      reason: '横轴必须按客户区**宽**夹回，保证整张卡片留在游戏画面内',
+      reason: '字形缺失的回退路径横轴必须按客户区**宽**夹回',
     );
     expect(
       compactReveal,
       contains('ClampDirectCardOrigin(local_y,screen_height,client_height)'),
-      reason: '纵轴必须按客户区**高**夹回；只夹一轴时"名字出现"的断言仍然全绿',
+      reason: '字形缺失的回退路径纵轴必须按客户区**高**夹回',
+    );
+    expect(
+      compactReveal,
+      contains(
+        'if(!direct_root_pin_valid_){direct_root_pin_valid_=true;'
+        'direct_root_local_left_=direct_bbox_dx_;'
+        'direct_root_local_top_=direct_bbox_dy_;'
+        'direct_root_width_=screen_width;',
+      ),
+      reason: '根卡钉子只能在本次查词首次上屏（union == 根卡）时建立',
     );
     expect(
       reveal,
@@ -355,7 +382,8 @@ void main() {
       expect(
         compactResize,
         isNot(matches(shape)),
-        reason: '直连不再被 1:1 客户区锁死：放大运行的游戏也必须走直连，'
+        reason:
+            '直连不再被 1:1 客户区锁死：放大运行的游戏也必须走直连，'
             '所以客户区尺寸不得再与画布尺寸做等值/容差比较（$shape）',
       );
     }
@@ -366,8 +394,30 @@ void main() {
     );
     expect(
       compactResize,
-      contains('if(direct_glyph_valid_){'),
+      contains('if(direct_glyph_valid_&&direct_root_pin_valid_){'),
       reason: '嵌套 resize 必须复用 present 时的同一贴附基准，否则同一次查词里卡片会跳位',
+    );
+    expect(
+      compactResize,
+      contains(
+        'PlaceDirectUnionAroundRoot(direct_glyph_left_,direct_glyph_top_,'
+        'direct_glyph_width_,direct_glyph_height_,direct_root_width_,'
+        'direct_root_height_,direct_root_local_left_,direct_root_local_top_,'
+        'dx,dy,screen_width,screen_height,client_width,client_height)',
+      ),
+      reason:
+          'BUG-2921：子卡出现时 union 变高，拿 union 尺寸重新贴字形会翻到字形下方再被'
+          '夹回，根卡跳位、子卡顶部越出客户区；必须按钉住的根卡 + bbox 偏移放 union',
+    );
+    expect(
+      compactResize,
+      isNot(contains('GlyphAnchoredCardOrigin(')),
+      reason: 'BUG-2921：嵌套 resize 不得拿 union 尺寸贴字形',
+    );
+    expect(
+      compactResize,
+      contains('if(root_height>0){direct_root_height_=root_height;}'),
+      reason: 'BUG-2921：根卡实测高度随 revealStack 更新，根卡长高时仍贴字形那条边',
     );
     expect(
       compactResize,
@@ -618,4 +668,29 @@ void main() {
       reason: '不得回退到 slide 延迟路径（stale-dismiss 会杀掉新卡，回归 signature）',
     );
   });
+
+  test(
+    'desktop work-area clamp keeps shell HRGN and shadow aligned with DOM',
+    () {
+      final String reveal = functionBody(
+        cpp,
+        'void GlobalLookupWindow::RevealStack(',
+      );
+      final String finalize = functionBody(
+        cpp,
+        'void GlobalLookupWindow::FinalizePendingShellGeometry(',
+      );
+      expect(reveal, contains('bbox_left + clamp_dx_css'));
+      expect(reveal, contains('bbox_top + clamp_dy_css'));
+      expect(
+        reveal,
+        contains('FinalizePendingShellGeometry(geometry_epoch, clamp_dx_css,'),
+      );
+      expect(finalize, contains('CommitPendingShellGeometry(geometry_epoch)'));
+      expect(finalize, contains('rect[0] -= clamp_dx_css;'));
+      expect(finalize, contains('rect[1] -= clamp_dy_css;'));
+      expect(hdr, contains('double clamp_dx_css = 0.0'));
+      expect(hdr, contains('double clamp_dy_css = 0.0'));
+    },
+  );
 }

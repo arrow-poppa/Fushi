@@ -1,6 +1,6 @@
 // v19 游戏内查词区的**契约级**测试。
 //
-// 这块区的三条通道（hit / input / frame）是跨进程的，写侧在游戏进程里、读侧在 Hibiki
+// 这块区的三条通道（hit / input / frame）是跨进程的，写侧在游戏进程里、读侧在 Fushi
 // 里，两边只靠 voice_hook_ipc.h 的寻址函数对齐。所以下面钉死的不是"某个 adapter 怎么
 // 写"，而是**任何写侧/读侧都必须成立的结构性质**：
 //
@@ -636,8 +636,8 @@ void TestV14LookupRegionIsPureAppendOverV13() {
 }
 
 void TestV16V17AndV19OnlyAppendOverV15() {
-  Check(kSharedVersion == 24,
-        "本测试锁的是 v24 契约（BUG-2339 Siglus text ownership 尾追加）");
+  Check(kSharedVersion == 25,
+        "本测试锁的是 v25 契约（game-stream native input 尾追加）");
 
   // v14 的最后一个字段是 lookup_diag。v15 只能紧随其后追加一个 64 位 applied seq；
   // 把字段插进 v14 中间，或在 applied seq 后再偷偷长出别的字段，都必须判红。
@@ -884,6 +884,41 @@ void TestV19ShieldPublicationAndVerifiedGate() {
         "任一 fault 面必须压过 verified");
 }
 
+void TestV25GameStreamInputPublication() {
+  SharedHeader h = {};
+  const uint32_t seq = fushi_voice_hook::PublishGameStreamInputRequest(
+      &h, 0x5555u, 42u, fushi_voice_hook::kGameStreamInputButtonLeft, 123456u);
+  Check(seq == 1u, "game-stream input fresh request 必须从 seq=1 发布");
+  const auto request = fushi_voice_hook::ReadGameStreamInputRequest(&h);
+  Check(request.valid && request.seq == seq && request.target_hwnd == 0x5555u &&
+            request.transaction_id == 42u && request.deadline_tick_ms == 123456u &&
+            request.active_buttons == fushi_voice_hook::kGameStreamInputButtonLeft,
+        "game-stream input request payload/seq 必须 coherent round-trip");
+  fushi_voice_hook::AtomicStoreShared32(
+      &h.game_stream_input_request_seq,
+      seq | fushi_voice_hook::kGameStreamInputRequestWriteInProgress);
+  Check(!fushi_voice_hook::ReadGameStreamInputRequest(&h).valid,
+        "writer-held game-stream input payload 必须不可读");
+  fushi_voice_hook::AtomicStoreShared32(&h.game_stream_input_request_seq, seq);
+  Check(fushi_voice_hook::PublishGameStreamInputStatus(
+            &h, request, fushi_voice_hook::kGameStreamInputStatusApplied,
+            fushi_voice_hook::kGameStreamInputButtonLeft),
+        "game-stream input 当前 request 必须能确认状态");
+  const uint32_t first_status_seq = h.game_stream_input_status_seq;
+  Check(h.game_stream_input_applied_seq == seq && first_status_seq != 0 &&
+            h.game_stream_input_status == fushi_voice_hook::kGameStreamInputStatusApplied &&
+            h.game_stream_input_observed_buttons == fushi_voice_hook::kGameStreamInputButtonLeft,
+        "game-stream input applied_seq 必须最后确认");
+  Check(fushi_voice_hook::PublishGameStreamInputStatus(
+            &h, request, fushi_voice_hook::kGameStreamInputStatusExpired, 0u),
+        "同一 game-stream request 可发布后续状态");
+  Check(h.game_stream_input_status_seq != first_status_seq &&
+            h.game_stream_input_applied_seq == seq &&
+            h.game_stream_input_status == fushi_voice_hook::kGameStreamInputStatusExpired &&
+            h.game_stream_input_observed_buttons == 0,
+        "game-stream status publication generation must advance");
+}
+
 void TestV19AttachedGeometryOwnershipSnapshot() {
   SharedHeader h = {};
   h.lookup_geometry_active_kind =
@@ -988,14 +1023,31 @@ void TestV19AdmissionIsPureAppendOverV17() {
   Check(offsetof(SharedHeader, adapter_report_count) % 4 == 0 &&
             offsetof(SharedHeader, adapter_report_seq) % 4 == 0,
         "count/seq 必须 4 字节对齐（Interlocked 前提）");
-  Check(offsetof(SharedHeader, siglus_text_owner) ==
+  Check(offsetof(SharedHeader, native_text_owner) ==
             offsetof(SharedHeader, adapter_report_seq) + sizeof(uint32_t),
         "v24 owner 只能追加在 v23 adapter 读数之后");
+  Check(offsetof(SharedHeader, game_stream_input_request_seq) ==
+            offsetof(SharedHeader, native_text_owner) + sizeof(uint32_t),
+        "v25 game-stream input 必须纯追加在 v24 owner 之后");
+  Check(offsetof(SharedHeader, game_stream_input_status_seq) ==
+            offsetof(SharedHeader, game_stream_input_request_seq) + 4u &&
+            offsetof(SharedHeader, game_stream_input_target_hwnd) ==
+                offsetof(SharedHeader, game_stream_input_request_seq) + 8u &&
+            offsetof(SharedHeader, game_stream_input_transaction_id) ==
+                offsetof(SharedHeader, game_stream_input_target_hwnd) + 8u &&
+            offsetof(SharedHeader, game_stream_input_deadline_tick_ms) ==
+                offsetof(SharedHeader, game_stream_input_transaction_id) + 8u &&
+            offsetof(SharedHeader, game_stream_input_active_buttons) ==
+                offsetof(SharedHeader, game_stream_input_deadline_tick_ms) + 8u &&
+            offsetof(SharedHeader, game_stream_input_applied_seq) ==
+                offsetof(SharedHeader, game_stream_input_observed_buttons) +
+                    sizeof(uint32_t),
+        "v25 game-stream input request/status 字段顺序固定");
   Check(sizeof(SharedHeader) ==
-            ((offsetof(SharedHeader, siglus_text_owner) +
+            ((offsetof(SharedHeader, game_stream_input_applied_seq) +
               sizeof(uint32_t) + 7u) /
              8u) * 8u,
-        "v24 末尾除 8 字节对齐填充外不得混入其他字段");
+        "v25 末尾除 8 字节对齐填充外不得混入其他字段");
 }
 
 // 准入的读写往返。这些性质全都是「UI 会不会误导用户」的直接决定因素，不是内部细节。
@@ -1028,6 +1080,8 @@ void TestAdapterReportRoundTrip() {
             h, out, fushi_voice_hook::kAdapterReportSlots, &seq) == 0,
         "未上报时必须读到 0 槽");
   Check(seq == 0, "未上报时 seq 必须是 0");
+  Check(!fushi_voice_hook::AdapterReportsClaimEngine(h, "sgre"),
+        "未上报时引擎身份必须是「还不知道」=false，不能猜成已认领");
 
   // (b) 正常往返：id / applicable / installed / flags 都要原样回来，且**按槽对号**。
   fushi_voice_hook::AdapterReportSlot in[3] = {
@@ -1049,6 +1103,32 @@ void TestAdapterReportRoundTrip() {
         "横切能力那行也要原样回来——它自带 id，不会被误读成引擎判定");
   Check(strcmp(out[2].id, "sgre") == 0 && out[2].applicable == 0,
         "probe 为假的行同样要如实回来");
+  // 引擎身份查询只认 applicable 的同名槽：sgre 那行 probe 为假 → 不算认领；
+  // 别的引擎 applicable 也不能被当成 sgre；前缀相同的 id 不得误配。
+  Check(!fushi_voice_hook::AdapterReportsClaimEngine(h, "sgre"),
+        "probe 为假的 sgre 槽不得被当成引擎已认领");
+  Check(fushi_voice_hook::AdapterReportsClaimEngine(h, "cmvs"),
+        "probe 为真的 cmvs 槽必须被认出");
+  Check(!fushi_voice_hook::AdapterReportsClaimEngine(h, "cmv"),
+        "id 必须整串相等，前缀不算");
+  Check(!fushi_voice_hook::AdapterReportsClaimEngine(h, "") &&
+            !fushi_voice_hook::AdapterReportsClaimEngine(h, nullptr) &&
+            !fushi_voice_hook::AdapterReportsClaimEngine(nullptr, "sgre"),
+        "空 id / 空 header 必须是 false");
+  {
+    fushi_voice_hook::AdapterReportSlot claimed[2] = {
+        make("siglus", false, false, 0u),
+        make("sgre", true, true, 0u),
+    };
+    Check(fushi_voice_hook::PublishAdapterReports(h, claimed, 2) == 2,
+          "发布 sgre 认领必须成功");
+    Check(fushi_voice_hook::AdapterReportsClaimEngine(h, "sgre"),
+          "probe 为真的 sgre 槽必须被认出（不看 exe 哈希/文件名）");
+    Check(!fushi_voice_hook::AdapterReportsClaimEngine(h, "siglus"),
+          "同一份报告里 probe 为假的引擎仍是 false");
+    Check(fushi_voice_hook::PublishAdapterReports(h, in, 3) == 3,
+          "还原为原 3 槽");
+  }
 
   // (c) adapter 数变少（换了个构建）时，尾部旧槽必须被清掉。不清就会读到上一次的
   //     probe/installed，而那一行看着完全正常——这正是最难发现的错。
@@ -1239,6 +1319,7 @@ int main() {
   TestV16V17AndV19OnlyAppendOverV15();
   TestV21GeometryAdmissionPublication();
   TestV19ShieldPublicationAndVerifiedGate();
+  TestV25GameStreamInputPublication();
   TestV19AttachedGeometryOwnershipSnapshot();
   TestV19AdmissionIsPureAppendOverV17();
   TestAdmissionRoundTrip();

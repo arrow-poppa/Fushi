@@ -468,6 +468,26 @@ def find_global_monkey_patches(source: MaskedSource) -> list[str]:
     return hits
 
 
+KAG_SEAM_CONTEXT_REBIND_RE = re.compile(
+    r"fushiLookupOrig_\w+\s+incontextof\b"
+)
+
+
+def find_kag_seam_context_rebinds(source: MaskedSource) -> list[str]:
+    """kag 实例接缝转发原方法时不得改写它自带的上下文。
+
+    `kag.onMouseMove` 等可能是游戏换上的闭包，绑定在游戏自己的对象上（真机
+    《王様恋愛》：logo/标题阶段的鼠标处理引用该对象的 `CS_Timer`）。
+    `(orig incontextof this)` 把它强行改绑到 kag，第一次鼠标移动就抛
+    `Member "CS_Timer" does not exist`——游戏弹未处理异常框后退出（BUG-2745）。
+    按成员调用 `this.fushiLookupOrig_x(...)`，TJS 保留闭包原有上下文。
+    """
+    return [
+        f"{ADAPTER.name}:{source.line_of(m.start())} {m.group(0)}"
+        for m in KAG_SEAM_CONTEXT_REBIND_RE.finditer(source.text)
+    ]
+
+
 # 逐实例补丁的形状：给某个**变量**（实例）而不是 global.Layer 赋 drawText。
 INSTANCE_DRAWTEXT_PATCH_RE = re.compile(
     r"(?<![\w.])(?!global\.)(\w+)\.drawText\s*=(?!=)\s*function"
@@ -1281,6 +1301,12 @@ def find_invalid_lookup_entry_visibility_lifecycle(
         "35",
         "36",
         "37",
+        # 32/33：私有 msgwin 插件**没有**出现时的另一支（BUG-2708）。32 = 进入该支；
+        # TextRender 插件在、却扫不到任何绑在消息层上的渲染器实例（KAGEX 系正文由
+        # MessageLayer 走 processCh 画）时才到 33，按 classic KAG 打开图层光标几何采集。
+        # 与 35/36/37 互斥，源码顺序上排在它们之后。
+        "32",
+        "33",
         # 38/39：注册 KAG stable-state plugin。两个边沿都只尝试迁移
         # carrier，仅 stable=false 的 run 边沿补 renderer/getRender 采集桥。
         "38",
@@ -1295,7 +1321,7 @@ def find_invalid_lookup_entry_visibility_lifecycle(
     if install_stages != expected_install_stages:
         violations.append(
             f"{ADAPTER.name}: bootstrap installStage 必须固定为 "
-            "0→10/11→20/21→30/31→35/36/37→38/39→40/43→50；"
+            "0→10/11→20/21→30/31→35/36/37 | 32/33→38/39→40/43→50；"
             f"实际 {install_stages}"
         )
 
@@ -3233,6 +3259,9 @@ class RealAdapterTest(unittest.TestCase):
             "只允许留在默认关闭的探测分支里；经典 KAG3 走逐实例补丁。",
         )
 
+    def test_kag_seams_keep_the_original_closure_context(self) -> None:
+        self.assertEqual([], find_kag_seam_context_rebinds(self.source))
+
     def test_exe_direct_exporter_probe_waits_for_engine_main_window(self) -> None:
         self.assertEqual(
             [],
@@ -4463,14 +4492,14 @@ global.fushiLookupInstallKagSeams = function()
       try { consumed = global.fushiLookupLeftClickHook(); }
       catch(e) { global.fushiLookupFault(); }
       if(consumed) return true;
-      return (this.fushiLookupOrig_onPrimaryClick incontextof this)(...);
+      return this.fushiLookupOrig_onPrimaryClick(...);
     } incontextof global.kag)) seams = seams | 0x2;
   if(global.fushiLookupWrapKagSeam("onMouseMove",
     function(x, y)
     {
       try { global.fushiLookupMouseMoveHook(x, y); }
       catch(e) { global.fushiLookupFault(); }
-      return (this.fushiLookupOrig_onMouseMove incontextof this)(...);
+      return this.fushiLookupOrig_onMouseMove(...);
     } incontextof global.kag)) seams = seams | 0x4;
   if(global.fushiLookupWrapKagSeam("onMouseWheel",
     function(shift, delta, x, y)
@@ -4479,7 +4508,7 @@ global.fushiLookupInstallKagSeams = function()
       try { consumed = global.fushiLookupMouseWheelHook(shift, delta, x, y); }
       catch(e) { global.fushiLookupFault(); }
       if(consumed) return true;
-      return (this.fushiLookupOrig_onMouseWheel incontextof this)(...);
+      return this.fushiLookupOrig_onMouseWheel(...);
     } incontextof global.kag)) seams = seams | 0x8;
   if(global.fushiLookupWrapKagSeam("onKeyDown",
     function(key, shift)
@@ -4488,7 +4517,7 @@ global.fushiLookupInstallKagSeams = function()
       try { consumed = global.fushiLookupKeyDownHook(key, shift); }
       catch(e) { global.fushiLookupFault(); }
       if(consumed) return true;
-      return (this.fushiLookupOrig_onKeyDown incontextof this)(...);
+      return this.fushiLookupOrig_onKeyDown(...);
     } incontextof global.kag)) seams = seams | 0x10;
   global.fushiLookupKagSeams = seams;
 };
@@ -4566,6 +4595,16 @@ if(global.fushiLookupResolveMsgwinPlugin() !== void)
   installStage = 36;
   global.fushiLookupSweepMsgwinRenders();
   installStage = 37;
+}
+else
+{
+  installStage = 32;
+  if(global.fushiLookupSweepLayerRenderers() == 0)
+  {
+    installStage = 33;
+    global.fushiLookupClassicSource = global.fushiLookupClassicSource | 1;
+    global.fushiLookupSweepClassicLayers();
+  }
 }
 installStage = 38;
 if(typeof global.kag.addPlugin == "Object")
@@ -4866,6 +4905,20 @@ class MutationSelfTest(unittest.TestCase):
             [], find_main_window_criteria_copied_into_overlay(DIRTY_OVERLAY_COPY)
         )
 
+    def test_kag_seam_rebinding_original_context_is_red(self) -> None:
+        clean = MaskedSource(
+            "function(x, y)\n{\n"
+            "  return this.fushiLookupOrig_onMouseMove(...);\n"
+            "} incontextof global.kag\n"
+        )
+        self.assertEqual([], find_kag_seam_context_rebinds(clean))
+        dirty = MaskedSource(
+            "function(x, y)\n{\n"
+            "  return (this.fushiLookupOrig_onMouseMove incontextof this)(...);\n"
+            "} incontextof global.kag\n"
+        )
+        self.assertNotEqual([], find_kag_seam_context_rebinds(dirty))
+
     def test_clean_sample_passes_every_rule(self) -> None:
         self.assertEqual([], find_dynamic_tjs_concatenations(self.clean))
         self.assertEqual([], find_network_debris(self.clean))
@@ -4875,6 +4928,7 @@ class MutationSelfTest(unittest.TestCase):
         self.assertEqual([], find_unguarded_bitmap_copies(self.clean))
         self.assertEqual([], find_ownerless_card_dismissals(self.clean))
         self.assertEqual([], find_classic_sweep_missing(self.clean))
+        self.assertEqual([], find_kag_seam_context_rebinds(self.clean))
         self.assertEqual([], find_ungated_exe_exporter_probe(self.clean))
         # 干净样本里确实有 exe 直取探针，否则 BUG-2118 这条规则在自测里根本没被走到。
         self.assertIn("ObtainExporter()", CLEAN_SAMPLE)
@@ -6453,7 +6507,7 @@ def find_install_failure_keeping_sensor_contract(source: MaskedSource) -> list[s
     sensor_installed、几何 provider 被认领、UI 显示查词就绪，点字却永远没有卡片，
     而且没有任何一位说明卡在哪。
     """
-    marker = '[HibikiLookup] install failed: '
+    marker = '[FushiLookup] install failed: '
     index = source.text.find(marker)
     if index < 0:
         return [f"{ADAPTER.name}: 找不到 install failed 的 catch 分支（锚点漂了）"]
@@ -6683,6 +6737,77 @@ class ReviewFixGuardTest(unittest.TestCase):
             'TjsVariantString* text = g_lookup_alloc_string(script);',
         )
         self.assertNotEqual([], find_cpp_catch_on_tjs_string_abi(dirty))
+
+
+def find_bind_group_swap_not_followed(source: MaskedSource) -> list[str]:
+    """BUG-2893：KAG backlay+trans 交换 fore/back 消息层后，bind group 必须跟随到
+    现在占据同一 (page,index) 的对象，且只在「原对象出现在另一页同一下标」时跟随。
+
+    没有跟随：表情切换后 AnchorValid 恒假，这句点不出卡、点击漏给游戏。
+    没有交换证据门：任何对象替换（含被移走/重排）都会被当成同一句继续命中。
+    """
+    tjs = _joined_tjs_payload(source)
+    follows = _assigned_tjs_functions(tjs, "fushiLookupBindGroupFollowSwap")
+    if len(follows) != 1:
+        return [
+            f"{ADAPTER.name}: fushiLookupBindGroupFollowSwap 定义数应为 1，"
+            f"实际 {len(follows)}"
+        ]
+    follow = _compact_tjs(follows[0][1])
+    violations: list[str] = []
+    for needle, why in (
+        ("if(here[group.anchorIndex]===anchor)returnfalse;", "原对象仍在原位时不得跟随"),
+        ("if(there[group.anchorIndex]!==anchor)returnfalse;", "缺少「原对象在另一页同一下标」的交换证据门"),
+        ("varsuccessor=here[group.anchorIndex];", "跟随目标必须是现在占据同一槽位的对象"),
+        ("group.anchorIdentity=successor;", "跟随后必须改写组的锚点对象"),
+    ):
+        if needle not in follow:
+            violations.append(f"{ADAPTER.name}: FollowSwap {why}")
+
+    captures = _assigned_tjs_functions(tjs, "fushiLookupCapture")
+    if len(captures) != 1:
+        return violations + [
+            f"{ADAPTER.name}: fushiLookupCapture 定义数应为 1，实际 {len(captures)}"
+        ]
+    capture = _compact_tjs(captures[0][1])
+    call = capture.find("global.fushiLookupBindGroupFollowSwap(g)")
+    valid = capture.find("global.fushiLookupBindGroupAnchorValid(g)")
+    if call < 0:
+        violations.append(f"{ADAPTER.name}: Capture 的候选循环没有调用 FollowSwap")
+    elif valid < 0 or call > valid:
+        violations.append(
+            f"{ADAPTER.name}: Capture 必须先 FollowSwap 再判 BindGroupAnchorValid"
+        )
+    return violations
+
+
+class BindGroupSwapFollowTest(unittest.TestCase):
+    """BUG-2893 正向守卫 + 变异自测（变异跑在真文件的副本上）。"""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.raw = ADAPTER.read_text(encoding="utf-8")
+
+    def _mutate_real(self, old: str, new: str) -> MaskedSource:
+        self.assertIn(old, self.raw, "变异锚点必须真的存在于当前实现里")
+        dirty = self.raw.replace(old, new, 1)
+        self.assertNotEqual(dirty, self.raw, "变异必须真的改变了源码")
+        return MaskedSource(dirty)
+
+    def test_real_adapter_follows_kag_page_swaps(self) -> None:
+        self.assertEqual([], find_bind_group_swap_not_followed(MaskedSource(self.raw)))
+
+    def test_missing_swap_evidence_gate_is_red(self) -> None:
+        dirty = self._mutate_real(
+            "if(there[group.anchorIndex] !== anchor) return false;", ""
+        )
+        self.assertNotEqual([], find_bind_group_swap_not_followed(dirty))
+
+    def test_capture_not_following_is_red(self) -> None:
+        dirty = self._mutate_real(
+            "if(global.fushiLookupBindGroupFollowSwap(g)) followedSwap++;", ""
+        )
+        self.assertNotEqual([], find_bind_group_swap_not_followed(dirty))
 
 
 if __name__ == "__main__":

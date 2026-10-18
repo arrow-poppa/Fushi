@@ -15,14 +15,14 @@ import 'package:fushi/src/storage/app_paths.dart';
 ///  2. **单一入口**（源码扫描）：被收敛的核心数据存储模块不再直连
 ///     `getApplicationDocumentsDirectory` / `getApplicationSupportDirectory`，必须经
 ///     [AppPaths]；唯一允许直连 `path_provider` 数据根的文件是 `app_paths.dart`
-///     （app 层）与 `audiobook_storage.dart`（上游包 `hibiki_audio` 无法导入 app 层
+///     （app 层）与 `audiobook_storage.dart`（上游包 `fushi_audio` 无法导入 app 层
 ///     `AppPaths`，故包内自有单一解析点 `_documentsRoot`）。
 void main() {
   group('TODO-935 E0 行为等价：AppPaths 解析等于旧的测试分支', () {
     late Directory root;
 
     setUp(() {
-      root = Directory.systemTemp.createTempSync('hibiki_app_paths_');
+      root = Directory.systemTemp.createTempSync('fushi_app_paths_');
     });
 
     tearDown(() {
@@ -110,7 +110,7 @@ void main() {
       expect(src.contains('_appPaths.tempRoot'), isTrue);
     });
 
-    test('hibiki_audio 包内 audiobook_storage 有单一 documents 解析点', () {
+    test('fushi_audio 包内 audiobook_storage 有单一 documents 解析点', () {
       // 上游包不能 import app 层 AppPaths，故包内自有单一解析点 _documentsRoot；
       // 三处持久目录方法都经它，不再各自直连 path_provider。
       final String src = read(
@@ -138,7 +138,7 @@ void main() {
         reason: '_documentsRoot 应经 resolver 门控、未装配时抛 StateError',
       );
       final String platformSrc = read(
-          '../packages/fushi_audio/lib/src/audiobook/audiobook_storage_platform.dart');
+          'lib/src/media/audiobook/audiobook_storage_platform.dart');
       expect(
         RegExp(r'documentsRootResolver \?\?= getApplicationDocumentsDirectory')
             .hasMatch(platformSrc),

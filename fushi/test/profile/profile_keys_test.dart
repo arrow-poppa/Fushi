@@ -23,6 +23,8 @@ void main() {
       expect(ProfileKeys.isExcludedPref('update_beta_channel'), isTrue);
       expect(
           ProfileKeys.isExcludedPref('startup_default_dictionary_tab'), isTrue);
+      // 启动页与 module_nav_order 同族：设备本地，不随 Profile 走。
+      expect(ProfileKeys.isExcludedPref('startup_module'), isTrue);
       expect(ProfileKeys.isExcludedPref('app_ui_scale'), isTrue);
       expect(ProfileKeys.isExcludedPref('app_ui_scale_mode'), isTrue);
       // TODO-1961: download folder + legacy-folder history are device-local.
@@ -84,12 +86,10 @@ void main() {
       );
     });
 
-    test('reading goals are per-Profile (not excluded, TODO-1046)', () {
-      // 0=off, but the goal targets themselves are per-Profile prefs: they must
-      // NOT be in the exclusion set so each profile keeps its own daily/weekly
-      // target.
+    test('reading goal is per-Profile (not excluded, TODO-1046)', () {
+      // 0=off, but the goal target itself is a per-Profile pref: it must NOT be
+      // in the exclusion set so each profile keeps its own daily target.
       expect(ProfileKeys.isExcludedPref('reading_goal_daily_chars'), isFalse);
-      expect(ProfileKeys.isExcludedPref('reading_goal_weekly_chars'), isFalse);
     });
   });
 
@@ -227,6 +227,34 @@ void main() {
       expect(result.ankiConnectApiKey, 'device-secret');
       expect(result.ankiConnectUseHttps, isTrue);
       expect(result.useAnkiConnectOnMobile, isTrue);
+    });
+
+    // 快照之外的字段一律保留当前值：此前从头构造 AnkiSettings，切一次 Profile
+    // 就把 Lapis 自定义 CSS、自动重排、批量制卡、后端选择全部打回默认。
+    test('profile apply keeps every field the snapshot does not own', () {
+      const AnkiSettings current = AnkiSettings(
+        lapisCustomCss: '.card { color: red }',
+        lapisFontScalePercent: 120,
+        autoRepositionEnabled: true,
+        mediaDedupAutoEnabled: true,
+        batchMiningEnabled: true,
+        useAnkiSyncClient: true,
+        repositionRareFirst: true,
+      );
+
+      final AnkiSettings result = ProfileKeys.mapToAnkiSettings(
+        ProfileKeys.ankiSettingsToMap(const AnkiSettings(tags: 'x')),
+        current,
+      );
+
+      expect(result.tags, 'x', reason: '快照字段照常覆盖');
+      expect(result.lapisCustomCss, '.card { color: red }');
+      expect(result.lapisFontScalePercent, 120);
+      expect(result.autoRepositionEnabled, isTrue);
+      expect(result.mediaDedupAutoEnabled, isTrue);
+      expect(result.batchMiningEnabled, isTrue);
+      expect(result.useAnkiSyncClient, isTrue);
+      expect(result.repositionRareFirst, isTrue);
     });
   });
 

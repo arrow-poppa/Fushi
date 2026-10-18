@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:drift/native.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -39,7 +39,7 @@ void main() {
     final PreferencesRepository prefsRepo = PreferencesRepository(db);
     await prefsRepo.loadFromDb();
     final Directory tmpDir =
-        Directory.systemTemp.createTempSync('hibiki_game_cover_menu_');
+        Directory.systemTemp.createTempSync('fushi_game_cover_menu_');
     addTearDown(() {
       try {
         tmpDir.deleteSync(recursive: true);
@@ -82,6 +82,7 @@ void main() {
   List<String> menuLabels() => <String>[
         t.game_view_detail,
         t.game_play_status,
+        t.media_stats_action,
         t.game_rename,
         t.game_set_cover,
         t.game_auto_cover,
@@ -119,11 +120,23 @@ void main() {
     ]);
     await pumpPage(tester, appModel);
 
-    await tester.tap(find.byType(PopupMenuButton<String>));
+    // 设计系统包装 FushiPopupMenuButton 是 PopupMenuButton 的子类，byType 按
+    // 精确运行时类型匹配会漏掉它。
+    await tester.tap(
+        find.byWidgetPredicate((Widget w) => w is PopupMenuButton<String>));
     await tester.pumpAndSettle();
 
+    // 限定在溢出菜单项内找：工具栏的「游玩状态」下拉 chip 与菜单项同文案，
+    // 全局 find.text 会把它也数进来。
     for (final String label in menuLabels()) {
-      expect(find.text(label), findsOneWidget, reason: '溢出菜单缺「$label」');
+      expect(
+        find.descendant(
+          of: find.byType(PopupMenuItem<String>),
+          matching: find.text(label),
+        ),
+        findsOneWidget,
+        reason: '溢出菜单缺「$label」',
+      );
     }
 
     // 次序也要钉住（统一约定：重命名 → 封面类 → 刮削 → 加入合集 → 标签 → 删除）。
@@ -166,7 +179,7 @@ void main() {
 
   testWidgets('有封面文件时卡片渲染封面图而非占位图标', (WidgetTester tester) async {
     final Directory dir =
-        Directory.systemTemp.createTempSync('hibiki_game_cover_render_');
+        Directory.systemTemp.createTempSync('fushi_game_cover_render_');
     addTearDown(() {
       try {
         dir.deleteSync(recursive: true);

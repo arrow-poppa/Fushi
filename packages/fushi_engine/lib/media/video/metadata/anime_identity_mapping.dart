@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:isolate';
 
+import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_transport.dart';
 
 /// Cross-service identifiers only. This catalog supplies no anime metadata and
@@ -46,9 +48,27 @@ class AnimeIdentityEntry {
   /// [tmdbId] 取自 `themoviedb_id.movie`（TMDB 电影命名空间）而非 `.tv`。
   final bool tmdbIsMovieNamespace;
 
-  /// 是否按 TMDB 电影处理：`themoviedb_id` 自己给出的命名空间优先（它是这条
-  /// 映射的直接事实），其次才看 Fribb 的 `type` 字段。
+  /// 作品**形态**是否为电影：`themoviedb_id` 落在 movie 空间，或 Fribb `type`
+  /// 是 MOVIE。只用于形态推断与类型闸门，**不能**拿来决定 [tmdbId] 属于
+  /// /movie 还是 /tv——那是 [tmdbMediaKind] 的事。
   bool get isMovie => tmdbIsMovieNamespace || type?.toUpperCase() == 'MOVIE';
+
+  /// [tmdbId] 所在的 TMDB 命名空间；没有 TMDB id 时为 null。
+  ///
+  /// 与 [isMovie] 不是一回事：TMDB 常把剧场版收成所属电视剧的第 0 季（特典），
+  /// Fribb 于是给出 `type: MOVIE` + `themoviedb_id: {tv: N}`（实测 715 行，如
+  /// リズと青い鳥 = anidb 13491 → tv 62564 吹响！上低音号）。把这种 tv id 按
+  /// /movie/N 拉会命中同号的无关电影（BUG-2828），所以拼 TMDB lookup 只认这里。
+  VideoMetadataMediaKind? get tmdbMediaKind => tmdbId == null
+      ? null
+      : tmdbIsMovieNamespace
+          ? VideoMetadataMediaKind.movie
+          : VideoMetadataMediaKind.tv;
+
+  /// 按请求的形态给 TMDB id：命名空间对不上（剧场版挂在剧的特典季下）时为
+  /// null，调用方据此回退标题补充，而不是把 tv id 当 movie id 用。
+  int? tmdbIdFor(VideoMetadataMediaKind kind) =>
+      tmdbMediaKind == kind ? tmdbId : null;
 
   AnimeIdentityMappingResult toMappingResult() =>
       AnimeIdentityMappingResult(anidbId: anidbId, malIds: malIds);
@@ -124,22 +144,57 @@ class AnimeIdentityMapping {
     );
     // Bound decoding and retained catalog size. The shared HTTP transport owns
     // response buffering; do not cache another copy of its raw body here.
-    if (response.body.length > maxResponseBytes ||
-        utf8.encode(response.body).length > maxResponseBytes) {
+    if (response.body.length > maxResponseBytes) {
       throw const FormatException('Anime identity mapping exceeds size limit');
     }
-    final Object? decoded =
-        response.decodeJson(operation: 'Anime identity mapping');
-    if (decoded is! List) {
-      throw const FormatException('Anime identity mapping must be a list');
-    }
-    return _AnimeIdentityCatalog.fromRows(decoded);
+    // Fribb 全表是十几 MB JSON、近四万行：字节数复核、jsonDecode 与建三张
+    // 索引整段进后台 isolate（结果经 Isolate.exit 零拷贝交回）。之前这段在 UI
+    // isolate 同步跑，是「按作品归类」导入时整机卡住的一节。闭包只捕获局部
+    // 变量，不能碰 `this`（HTTP client 跨不了 isolate）。
+    final String body = response.body;
+    final int statusCode = response.statusCode;
+    final int limit = maxResponseBytes;
+    return Isolate.run(
+      () => _decodeIdentityCatalog(body, statusCode: statusCode, limit: limit),
+      debugName: 'anime-identity-mapping',
+    );
   }
 
   void close() {
     if (_ownsHttp) _http.close();
   }
 }
+
+/// 后台 isolate 入口：与 `VideoMetadataHttpResponse.decodeJson` 同一套错误语义
+/// （坏 JSON → [VideoMetadataNetworkException]），只是不在 UI isolate 上跑。
+_AnimeIdentityCatalog _decodeIdentityCatalog(
+  String body, {
+  required int statusCode,
+  required int limit,
+}) {
+  if (utf8.encode(body).length > limit) {
+    throw const FormatException('Anime identity mapping exceeds size limit');
+  }
+  final Object? decoded;
+  try {
+    decoded = jsonDecode(body);
+  } catch (error) {
+    throw VideoMetadataNetworkException(
+      'Anime identity mapping returned invalid JSON: $error',
+      statusCode: statusCode,
+    );
+  }
+  if (decoded is! List) {
+    throw const FormatException('Anime identity mapping must be a list');
+  }
+  return _AnimeIdentityCatalog.fromRows(decoded);
+}
+
+/// Fribb `anime-list-full.json` 的行 → 按 AniDB 条目归并后的身份条目，与
+/// [AnimeIdentityMapping] 同一套解析规则（发现页的紧凑交叉索引复用它，不另写
+/// 一份字段解析）。
+List<AnimeIdentityEntry> animeIdentityEntriesFromRows(List<Object?> rows) =>
+    _AnimeIdentityCatalog.fromRows(rows).byAnidb.values.toList();
 
 class _AnimeIdentityCatalog {
   const _AnimeIdentityCatalog({

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:ui';
 
@@ -71,6 +72,43 @@ void main() {
       expect(pageSelected, isFalse);
     });
 
+    test('BUG-2555：查词不等制卡页物化，两者并行、返回前都落地', () async {
+      final Completer<void> mining = Completer<void>();
+      bool miningStarted = false;
+      bool searchedWhileMiningPending = false;
+      bool miningAwaited = false;
+      final ReaderSelectionData data = ReaderSelectionData.fromJson(
+        <String, dynamic>{
+          'text': '世界',
+          'sentence': 'この世界は美しい。',
+          'mangaPageIndex': 7,
+        },
+      );
+
+      final Future<void> dispatch = dispatchMangaSelection(
+        data,
+        fallbackScreen: const Size(800, 600),
+        selectPageForMining: (int? page) {
+          miningStarted = true;
+          return mining.future;
+        },
+        setSentence: (_) {},
+        search: (_, __, ___) async {
+          // 在线章节这里对应 session.localFile + exists()，此前查词被它串在后面。
+          searchedWhileMiningPending = miningStarted && !mining.isCompleted;
+        },
+      );
+      await Future<void>.delayed(Duration.zero);
+      expect(searchedWhileMiningPending, isTrue, reason: '查词必须在制卡页物化完成前就发起');
+
+      unawaited(dispatch.then((_) => miningAwaited = true));
+      await Future<void>.delayed(Duration.zero);
+      expect(miningAwaited, isFalse, reason: '返回前仍要等物化收尾（语义不变）');
+      mining.complete();
+      await dispatch;
+      expect(miningAwaited, isTrue);
+    });
+
     test('无 rect payload 锚到屏幕中心 1x1（块级兜底）', () async {
       Rect? capturedRect;
       final ReaderSelectionData data = ReaderSelectionData.fromJson(
@@ -91,7 +129,7 @@ void main() {
 
     test('双页 spread 精确解析命中页图片，不取 spread 首页', () async {
       final Directory root =
-          await Directory.systemTemp.createTemp('hibiki-mining-page-');
+          await Directory.systemTemp.createTemp('fushi-mining-page-');
       addTearDown(() async {
         if (await root.exists()) await root.delete(recursive: true);
       });
@@ -210,8 +248,10 @@ void main() {
       // （`reader_selection_scripts.dart:1036`）。选词入口换了函数，但
       // **maxLength 仍是必传参数、漏传仍然会哑火**，危险一点没变，所以这里换靶
       // 不放宽：仍然要求全文件恰好一处选词调用，且 maxLength 显式写成 40。
+      // 末参 fromHover 随 payload 回传：宿主只对点击（不是 Shift 悬停）自动做
+      // AI 挑词条，漏传就把悬停当点击、每次悬停都发请求。
       final RegExp selectRe = RegExp(
-        r'selection\.selectFromPosition\(\s*node\s*,\s*0\s*,\s*40\s*,\s*x\s*,\s*y\s*\)',
+        r'selection\.selectFromPosition\(\s*node\s*,\s*0\s*,\s*40\s*,\s*x\s*,\s*y\s*,\s*fromHover\s*\)',
       );
       expect(selectRe.allMatches(src).length, 1,
           reason: '选词必须是唯一调用点，且显式传 maxLength=40');

@@ -10,9 +10,14 @@ library;
 
 import 'dart:async';
 import 'dart:io';
+import 'dart:typed_data';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/utils/components/batch_action_bar.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_feedback.dart';
+import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
 
@@ -24,10 +29,15 @@ import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart
 import 'package:fushi_engine/media/video/jimaku_client.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi_engine/media/video/download/video_subtitle_registry.dart';
+import 'package:fushi/src/media/video/subtitle/subtitle_archive_label.dart';
 import 'package:fushi/src/media/video/subtitle/subtitle_content_language.dart';
 import 'package:fushi/src/media/video/subtitle/subtitle_search_seed.dart';
+import 'package:fushi/src/media/video/subtitle/subtitle_series_season.dart';
 import 'package:fushi/src/media/video/subtitle/subtitle_version_groups.dart';
 import 'package:fushi/src/media/video/subtitle/subtitle_version_language_probe.dart';
+import 'package:fushi_engine/media/video/subtitle/embedded_reference_subtitle_sync.dart';
+import 'package:fushi_engine/media/video/subtitle/subtitle_archive.dart'
+    show kSubtitleArchiveOperation;
 import 'package:fushi_engine/media/video/subtitle/video_subtitle_provider.dart';
 import 'package:fushi/src/pages/fushi_page_placeholders.dart';
 import 'package:fushi/src/pages/implementations/jimaku_api_key_field.dart';
@@ -72,7 +82,10 @@ class JimakuCandidate {
   }
 
   /// 从文件名解析出的集号（认不出为 null），用于按集升序排列。
-  int? get episode => source?.episode ?? parseSubtitleEpisode(name);
+  /// 整季压缩包没有单集集号（`(01-26).zip` 会被解析成第 1 集）。
+  int? get episode => source?.isArchivePack ?? false
+      ? null
+      : source?.episode ?? parseSubtitleEpisode(name);
 
   /// 字幕文件类型（扩展名小写不含点，如 `ass`/`srt`）。候选在入列前已过文本字幕
   /// 过滤，故这里恒是四种可解析文本格式之一。
@@ -231,11 +244,53 @@ int? subtitleFailureStatusCode(Object? error) =>
 ///
 /// 拼法本身走 i18n（`video_subtitle_error_with_code`），不在这里写死全角括号——
 /// 中英文的括号形态不同，硬编码等于让英文界面也吃到全角括号。
+///
+/// 鉴权被拒与连不上两类换成说清原因的文案（BUG-3000）：只给「搜索失败（HTTP 401）」
+/// 用户看不出是 key 的问题，会继续换关键词瞎试。
 String describeSubtitleFailure(String baseMessage, Object? error) {
   final int? status = subtitleFailureStatusCode(error);
-  if (status == null) return baseMessage;
-  return t.video_subtitle_error_with_code(msg: baseMessage, code: status);
+  final String message = switch (error) {
+    // 整季压缩包（BUG-3000 跟进）：解不开的格式 / 包里没有这一集。
+    ExternalProviderFailure(
+      operation: kSubtitleArchiveOperation,
+      kind: ExternalProviderFailureKind.unsupported,
+    ) =>
+      t.video_subtitle_error_archive_unsupported,
+    ExternalProviderFailure(
+      operation: kSubtitleArchiveOperation,
+      kind: ExternalProviderFailureKind.notFound,
+    ) =>
+      t.video_subtitle_error_archive_episode_missing,
+    ExternalProviderFailure(
+      kind: ExternalProviderFailureKind.unauthorized ||
+          ExternalProviderFailureKind.forbidden,
+      :final String providerId,
+    ) =>
+      t.video_subtitle_error_key_rejected(
+        provider: subtitleProviderDisplayName(providerId),
+      ),
+    ExternalProviderFailure(
+      kind: ExternalProviderFailureKind.network ||
+          ExternalProviderFailureKind.timeout,
+      :final String providerId,
+    ) =>
+      t.video_subtitle_error_network(
+        provider: subtitleProviderDisplayName(providerId),
+      ),
+    _ => baseMessage,
+  };
+  if (status == null) return message;
+  return t.video_subtitle_error_with_code(msg: message, code: status);
 }
+
+/// 字幕 provider id → 给用户看的名字（未知 id 原样返回）。纯函数。
+String subtitleProviderDisplayName(String providerId) => switch (providerId) {
+  'jimaku' => 'Jimaku',
+  'opensubtitles' => 'OpenSubtitles',
+  'subdl' => 'SubDL',
+  'ajatt' => 'AJATT',
+  _ => providerId,
+};
 
 /// 一批 provider 结果里最值得说给用户听的那条失败；全绿时为 null。纯函数。
 ///
@@ -284,6 +339,8 @@ class SubtitleSearchPanel extends StatefulWidget {
     this.onCancel,
     this.showTitle = true,
     required this.initialQuery,
+    this.initialEpisode,
+    this.initialSeason,
     required this.initialApiKey,
     required this.onApiKeyChanged,
     required this.saveDirectory,
@@ -293,6 +350,7 @@ class SubtitleSearchPanel extends StatefulWidget {
     this.httpClientFactory,
     this.seed = const SubtitleSearchSeed(),
     this.videoPath,
+    this.subtitleAligner,
     this.debugInitialCandidates,
     this.debugInitialSeriesMatches,
     this.debugInitialSeriesLookupFailed = false,
@@ -318,10 +376,24 @@ class SubtitleSearchPanel extends StatefulWidget {
   /// 延迟是必须的：填 key 会经 [onApiKeyChanged] 触发 provider runtime 重建，早绑
   /// 的 registry 实例正是那个「刚填完 key 还是搜不到」的旧实例。null = 宿主没接
   /// registry（纯渲染用的测试宿主）→ 搜索按未配置来源处理。
-  final VideoSubtitleRegistry? Function()? subtitleRegistry;
+  final Future<VideoSubtitleRegistry?> Function()? subtitleRegistry;
 
   /// 预填的搜索词（由视频文件名解析出的番名）。
   final String initialQuery;
+
+  /// BUG-2626：预填的集号；null = 留空（列出全部版本）。
+  ///
+  /// 这处改了一条既有决策：集数框原先**恒空**（「用户决策：默认空」），代价是用户每次
+  /// 都得自己数当前是第几集再手填，而这个数字调用方本来就知道。现在只在调用方能给出
+  /// **可靠**集号时预填；给不出仍留空，那条旧行为在没有集号的来源上原样保留。
+  final int? initialEpisode;
+
+  /// 调用方从文件名 / 远端标题解析出的季号；null = 不知道（面板再从预填词、合集名等
+  /// 标题里的季度记号推断，见 [subtitleSeasonHint]）。
+  ///
+  /// AniList 把每一季登记成独立条目、相关度首条恒为第一季：不带季号时看第四季也会按
+  /// 第一季的 id 去查 Jimaku，第四季条目里现成的字幕永远列不出来。
+  final int? initialSeason;
 
   /// 该视频**已知的身份**（刮削存下的 AniList / TMDB id 与备选搜索词），BUG-1842。
   ///
@@ -333,6 +405,9 @@ class SubtitleSearchPanel extends StatefulWidget {
   /// 当前视频的本地文件绝对路径；非空且存在时用于算 OSDb 文件哈希做精确匹配
   /// （BUG-1847）。远端流 / 无本地文件为 null。
   final String? videoPath;
+
+  /// 落盘前按 [videoPath] 的内嵌字幕轨对时间轴；null = 不对齐。
+  final AutomaticSubtitleAligner? subtitleAligner;
 
   /// 预填的 Jimaku API key。
   final String initialApiKey;
@@ -379,8 +454,11 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
   late final TextEditingController _queryCtrl = TextEditingController(
     text: widget.initialQuery,
   );
-  // 集数输入框：初值空（用户决策「默认空」）。空 → 不传 episode（= 现状列全部）。
-  final TextEditingController _episodeCtrl = TextEditingController();
+  // 集数输入框：BUG-2626 起预填调用方给的集号（[SubtitleSearchPanel.initialEpisode]）；
+  // 调用方给不出可靠集号时仍为空 → 不传 episode（= 列出全部版本）。
+  late final TextEditingController _episodeCtrl = TextEditingController(
+    text: widget.initialEpisode?.toString() ?? '',
+  );
 
   bool _searching = false;
   bool _searched = false;
@@ -520,10 +598,17 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
   }
 
   /// 当前是否有**任何**已配置的在线字幕来源（registry 里有 provider 即算）。
-  bool get _hasConfiguredSubtitleSource {
-    final VideoSubtitleRegistry? registry = widget.subtitleRegistry?.call();
+  Future<bool> _hasConfiguredSubtitleSource() async {
+    final VideoSubtitleRegistry? registry = await widget.subtitleRegistry
+        ?.call();
     return registry != null && registry.providers.isNotEmpty;
   }
+
+  /// 一个字幕来源都拿不到时的提示：没填 Jimaku key 才说「请先填写 key」；填了
+  /// key 却仍然没有来源 = 来源全被关掉了（BUG-3000）。
+  String _noSourceMessage() => _apiKeyCtrl.text.trim().isEmpty
+      ? t.video_jimaku_no_key
+      : t.video_subtitle_sources_all_disabled;
 
   Future<void> _search() async {
     final String apiKey = _apiKeyCtrl.text.trim();
@@ -531,7 +616,7 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
     // 门槛是「有没有可用的字幕来源」，不是「有没有 Jimaku key」：只配了
     // OpenSubtitles 的用户照样能搜。改动前这里硬卡 Jimaku key，等于把另一路来源
     // 挡在门外。已配来源但 key 填错/失效 → 搜索照跑，按无结果呈现（与既有一致）。
-    if (apiKey.isEmpty && !_hasConfiguredSubtitleSource) {
+    if (apiKey.isEmpty && !await _hasConfiguredSubtitleSource()) {
       _showError(t.video_jimaku_no_key);
       return;
     }
@@ -628,9 +713,11 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
       });
       // 降级但仍留着同一番名的旧系列列表时，按旧列表首条继续检索：比退回纯文本搜准，
       // 也不用再问一次 AniList。
+      // 相关度首条恒为第一季：按本集季号挑对应那一季的条目（挑不出才退回首条）。
+      final int? season = _seasonHint(query);
       final int? resolvedSeriesId = outcome.media.isNotEmpty
-          ? outcome.media.first.id
-          : (_seriesMatches.isNotEmpty ? _seriesMatches.first.id : null);
+          ? pickAniListSeriesForSeason(outcome.media, season: season)?.id
+          : pickAniListSeriesForSeason(_seriesMatches, season: season)?.id;
       await _fetchCandidates(
         anilistId: resolvedSeriesId,
         queryFallback: query,
@@ -642,12 +729,26 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
     }
   }
 
+  /// 本次检索的季号提示：输入框里的词自带季度记号就用它；用户没改过番名时再看
+  /// 调用方给的季号（文件名 `S04E18`）与种子里的备选词（合集名「… 4th season」）。
+  /// 用户改了番名就只信他自己写的，不拿原视频的季号去套另一部作品。
+  int? _seasonHint(String query) {
+    final bool untouchedQuery = query == widget.initialQuery.trim();
+    final int? typed = subtitleSeasonHint(titles: <String>[query]);
+    if (typed != null || !untouchedQuery) return typed;
+    return subtitleSeasonHint(
+      parsedSeason: widget.initialSeason,
+      titles: widget.seed.queries,
+    );
+  }
+
   /// 用户点某个系列 chip：以该系列 id 重搜 Jimaku（不再重跑 AniList，保留已展示的候选
   /// 系列列表）。query/episode 从当前输入框读取，与首搜一致。
   Future<void> _selectSeries(AniListMedia media) async {
     if (_selectedSeriesId == media.id || _searching) return;
     final String apiKey = _apiKeyCtrl.text.trim();
-    if (apiKey.isEmpty && !_hasConfiguredSubtitleSource) return;
+    if (apiKey.isEmpty && !await _hasConfiguredSubtitleSource()) return;
+    if (!mounted) return;
     final int? episode = int.tryParse(_episodeCtrl.text.trim());
     setState(() {
       _searching = true;
@@ -686,14 +787,18 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
     required String queryFallback,
     required int? episode,
   }) async {
-    final VideoSubtitleRegistry? registry = widget.subtitleRegistry?.call();
+    final VideoSubtitleRegistry? registry = await widget.subtitleRegistry
+        ?.call();
     if (registry == null || registry.providers.isEmpty) {
       if (!mounted) return;
+      // BUG-3000：这里曾只把候选清空、不设错误——没有任何来源可问时页面却显示
+      // 「找不到字幕」，像是搜过了而 Jimaku 上没有。要说清是「没问」。
       setState(() {
         _candidates = const <JimakuCandidate>[];
         _searched = true;
         _searchedWithEpisode = episode != null;
         _selectedSeriesId = anilistId;
+        _error = _noSourceMessage();
       });
       return;
     }
@@ -734,6 +839,11 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
               alternateTitles: untouchedQuery
                   ? seed.fallbackQueries
                   : const <String>[],
+              // OpenSubtitles / SubDL 据此按 season_number 收敛。只给**显式**季号
+              // （调用方从文件名 / 远端标题 `S04E18` 解析的）：从标题推断的季号只
+              // 用来挑 AniList 条目——标题里的季度记号与 TMDB 季号并不总对得上，
+              // 发给服务端当筛选条件会把同一部剧的另一季当成精确命中。
+              season: untouchedQuery ? widget.initialSeason : null,
               episode: episode,
               fingerprint: fingerprint,
             ),
@@ -848,8 +958,9 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
   /// 探测用下载：**每次现取** registry（与直接下载路径同纪律），不长期持有闭包。
   Future<VideoSubtitleDownload> _downloadForProbe(
     VideoSubtitleCandidate candidate,
-  ) {
-    final VideoSubtitleRegistry? registry = widget.subtitleRegistry?.call();
+  ) async {
+    final VideoSubtitleRegistry? registry = await widget.subtitleRegistry
+        ?.call();
     if (registry == null) {
       throw ExternalProviderFailure(
         providerId: candidate.providerId,
@@ -890,7 +1001,8 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
   /// 一条失败不中断整批（某个 provider 挂了不该把其余的也废掉），失败条数汇总到
   /// 错误提示里；一条都没成功时不回调，避免调用方拿着空列表去「应用第一条」。
   Future<void> _downloadSelected() async {
-    final VideoSubtitleRegistry? registry = widget.subtitleRegistry?.call();
+    final VideoSubtitleRegistry? registry = await widget.subtitleRegistry
+        ?.call();
     if (registry == null || _selectedCandidates.isEmpty) return;
     final List<VideoSubtitleCandidate> targets =
         List<VideoSubtitleCandidate>.of(_selectedCandidates);
@@ -915,7 +1027,7 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
           dir.path,
           safeSubtitleFileName(download.fileName),
         );
-        await File(dest).writeAsBytes(download.bytes);
+        await File(dest).writeAsBytes(await _alignedBytes(download));
         saved.add(dest);
       } on Object catch (error) {
         failed++;
@@ -935,8 +1047,16 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
     widget.onDownloaded(saved);
   }
 
+  Future<Uint8List> _alignedBytes(VideoSubtitleDownload download) async {
+    final AutomaticSubtitleAligner? aligner = widget.subtitleAligner;
+    final String? path = widget.videoPath;
+    if (aligner == null || path == null) return download.bytes;
+    return aligner(download.bytes, path);
+  }
+
   Future<void> _downloadSource(VideoSubtitleCandidate source) async {
-    final VideoSubtitleRegistry? registry = widget.subtitleRegistry?.call();
+    final VideoSubtitleRegistry? registry = await widget.subtitleRegistry
+        ?.call();
     if (registry == null) return;
     setState(() {
       _busyName = source.fileName;
@@ -957,7 +1077,7 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
         dir.path,
         safeSubtitleFileName(download.fileName),
       );
-      await File(dest).writeAsBytes(download.bytes);
+      await File(dest).writeAsBytes(await _alignedBytes(download));
       if (!mounted) return;
       widget.onDownloaded(<String>[dest]);
     } on Object catch (error) {
@@ -991,7 +1111,7 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
     if (_apiKeyCollapsed && _apiKeyCtrl.text.trim().isNotEmpty) {
       return Row(
         children: <Widget>[
-          const Icon(Icons.vpn_key, size: 18),
+          const FushiIcon(FushiIcons.key, size: 18),
           const SizedBox(width: 8),
           Expanded(
             child: Text(
@@ -1000,7 +1120,7 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
               style: Theme.of(context).textTheme.bodyMedium,
             ),
           ),
-          TextButton(
+          FushiTextButton(
             onPressed: () => setState(() => _apiKeyCollapsed = false),
             child: Text(t.dialog_edit),
           ),
@@ -1048,12 +1168,15 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
           ),
         ),
         for (final AniListMedia media in _seriesMatches)
-          ListTile(
+          FushiListTileControl(
             dense: true,
             visualDensity: VisualDensity.compact,
             contentPadding: const EdgeInsets.symmetric(horizontal: 8),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(8),
+            // M3E：选中行 16 圆角（listActive），与分段列表选中同一形状档。
+            shape: const RoundedRectangleBorder(
+              borderRadius: BorderRadius.all(
+                Radius.circular(FushiM3eShape.listActive),
+              ),
             ),
             selected: _selectedSeriesId == media.id,
             selectedTileColor: theme.colorScheme.secondaryContainer,
@@ -1093,18 +1216,52 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
     );
   }
 
+  /// 番名备选（BUG-3199）：输入框默认填原名（日文原名排第一，见
+  /// [buildSubtitleSearchSeed]），这里一键切到其它标题（服务器 / 刮削的中文译名、
+  /// 合集名）并重搜。只有一个候选时不显示。
+  Widget _buildQueryAlternatives() {
+    final List<String> titles = widget.seed.queries;
+    if (titles.length < 2) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: ValueListenableBuilder<TextEditingValue>(
+        valueListenable: _queryCtrl,
+        builder: (BuildContext context, TextEditingValue value, Widget? _) {
+          final String current = value.text.trim();
+          return Wrap(
+            spacing: 8,
+            runSpacing: 4,
+            children: <Widget>[
+              for (int i = 0; i < titles.length; i++)
+                FushiChoiceChip(
+                  key: ValueKey<String>('subtitle-query-alt-$i'),
+                  label: Text(titles[i]),
+                  selected: current == titles[i],
+                  onSelected: (_) {
+                    if (current == titles[i] || _searching) return;
+                    _queryCtrl.text = titles[i];
+                    unawaited(_search());
+                  },
+                ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
   /// 语言筛选分区（含「全部」）：仅在搜出结果里出现 ≥1 个可识别语言时显示。
   Widget _buildLanguageChips() {
     final List<String> langs = availableLanguages(_candidates);
     if (langs.isEmpty) return const SizedBox.shrink();
     return _chipSection(t.video_jimaku_language, <Widget>[
-      ChoiceChip(
+      FushiChoiceChip(
         label: Text(t.video_jimaku_language_all),
         selected: _selectedLanguage == null,
         onSelected: (_) => _selectLanguage(null),
       ),
       for (final String lang in langs)
-        ChoiceChip(
+        FushiChoiceChip(
           label: Text(jimakuLanguageLabel(lang)),
           selected: _selectedLanguage == lang,
           onSelected: (_) => _selectLanguage(lang),
@@ -1118,13 +1275,13 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
     final List<String> formats = availableFormats(_candidates);
     if (formats.length < 2) return const SizedBox.shrink();
     return _chipSection(t.video_jimaku_format, <Widget>[
-      ChoiceChip(
+      FushiChoiceChip(
         label: Text(t.video_jimaku_format_all),
         selected: _selectedFormat == null,
         onSelected: (_) => _selectFormat(null),
       ),
       for (final String format in formats)
-        ChoiceChip(
+        FushiChoiceChip(
           // 类型名是文件扩展名本身（ASS / SRT），不进 i18n：它是格式标识不是可译词。
           label: Text(format.toUpperCase()),
           selected: _selectedFormat == format,
@@ -1151,22 +1308,23 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
         children: <Widget>[
           _buildApiKeySection(),
           const SizedBox(height: 8),
-          TextField(
+          FushiTextFieldControl(
             controller: _queryCtrl,
             decoration: InputDecoration(labelText: t.video_jimaku_query),
             onSubmitted: (_) => _search(),
           ),
+          _buildQueryAlternatives(),
           const SizedBox(height: 8),
           // 集数输入：默认空 → 列全部（现状）；填数字 → 只搜该集（Jimaku 服务端
           // 启发式）。hint（而非 helperText）内联在框里，不额外占一行垂直空间。
-          TextField(
+          FushiTextFieldControl(
             controller: _episodeCtrl,
             keyboardType: TextInputType.number,
             decoration: InputDecoration(
               labelText: t.video_jimaku_episode,
               hintText: t.video_jimaku_episode_hint,
               isDense: true,
-              prefixIcon: const Icon(Icons.tag, size: 18),
+              prefixIcon: const FushiIcon(FushiIcons.tag, size: 18),
             ),
             onSubmitted: (_) => _search(),
           ),
@@ -1177,11 +1335,11 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
             const SizedBox(height: 12),
             _buildLanguageChips(),
             _buildFormatChips(),
-            TextField(
+            FushiTextFieldControl(
               decoration: InputDecoration(
                 labelText: t.video_jimaku_filter,
                 isDense: true,
-                prefixIcon: const Icon(Icons.filter_list, size: 18),
+                prefixIcon: const FushiIcon(FushiIcons.filterList, size: 18),
               ),
               onChanged: (String v) => setState(() => _filter = v),
             ),
@@ -1192,7 +1350,7 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
               const SizedBox(height: 8),
               Align(
                 alignment: Alignment.centerLeft,
-                child: FilterChip(
+                child: FushiFilterChip(
                   key: const ValueKey<String>('jimaku-file-view-toggle'),
                   label: Text(t.subtitle_version_view_files),
                   selected: _showFileView,
@@ -1240,7 +1398,7 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
     if (error != null) {
       return _noticeBanner(
         theme,
-        icon: Icons.error_outline,
+        severity: FushiNoticeSeverity.error,
         message: error,
         onRetry: null,
       );
@@ -1248,7 +1406,7 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
     if (_seriesLookupFailed && !_searching) {
       return _noticeBanner(
         theme,
-        icon: Icons.warning_amber_outlined,
+        severity: FushiNoticeSeverity.warning,
         message: jimakuSeriesLookupNotice(_seriesLookupKind),
         onRetry: _search,
       );
@@ -1260,41 +1418,50 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
   /// 可选重试。
   Widget _noticeBanner(
     ThemeData theme, {
-    required IconData icon,
+    required FushiNoticeSeverity severity,
     required String message,
     required VoidCallback? onRetry,
   }) {
+    // 走全 app 唯一的提示横幅（FushiInlineNotice）：中性块 + 语义色图标，
+    // Apple / 墨水屏各自分支；重试是横幅自带的动作位。
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
-      child: Material(
+      child: FushiInlineNotice(
         key: kSubtitleNoticeBannerKey,
-        color: theme.colorScheme.errorContainer,
-        borderRadius: BorderRadius.circular(8),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              Icon(icon, size: 18, color: theme.colorScheme.onErrorContainer),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  message,
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.onErrorContainer,
-                  ),
-                ),
+        severity: severity,
+        icon: severity == FushiNoticeSeverity.error
+            ? FushiIcons.error
+            : FushiIcons.warning,
+        message: message,
+        actionsInline: true,
+        actions: <Widget>[
+          if (onRetry != null)
+            FushiTextButton(
+              onPressed: _searching ? null : onRetry,
+              child: Text(t.retry),
+            ),
+        ],
+      ),
+    );
+  }
+
+  /// 搜索中的骨架：五条分段卡片形状的占位（首尾大圆角、行间 2），有界扫光；
+  /// 墨水屏 / 减弱动态效果由共享骨架自行降级为静态块。
+  Widget _buildResultsSkeleton() {
+    const int rows = 5;
+    return FushiSkeletonShimmer(
+      child: ListView(
+        physics: const NeverScrollableScrollPhysics(),
+        children: <Widget>[
+          for (int i = 0; i < rows; i++)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 2),
+              child: FushiSkeleton(
+                height: 72,
+                borderRadius: fushiGroupedItemRadius(context, i, rows),
               ),
-              if (onRetry != null) ...<Widget>[
-                const SizedBox(width: 8),
-                TextButton(
-                  onPressed: _searching ? null : onRetry,
-                  child: Text(t.retry),
-                ),
-              ],
-            ],
-          ),
-        ),
+            ),
+        ],
       ),
     );
   }
@@ -1304,33 +1471,32 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
   /// 滚动，保留 BUG-279 不变量。
   Widget _buildResultsBody(ThemeData theme) {
     if (_searching) {
-      return buildLoading();
+      return _buildResultsSkeleton();
     }
     if (_searched && _candidates.isEmpty) {
       return Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            Text(t.video_jimaku_no_results, textAlign: TextAlign.center),
+        child: SingleChildScrollView(
+          child: FushiPlaceholderMessage(
+            icon: FushiIcons.searchOff,
+            message: t.video_jimaku_no_results,
             // 带了集数却 0 结果：Jimaku 文件名启发式可能误伤整季打包字幕，给一键
             // 「显示全部集」逃生口（清集数框重搜）。
-            if (_searchedWithEpisode) ...<Widget>[
-              const SizedBox(height: 8),
-              TextButton.icon(
-                onPressed: _showAllEpisodes,
-                icon: const Icon(Icons.list, size: 18),
-                label: Text(t.video_jimaku_show_all_episodes),
-              ),
-            ],
-          ],
+            action: _searchedWithEpisode
+                ? FushiFilledButton.tonalIcon(
+                    onPressed: _showAllEpisodes,
+                    icon: const FushiIcon(FushiIcons.listView, size: 18),
+                    label: Text(t.video_jimaku_show_all_episodes),
+                  )
+                : null,
+          ),
         ),
       );
     }
     if (_candidates.isEmpty) {
       // 未搜索的初始态（宽屏右栏占位）：淡图标示意结果将显示在这里，不引入新文案。
       return Center(
-        child: Icon(
-          Icons.subtitles_outlined,
+        child: FushiIcon(
+          FushiIcons.subtitles,
           size: 48,
           color: theme.colorScheme.outlineVariant,
         ),
@@ -1391,7 +1557,7 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
             SizedBox(width: filterPaneWidth, child: _buildFilterPane(theme)),
             const Padding(
               padding: EdgeInsets.symmetric(horizontal: 12),
-              child: VerticalDivider(width: 1),
+              child: FushiVerticalDivider(width: 1),
             ),
             Expanded(child: _buildResultsArea(theme)),
           ],
@@ -1479,7 +1645,7 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
                 key: const ValueKey<String>('subtitle-batch-download'),
                 enabled: _busyName == null,
                 tooltip: t.video_jimaku_batch_download,
-                icon: Icons.download_outlined,
+                icon: FushiIcons.download,
                 onTap: () => unawaited(_downloadSelected()),
               ),
             ],
@@ -1498,13 +1664,13 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
           overflowSpacing: 4,
           children: <Widget>[
             if (widget.onCancel != null)
-              TextButton(
+              FushiTextButton(
                 onPressed: widget.onCancel,
                 child: Text(t.dialog_cancel),
               ),
-            FilledButton.icon(
+            FushiFilledButton.icon(
               onPressed: _searching ? null : _search,
-              icon: const Icon(Icons.search),
+              icon: const FushiIcon(FushiIcons.search),
               label: Text(t.video_jimaku_search),
             ),
           ],
@@ -1553,40 +1719,59 @@ class JimakuCandidateList extends StatelessWidget {
     // 不用 shrinkWrap：外层 [ConstrainedBox] 给了有界 maxHeight，普通 ListView 会
     // 填满该高度并在内容超出时正常滚动。shrinkWrap 反而会让它贴合内容/不产生可滚
     // 余量（maxScrollExtent=0），正是「滚不动」的来源。
-    return ListView.builder(
-      itemCount: shown.length,
-      itemBuilder: (BuildContext context, int i) {
-        final JimakuCandidate c = shown[i];
-        final bool busy = busyName == c.name;
-        // 文件名（含集数，如 第01話/E01）整段可见才能区分是第几集：换行而非单行截断
-        // （TODO-673：番名都一样，区分集数的部分原本被省略号吃掉）。文件名给多行
-        // 软换行，仍给一个上限避免极长名把单条撑满整个列表区，超限再 fade 兜底。
-        return ListTile(
-          contentPadding: const EdgeInsets.symmetric(vertical: 4),
-          isThreeLine: true,
-          leading: const Icon(Icons.subtitles_outlined),
-          title: Text(
-            c.name,
-            maxLines: 3,
-            softWrap: true,
-            overflow: TextOverflow.fade,
-          ),
-          subtitle: Text(
-            c.entryName,
-            maxLines: 2,
-            softWrap: true,
-            overflow: TextOverflow.fade,
-          ),
-          trailing: busy
-              ? const SizedBox(
-                  width: 18,
-                  height: 18,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              : const Icon(Icons.download),
-          onTap: onDownload == null ? null : () => onDownload!(c),
-        );
-      },
+    // M3E 分段卡片（首尾大圆角、行间 2），错峰进场；结果集换了（重搜 / 改筛选）
+    // 重开进场窗口。
+    return FushiEntranceScope(
+      replayKey: shown.length,
+      child: ListView.builder(
+        itemCount: shown.length,
+        itemBuilder: fushiStaggeredItemBuilder((BuildContext context, int i) {
+          final JimakuCandidate c = shown[i];
+          final bool busy = busyName == c.name;
+          // 文件名（含集数，如 第01話/E01）整段可见才能区分是第几集：换行而非单行截断
+          // （TODO-673：番名都一样，区分集数的部分原本被省略号吃掉）。文件名给多行
+          // 软换行，仍给一个上限避免极长名把单条撑满整个列表区，超限再 fade 兜底。
+          return FushiGroupedListItem(
+            index: i,
+            count: shown.length,
+            onTap: onDownload == null ? null : () => onDownload!(c),
+            child: FushiListItem(
+              isThreeLine: true,
+              titleMaxLines: 3,
+              leading: FushiListLeadingIcon(
+                FushiIcons.subtitles,
+                shape: FushiLeadingShape.square,
+                tone: busy ? FushiCardTone.primary : FushiCardTone.secondary,
+              ),
+              title: Text(
+                c.name,
+                maxLines: 3,
+                softWrap: true,
+                overflow: TextOverflow.fade,
+              ),
+              subtitle: Text(
+                switch (c.source) {
+                  final VideoSubtitleCandidate source
+                      when source.isArchivePack =>
+                    '${subtitleArchivePackLabel(source)} · ${c.entryName}',
+                  _ => c.entryName,
+                },
+                maxLines: 2,
+                softWrap: true,
+                overflow: TextOverflow.fade,
+              ),
+              trailing: busy
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: FushiCircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const FushiIcon(FushiIcons.download),
+            ),
+          );
+        }),
+      ),
     );
+
   }
 }

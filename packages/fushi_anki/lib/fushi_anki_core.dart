@@ -8,12 +8,20 @@
 /// foundation）只从 `fushi_anki.dart` 导出。
 library fushi_anki_core;
 
+export 'src/anki_compact_glossaries.dart';
+export 'src/anki_glossary_css.dart';
 export 'src/anki_media_dedup.dart';
 export 'src/anki_models.dart';
+export 'src/anki_note_composer.dart';
+export 'src/anki_media_naming.dart';
+export 'src/anki_local_media.dart';
 export 'src/anki_note_type_definition.dart';
 export 'src/anki_remote_media_http.dart';
+export 'src/anki_synchronized_clip_template.dart';
 export 'src/anki_template_render.dart';
 export 'src/card_source_link.dart';
+export 'src/fushi_card_blocks.dart';
+export 'src/fushi_card_note_type.dart';
 export 'src/ankiconnect/ankiconnect_service.dart';
 export 'src/lapis_blocks.dart';
 export 'src/lapis_note_type.dart';
@@ -21,3 +29,6 @@ export 'src/lapis_preset.dart';
 export 'src/lapis_style_preview.dart';
 export 'src/lapis_styling.dart';
 export 'src/lapis_template_preview.dart';
+export 'src/mining_request_overrides.dart';
+
+export 'src/anki_video_template.dart';

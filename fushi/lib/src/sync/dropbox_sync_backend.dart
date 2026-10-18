@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:fushi/src/sync/pkce_oauth.dart';
 import 'package:fushi/src/sync/pkce_oauth_backend_mixin.dart';
+import 'package:fushi/src/sync/sync_asset_range_reader.dart';
 import 'package:fushi/src/sync/sync_http.dart';
 import 'package:fushi_engine/sync/sync_asset_store.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
@@ -18,6 +19,22 @@ import 'package:fushi/src/sync/sync_file_ref.dart';
 import 'package:fushi_engine/sync/ttu_models.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 
+/// Dropbox `list_folder` 条目（FileMetadata / FolderMetadata）→ [AssetEntry]。
+///
+/// 修改时间取 `server_modified`（Dropbox 服务端时刻，`Z` 结尾的 ISO 8601），不取
+/// `client_modified`（上传方自报）。文件夹条目没有修改时间，为 null。
+AssetEntry dropboxEntryToAssetEntry(Map<String, dynamic> e) {
+  final bool isFolder = e['.tag'] == 'folder';
+  return AssetEntry(
+    id: e['path_lower'] as String? ?? e['path_display'] as String,
+    name: e['name'] as String,
+    isFolder: isFolder,
+    sizeBytes: isFolder ? null : (e['size'] as num?)?.toInt(),
+    modifiedAt: isFolder ? null : syncIsoTimestampMs(e['server_modified']),
+    revision: DropboxSyncBackend._contentRevisionOf(e),
+  );
+}
+
 /// Dropbox sync backend via Dropbox API v2.
 ///
 /// Auth: OAuth 2.0 PKCE flow（外壳在 [PkceOAuthBackendMixin]）.
@@ -28,7 +45,7 @@ class DropboxSyncBackend extends SyncBackend
         SyncBackendFileTrioMixin,
         SyncAssetStoreDefaults,
         PkceOAuthBackendMixin
-    implements RemoteListingCapable {
+    implements RemoteListingCapable, SyncAssetRangeReader {
   DropboxSyncBackend._();
   static final DropboxSyncBackend instance = DropboxSyncBackend._();
 
@@ -327,7 +344,7 @@ class DropboxSyncBackend extends SyncBackend
     required String folderId,
     required String fileName,
     required File file,
-    void Function(double progress)? onProgress,
+    SyncTransferProgress? onProgress,
   }) async {
     final fileLength = await file.length();
     final apiArg = jsonEncode({
@@ -356,7 +373,7 @@ class DropboxSyncBackend extends SyncBackend
   Future<void> downloadContentFile({
     required String fileId,
     required File destination,
-    void Function(double progress)? onProgress,
+    SyncTransferProgress? onProgress,
   }) async {
     final apiArg = jsonEncode({'path': fileId});
     final request = http.Request(
@@ -396,6 +413,50 @@ class DropboxSyncBackend extends SyncBackend
     }
   }
 
+  // ── SyncAssetRangeReader（云盘视频流播） ──────────────────────────
+
+  /// `files/get_temporary_link` 的直链有效期 4 小时、免鉴权、支持 Range。本地只信
+  /// 3 小时，过期或被拒即现取；绝不落库。
+  final PresignedLinkCache _temporaryLinks =
+      PresignedLinkCache(ttl: const Duration(hours: 3));
+
+  /// 退出登录 / 换账号走这里（`signOut` 与设置页都会调）：直链属于签发它的账号——
+  /// 资产 id 就是路径，换了账号同一路径是另一个文件——与文件夹缓存一起作废。
+  @override
+  void clearCache() {
+    super.clearCache();
+    _temporaryLinks.clear();
+  }
+
+  @override
+  Future<SyncAssetRange> openAssetRange(
+    String assetId, {
+    required int start,
+    int? end,
+  }) async =>
+      openPresignedAssetRange(
+        client: await obtainSyncHttpClient(),
+        cache: _temporaryLinks,
+        assetId: assetId,
+        fetchLink: () => _fetchTemporaryLink(assetId),
+        start: start,
+        end: end,
+      );
+
+  /// [path] 是 [AssetEntry.id]（Dropbox 上即小写路径）。
+  Future<Uri> _fetchTemporaryLink(String path) =>
+      retryAfterAuthRefresh(refreshAuth, () async {
+        final resp = await _apiPost('/files/get_temporary_link', {
+          'path': path,
+        });
+        final json = jsonDecode(resp.body) as Map<String, dynamic>;
+        final link = json['link'] as String?;
+        if (link == null || link.isEmpty) {
+          throw SyncBackendError('No temporary link for $path');
+        }
+        return Uri.parse(link);
+      });
+
   // ── Cache ─────────────────────────────────────────────────────────
   //
   // 缓存字段 + 六个 cache 方法收敛进 [SyncFolderCache] mixin（恒等 folderId，无尾
@@ -427,13 +488,16 @@ class DropboxSyncBackend extends SyncBackend
   @override
   Future<List<AssetEntry>> listChildren(String namespaceId) async {
     final entries = await _listFolder(namespaceId);
-    return entries
-        .map((e) => AssetEntry(
-              id: e['path_lower'] as String? ?? e['path_display'] as String,
-              name: e['name'] as String,
-              isFolder: e['.tag'] == 'folder',
-            ))
-        .toList();
+    return entries.map(dropboxEntryToAssetEntry).toList();
+  }
+
+  /// 文件条目的内容版本标记：`content_hash`（内容哈希）优先，没有时退到 `rev`
+  /// （每次写入都换新）。文件夹两者都没有，返回 null。
+  static String? _contentRevisionOf(Map<String, dynamic> entry) {
+    final Object? hash = entry['content_hash'];
+    if (hash is String && hash.isNotEmpty) return 'content_hash:$hash';
+    final Object? rev = entry['rev'];
+    return rev is String && rev.isNotEmpty ? 'rev:$rev' : null;
   }
 
   @override

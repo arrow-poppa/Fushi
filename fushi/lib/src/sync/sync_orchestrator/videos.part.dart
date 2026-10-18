@@ -5,18 +5,17 @@ part of '../sync_orchestrator.dart';
 extension _SyncOrchestratorVideos on SyncOrchestrator {
   /// 一条 `VideoBooks` 行是否是可作为单文件上传的**本地**视频（[syncVideoAssets] 用）。
   ///
-  /// 排除：流媒体（`streamSpecJson` 非空 / `videoPath` 为 http(s) URL）——无本地字节
-  /// 可传；多集播放列表（`playlistJson` 非空）——单文件资产模型装不下多集（多集上传
-  /// 是后续批的接缝，见 §2.6 seam）。
+  /// 排除：流媒体（`streamSpecJson` 非空 / `videoPath` 为网络流地址——http(s) 与
+  /// IPTV 频道的 rtsp / rtmp / udp …）——无本地字节可传；`.strm` 流指针——本地那份
+  /// 只是一行地址，传给对端会被当视频下发、播不了（两者合起来就是
+  /// [lacksLocalMediaFile]）；多集播放列表（`playlistJson` 非空）——单文件资产模型
+  /// 装不下多集（多集上传是后续批的接缝，见 §2.6 seam）。
   bool _isUploadableLocalVideo(VideoBookRow v) {
     if (v.streamSpecJson != null) return false;
     if (v.playlistJson != null) return false;
     final String path = v.videoPath;
     if (path.isEmpty) return false;
-    final String lower = path.toLowerCase();
-    if (lower.startsWith('http://') || lower.startsWith('https://')) {
-      return false;
-    }
+    if (lacksLocalMediaFile(path)) return false;
     return true;
   }
 
@@ -40,7 +39,7 @@ extension _SyncOrchestratorVideos on SyncOrchestrator {
   /// 同键空间）；**仅当本地存在 VideoBooks 行时**才一并更新 `lastPositionMs`
   /// （流式视频绝不强建行污染书架）。
   ///
-  /// LWW 比对与逐条错误处理见共享模板 [_syncPositionsLive]。
+  /// 三方判定（BUG-3367）、冲突上报与逐条错误处理见共享模板 [_syncPositionsLive]。
   Future<void> _syncVideoProgressLive(
     SyncRunReport report,
     InterconnectSyncBackend backend,
@@ -70,18 +69,17 @@ extension _SyncOrchestratorVideos on SyncOrchestrator {
 
     await _syncPositionsLive(
       report,
+      sync: InterconnectPlaybackPositionSync(
+        db: _db,
+        backend: backend,
+        kind: PlaybackPositionKind.video,
+      ),
       errorLabel: 'live video progress',
       localKeys: localUids,
       hostKeys: hostById.keys.toSet(),
-      readLocal: (String uid) async {
-        final int prefsPos =
-            await _db.getPrefTyped<int>(videoRemotePositionPrefKey(uid), 0);
-        final int prefsAt =
-            await _db.getPrefTyped<int>(videoRemotePositionAtPrefKey(uid), 0);
-        return (
-          positionMs: rowPositionByUid[uid] ?? prefsPos,
-          updatedAtMs: prefsAt,
-        );
+      titleOf: (String uid) {
+        final String? title = hostById[uid]?.title;
+        return title == null || title.isEmpty ? uid : title;
       },
       // host 清单条目已带 positionMs / positionUpdatedAtMs，无需逐视频 GET。
       readHost: (String uid) async {
@@ -90,21 +88,6 @@ extension _SyncOrchestratorVideos on SyncOrchestrator {
           positionMs: info.positionMs,
           updatedAtMs: info.positionUpdatedAtMs,
         );
-      },
-      pushToHost: (String uid, int positionMs, int updatedAtMs) =>
-          backend.putRemoteVideoPosition(uid, positionMs, updatedAtMs),
-      writeBackLocal: (String uid, int positionMs, int updatedAtMs) async {
-        await _db.setPrefTyped<int>(
-            videoRemotePositionPrefKey(uid), positionMs);
-        await _db.setPrefTyped<int>(
-            videoRemotePositionAtPrefKey(uid), updatedAtMs);
-        if (rowPositionByUid.containsKey(uid)) {
-          // 时刻用**对端的** updatedAtMs（不是 now）：这是「对方在那个时刻看到这
-          // 里」的事实。传 now 会把三天前的远端进度冒充成本机刚看的，直接把合集
-          // 续播锚点（BUG-1542）钉在一集用户根本没在看的集上。
-          await _db.updateVideoBookPosition(uid, positionMs,
-              playedAt: updatedAtMs);
-        }
       },
     );
 
@@ -287,11 +270,12 @@ extension _SyncOrchestratorVideos on SyncOrchestrator {
             v.bookUid,
             item.file,
             title: v.title,
-            onProgress: (double f) => _emit(SyncPhase.videos,
+            onProgress: (double f, [int? b]) => _emit(SyncPhase.videos,
                 itemIndex: index,
                 itemTotal: total,
                 title: v.title,
-                fileFraction: f),
+                fileFraction: f,
+                fileBytes: b),
           );
           report.videosExported++;
           videoOk = true;

@@ -66,7 +66,22 @@ bool isGalLookupProductionProviderPair(int kind, int id) {
     case 1: // runtime_layout
       return id == 1 || id == 2 || id == 6 || id == 7 || id == 8;
     case 2: // engine_exact_layout
-      return id == 3 || id == 4 || id == 5 || id == 14 || id == 15 || id == 16;
+      return id == 3 ||
+          id == 4 ||
+          id == 5 ||
+          id == 14 ||
+          id == 15 ||
+          id == 16 ||
+          id == 17 ||
+          id == 18 ||
+          id == 19 ||
+          id == 20 ||
+          id == 21 ||
+          id == 22 ||
+          id == 23 ||
+          id == 24 ||
+          id == 25 ||
+          id == 28;
     case 3: // positioned_text_api
       return id == 9 || id == 10;
     default:
@@ -571,6 +586,11 @@ class GalAttachedShieldStatus {
     this.observedMask = 0,
     this.faultMask = 0,
     this.statusFlags = 0,
+    this.ownerKind = 0,
+    this.targetHwnd = 0,
+    this.transactionId = 0,
+    this.activeButtons = 0,
+    this.allowRisk = false,
   });
 
   static const int _verifiedFlag = 0x01;
@@ -588,6 +608,11 @@ class GalAttachedShieldStatus {
   final int observedMask;
   final int faultMask;
   final int statusFlags;
+  final int ownerKind;
+  final int targetHwnd;
+  final int transactionId;
+  final int activeButtons;
+  final bool allowRisk;
 
   GalAttachedShieldConclusion get conclusion {
     if ((statusFlags & _faultedFlag) != 0) {
@@ -621,6 +646,11 @@ class GalAttachedShieldStatus {
       observedMask: intOf('observedMask'),
       faultMask: intOf('faultMask'),
       statusFlags: intOf('statusFlags'),
+      ownerKind: intOf('ownerKind'),
+      targetHwnd: intOf('targetHwnd'),
+      transactionId: intOf('transactionId'),
+      activeButtons: intOf('activeButtons'),
+      allowRisk: map['allowRisk'] == true,
     );
   }
 }
@@ -636,6 +666,8 @@ class GalAttachedLookupHitV19 {
     required this.charIndex,
     required this.sourceLength,
     this.wordRect,
+    this.physicalWordRect,
+    this.destinationViewportScreen,
     this.hover = false,
   });
 
@@ -647,6 +679,15 @@ class GalAttachedLookupHitV19 {
   final int charIndex;
   final int sourceLength;
   final Rect? wordRect;
+
+  /// Raw screen-physical word rectangle from the attached DirectWrite layer.
+  /// Unlike [wordRect], this value must not be multiplied by the main Flutter
+  /// window's DPR.
+  final Rect? physicalWordRect;
+
+  /// Raw screen-physical presentation client viewport containing
+  /// [physicalWordRect]. It is optional for older native runners.
+  final Rect? destinationViewportScreen;
 
   /// True when the runner's Shift+hover timer emitted the hit instead of a
   /// completed shielded click. Both take the same lookup chain; the flag is
@@ -686,8 +727,19 @@ class GalAttachedLookupHitV19 {
       charIndex: charIndex,
       sourceLength: sourceLength,
       wordRect: GalHookTextOverlayChannel._wordRect(map),
+      physicalWordRect: GalHookTextOverlayChannel._physicalRect(
+        map['physicalWordRect'],
+      ),
+      destinationViewportScreen: GalHookTextOverlayChannel._physicalRect(
+        map['destinationViewportScreen'],
+      ),
       hover: map['hover'] == true,
     );
+    if ((map.containsKey('physicalWordRect') && hit.physicalWordRect == null) ||
+        (map.containsKey('destinationViewportScreen') &&
+            hit.destinationViewportScreen == null)) {
+      return null;
+    }
     return hit.isAddressable && hit.hasConsistentSourceLength ? hit : null;
   }
 }
@@ -961,6 +1013,10 @@ class GalLookupCallResult {
     this.directSurface = false,
     this.requestSeq = 0,
     this.appliedSeq = 0,
+    this.clientWidth = 0,
+    this.clientHeight = 0,
+    this.rootClientX,
+    this.rootClientY,
   });
 
   /// 平台不支持（非 Windows）时的常量结果：不是失败，是「这条链在这个平台不存在」。
@@ -995,6 +1051,15 @@ class GalLookupCallResult {
   final int requestSeq;
   final int appliedSeq;
 
+  /// 直连 present 时的游戏客户区尺寸（物理 px，0 = 未上报）。
+  final int clientWidth;
+  final int clientHeight;
+
+  /// BUG-2921 — 直连 present 时根卡在客户区里的真实左上角（物理 px）；null = runner
+  /// 未上报（旧 runner / 位图回退）。嵌套子卡以它为原点、以客户区为视口排版。
+  final int? rootClientX;
+  final int? rootClientY;
+
   bool get ok => error == null;
 
   static GalLookupCallResult fromReply(Object? reply) {
@@ -1010,6 +1075,10 @@ class GalLookupCallResult {
       directSurface: map['directSurface'] == true,
       requestSeq: _finiteWireInt(map['requestSeq']) ?? 0,
       appliedSeq: _finiteWireInt(map['appliedSeq']) ?? 0,
+      clientWidth: _finiteWireInt(map['clientWidth']) ?? 0,
+      clientHeight: _finiteWireInt(map['clientHeight']) ?? 0,
+      rootClientX: _finiteWireInt(map['rootClientX']),
+      rootClientY: _finiteWireInt(map['rootClientY']),
     );
   }
 }
@@ -1042,6 +1111,14 @@ typedef GalHookTextBoundsHandler =
 /// 偏好；本常量只是它的默认值，等于旧公式在默认窗高（140dip）下的实际字号，
 /// 所以没拖过窗的用户观感逐像素不变。
 const double kGalHookTextFontSize = 30.0;
+
+/// Hook 浮窗工具条的历史配色（白字 / 紫灰悬停底 / 浅紫激活）。M3E 重设计后由
+/// 控制器按 app 主题色下发（见 `galHookToolbarPalette`），这里只作「拿不到主题」
+/// 时的回落与 channel 参数默认值。键名与 alpha 均不变：悬停底色只在悬停格上画、
+/// 叠在 alpha ≥ 0x99 的工具条底板上，不改变分层窗口的逐像素命中区。
+const int kGalHookToolbarLegacyButtonTextColor = 0xFFFFFFFF;
+const int kGalHookToolbarLegacyButtonBgColor = 0x552D2340;
+const int kGalHookToolbarLegacyActiveColor = 0xFFCE93D8;
 
 /// Windows Hook 台词浮窗的专用 MethodChannel 契约。
 class GalHookTextOverlayChannel extends FloatingOverlayChannel {
@@ -1259,6 +1336,22 @@ class GalHookTextOverlayChannel extends FloatingOverlayChannel {
     return Rect.fromLTWH(left, top, width, height);
   }
 
+  static Rect? _physicalRect(Object? value) {
+    if (value is! Map) return null;
+    double? number(Object? value) =>
+        value is num && value.isFinite ? value.toDouble() : null;
+    final double? left = number(value['left']);
+    final double? top = number(value['top']);
+    final double? width = number(value['width']);
+    final double? height = number(value['height']);
+    if (left == null || top == null || width == null || height == null) {
+      return null;
+    }
+    if (width <= 0 || height <= 0) return null;
+    final Rect rect = Rect.fromLTWH(left, top, width, height);
+    return rect.isFinite ? rect : null;
+  }
+
   static Future<bool> show({
     GalHookTextWindowRect? rect,
     double fontSize = kGalHookTextFontSize,
@@ -1275,6 +1368,10 @@ class GalHookTextOverlayChannel extends FloatingOverlayChannel {
     double outlineWidth = 1.6,
     double textPadding = 20,
     double cornerRadius = 14,
+    int buttonTextColor = kGalHookToolbarLegacyButtonTextColor,
+    int buttonBgColor = kGalHookToolbarLegacyButtonBgColor,
+    int activeColor = kGalHookToolbarLegacyActiveColor,
+    Map<String, Object?> themeArgs = const <String, Object?>{},
     bool following = true,
     bool passThrough = false,
     bool locked = false,
@@ -1284,6 +1381,8 @@ class GalHookTextOverlayChannel extends FloatingOverlayChannel {
     bool toolbarAutoHide = true,
     bool passThroughBlocksMouse = true,
     List<String>? slotTooltips,
+    List<String>? slotLabels,
+    bool toolbarLabels = false,
   }) {
     return _instance.showImpl(<String, Object?>{
       'fontSize': fontSize,
@@ -1292,6 +1391,10 @@ class GalHookTextOverlayChannel extends FloatingOverlayChannel {
       // 不传 = native 侧无提示（老 payload 行为），工具条本身照常可点。
       if (slotTooltips != null && slotTooltips.isNotEmpty)
         'slotTooltips': slotTooltips,
+      // 图标下方短标签（同下标）。不传 = native 不画文字，只有图标。
+      if (slotLabels != null && slotLabels.isNotEmpty) 'slotLabels': slotLabels,
+      // 工具条文字说明开关；浮窗比整排窄时 native 自行退回纯图标。
+      'toolbarLabels': toolbarLabels,
       if (fontPath != null) 'fontPath': fontPath,
       'letterSpacing': letterSpacing,
       'lineHeight': lineHeight,
@@ -1305,9 +1408,12 @@ class GalHookTextOverlayChannel extends FloatingOverlayChannel {
       'outlineColor': outlineColor,
       'outlineWidth': outlineWidth,
       'textPadding': textPadding,
-      'buttonTextColor': 0xFFFFFFFF,
-      'buttonBgColor': 0x552D2340,
-      'activeColor': 0xFFCE93D8,
+      'buttonTextColor': buttonTextColor,
+      'buttonBgColor': buttonBgColor,
+      'activeColor': activeColor,
+      // M3E 工具条 / 查词高亮的主题色（见 galHookToolbarThemeArgs）；缺省 = native
+      // 历史外观。
+      ...themeArgs,
       'windowWidth': 900.0,
       'windowHeight': 140.0,
       'cornerRadius': cornerRadius,
@@ -1371,6 +1477,10 @@ class GalHookTextOverlayChannel extends FloatingOverlayChannel {
     double outlineWidth = 1.6,
     double textPadding = 20,
     double cornerRadius = 14,
+    int buttonTextColor = kGalHookToolbarLegacyButtonTextColor,
+    int buttonBgColor = kGalHookToolbarLegacyButtonBgColor,
+    int activeColor = kGalHookToolbarLegacyActiveColor,
+    Map<String, Object?> themeArgs = const <String, Object?>{},
   }) async {
     if (!_instance.isSupported) return;
     await _instance.channel.invokeMethod<void>('updateStyle', <String, Object?>{
@@ -1388,9 +1498,10 @@ class GalHookTextOverlayChannel extends FloatingOverlayChannel {
       'outlineWidth': outlineWidth,
       'textPadding': textPadding,
       'cornerRadius': cornerRadius,
-      'buttonTextColor': 0xFFFFFFFF,
-      'buttonBgColor': 0x552D2340,
-      'activeColor': 0xFFCE93D8,
+      'buttonTextColor': buttonTextColor,
+      'buttonBgColor': buttonBgColor,
+      'activeColor': activeColor,
+      ...themeArgs,
     });
   }
 
@@ -1456,6 +1567,15 @@ class GalHookTextOverlayChannel extends FloatingOverlayChannel {
     if (!_instance.isSupported) return;
     await _instance.channel.invokeMethod<void>(
       'setToolbarAutoHide',
+      <String, Object?>{'enabled': enabled},
+    );
+  }
+
+  /// 工具条文字说明 live 下发。
+  static Future<void> setToolbarLabels(bool enabled) async {
+    if (!_instance.isSupported) return;
+    await _instance.channel.invokeMethod<void>(
+      'setToolbarLabels',
       <String, Object?>{'enabled': enabled},
     );
   }

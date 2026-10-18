@@ -4,13 +4,31 @@ import 'dart:io';
 import 'package:ffi/ffi.dart';
 
 DynamicLibrary _openNativeLib() {
+  // 宿主显式给了绝对路径（无头服务端按 bundle 布局 `bin/../lib/` 定位）就只认它：
+  // 找错库时宁可在这里抛出，也不悄悄退回裸名加载一份别处的旧库。
+  final String? override = FushidictsFfiBindings.libraryPathOverride;
+  if (override != null && override.isNotEmpty) {
+    return DynamicLibrary.open(override);
+  }
   if (Platform.isAndroid) return DynamicLibrary.open('libfushidicts_ffi.so');
   if (Platform.isWindows) return DynamicLibrary.open('fushidicts_ffi.dll');
   if (Platform.isMacOS) return DynamicLibrary.open('libfushidicts_ffi.dylib');
-  if (Platform.isLinux) return DynamicLibrary.open('libfushidicts_ffi.so');
+  if (Platform.isLinux) return _openLinuxBundled('libfushidicts_ffi.so');
   if (Platform.isIOS) return DynamicLibrary.process();
   throw UnsupportedError(
       'fushidicts: unsupported platform ${Platform.operatingSystem}');
+}
+
+/// Linux bundle 把随包 .so 装在 `<exe 目录>/lib/`。runner 的 RUNPATH
+/// (`$ORIGIN/lib`) 只作用于 exe 自己的直接依赖，**不**作用于 Dart VM（在
+/// libflutter_linux_gtk.so 里）发起的 `dlopen`，所以裸名加载找不到它——
+/// pdfium_dart 在 Linux 上同样按这个绝对路径加载。exe 旁没有（flutter test /
+/// 纯 Dart 宿主）时退回裸名，交给 LD_LIBRARY_PATH / 系统路径。
+DynamicLibrary _openLinuxBundled(String name) {
+  final String bundled =
+      '${File(Platform.resolvedExecutable).parent.path}/lib/$name';
+  if (File(bundled).existsSync()) return DynamicLibrary.open(bundled);
+  return DynamicLibrary.open(name);
 }
 
 // ── C struct mirrors ────────────────────────────────────────────────
@@ -212,6 +230,13 @@ typedef _FreeStringDart = void Function(Pointer<Utf8> s);
 // ── bindings class ──────────────────────────────────────────────────
 
 class FushidictsFfiBindings {
+  /// 原生库的绝对路径覆盖（null = 各平台默认的裸名 / exe 旁 `lib/` 搜索）。
+  ///
+  /// isolate 局部：后台 isolate（`FushiDicts.importDictionary`）由调用方带过去。
+  /// 必须在首次创建绑定（首个 `FushiDicts` 实例 / 导入 / 探测）之前设好——绑定
+  /// 一旦创建就缓存，之后改它不会换库。
+  static String? libraryPathOverride;
+
   FushidictsFfiBindings() {
     _lib = _openNativeLib();
 
@@ -303,4 +328,26 @@ class FushidictsFfiBindings {
   late final _FreeKanjiResultsDart freeKanjiResults;
   late final _LookupPopupJsonDart lookupPopupJson;
   late final _FreeStringDart freeString;
+}
+
+// ── zstd 文件解压（按需解析） ───────────────────────────────────────
+
+typedef _ZstdDecompressFileNative = Int32 Function(
+    Pointer<Utf8> inPath, Pointer<Utf8> outPath);
+typedef ZstdDecompressFileDart = int Function(
+    Pointer<Utf8> inPath, Pointer<Utf8> outPath);
+
+/// `fushidicts_zstd_decompress_file` 的绑定，**用到时才解析**。
+///
+/// 不放进 [FushidictsFfiBindings] 的构造函数：那里是急切查找，某个平台上随包
+/// 的原生库若还是没有这个导出的旧版本，整套查词绑定会在构造时一起抛。单独解析
+/// 让缺符号只影响这一个功能（返回 null，调用方报「本平台不支持」）。
+ZstdDecompressFileDart? lookupZstdDecompressFile() {
+  try {
+    return _openNativeLib()
+        .lookupFunction<_ZstdDecompressFileNative, ZstdDecompressFileDart>(
+            'fushidicts_zstd_decompress_file');
+  } on ArgumentError {
+    return null;
+  }
 }

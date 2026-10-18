@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:drift/drift.dart';
 import 'package:drift/native.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_extension_store_client.dart';
@@ -50,8 +50,7 @@ MihonAvailableExtension _ext(
 }
 
 MangaExtensionStoreRow _store(String indexUrl, String name, int sortOrder) {
-  return MangaExtensionStoreRow(
-    indexUrl: indexUrl,
+  return MangaExtensionStoreRow(mediaKind: 'manga', indexUrl: indexUrl,
     name: name,
     badgeLabel: null,
     format: MihonStoreFormat.currentJson.name,
@@ -236,7 +235,7 @@ void main() {
 
     setUp(() async {
       LocaleSettings.setLocale(AppLocale.en);
-      root = await Directory.systemTemp.createTemp('hibiki-mihon-grouping-');
+      root = await Directory.systemTemp.createTemp('fushi-mihon-grouping-');
       database = FushiDatabase.forTesting(NativeDatabase.memory());
       await database.upsertMangaExtensionStore(
         MangaExtensionStoresCompanion.insert(

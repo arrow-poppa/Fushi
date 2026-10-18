@@ -134,9 +134,33 @@ Actions → **Build Desktop and Apple Release Artifacts** → Run workflow：
 - `channel` = `beta`（或 `formal`）
 - `upload_testflight` = true（默认）
 
-**TestFlight 只在手动 `workflow_dispatch` 的 beta / formal 通道上传**。push 触发的
-debug 通道每次提交都会跑，传上去只会白烧 App Store Connect 的处理配额，并且把构建号
-推高 —— 构建号在同一个 `CFBundleShortVersionString` 下必须单调递增，浪费掉不可回收。
+手动 dispatch：beta / formal 直接上传；debug 只在 `testflight_only=true` 时上传（手动重发
+一个普通 debug 不会顺手传）。
+
+### debug 包约每三次上一次 TestFlight
+
+push 触发的 debug 通道（`develop` / `main` push）**约每三次传一次**：发布序列（= 构建号 =
+commit 计数，`tool/release_sequence.sh`）能被 3 整除的那次 push，ios job 在未签名 IPA 之外
+再做一趟签名构建 + `altool` 上传（2026-09-16 用户拍板「发三次调试版触发一次 TestFlight」）。
+不每次都传，是因为 push 一天 5~13 次，全传会让 App Store Connect 的处理排队压后真正想发的
+beta、TestFlight 列表被 debug 构建淹掉（每个挂 90 天）、每条 push 再多一趟 15 分钟签名构建。
+用发布序列而不是 run 号：本仓不变式是 run 号永远不当序列（`tool/check_release_policy.ps1`
+整个禁用 `GITHUB_RUN_NUMBER` / `github.run_number`），而且这样从 TestFlight 的构建号就能看出
+哪次是自动传的。每次 push 涨的 commit 数不固定，所以是「约」每三次；哪次会传，看 ios job
+「Resolve Apple signing mode」那一行 `debug push, build N ...` 的日志。
+
+debug 包在 TestFlight 里的短版本与 beta 相同（Apple 只收三段），靠构建号和 app 内
+`FUSHI_BUILD_VERSION`（`2.x.y-debug.<seq>`）区分。构建号是 commit 计数 + 地板、沿 develop
+单调，debug / beta / formal 共用一条序列。所以从**比 develop 头更旧的 commit** 手动发 beta
+时，构建号会比已传的 debug 小、altool 拒收——beta 一律从 develop 头发。
+
+缺任一 Apple 密钥时 push 门直接关闭（fork 照常绿）；`testflight_only=true` 的 dispatch 缺密钥
+则红，不允许「绿着跳过」。想在两次自动上传之间手动补传一份 debug：Run workflow →
+`channel=debug` + `testflight_only=true`（只跑 ios job 的签名 + 上传，其余全跳）。
+
+（09-14 ~ 09-16 曾有过定时通道 `testflight-debug.yml`：每 8 小时用 `tool/asc_latest_build_number.sh`
+查一次 App Store Connect、有新提交才 dispatch。改为按次数后已连同脚本一起撤掉；别把它加
+回来，两条节律并存会重复上传。守卫 `apple_signing_workflow_guard_test.dart` 钉着「不得回潮」。）
 
 上传后 App Store Connect 处理通常 5–30 分钟，之后才出现在测试员列表里。
 
@@ -145,9 +169,10 @@ debug 通道每次提交都会跑，传上去只会白烧 App Store Connect 的�
 Release 里挂的 `fushi-<版本>-ios.ipa` **仍然是未签名包**，走的还是原来的
 `flutter build ios --release --no-codesign` + 手工打 Payload。老用户用 AltStore /
 Sideloadly 自签侧载的就是它，换成 App Store 签名包会直接打断他们。TestFlight 用的是
-另外一次、只在手动 beta/formal 时才发生的签名构建，产物不进 Release 资产。
+另外一次签名构建（手动 beta/formal，或每第三次 debug push），产物不进 Release 资产。
 
-代价是这种发布下 iOS 会构建两次。可以接受：手动 beta/formal 本来就不频繁。
+代价是这种 run 下 iOS 会构建两次。可以接受：手动 beta/formal 本来就不频繁，debug 也只有
+三分之一的 push 多这一趟。
 
 ## 实现要点（改之前先读）
 
@@ -199,6 +224,32 @@ xcodebuild -project Runner.xcodeproj -target Runner -configuration Release \
 `macos/Runner.xcodeproj` 里 hoshidicts 的构建脚本用的是 `codesign --timestamp=none`
 的 ad-hoc 签名 —— 重签这一步正是用来覆盖它的。
 
+### 没有 Developer ID 时：ad-hoc 包必须钉指定要求（BUG-2772）
+
+现状更新（2026-10-10）：两个 secret 已于 2026-10-09 16:15 UTC 写入，macOS 各通道改走
+Developer ID 路径；但首批写入的口令与 p12 不一致（口令文件结尾带裸 `\r`，p12 用带 `\r`
+的口令加密，`gh secret set` 写入时去掉了 `\r`），「Import Developer ID certificate」报
+`SecKeychainItemImport: The user name or passphrase you entered is not correct`，macOS 资产
+整包缺席、调试版清单只剩 Android/Windows/iOS。`tool/apple_signing_secrets.sh` 现在按 gh
+同口径去掉口令结尾的 `\r\n` 再校验，这类不一致会在本地校验阶段直接报「口令错误」。
+**口令文件只写一行、不要带 `\r`；p12 用同一份去掉 `\r` 的口令重新导出。**
+
+以下为写入 secret 之前的历史说明：仓库没有 `MACOS_DEVELOPER_ID_P12_BASE64` /
+`MACOS_DEVELOPER_ID_P12_PASSWORD` 时，macOS 包**所有通道**（debug / beta / formal）都走 ad-hoc
+路径——签名判据不看通道，补齐这两个 secret（证书只能账号持有人在网页端建）后各通道自动改走
+Developer ID + 公证，workflow 不用再改。在那之前，手动下载用的 `-macos-arm64.dmg` 里随包放
+`打开说明 How to open.txt`（Gatekeeper「仍要打开」/ `xattr -dr com.apple.quarantine`）。
+
+ad-hoc 签名默认的指定要求是 `cdhash H"…"`，每次构建都变。TCC（辅助功能等隐私授权）
+存的就是授权那一刻的指定要求，所以不钉的话**每次应用内更新都要重新授权**（全局查词
+读前台选区靠辅助功能）。workflow 的「Pin stable designated requirement for ad-hoc
+macOS app」在所有 bundle 改动之后、只在 ad-hoc 路径上，只重签外层（**不带 `--deep`**，
+否则 identifier 要求会盖到内层 Mach-O 上、`--verify --strict` 失败）并嵌入
+`designated => identifier "app.fushi.reader"`。它之后不许再出现 `--deep --sign -`
+整包重签（守卫 `fushi/test/build/macos_adhoc_designated_requirement_guard_test.dart`）。
+改 macOS bundle id 等于让所有用户重新授权一次。Developer ID 路径不需要这一步：默认
+要求锚在 Team ID 上，本就跨构建稳定。
+
 ### 捆绑 JVM 的额外 entitlement
 
 `Contents/Resources/mihon_bridge` 是一个 Temurin JDK 21 的 jlink 镜像
@@ -222,6 +273,56 @@ com.apple.security.cs.disable-library-validation
 `false` 的依据是 Hibiki 只用系统 HTTPS/TLS，没有自研或专有加密算法。
 **将来如果引入自研加密（比如端到端加密的互联同步），必须回头改这个值并补交年度
 自分类报告。**
+
+## APNs 推送密钥（反馈回复推送）
+
+开发者在反馈处理台回复 / 改状态后，排行榜 Worker（`services/leaderboard/src/feedback_push.js`）
+给反馈人的 iOS 设备发 APNs 推送，App 没运行也能收到，点开直达那条反馈。Android 不接 FCM
+（国内无 GMS），继续用后台检查；桌面不变。**两侧缺配置都安全空转**：Worker 缺 secret 时
+不发送、不报错（每个 isolate 记一行日志），App 拿不到推送令牌时不登记，提醒照旧走本机后台检查。
+
+### 1. Apple Developer 侧
+
+1. developer.apple.com/account/resources/identifiers → `app.fushi.reader` → Capabilities 勾
+   **Push Notifications** → Save。
+2. **重新生成 App Store 描述文件**（勾了 capability 之后旧描述文件里没有 `aps-environment`）：
+   Profiles → 原来那份 `IOS_APP_STORE` 描述文件 → Edit → Save → 下载，然后照「仓库 Secrets
+   清单」重写 `IOS_PROVISIONING_PROFILE_BASE64`（`tool/apple_signing_secrets.sh`）。
+   `release-desktop.yml` 解出描述文件时发现它带 `aps-environment`，才往 `Release.xcconfig` 追加
+   `CODE_SIGN_ENTITLEMENTS = Runner/Runner.entitlements`（值取描述文件里的，App Store 描述文件
+   是 `production`）；不带就照旧不接入——**描述文件没开 Push 却签进 aps-environment，codesign
+   会直接失败**，所以这一步不能写死在工程里。
+3. Keys → **+** → 勾 **Apple Push Notifications service (APNs)** → 下载 `AuthKey_<KEYID>.p8`
+   （**只能下一次**，丢了只能作废重建）。记下 Key ID 与 Team ID（10 位）。一把 Auth Key
+   对团队下所有 App、sandbox 与 production 都有效，不像旧的 .p12 推送证书一年一换。
+
+### 2. Worker secrets
+
+```bash
+cd services/leaderboard
+W="node node_modules/wrangler/bin/wrangler.js"
+$W secret put APNS_KEY_P8    --config wrangler.toml   # 粘贴 .p8 全文（含 BEGIN/END 行）
+$W secret put APNS_KEY_ID    --config wrangler.toml   # Key ID
+$W secret put APNS_TEAM_ID   --config wrangler.toml   # Team ID
+$W secret put APNS_BUNDLE_ID --config wrangler.toml   # app.fushi.reader
+$W secret put APNS_ENV       --config wrangler.toml   # production（见下）
+```
+
+部署前先应用迁移 `0010_feedback_push_tokens.sql`（Actions 部署勾 `apply_migrations`）。
+
+### sandbox 与 production
+
+| | sandbox（`api.sandbox.push.apple.com`） | production（`api.push.apple.com`） |
+|---|---|---|
+| 哪些包的令牌 | Xcode 直接装的 Debug 包（`aps-environment = development`） | TestFlight 与 App Store 包（`production`） |
+| `APNS_ENV` | `sandbox` | `production` |
+
+两套环境的令牌互不通用：令牌发错环境 APNs 回 `400 BadDeviceToken`，Worker 会把它当失效令牌删掉。
+线上 Worker 只服务 TestFlight / App Store 包，所以设 `production`。本地真机调推送：在自己机器上
+（别提交）给 Runner 加 `CODE_SIGN_ENTITLEMENTS = Runner/Runner.entitlements`（Debug 的
+`FUSHI_APS_ENVIRONMENT` 默认 `development`），并临时把一个测试 Worker 的 `APNS_ENV` 设成 `sandbox`。
+
+GitHub Release 里的未签名 ipa（AltStore / Sideloadly 侧载）没有推送能力，照旧走后台检查。
 
 ## 排障
 

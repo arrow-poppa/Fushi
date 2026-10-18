@@ -4,7 +4,7 @@ import 'dart:io';
 
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi_engine/media/external_provider.dart';
@@ -16,6 +16,7 @@ import 'package:fushi/src/pages/implementations/subtitle_collection_panel.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
+import '../helpers/glass_unwrap.dart';
 
 /// 合集批量面板（前身 `JimakuBatchDialog`，现走 registry）的状态门：
 /// 搜索失败 → 提示 + 下载禁用；搜索中禁用、非空后开放；快速切系列时迟到的旧响应
@@ -119,7 +120,7 @@ void main() {
             database: db,
             collection: collection,
             members: <VideoBookRow>[member],
-            subtitleRegistry: () => registry,
+            subtitleRegistry: () async => registry,
             initialApiKey: 'test-key',
             onApiKeyChanged: (_) async {},
             saveDirectory: tempDir.path,
@@ -303,7 +304,7 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(find.textContaining(t.video_jimaku_search_failed), findsOneWidget);
-    expect(tester.widget<FilledButton>(downloadButton()).onPressed, isNull);
+    expect(tester.widget<FilledButton>(glassUnwrap<FilledButton>(downloadButton())).onPressed, isNull);
   });
 
   testWidgets('搜索中禁用；返回非空候选后才开放下载', (WidgetTester tester) async {
@@ -320,7 +321,7 @@ void main() {
     );
     await tester.pump();
     expect(find.text(t.video_jimaku_source_loading), findsWidgets);
-    expect(tester.widget<FilledButton>(downloadButton()).onPressed, isNull);
+    expect(tester.widget<FilledButton>(glassUnwrap<FilledButton>(downloadButton())).onPressed, isNull);
 
     pending.complete(
       ProviderBatchResult<VideoSubtitleCandidate>.success(
@@ -330,7 +331,7 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(tester.widget<FilledButton>(downloadButton()).onPressed, isNotNull);
+    expect(tester.widget<FilledButton>(glassUnwrap<FilledButton>(downloadButton())).onPressed, isNotNull);
     expect(
       find.byKey(const ValueKey<String>('subtitle-source-fake:Source')),
       findsOneWidget,
@@ -534,7 +535,7 @@ void main() {
       find.byKey(const ValueKey<String>('subtitle-source-fake:e1')),
       findsOneWidget,
     );
-    expect(tester.widget<FilledButton>(downloadButton()).onPressed, isNotNull);
+    expect(tester.widget<FilledButton>(glassUnwrap<FilledButton>(downloadButton())).onPressed, isNotNull);
   });
 
   /// AniList 模糊搜索返回 [ids] 里每个 id 一条候选，其余请求 404。
@@ -604,6 +605,75 @@ void main() {
     );
   });
 
+  testWidgets('BUG-2713：成员是 S04E18 → 自动首搜按第四季的 AniList 条目检索', (
+    WidgetTester tester,
+  ) async {
+    await db.upsertVideoBook(
+      const VideoBooksCompanion(
+        bookUid: Value<String>('video/rezero-s04e18'),
+        title: Value<String>('Re Zero kara Hajimeru Isekai Seikatsu S04E18'),
+        videoPath: Value<String>(
+          'C:/video/[NanakoRaws] Re Zero kara Hajimeru Isekai Seikatsu '
+          'S04E18 (AT-X TV 1080p HEVC AAC).mkv',
+        ),
+      ),
+    );
+    final VideoBookRow member = (await repo.getByBookUid(
+      'video/rezero-s04e18',
+    ))!;
+    final MediaCollectionRow collection = await seedCollection();
+    // 相关度首条恒为第一季（2026-09-26 实测 AniList 原样顺序）。
+    Future<http.Client> factory() async => MockClient(
+      (http.Request request) async => http.Response(
+        jsonEncode(<String, Object?>{
+          'data': <String, Object?>{
+            'Page': <String, Object?>{
+              'media': <Object?>[
+                for (final (int id, String romaji) in const <(int, String)>[
+                  (21355, 'Re:Zero kara Hajimeru Isekai Seikatsu'),
+                  (108632, 'Re:Zero kara Hajimeru Isekai Seikatsu 2nd Season'),
+                  (163134, 'Re:Zero kara Hajimeru Isekai Seikatsu 3rd Season'),
+                  (189046, 'Re:Zero kara Hajimeru Isekai Seikatsu 4th Season'),
+                ])
+                  <String, Object?>{
+                    'id': id,
+                    'title': <String, Object?>{'romaji': romaji},
+                  },
+              ],
+            },
+          },
+        }),
+        200,
+      ),
+    );
+    final List<VideoSubtitleSearchRequest> requests =
+        <VideoSubtitleSearchRequest>[];
+    await tester.pumpWidget(
+      wrap(
+        collection: collection,
+        member: member,
+        httpClientFactory: factory,
+        onSearch: (VideoSubtitleSearchRequest request) async {
+          requests.add(request);
+          return ProviderBatchResult<VideoSubtitleCandidate>.success(
+            <VideoSubtitleCandidate>[
+              _Cand('Show - 18.ja.srt', source: 'e1', episode: 18),
+            ],
+          );
+        },
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(requests, hasLength(1));
+    expect(
+      requests.single.media!.anilistId,
+      189046,
+      reason: '按第一季的 id 查 Jimaku 只会列出第一季的字幕',
+    );
+    expect(requests.single.effectiveSeason, 4);
+  });
+
   testWidgets('用户显式点选系列 → anilistId 才写进合集', (WidgetTester tester) async {
     final VideoBookRow member = await seedMember();
     final MediaCollectionRow collection = await seedCollection();
@@ -656,7 +726,34 @@ void main() {
     );
     expect(empty, findsOneWidget);
     expect(tester.widget<Text>(empty).data, t.video_jimaku_no_results);
-    expect(tester.widget<FilledButton>(downloadButton()).onPressed, isNull);
+    expect(tester.widget<FilledButton>(glassUnwrap<FilledButton>(downloadButton())).onPressed, isNull);
+  });
+
+  // BUG-3000：截图里 key 输入框明明有值，顶部却报「请先填写 Jimaku API key」——
+  // 判据看的是「有没有 registry」而不是 key。key 填了还拿不到来源时，要说真实原因。
+  testWidgets('BUG-3000 key 已填但没有任何来源：不再报「请先填写 key」',
+      (WidgetTester tester) async {
+    final VideoBookRow member = await seedMember();
+    // 绑了系列 → 进页即直接搜来源（不经 AniList），走到无来源分支。
+    final MediaCollectionRow collection = await seedCollection(anilistId: 21);
+    await tester.pumpWidget(
+      wrap(
+        collection: collection,
+        member: member,
+        withProvider: false,
+        httpClientFactory: () async =>
+            MockClient((_) async => http.Response('', 404)),
+        onSearch: (_) async =>
+            ProviderBatchResult<VideoSubtitleCandidate>.success(
+              const <VideoSubtitleCandidate>[],
+            ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text(t.video_jimaku_no_key), findsNothing,
+        reason: 'initialApiKey 是 test-key：说「请先填写 key」是在骗用户');
+    expect(find.text(t.video_subtitle_sources_all_disabled), findsOneWidget);
   });
 
   testWidgets('一个字幕来源都没配：不自动发搜，来源区给引导', (WidgetTester tester) async {

@@ -1,10 +1,14 @@
-import 'package:flutter/material.dart';
+import 'dart:typed_data';
+
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/pages/implementations/stat_session_list.dart';
+import 'package:fushi/src/pages/implementations/stat_shared.dart';
 import 'package:fushi_engine/stats/study_sessions.dart';
 import 'package:fushi_core/fushi_core.dart';
+import '../helpers/glass_unwrap.dart';
 
 /// 统计页会话流（用户 2026-09-08：每个域都要会话级统计，能删误点的会话）的行为守卫：
 ///  * 每行显示 标题 · 起止 · 量纲；空串标题回退 mediaKey；
@@ -40,6 +44,7 @@ Future<void> _pump(
   StatSessionEditOf? onEdit,
   StatSessionClearAll? onClearAll,
   StatSessionCollectionOf? collectionOf,
+  StatSessionCoverOf? coverOf,
   int limit = 8,
 }) async {
   await tester.pumpWidget(
@@ -53,6 +58,7 @@ Future<void> _pump(
                 sessions: sessions,
                 titleOf: (StudySession s) => s.title,
                 collectionOf: collectionOf,
+                coverOf: coverOf,
                 onDelete: onDelete,
                 onEdit: onEdit ?? (StudySession s, StudySessionEdit e) async {},
                 onClearAll: onClearAll ?? (List<StudySession> b) async {},
@@ -132,7 +138,9 @@ void main() {
   });
 
   testWidgets('BUG-2417：长标题排到第二行而不是单行省略', (WidgetTester tester) async {
-    const String long = 'Re：从零开始的异世界生活 第三期 第七话 暗中行动する者たち';
+    // MD3 列表行重做（2026-10：行内缩 4 + 行首间距 16）后文本列比旧实现窄约
+    // 20dp；用一个在 400dp 下仍需两行、且两行装得下的长标题钉同一契约。
+    const String long = 'Re：从零开始的异世界生活 第七话 暗中行动する者たち';
     // 手机宽度：用户实报的截图就是这个宽度下的单行截断。
     tester.view.physicalSize = const Size(400, 900);
     tester.view.devicePixelRatio = 1.0;
@@ -156,6 +164,82 @@ void main() {
       title.size.height,
       greaterThan(title.preferredLineHeight * 1.5),
       reason: '真的排到了第二行（单行 ellipsis 会停在一行高）',
+    );
+  });
+
+  testWidgets('封面：有封面画 2:3 封面槽，无封面画域图标占位，两行左缘对齐', (
+    WidgetTester tester,
+  ) async {
+    // 1×1 透明 PNG。
+    final MemoryImage cover = MemoryImage(
+      Uint8List.fromList(<int>[
+        0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D,
+        0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
+        0x08, 0x06, 0x00, 0x00, 0x00, 0x1F, 0x15, 0xC4, 0x89, 0x00, 0x00, 0x00,
+        0x0D, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9C, 0x63, 0x00, 0x01, 0x00, 0x00,
+        0x05, 0x00, 0x01, 0x0D, 0x0A, 0x2D, 0xB4, 0x00, 0x00, 0x00, 0x00, 0x49,
+        0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82,
+      ]),
+    );
+    await _pump(
+      tester,
+      sessions: <StudySession>[
+        _session('a', title: 'WITH'),
+        _session('b', title: 'WITHOUT', kind: kActivityMediaVideo),
+      ],
+      coverOf: (StudySession s) => s.title == 'WITH' ? cover : null,
+      onDelete: (_) async {},
+    );
+    final Finder image = find.byWidgetPredicate(
+      (Widget w) => w is Image && w.image == cover,
+    );
+    expect(image, findsOneWidget);
+    expect(
+      tester.getSize(image),
+      const Size(kStatSessionCoverWidth, kStatSessionCoverWidth * 1.4),
+    );
+    expect(find.byIcon(Icons.menu_book), findsNothing, reason: '有封面不再画占位图标');
+    expect(find.byIcon(Icons.movie), findsOneWidget, reason: '无封面画域图标占位');
+    expect(
+      tester.getTopLeft(find.text('WITH')).dx,
+      tester.getTopLeft(find.text('WITHOUT')).dx,
+      reason: '封面槽定宽，有无封面的行标题左缘对齐',
+    );
+  });
+
+  testWidgets('不传 coverOf 时 leading 仍是小号域图标（不出空封面槽）', (
+    WidgetTester tester,
+  ) async {
+    await _pump(
+      tester,
+      sessions: <StudySession>[_session('a', title: 'A')],
+      onDelete: (_) async {},
+    );
+    expect(tester.getSize(find.byIcon(Icons.menu_book)), const Size(18, 18));
+  });
+
+  testWidgets('BUG-2417：带封面槽时长标题放宽一行、仍不截断', (
+    WidgetTester tester,
+  ) async {
+    const String long = 'Re：从零开始的异世界生活 第三期 第七话 暗中行动する者たち';
+    tester.view.physicalSize = const Size(400, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+    await _pump(
+      tester,
+      sessions: <StudySession>[
+        _session('a', title: long, kind: kActivityMediaVideo),
+      ],
+      coverOf: (_) => null,
+      onDelete: (_) async {},
+    );
+    final RenderParagraph title = tester.renderObject<RenderParagraph>(
+      find.text(long),
+    );
+    expect(
+      title.didExceedMaxLines,
+      isFalse,
+      reason: '封面槽挤窄了文本列，放宽后的行数仍装得下这个长度的媒体名',
     );
   });
 
@@ -184,6 +268,41 @@ void main() {
     await tester.tap(showAll);
     await tester.pumpAndSettle();
     expect(find.text('S4'), findsOneWidget, reason: 'sheet 里是全量');
+  });
+
+  // PDF 图 3（2026-10-09）：手机宽下卡头「全部会话 (N)」+ 清除图标挤进一个 Wrap，
+  // 各占一行、标题被顶到中间。现在卡头只有标题 + 清除图标同一行，「全部会话」
+  // 在列表下方。
+  testWidgets('手机宽：卡头标题与清除钮同一行，「全部会话」在列表下方', (
+    WidgetTester tester,
+  ) async {
+    tester.view.physicalSize = const Size(360, 1600);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await _pump(
+      tester,
+      sessions: <StudySession>[
+        for (int i = 0; i < 12; i++) _session('s$i', title: 'S$i'),
+      ],
+      onDelete: (_) async {},
+      limit: 3,
+    );
+    final Rect title = tester.getRect(find.text(t.stat_sessions_recent));
+    final Rect clear = tester.getRect(
+      find.byKey(const ValueKey<String>('stat-sessions-clear-all')),
+    );
+    expect(
+      (clear.center.dy - title.center.dy).abs(),
+      lessThan(clear.height / 2),
+      reason: '清除钮与标题同一行',
+    );
+    expect(clear.right, greaterThan(360 - 80), reason: '清除钮贴卡片右缘，不在中间');
+    final Rect showAll = tester.getRect(
+      find.byKey(const ValueKey<String>('stat-sessions-show-all')),
+    );
+    expect(showAll.top, greaterThan(tester.getRect(find.text('S2')).bottom),
+        reason: '「全部会话」在最后一行之下');
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('垃圾桶 → 会话专用确认文案 → 删除回调 + 行移除；取消不动', (
@@ -316,7 +435,7 @@ void main() {
     final Finder confirm =
         find.widgetWithText(FilledButton, t.stat_clear_all_confirm);
     expect(
-      tester.widget<FilledButton>(confirm).onPressed,
+      tester.widget<FilledButton>(glassUnwrap<FilledButton>(confirm)).onPressed,
       isNull,
       reason: '防呆：没勾确认项之前不许清',
     );
@@ -368,5 +487,40 @@ void main() {
       findsNothing,
     );
     expect(find.byIcon(Icons.delete_outline), findsNothing);
+  });
+
+  testWidgets('BUG-2741：「全部会话」sheet 会话多时截到屏高上限并在内部滚动', (
+    WidgetTester tester,
+  ) async {
+    // iPhone 15 逻辑尺寸；dpr 1 让 physicalSize 即逻辑像素。
+    tester.view.physicalSize = const Size(393, 852);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await _pump(
+      tester,
+      sessions: <StudySession>[
+        for (int i = 0; i < 40; i++) _session('s$i', title: 'S$i'),
+      ],
+      onDelete: (_) async {},
+      limit: 2,
+    );
+    await tester.tap(find.text('${t.stat_sessions_show_all} (40)'));
+    await tester.pumpAndSettle();
+    final Finder sheet = find.byType(BottomSheet);
+    expect(
+      tester.getSize(sheet).height,
+      // 内容截到上限；BottomSheet 另含 48dp 拖动条。
+      lessThanOrEqualTo(
+        852 * kStatSheetMaxHeightFactor + kMinInteractiveDimension + 0.5,
+      ),
+    );
+    await tester.scrollUntilVisible(
+      find.text('S39'),
+      200,
+      scrollable: find
+          .descendant(of: sheet, matching: find.byType(Scrollable))
+          .first,
+    );
+    expect(find.text('S39'), findsOneWidget);
   });
 }

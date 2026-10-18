@@ -282,6 +282,8 @@ class PopupDictActivity : Activity() {
             hint = "Search"
             isSingleLine = true
             imeOptions = EditorInfo.IME_ACTION_SEARCH
+            // 用户在设置里选了查词输入法语言时，告诉键盘该切哪种语言（API 24+）。
+            LookupImeHint.applyTo(this@PopupDictActivity, this)
             setSingleLine(true)
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
             setTextColor(colors.onSurface)
@@ -391,10 +393,6 @@ class PopupDictActivity : Activity() {
 </head>
 <body>
 <div id="entries-container"></div>
-<div class="overlay">
-  <div class="overlay-close" onclick="closeOverlay()">×</div>
-  <div class="overlay-content"></div>
-</div>
 </body></html>"""
     }
 
@@ -465,6 +463,7 @@ class PopupDictActivity : Activity() {
             window.deduplicatePitchAccents = ${prefs.deduplicatePitch};
             window.harmonicFrequency = ${prefs.harmonicFrequency};
             window.showExpressionTags = ${prefs.showExpressionTags};
+            window.__fushiDictUnifiedStyle = ${prefs.dictionaryUnifiedStyle};
             window.collapseDictionaries = ${prefs.collapseDictionaries};
             window.collapsedDictionaryNames = $collapsedJson;
             window.needsAudio = false;

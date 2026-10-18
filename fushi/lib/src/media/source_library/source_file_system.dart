@@ -1,6 +1,6 @@
 // TODO-817 M1a / TODO-1274 来源库文件系统抽象。
 //
-// 网络/本地来源库（local / sftp / ftp / webdav transport，见 hibiki_core
+// 网络/本地来源库（local / sftp / ftp / webdav / alist transport，见 fushi_core
 // MediaSources.transport）共用一套扫描契约：列目录、找同名 sidecar、读文本、
 // 把网络文件落到本地临时盘。M1b 扫描器据此实现 local，TODO-1274 接入 SFTP/FTP/WebDAV。
 //
@@ -14,8 +14,9 @@
 // 不动），消费侧统一用别名 SourceLibraryRow（source_library_row.dart）。
 //
 // [NetworkSourceFileSystem] 复用 sync 子系统同款传输栈（dartssh2 for SFTP,
-// ftpconnect for FTP, WebDavOps for WebDAV）；凭据不落 configJson，由
-// SourceLibraryCredentialStore 解析后经 [NetworkSourceConfig] 注入（凭据红线）。
+// ftpconnect for FTP, WebDavOps for WebDAV，AListApiClient for AList/OpenList）；
+// 凭据不落 configJson，由 SourceLibraryCredentialStore 解析后经
+// [NetworkSourceConfig] 注入（凭据红线）。
 
 import 'dart:convert';
 import 'dart:io';
@@ -23,10 +24,14 @@ import 'dart:io';
 import 'package:dartssh2/dartssh2.dart';
 import 'package:flutter/foundation.dart';
 import 'package:ftpconnect/ftpconnect.dart';
+import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
 
 import 'package:fushi_engine/media/video/external_video.dart'
     show sourceEntryBasename;
+import 'package:fushi_engine/utils/net/app_http.dart';
+import 'package:fushi/src/media/alist/alist_api_client.dart';
+import 'package:fushi/src/media/alist/alist_source_url.dart';
 import 'package:fushi/src/sync/webdav_ops.dart';
 
 /// 来源文件系统列目录返回的单个条目（文件或子目录）。
@@ -179,9 +184,10 @@ class NetworkSourceConfig {
     this.password,
     this.privateKey,
     this.useTls = false,
+    this.baseUrl,
   });
 
-  /// 'sftp' | 'ftp' | 'webdav'。
+  /// 'sftp' | 'ftp' | 'webdav' | 'alist'。
   final String transport;
 
   /// 远端主机名/IP。
@@ -202,9 +208,15 @@ class NetworkSourceConfig {
   /// FTP 是否走 FTPS（TLS）。SFTP 忽略此项。
   final bool useTls;
 
+  /// AList / OpenList 站点根（`https://od.example.com`，可带子路径）；仅
+  /// `alist` 用。条目地址 = `<baseUrl>/d/<AList 路径>`（alist_source_url.dart）。
+  final String? baseUrl;
+
   bool get isSftp => transport == 'sftp';
 
   bool get isWebDav => transport == 'webdav';
+
+  bool get isAList => transport == 'alist';
 }
 
 /// 网络传输实现（SFTP via dartssh2 / FTP via ftpconnect / WebDAV via [WebDavOps]）。
@@ -228,6 +240,10 @@ class NetworkSourceFileSystem implements SourceFileSystem {
 
   // WebDAV 连接状态（惰性建立，按首个访问路径的 origin 派生 baseUrl）。
   WebDavOps? _dav;
+
+  // AList / OpenList：JSON API 客户端（token 缓存在里面）+ 拉直链用的 HTTP 客户端。
+  AListApiClient? _alist;
+  http.Client? _alistHttp;
 
   @override
   bool get isLocal => false;
@@ -262,10 +278,21 @@ class NetworkSourceFileSystem implements SourceFileSystem {
 
   // ── SFTP ─────────────────────────────────────────────────────────
 
-  Future<SftpClient> _ensureSftp() async {
+  /// 在建的 SFTP 连接。流播时播放内核会同时发好几个 `Range` 请求，各自走到这里；
+  /// 不收口的话每个请求都会另起一条 SSH 连接、互相覆盖 [_ssh] / [_sftp]，被覆盖的
+  /// 那几条再也没人关。
+  Future<SftpClient>? _sftpConnecting;
+
+  Future<SftpClient> _ensureSftp() {
     if (_sftp != null && _ssh != null && !_ssh!.isClosed) {
-      return _sftp!;
+      return Future<SftpClient>.value(_sftp!);
     }
+    return _sftpConnecting ??= _connectSftp().whenComplete(() {
+      _sftpConnecting = null;
+    });
+  }
+
+  Future<SftpClient> _connectSftp() async {
     _sftp = null;
     _ssh = null;
     final String? key = config.privateKey;
@@ -279,6 +306,46 @@ class NetworkSourceFileSystem implements SourceFileSystem {
     );
     _sftp = await _ssh!.sftp();
     return _sftp!;
+  }
+
+  /// SFTP 区间读（流播用）：`[start, end]` 闭区间，[end] 为 null 或越过文件尾时截到
+  /// 文件尾。返回文件总长与区间字节流；流读完或被取消时关闭远端句柄，所以调用方
+  /// 不再需要时**必须**取消订阅。[start] 越过文件尾抛 [RangeError]（流播中继映射成
+  /// 416）。连接断了（移动端挂起后被系统掐掉）下一次调用自动重连。
+  Future<({int totalBytes, int start, int end, Stream<List<int>> bytes})>
+      openSftpRange(
+    String filePath, {
+    required int start,
+    int? end,
+  }) async {
+    if (!config.isSftp) {
+      throw UnsupportedError('Range reads are only implemented for SFTP');
+    }
+    final SftpClient sftp = await _ensureSftp();
+    final int? size = (await sftp.stat(filePath)).size;
+    if (size == null) {
+      throw StateError('SFTP server did not report a size for $filePath');
+    }
+    if (start < 0 || start >= size) {
+      throw RangeError.range(start, 0, size - 1, 'start');
+    }
+    final int last = (end == null || end >= size) ? size - 1 : end;
+    if (last < start) {
+      throw RangeError.range(last, start, size - 1, 'end');
+    }
+    // 句柄在流真正开始读时才打开：中继对 HEAD 是「订阅后立刻取消」，生成器体可能
+    // 根本没跑起来，那时在外面先开的句柄就再也没人关。
+    Stream<List<int>> bytes() async* {
+      final SftpFile handle =
+          await sftp.open(filePath, mode: SftpFileOpenMode.read);
+      try {
+        yield* handle.read(offset: start, length: last - start + 1);
+      } finally {
+        await handle.close();
+      }
+    }
+
+    return (totalBytes: size, start: start, end: last, bytes: bytes());
   }
 
   Future<List<SourceFileEntry>> _listSftp(
@@ -580,6 +647,122 @@ class NetworkSourceFileSystem implements SourceFileSystem {
     return utf8.decode(bytes, allowMalformed: true);
   }
 
+  // ── AList / OpenList ─────────────────────────────────────────────
+
+  /// 站点根：配置缺失时抛，而不是拿空串去拼地址——那会把所有条目都算到
+  /// `/d/...` 相对路径下，扫描「成功」但一条都播不了。
+  String get _alistBaseUrl {
+    final String? base = config.baseUrl;
+    if (base == null || base.trim().isEmpty) {
+      throw StateError('alist source has no baseUrl');
+    }
+    return base;
+  }
+
+  AListApiClient _ensureAList() => _alist ??= AListApiClient(
+        baseUrl: _alistBaseUrl,
+        providerId: 'alist-source',
+        username: config.username,
+        password: config.password,
+      );
+
+  http.Client _ensureAListHttp() => _alistHttp ??= createAppHttpIoClient();
+
+  /// 条目地址 → AList 路径；地址不在本站点 `/d/` 命名空间下按参数错误抛。
+  String _alistPathOf(String url) {
+    final String? path =
+        alistPathFromSourceUrl(baseUrl: _alistBaseUrl, url: url);
+    if (path == null) {
+      throw ArgumentError.value(url, 'url', 'not under this AList source');
+    }
+    return path;
+  }
+
+  Future<List<SourceFileEntry>> _listAList(
+    String dirPath,
+    bool recursive,
+  ) async {
+    final AListApiClient api = _ensureAList();
+    final String base = _alistBaseUrl;
+    final List<SourceFileEntry> result = <SourceFileEntry>[];
+
+    Future<void> walk(String path) async {
+      final List<AListEntry> children = await api.listAll(path);
+      for (final AListEntry e in children) {
+        if (e.name.isEmpty) continue;
+        final String childPath = path == '/' ? '/${e.name}' : '$path/${e.name}';
+        final String url = alistSourceUrlFor(baseUrl: base, path: childPath);
+        if (e.isDir) {
+          if (recursive) {
+            await walk(childPath);
+          } else {
+            result.add(SourceFileEntry(
+              name: e.name,
+              path: url,
+              isDirectory: true,
+            ));
+          }
+        } else {
+          result.add(SourceFileEntry(
+            name: e.name,
+            path: url,
+            isDirectory: false,
+            sizeBytes: e.sizeBytes,
+          ));
+        }
+      }
+    }
+
+    await walk(_alistPathOf(dirPath));
+    return result;
+  }
+
+  /// 经 `fs/get` 换签名直链再 GET。直链多指向存储后端或站点 `/p/` 代理，
+  /// 与 API 不同源，**不带** token。
+  Future<http.StreamedResponse> _openAListRaw(String filePath) async {
+    final AListFileLink link =
+        await _ensureAList().getFile(_alistPathOf(filePath));
+    final http.StreamedResponse resp = await _ensureAListHttp()
+        .send(http.Request('GET', Uri.parse(link.rawUrl)));
+    if (resp.statusCode < 200 || resp.statusCode >= 300) {
+      throw HttpException(
+        'GET raw_url failed: HTTP ${resp.statusCode}',
+        uri: Uri.parse(link.rawUrl),
+      );
+    }
+    return resp;
+  }
+
+  Future<String> _copyAList(String filePath, String destDir) async {
+    final String local = p.join(destDir, _urlBasename(filePath));
+    final http.StreamedResponse resp = await _openAListRaw(filePath);
+    final IOSink sink = File(local).openWrite();
+    bool ok = false;
+    try {
+      await for (final List<int> chunk in resp.stream) {
+        sink.add(chunk);
+      }
+      ok = true;
+    } finally {
+      await sink.close();
+      if (!ok) {
+        try {
+          File(local).deleteSync();
+        } catch (_) {}
+      }
+    }
+    return local;
+  }
+
+  Future<String> _readTextAList(String filePath) async {
+    final http.StreamedResponse resp = await _openAListRaw(filePath);
+    final List<int> bytes = <int>[];
+    await for (final List<int> chunk in resp.stream) {
+      bytes.addAll(chunk);
+    }
+    return utf8.decode(bytes, allowMalformed: true);
+  }
+
   // ── SourceFileSystem 契约 ────────────────────────────────────────
 
   @override
@@ -592,6 +775,9 @@ class NetworkSourceFileSystem implements SourceFileSystem {
     }
     if (config.isWebDav) {
       return _listDav(dirPath, recursive);
+    }
+    if (config.isAList) {
+      return _listAList(dirPath, recursive);
     }
     return _listFtp(dirPath, recursive);
   }
@@ -618,6 +804,9 @@ class NetworkSourceFileSystem implements SourceFileSystem {
     if (config.isWebDav) {
       return _readTextDav(filePath);
     }
+    if (config.isAList) {
+      return _readTextAList(filePath);
+    }
     // FTP 无随机读文本原语：下载到临时盘再读。
     final Directory tmp =
         Directory.systemTemp.createTempSync('net_src_ftp_read_');
@@ -642,6 +831,9 @@ class NetworkSourceFileSystem implements SourceFileSystem {
     if (config.isWebDav) {
       return _copyDav(filePath, destDir);
     }
+    if (config.isAList) {
+      return _copyAList(filePath, destDir);
+    }
     return _copyFtp(filePath, destDir);
   }
 
@@ -651,6 +843,14 @@ class NetworkSourceFileSystem implements SourceFileSystem {
       _dav?.close();
     } catch (_) {}
     _dav = null;
+    try {
+      _alist?.close();
+    } catch (_) {}
+    _alist = null;
+    try {
+      _alistHttp?.close();
+    } catch (_) {}
+    _alistHttp = null;
     try {
       _sftp?.close();
     } catch (_) {}

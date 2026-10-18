@@ -483,7 +483,7 @@ void main() {
       }
     });
 
-    test('selector 里不出现 Hibiki 自产卡从不产出的结构', () {
+    test('selector 里不出现 Fushi 自产卡从不产出的结构', () {
       // 这些锚点只存在于 vendored Lapis CSS（服务 JPMN 导入卡）与旧预览 mock：
       // popup.js 的 constructGlossaryHtml 永远产出
       // `div.yomitan-glossary > ol > li[data-dictionary] > (i + span)`。
@@ -648,6 +648,62 @@ void main() {
             .alignment,
         LapisVisualTextAlign.end,
       );
+    });
+  });
+
+  group('首行缩进', () {
+    test('以字宽为单位渲染 text-indent 并完整往返', () {
+      final String css = composeLapisVisualStyleSheet(
+        freeformCss: '',
+        rules: const <LapisVisualField, LapisVisualRule>{
+          LapisVisualField.definitionContent:
+              LapisVisualRule(textIndentPercent: 150),
+        },
+      );
+      expect(css, contains('text-indent: 1.50em !important;'));
+      expect(css, contains('"textIndentPercent":150'));
+      expect(
+        splitLapisVisualStyleSheet(css)
+            .ruleFor(LapisVisualField.definitionContent)
+            .textIndentPercent,
+        150,
+      );
+    });
+
+    test('未设置时不生成覆盖，越界值夹到 0–400', () {
+      expect(const LapisVisualRule().isDefault, isTrue);
+      expect(const LapisVisualRule(textIndentPercent: 100).isDefault, isFalse);
+      expect(
+        lapisVisualDeclarations(const LapisVisualRule()).join(),
+        isNot(contains('text-indent')),
+      );
+      expect(
+        LapisVisualRule.fromJson(
+          <String, dynamic>{'textIndentPercent': 9999},
+        )!
+            .textIndentPercent,
+        400,
+      );
+      // 负值夹到 0，而 0 就是默认：归一成 null、不生成覆盖。
+      expect(
+        LapisVisualRule.fromJson(
+          <String, dynamic>{'textIndentPercent': -50},
+        )!
+            .textIndentPercent,
+        isNull,
+      );
+      final LapisVisualRule zero = LapisVisualRule.fromJson(
+        <String, dynamic>{'textIndentPercent': 0},
+      )!;
+      expect(zero.textIndentPercent, isNull);
+      expect(zero.isDefault, isTrue);
+      expect(lapisVisualDeclarations(zero).join(), isNot(contains('text-indent')));
+    });
+
+    test('copyWith 可以把缩进清回默认', () {
+      const LapisVisualRule rule = LapisVisualRule(textIndentPercent: 200);
+      expect(rule.copyWith(bold: true).textIndentPercent, 200);
+      expect(rule.copyWith(textIndentPercent: null).isDefault, isTrue);
     });
   });
 

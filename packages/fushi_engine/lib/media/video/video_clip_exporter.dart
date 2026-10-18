@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:fushi_engine/media/video/ffmpeg_backend.dart';
+import 'package:fushi_engine/media/video/bluray/bluray_source.dart';
 import 'package:fushi_engine/media/video/video_clip_subtitle.dart';
 import 'package:fushi_engine/media/video/video_clip_subtitle_burn.dart';
 import 'package:path/path.dart' as p;
@@ -36,10 +37,10 @@ class VideoClipExportResult {
     String outputPath, {
     int subtitleTrackCount = 0,
   }) : this._(
-          outputPath: outputPath,
-          failure: null,
-          subtitleTrackCount: subtitleTrackCount,
-        );
+         outputPath: outputPath,
+         failure: null,
+         subtitleTrackCount: subtitleTrackCount,
+       );
 
   const VideoClipExportResult.failure(
     VideoClipExportFailure failure, {
@@ -207,8 +208,10 @@ class ClipCodecPlan {
 
   /// 中性计划：与加这层门控之前的行为**逐参数等价**（`-c copy`、不改 tag）。
   /// 探测不可用、解析不出、或源本来就通用可播时用它。
-  static const ClipCodecPlan fullCopy =
-      ClipCodecPlan(copyVideo: true, copyAudio: true);
+  static const ClipCodecPlan fullCopy = ClipCodecPlan(
+    copyVideo: true,
+    copyAudio: true,
+  );
 
   final bool copyVideo;
   final bool copyAudio;
@@ -221,25 +224,89 @@ class ClipCodecPlan {
   bool get isFullCopy => copyVideo && copyAudio;
 }
 
+/// 纯函数：把用户设置的「片段视频比特率」归一成导出层认的值。
+///
+/// null / 0 / 负数一律视为**未设置**（返回 null）：偏好层用 0 表示「跟随源」，导出层
+/// 不该为此再分一个哨兵值。正数原样返回，单位 kbps。
+int? normalizeClipVideoBitrateKbps(int? kbps) {
+  if (kbps == null || kbps <= 0) return null;
+  return kbps;
+}
+
+/// 纯函数：视频重编码（libx264 → 8-bit 4:2:0）的编码参数段，三条重编码路径共用
+/// （codec 计划里的视频重编码、copy 失败后的整段重编码兜底、硬字幕烧录）。
+///
+/// [videoBitrateKbps] 为 null（未设置）时走恒定质量 `-crf 20`——这是加比特率选项之前
+/// 三条路径逐参数一致的既有行为，一个字节都没变。设置了就换成目标码率
+/// `-b:v` + 同值 `-maxrate` + 两倍 `-bufsize`：单给 `-b:v` 只是**平均**码率，片段里
+/// 一个高动态镜头就能把瞬时码率顶到几倍，用户按上限选的数值在 IM 体积限制面前
+/// 照样超；maxrate/bufsize 把它箍成 VBV 受限的近似 CBR，体积才可预期。
+@visibleForTesting
+List<String> buildClipVideoEncoderArgs({int? videoBitrateKbps}) {
+  final int? kbps = normalizeClipVideoBitrateKbps(videoBitrateKbps);
+  return <String>[
+    '-c:v',
+    'libx264',
+    '-preset',
+    'veryfast',
+    if (kbps == null) ...<String>['-crf', '20'] else ...<String>[
+      '-b:v',
+      '${kbps}k',
+      '-maxrate',
+      '${kbps}k',
+      '-bufsize',
+      '${kbps * 2}k',
+    ],
+    '-pix_fmt',
+    'yuv420p',
+  ];
+}
+
 /// 纯函数：由源编码画像决出导出编码计划。
 ///
 /// 这是「导出成功」判据的**前移**：原先的模型是「跑 `-c copy`，退出码非 0 才降级重编
 /// 码」，可 hev1 / 10-bit / FLAC 全都能成功封进 mp4、退出码 0——于是兜底永不触发，产物
 /// 播不了却被判成功。真正的判据是「产物能不能被通用播放器播」，只能在跑之前按流编码
 /// 判定。
+///
+/// [videoBitrateKbps] 设了正值时视频**必然**重编码（用户要的就是改码率，copy 做不到），
+/// 与源编码是否可播无关，hvc1 tag 也随之不挂（输出已是 H.264）。探测失败
+/// （[ClipSourceCodecs.isEmpty]）时同理强制。
+///
+/// 视频一旦重编码，音频**跟着重编码、绝不 copy**。`-ss` 是输入 seek，demuxer 停在请求点
+/// 之前的那个关键帧：重编码的视频靠 accurate seek 把请求点之前的帧全丢掉，copy 的音频
+/// 却是逐包原样带出，从关键帧起的那一截全在；随后 `-avoid_negative_ts make_zero`（重编码
+/// 路径必带，见 [buildFfmpegVideoClipExportArgs]）把这截负时间戳平移成正片内容。实测
+/// 随包 ffmpeg-min 裁一个关键帧间隔 1 s 的源、请求 3 s：产物 4.04 s，视频 start_time
+/// 1.02 s、音频 0 s——开头一秒只有声音没画面。音频重编码（aac 192k，与整段重编码兜底
+/// 同参数）就精确切在请求点。视频 copy 时不受影响：那条路径不带 make_zero，前导由 mp4
+/// edit list 表达成「播放时跳过」（BUG-2011）。
 @visibleForTesting
-ClipCodecPlan resolveClipCodecPlan(ClipSourceCodecs codecs) {
-  if (codecs.isEmpty) return ClipCodecPlan.fullCopy;
+ClipCodecPlan resolveClipCodecPlan(
+  ClipSourceCodecs codecs, {
+  int? videoBitrateKbps,
+}) {
+  final bool forceVideoReencode =
+      normalizeClipVideoBitrateKbps(videoBitrateKbps) != null;
+  if (codecs.isEmpty) {
+    return forceVideoReencode
+        ? const ClipCodecPlan(copyVideo: false, copyAudio: false)
+        : ClipCodecPlan.fullCopy;
+  }
 
   final String? video = codecs.videoCodec;
-  final bool copyVideo = video == null ||
-      (_kClipCopyableVideoCodecs.contains(video) &&
-          _isCopyableVideoPixFmt(codecs.videoPixFmt));
+  final bool copyVideo =
+      !forceVideoReencode &&
+      (video == null ||
+          (_kClipCopyableVideoCodecs.contains(video) &&
+              _isCopyableVideoPixFmt(codecs.videoPixFmt)));
 
   // 空列表 = 没探到音频流信息，保持原 copy 行为；探到了就要求**每一条**都可播，
-  // 因为 `-map 0:a?` 会把它们全部带进输出。
-  final bool copyAudio = codecs.audioCodecs.isEmpty ||
-      codecs.audioCodecs.every(_kClipCopyableAudioCodecs.contains);
+  // 因为 `-map 0:a?` 会把它们全部带进输出。视频重编码时一律不 copy（见上）。
+  final bool copyAudio =
+      copyVideo &&
+      (codecs.audioCodecs.isEmpty ||
+          codecs.audioCodecs.every(_kClipCopyableAudioCodecs.contains));
 
   return ClipCodecPlan(
     copyVideo: copyVideo,
@@ -252,24 +319,21 @@ ClipCodecPlan resolveClipCodecPlan(ClipSourceCodecs codecs) {
 ///
 /// 全 copy 时**逐参数**回到加门控之前的 `-c copy`（外加可能的 `-tag:v hvc1`，它只改
 /// sample entry 四字符码、不碰码流），保证「源本来就通用可播」这条最常见路径的行为
-/// 和性能一个字节都没变。
+/// 和性能一个字节都没变。[videoBitrateKbps] 只在计划要重编码视频时生效（见
+/// [buildClipVideoEncoderArgs]）；计划由 [resolveClipCodecPlan] 用同一个值决出，
+/// 所以设了码率时这里绝不会落到 copy 分支。
 @visibleForTesting
-List<String> buildClipCodecArgs({required ClipCodecPlan plan}) {
+List<String> buildClipCodecArgs({
+  required ClipCodecPlan plan,
+  int? videoBitrateKbps,
+}) {
   final List<String> tag = plan.videoTag == null
       ? const <String>[]
       : <String>['-tag:v', plan.videoTag!];
   if (plan.isFullCopy) return <String>['-c', 'copy', ...tag];
   return <String>[
-    '-c:v',
-    if (plan.copyVideo) 'copy' else 'libx264',
-    if (!plan.copyVideo) ...<String>[
-      '-preset',
-      'veryfast',
-      '-crf',
-      '20',
-      '-pix_fmt',
-      'yuv420p',
-    ],
+    if (plan.copyVideo) ...<String>['-c:v', 'copy'] else
+      ...buildClipVideoEncoderArgs(videoBitrateKbps: videoBitrateKbps),
     ...tag,
     '-c:a',
     if (plan.copyAudio) 'copy' else 'aac',
@@ -287,22 +351,34 @@ List<String> buildClipCodecArgs({required ClipCodecPlan plan}) {
 Future<_ClipProbe> _probeClipCodecPlan(
   FfmpegBackend backend,
   String inputPath,
-  Duration timeout,
-) async {
+  Duration timeout, {
+  int? videoBitrateKbps,
+}) async {
   try {
-    final FfmpegRunResult probe = await backend.run(
-      <String>['-hide_banner', '-i', inputPath],
-      timeout,
-    );
+    final FfmpegRunResult probe = await backend.run(<String>[
+      '-hide_banner',
+      '-i',
+      inputPath,
+    ], timeout);
     // 同一份日志解两样东西，**不额外起进程**：编码（决定哪些流能 copy）和画面尺寸
     // （决定字幕 PNG 渲染成多大，BUG-2202）。
     return _ClipProbe(
-      resolveClipCodecPlan(parseClipSourceCodecs(probe.output)),
+      resolveClipCodecPlan(
+        parseClipSourceCodecs(probe.output),
+        videoBitrateKbps: videoBitrateKbps,
+      ),
       parseClipFrameSize(probe.output),
     );
   } catch (e, stack) {
     engineLog.log('VideoClipExport', e, stack);
-    return const _ClipProbe(ClipCodecPlan.fullCopy, null);
+    // 探测炸了也不能丢掉用户设的码率：视频照样强制重编码，其余退回全 copy。
+    return _ClipProbe(
+      resolveClipCodecPlan(
+        const ClipSourceCodecs(),
+        videoBitrateKbps: videoBitrateKbps,
+      ),
+      null,
+    );
   }
 }
 
@@ -323,17 +399,22 @@ class _ClipProbe {
 /// 秒级的用户操作；缓存换不来可感知的收益，却会引入「用户中途换了 `FUSHI_FFMPEG`
 /// 指向，缓存还是旧能力」的陈旧态。
 ///
-/// 探测失败一律当**不能烧**（返回空集合）：烧不了顶多退成无字幕导出，而误判成能烧
-/// 会让整次导出失败。
-Future<Set<String>> _probeFfmpegFilters(
+/// 探测失败（起不来 / 超时 / 非零退出）一律当**不能烧**（返回空集合）：烧不了顶多
+/// 退成无字幕导出，而误判成能烧会让整次导出失败。
+///
+/// 必须走 [FfmpegBackend.runQuery]：滤镜表写在 stdout，[FfmpegBackend.run] 只收
+/// stderr，经它探在桌面 CLI 上恒为空表、硬字幕静默退成无字幕（BUG-2938）。app 的片段
+/// 导出与无头服务端 `video clip --burn-subs` 共用这一个探测点。
+Future<Set<String>> queryFfmpegFilterNames(
   FfmpegBackend backend,
   Duration timeout,
 ) async {
   try {
-    final FfmpegRunResult probe = await backend.run(
-      <String>['-hide_banner', '-filters'],
-      timeout,
-    );
+    final FfmpegRunResult probe = await backend.runQuery(<String>[
+      '-hide_banner',
+      '-filters',
+    ], timeout);
+    if (!probe.isSuccess) return const <String>{};
     return parseFfmpegFilterNames(probe.output);
   } catch (e, stack) {
     engineLog.log('VideoClipExport', e, stack);
@@ -416,7 +497,13 @@ List<String> buildFfmpegVideoClipExportArgs({
   List<String> subtitlePaths = const <String>[],
   String? subtitleCodec,
   ClipCodecPlan codecPlan = ClipCodecPlan.fullCopy,
+  int? videoBitrateKbps,
 }) {
+  // Playlist edits can fall between keyframes. Filtering decoded preroll is
+  // required for accurate boundaries and cannot be combined with stream copy.
+  if (isBlurayPlaylistPath(inputPath)) {
+    codecPlan = const ClipCodecPlan(copyVideo: false, copyAudio: false);
+  }
   final double startSeconds = startMs / 1000.0;
   final double durationSeconds = (endMs - startMs) / 1000.0;
   final int? explicitAudio = resolveAudioMapIndex(
@@ -454,7 +541,7 @@ List<String> buildFfmpegVideoClipExportArgs({
     // （BUG-2011）。片段继承整集章节本就没有意义，两条路径一律丢弃。
     '-map_chapters',
     '-1',
-    ...buildClipCodecArgs(plan: codecPlan),
+    ...buildClipCodecArgs(plan: codecPlan, videoBitrateKbps: videoBitrateKbps),
     // 字幕流单独指定编码：Matroska 能直接 copy SRT，mp4/mov 系必须转 mov_text。
     if (withSubtitles) ...<String>['-c:s', subtitleCodec],
     // `-avoid_negative_ts make_zero` 只在**视频重编码**时给（BUG-2011）：
@@ -499,6 +586,7 @@ List<String> buildFfmpegVideoClipReencodeArgs({
   int? audioStreamCount,
   List<String> subtitlePaths = const <String>[],
   String? subtitleCodec,
+  int? videoBitrateKbps,
 }) {
   final double startSeconds = startMs / 1000.0;
   final double durationSeconds = (endMs - startMs) / 1000.0;
@@ -530,14 +618,7 @@ List<String> buildFfmpegVideoClipReencodeArgs({
     '-map_chapters',
     '-1',
     if (withSubtitles) ...<String>['-c:s', subtitleCodec],
-    '-c:v',
-    'libx264',
-    '-preset',
-    'veryfast',
-    '-crf',
-    '20',
-    '-pix_fmt',
-    'yuv420p',
+    ...buildClipVideoEncoderArgs(videoBitrateKbps: videoBitrateKbps),
     '-c:a',
     'aac',
     '-b:a',
@@ -572,6 +653,7 @@ List<String> buildFfmpegVideoClipBurnArgs({
   required List<ClipBurnCue> burnCues,
   int? audioStreamIndex,
   int? audioStreamCount,
+  int? videoBitrateKbps,
 }) {
   final double startSeconds = startMs / 1000.0;
   final double durationSeconds = (endMs - startMs) / 1000.0;
@@ -602,20 +684,123 @@ List<String> buildFfmpegVideoClipBurnArgs({
     // 与另外两条路径同因：片段不继承源整集的章节表（BUG-2011）。
     '-map_chapters',
     '-1',
-    '-c:v',
-    'libx264',
-    '-preset',
-    'veryfast',
-    '-crf',
-    '20',
-    '-pix_fmt',
-    'yuv420p',
+    ...buildClipVideoEncoderArgs(videoBitrateKbps: videoBitrateKbps),
     '-c:a',
     'aac',
     '-b:a',
     '192k',
     // 重编码时 accurate seek 精确切在请求点，没有关键帧前导可跳，归零无副作用
     // （BUG-2011 ②：这个参数只在重编码时才安全）。
+    '-avoid_negative_ts',
+    'make_zero',
+    ...buildClipFaststartArgs(outputPath),
+    outputPath,
+  ];
+}
+
+/// 用 ffmpeg 自带 libass 烧字幕所需的滤镜（`subtitles`）。没有它就只能走上面那条
+/// 「Flutter 渲染 PNG + overlay」的路径（[buildFfmpegVideoClipBurnArgs]）。
+const String kLibassSubtitlesFilter = 'subtitles';
+
+/// 本机 ffmpeg 有没有 libass 的 `subtitles` 滤镜（[filters] 来自
+/// [parseFfmpegFilterNames]）。探测失败（空集合）一律判没有。
+bool ffmpegHasLibassSubtitlesFilter(Set<String> filters) =>
+    filters.contains(kLibassSubtitlesFilter);
+
+/// 纯函数：滤镜**选项值**一级转义（ffmpeg filters 文档「Notes on filtergraph
+/// escaping」第一层）：`\`、`'`、`:` 前加反斜杠。`:` 是选项分隔符，不转义的话
+/// Windows 盘符 `C:` 会把路径劈成两个选项。
+String escapeFfmpegFilterOptionValue(String value) =>
+    value.replaceAllMapped(RegExp(r"[\\':]"), (Match m) => '\\${m[0]}');
+
+/// 纯函数：**滤镜图**二级转义（同一节第二层）：`\`、`'`、`[`、`]`、`,`、`;` 前加
+/// 反斜杠。`,` / `;` 是滤镜 / 链分隔符，`[` `]` 是 pad 标签。参数经 argv 直传（不过
+/// shell），没有第三层。
+String escapeFfmpegFiltergraphText(String text) =>
+    text.replaceAllMapped(RegExp(r"[\\'\[\],;]"), (Match m) => '\\${m[0]}');
+
+/// 纯函数：把字幕文件路径写成 `subtitles=filename=…` 里能原样还原的形式。
+///
+/// [windows] 为 true 时先把 `\` 换成 `/`（ffmpeg 在 Windows 上两种分隔符都认），
+/// 少一层反斜杠叠加；盘符的 `:` 照样转义。
+String ffmpegSubtitlesFilenameArg(String path, {required bool windows}) {
+  final String normalized = windows ? path.replaceAll(r'\', '/') : path;
+  return escapeFfmpegFiltergraphText(escapeFfmpegFilterOptionValue(normalized));
+}
+
+/// 纯函数：libass 烧录的 `-vf` 滤镜链。
+///
+/// 时间轴对齐：`-ss` 放在 `-i` 前面是输入 seek，进滤镜图的帧 PTS 从 0 起算；而
+/// `subtitles` 按帧 PTS 去字幕文件里找事件——不处理的话，从 1:23 起剪的片段会烧上
+/// 字幕文件开头那几句。做法是先 `setpts=PTS+<起点>/TB` 把帧挪回源时间轴、烧完再
+/// `setpts=PTS-STARTPTS` 归零。相比「先把字幕平移 / 裁剪成新 SRT」，这样 ASS 的样式、
+/// 定位、特效原样保留（转 SRT 会全丢），也不用写临时文件。[startMs] 为 0 时省掉两次
+/// setpts。
+String buildLibassSubtitlesFilter({
+  required String subtitlePath,
+  required int startMs,
+  required bool windows,
+}) {
+  final String burn =
+      '$kLibassSubtitlesFilter=filename='
+      '${ffmpegSubtitlesFilenameArg(subtitlePath, windows: windows)}';
+  if (startMs <= 0) return burn;
+  final String offset = (startMs / 1000.0).toStringAsFixed(3);
+  return 'setpts=PTS+$offset/TB,$burn,setpts=PTS-STARTPTS';
+}
+
+/// 纯函数：用 libass `subtitles` 滤镜烧硬字幕的裁剪命令（无头端用；app 走 PNG +
+/// overlay 的 [buildFfmpegVideoClipBurnArgs]）。
+///
+/// 与另外两条重编码路径同参：烧录必然重编码视频（画面变了，`-c copy` 在定义上就
+/// 不可能），音频 aac、`-sn` / `-dn` 不带任何源字幕 / 数据流、不继承章节表
+/// （BUG-2011）、mp4 系挂 faststart。`-vf` 与 `-map` 同时出现时自动流选择关闭，
+/// 所以音频照样显式 `-map 0:a…?`（BUG-345 的 `?` 兜底）。
+List<String> buildFfmpegVideoClipLibassBurnArgs({
+  required String inputPath,
+  required int startMs,
+  required int endMs,
+  required String outputPath,
+  required String subtitlePath,
+  required bool windows,
+  int? audioStreamIndex,
+  int? audioStreamCount,
+  int? videoBitrateKbps,
+}) {
+  final double startSeconds = startMs / 1000.0;
+  final double durationSeconds = (endMs - startMs) / 1000.0;
+  final int? explicitAudio = resolveAudioMapIndex(
+    audioStreamIndex: audioStreamIndex,
+    audioStreamCount: audioStreamCount,
+  );
+  return <String>[
+    '-hide_banner',
+    '-y',
+    '-ss',
+    startSeconds.toStringAsFixed(3),
+    '-t',
+    durationSeconds.toStringAsFixed(3),
+    '-i',
+    inputPath,
+    '-vf',
+    buildLibassSubtitlesFilter(
+      subtitlePath: subtitlePath,
+      startMs: startMs,
+      windows: windows,
+    ),
+    '-map',
+    '0:v:0',
+    '-map',
+    explicitAudio != null ? '0:a:$explicitAudio?' : '0:a?',
+    '-sn',
+    '-dn',
+    '-map_chapters',
+    '-1',
+    ...buildClipVideoEncoderArgs(videoBitrateKbps: videoBitrateKbps),
+    '-c:a',
+    'aac',
+    '-b:a',
+    '192k',
     '-avoid_negative_ts',
     'make_zero',
     ...buildClipFaststartArgs(outputPath),
@@ -661,6 +846,10 @@ class _ClipAttempt {
 /// 导出片段。[subtitleContents] 是已裁剪、时间轴已平移到片段起点为 0 的 SRT 文本
 /// （主字幕、副字幕各一条，由 [buildClipSrtContent] 生成）；为空、或输出容器封不下
 /// 文本字幕（[resolveClipSubtitleCodec] 返回 null）时自动退回纯视频音频导出。
+///
+/// [videoBitrateKbps]：用户指定的视频目标码率（kbps）。null / 非正数 = 未设置，保持
+/// 「能 copy 就 copy、否则 `-crf 20`」的既有行为；正数则视频**必然**重编码到该码率
+/// （三条路径一致，见 [buildClipVideoEncoderArgs]），音频不受影响。
 Future<VideoClipExportResult> exportVideoClipViaFfmpeg({
   required String inputPath,
   required int startMs,
@@ -671,6 +860,7 @@ Future<VideoClipExportResult> exportVideoClipViaFfmpeg({
   List<String> subtitleContents = const <String>[],
   List<ClipSubtitleCue> subtitleCues = const <ClipSubtitleCue>[],
   ClipSubtitleFrameRenderer? subtitleRenderer,
+  int? videoBitrateKbps,
   FfmpegBackend? backend,
   Duration timeout = const Duration(minutes: 10),
 }) async {
@@ -704,6 +894,7 @@ Future<VideoClipExportResult> exportVideoClipViaFfmpeg({
       resolved,
       inputPath,
       _kClipProbeTimeout,
+      videoBitrateKbps: videoBitrateKbps,
     );
     final ClipCodecPlan codecPlan = probe.plan;
     bool produced(FfmpegRunResult r) =>
@@ -717,11 +908,14 @@ Future<VideoClipExportResult> exportVideoClipViaFfmpeg({
     // 导出变成失败。失败原因写进错误日志，排查时看那条。
     if (subtitleCues.isNotEmpty && subtitleRenderer != null) {
       final ClipFrameSize? frame = probe.frameSize;
-      final Set<String> filters =
-          await _probeFfmpegFilters(resolved, _kClipProbeTimeout);
+      final Set<String> filters = await queryFfmpegFilterNames(
+        resolved,
+        _kClipProbeTimeout,
+      );
       if (frame != null && ffmpegCanBurnClipSubtitles(filters)) {
         final _BurnFrames? frames = await _renderClipBurnFrames(
-          cues: subtitleCues,
+          // overlay 链后画的在上：按 ASS Layer 排成与 libass / 屏幕一致的叠画顺序。
+          cues: orderClipCuesForBurn(subtitleCues),
           frame: frame,
           renderer: subtitleRenderer,
         );
@@ -738,6 +932,7 @@ Future<VideoClipExportResult> exportVideoClipViaFfmpeg({
               burnCues: burnCues,
               audioStreamIndex: audioStreamIndex,
               audioStreamCount: audioStreamCount,
+              videoBitrateKbps: videoBitrateKbps,
             ),
             timeout,
           );
@@ -786,6 +981,7 @@ Future<VideoClipExportResult> exportVideoClipViaFfmpeg({
           subtitlePaths: subs,
           subtitleCodec: subtitleCodec,
           codecPlan: codecPlan,
+          videoBitrateKbps: videoBitrateKbps,
         ),
         timeout,
       );
@@ -802,6 +998,7 @@ Future<VideoClipExportResult> exportVideoClipViaFfmpeg({
           audioStreamCount: audioStreamCount,
           subtitlePaths: subs,
           subtitleCodec: subtitleCodec,
+          videoBitrateKbps: videoBitrateKbps,
         ),
         timeout,
       );
@@ -848,7 +1045,10 @@ Future<VideoClipExportResult> exportVideoClipViaFfmpeg({
     // C 修（BUG-345）：把两轮 ffmpeg 的真实失败原因（退出码 + stderr）写进错误日志，
     // 与 desktop_audio_clipper 的 _reportFfmpegFailure 对齐——否则失败是黑盒，真机只
     // 看到一句固定文案，看不到「Stream map matches no streams」/「Invalid argument」。
-    engineLog.log('VideoClipExport', 'stream-copy: ${result.copy.failureSummary}');
+    engineLog.log(
+      'VideoClipExport',
+      'stream-copy: ${result.copy.failureSummary}',
+    );
     final FfmpegRunResult? reencode = result.reencode;
     if (reencode != null) {
       engineLog.log('VideoClipExport', 'reencode: ${reencode.failureSummary}');
@@ -864,11 +1064,7 @@ Future<VideoClipExportResult> exportVideoClipViaFfmpeg({
     );
   } on ProcessException catch (e, stack) {
     _deleteIfPresent(output);
-    engineLog.log(
-      'VideoClipExport',
-      describeFfmpegProcessException(e),
-      stack,
-    );
+    engineLog.log('VideoClipExport', describeFfmpegProcessException(e), stack);
     return VideoClipExportResult.failure(
       VideoClipExportFailure.ffmpegUnavailable,
       detail: e.message,
@@ -932,11 +1128,9 @@ Future<_BurnFrames?> _renderClipBurnFrames({
       if (png == null || png.isEmpty) continue;
       final String path = p.join(dir.path, 'c$i.png');
       await File(path).writeAsBytes(png, flush: true);
-      out.add(ClipBurnCue(
-        startMs: cue.startMs,
-        endMs: cue.endMs,
-        pngPath: path,
-      ));
+      out.add(
+        ClipBurnCue(startMs: cue.startMs, endMs: cue.endMs, pngPath: path),
+      );
     }
     if (out.isEmpty) {
       try {
@@ -961,12 +1155,13 @@ Future<_BurnFrames?> _renderClipBurnFrames({
 Future<Directory?> _writeTempSubtitleFiles(List<String> contents) async {
   Directory? dir;
   try {
-    dir = await Directory.systemTemp.createTemp('hibiki_clip_sub');
+    dir = await Directory.systemTemp.createTemp('fushi_clip_sub');
     for (int i = 0; i < contents.length; i++) {
       // flush: true——ffmpeg 进程随后立刻读这些文件，不能停在 OS 写缓冲里。
       // encoding: utf8 且不写 BOM：ffmpeg 的 srt demuxer 默认按 UTF-8 解析。
-      await File(_tempSubtitlePath(dir, i))
-          .writeAsString(contents[i], encoding: utf8, flush: true);
+      await File(
+        _tempSubtitlePath(dir, i),
+      ).writeAsString(contents[i], encoding: utf8, flush: true);
     }
     return dir;
   } catch (e, stack) {

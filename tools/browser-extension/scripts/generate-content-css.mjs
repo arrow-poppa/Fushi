@@ -41,6 +41,14 @@ const repoRoot = join(scriptsDir, '..', '..', '..');
 
 const POPUP_CSS = join(repoRoot, 'fushi', 'assets', 'popup', 'popup.css');
 const OVERLAY = join(scriptsDir, 'content-css-overlay.css');
+// 扩展自有界面的调色板（theme.css，:root 级）。页内浮层（抽屉 / 字幕覆盖层 / 拖放提示 /
+// 排队 chip / toast）也要吃同一套 --fushi-* token，但 content.css 注入的是宿主页，绝不能
+// 往宿主 :root 写变量——这里把 theme.css 的 `:root` 重根到那几个 #fushi-* 宿主上再拼进去
+// （零特异性 :where，与 popup.css 重根同一取向）。明暗：宿主上有 data-theme 走显式块，
+// 没有走 prefers-color-scheme 块，与扩展页面上的 theme.css 语义完全一致。
+const THEME_CSS = join(repoRoot, 'tools', 'browser-extension', 'theme.css');
+const IN_PAGE_THEME_HOSTS =
+  ':where(#fushi-drawer, #fushi-subtitle-overlay, #fushi-subtitle-drop-hint, #fushi-queue-chip, #fushi-toast, #fushi-player-btn, #fushi-player-controls, #fushi-ctx-modal-host)';
 const OUTPUTS = [
   join(repoRoot, 'tools', 'browser-extension', 'vendor', 'content.css'),
   join(repoRoot, 'fushi', 'assets', 'browser_extension', 'vendor', 'content.css'),
@@ -74,7 +82,10 @@ function transformSelector(raw) {
   if (p === '') return null;
   // App-external-window-only modes: the extension host #entries-container never
   // carries these classes, so drop them entirely (dead weight otherwise).
-  if (p.startsWith('html.global-lookup') || p.startsWith('html.mobile-external')) {
+  // html.fushi-glass-host 同理：app 内 Apple 设计系统的透明文档宿主（Flutter 画玻璃卡面），
+  // 扩展的玻璃走 content-css-overlay.css 的 :host([data-fushi-glass]) / .fushi-glass。
+  if (p.startsWith('html.global-lookup') || p.startsWith('html.mobile-external') ||
+      p.startsWith('html.fushi-glass-host')) {
     return null;
   }
   // Named custom highlight (CSS Custom Highlight API) is global by design and its
@@ -85,6 +96,9 @@ function transformSelector(raw) {
   // are document-global. Keep verbatim: the family name is app-namespaced and the
   // src is a self-contained data: URI, so nothing leaks from / depends on the host.
   if (p.startsWith('@font-face')) return p;
+  // @keyframes（查询加载指示器的形状变形）：名字带 fushi- 命名空间，规则体里只有百分比
+  // 关键帧，原样保留即可，不会作用到宿主页任何元素。
+  if (/^@keyframes fushi-/.test(p)) return p;
   // Verbatim class/id/:where() rules — already popup-scoped in practice.
   if (p.startsWith('.') || p.startsWith('#') || p.startsWith(':where(')) return p;
   // Document-level rules → re-root at #entries-container.
@@ -268,8 +282,21 @@ function generate() {
   // Normalize the popup.css portion: collapse any 3+ newline runs left by drops
   // into a single blank line, then append the extension-only overlay.
   out = out.replace(/\n{3,}/g, '\n\n').replace(/\s+$/, '') + '\n\n';
+  out += rerootThemeCss(readFileSync(THEME_CSS, 'utf8')) + '\n\n';
   out += overlay.replace(/^\s+/, '').replace(/\s+$/, '') + '\n';
   return out;
+}
+
+/** theme.css（:root 级 token）→ 重根到页内 #fushi-* 宿主；去掉文件头注释（那段讲的是扩展页面）。 */
+function rerootThemeCss(css) {
+  const body = css.replace(/^\s*\/\*[\s\S]*?\*\/\s*/, '');
+  if (!/:root/.test(body)) {
+    throw new Error('[generate-content-css] theme.css has no :root token block — nothing to re-root');
+  }
+  return (
+    '/* ── theme.css tokens, re-rooted to the in-page hosts (generated; edit theme.css) ── */\n' +
+    body.replace(/:root/g, IN_PAGE_THEME_HOSTS).replace(/\s+$/, '')
+  );
 }
 
 function main() {

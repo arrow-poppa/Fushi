@@ -422,103 +422,6 @@ void main() {
     });
   });
 
-  group('VideoPlayerController pause at subtitle end', () {
-    test('pauses once when leaving the active cue', () {
-      final c = VideoPlayerController();
-      addTearDown(c.dispose);
-      c.setCues([_cue(0, 0, 1000), _cue(1, 2000, 3000)]);
-
-      int pauses = 0;
-      c.debugSetPauseAtSubtitleEndForTesting(
-        enabled: true,
-        onPause: () async => pauses++,
-      );
-
-      c.debugUpdateCueForPosition(500);
-      expect(c.currentCueIndex, 0);
-      expect(pauses, 0);
-
-      c.debugUpdateCueForPosition(1500);
-      expect(c.currentCueIndex, -1);
-      expect(pauses, 1);
-
-      c.debugUpdateCueForPosition(1600);
-      c.debugUpdateCueForPosition(1900);
-      expect(pauses, 1, reason: 'sustained gap should not pause repeatedly');
-
-      c.debugUpdateCueForPosition(2500);
-      c.debugUpdateCueForPosition(3500);
-      expect(pauses, 2);
-    });
-
-    test(
-        'pauses at the exact end when playback crosses directly into the next cue',
-        () async {
-      final c = VideoPlayerController();
-      addTearDown(c.dispose);
-      c.setCues([_cue(0, 0, 1000), _cue(1, 1001, 2000)]);
-
-      final List<String> actions = <String>[];
-      c.debugSetPauseAtSubtitleEndForTesting(
-        enabled: true,
-        isPlaying: () => true,
-        onPause: () async => actions.add('pause'),
-        onSeek: (int positionMs) async => actions.add('seek:$positionMs'),
-      );
-
-      c.debugUpdateCueForPosition(900);
-      c.debugUpdateCueForPosition(1125);
-      await Future<void>.delayed(Duration.zero);
-
-      expect(actions, <String>['pause', 'seek:1000']);
-      expect(c.currentCueIndex, 0,
-          reason: 'the completed sentence stays visible at its exact end');
-
-      // The player lands on the previous cue end, then resumes into cue 1.
-      // That must not pause cue 0 a second time.
-      c.debugUpdateCueForPosition(1000);
-      c.debugUpdateCueForPosition(1125);
-      await Future<void>.delayed(Duration.zero);
-      expect(actions, <String>['pause', 'seek:1000']);
-      expect(c.currentCueIndex, 1);
-
-      // Rewinding rearms sentence-end pause for a repeated cue.
-      c.debugUpdateCueForPosition(500);
-      c.debugUpdateCueForPosition(1125);
-      await Future<void>.delayed(Duration.zero);
-      expect(actions, <String>[
-        'pause',
-        'seek:1000',
-        'pause',
-        'seek:1000',
-      ]);
-    });
-
-    test('does not snap a paused manual seek back to the previous cue end',
-        () async {
-      final c = VideoPlayerController();
-      addTearDown(c.dispose);
-      c.setCues([_cue(0, 0, 1000), _cue(1, 1001, 2000)]);
-
-      int pauses = 0;
-      int seeks = 0;
-      c.debugSetPauseAtSubtitleEndForTesting(
-        enabled: true,
-        isPlaying: () => false,
-        onPause: () async => pauses++,
-        onSeek: (_) async => seeks++,
-      );
-
-      c.debugUpdateCueForPosition(900);
-      c.debugUpdateCueForPosition(1125);
-      await Future<void>.delayed(Duration.zero);
-
-      expect(pauses, 0);
-      expect(seeks, 0);
-      expect(c.currentCueIndex, 1);
-    });
-  });
-
   group('VideoPlayerController settings getters (no player)', () {
     test('delayMs getter reflects setDelayMs and clamps to ±600000', () {
       final c = VideoPlayerController();
@@ -1908,6 +1811,8 @@ void main() {
         _cue(1, 5000, 6000),
       ]);
       await c.skipToCue(c.cues[1]); // 目标=1，窗口 [4820,5000)
+      // 宽限只在播放态消耗（BUG-3488：暂停态 position 不推进，不算 seek 失败）。
+      c.debugSetIsPlayingForTesting(true);
       // 喂「宽限格数 + 余量」次 stale tick（都在首句区间、远早于窗口）：耗尽宽限。
       final int grace = VideoPlayerController.debugSeekSnapGraceTicks;
       for (int i = 0; i <= grace; i++) {
@@ -1916,6 +1821,68 @@ void main() {
       expect(c.debugSeekTargetCueIndex, isNull,
           reason: '宽限耗尽：放弃保护、清快照（seek 落地失败兜底）');
       expect(c.currentCueIndex, 0, reason: '退回纯位置推导，高亮真实位置 cue0');
+    });
+
+    // BUG-3488：暂停时按「下一句」，在线流 / 长 GOP 的 seek 回报可能要好几秒，暂停态
+    // position 一直停在跳转前的旧位置。旧实现照样每拍扣宽限，2 秒后清快照 → 字幕弹回
+    // 原句；再按「下一句」锚点已丢、按旧位置又算出同一个目标 → 「这句跳不动、狂点才过去」。
+    // 撤掉 _applySeekTargetSnap 里的 `if (isPlaying)` 此测试转红。
+    test('暂停态 seek 回报迟迟不到：快照不过期，连按下一句逐句前进', () async {
+      final c = VideoPlayerController();
+      addTearDown(c.dispose);
+      c.setCues([
+        _cue(0, 0, 3000),
+        _cue(1, 3050, 4000),
+        _cue(2, 5000, 6000),
+        _cue(3, 7000, 8000),
+      ]);
+      c.debugSetIsPlayingForTesting(false);
+      // 暂停在第 0 句中间；seek 不会改变读到的 position（模拟暂停态回报滞后）。
+      c.debugSetPositionForTesting(1000);
+      c.debugUpdateCueForPosition(1000);
+      expect(c.currentCueIndex, 0);
+
+      await c.skipToNextCueOrSeekForward(seekSeconds: 3);
+      expect(c.debugSeekTargetCueIndex, 1);
+      final int grace = VideoPlayerController.debugSeekSnapGraceTicks;
+      for (int i = 0; i < grace * 3; i++) {
+        c.debugUpdateCueForPosition(1000);
+      }
+      expect(
+        c.debugSeekTargetCueIndex,
+        1,
+        reason: '暂停态不消耗宽限：等多久都保持跳转目标',
+      );
+      expect(c.currentCueIndex, 1, reason: '字幕停在跳到的那一句，不弹回原句');
+      expect(
+        c.activeCues.map((AudioCue e) => e.text),
+        <String>['line1'],
+        reason: '画面上只剩跳到的那句，旧句不回来',
+      );
+
+      // 再按一次：从刚跳到的那句往后走，而不是按旧位置再算出同一句。
+      await c.skipToNextCueOrSeekForward(seekSeconds: 3);
+      expect(
+        c.debugSeekTargetCueIndex,
+        2,
+        reason: '第二次下一句 = 第 2 句（非又是第 1 句）',
+      );
+      for (int i = 0; i < grace * 3; i++) {
+        c.debugUpdateCueForPosition(1000);
+      }
+      expect(c.currentCueIndex, 2);
+
+      // 上一句同理：从当前目标往回一句。
+      await c.skipToPrevCueOrSeekBack(seekSeconds: 3);
+      expect(c.debugSeekTargetCueIndex, 1);
+
+      // 播放后 seek 仍不落地（真失败）：宽限照旧有界，退回真实位置。
+      c.debugSetIsPlayingForTesting(true);
+      for (int i = 0; i <= grace; i++) {
+        c.debugUpdateCueForPosition(1000);
+      }
+      expect(c.debugSeekTargetCueIndex, isNull, reason: '播放态宽限仍有界');
+      expect(c.currentCueIndex, 0);
     });
 
     // TODO-565 复核退回的必修项：点字幕行 N（skipToCue 置目标 N + 在途 seek 宽限）后，
@@ -2173,6 +2140,239 @@ void main() {
     });
   });
 
+  // BUG-2731：远端流 seek 缓冲几秒，这期间 position 仍是 seek 前的旧值；换画质 / 自适应
+  // 降档拿它重开流，用户刚滑到的位置就被抹掉。
+  group('resumePositionMs：seek 未落地时取目标，不取滞后旧位置（BUG-2731）', () {
+    test('往回 seek：旧位置恒大于目标也不误判落地，超过字幕 2 秒宽限仍取目标', () {
+      final c = VideoPlayerController();
+      addTearDown(c.dispose);
+      c.debugSetIsPlayingForTesting(true);
+      c.debugSetPositionForTesting(718760);
+      expect(c.resumePositionMs, 718760);
+
+      final int generation = c.seekGeneration;
+      c.notifyExternalSeek(705000);
+      expect(c.seekGeneration, generation + 1);
+      // 40 拍 = 5 秒，远超字幕在途保护的 2 秒宽限。
+      for (var i = 0; i < 40; i++) {
+        c.debugUpdateCueForPosition(718760);
+        expect(c.resumePositionMs, 705000, reason: '第 $i 拍：seek 还没落地');
+      }
+
+      c.debugSetPositionForTesting(705120);
+      c.debugUpdateCueForPosition(705120);
+      expect(c.resumePositionMs, 705120, reason: '落地后回到真实位置');
+    });
+
+    test('seekMs 同样登记在途目标与计数', () async {
+      final c = VideoPlayerController();
+      addTearDown(c.dispose);
+      c.debugSetPositionForTesting(10000);
+      final int generation = c.seekGeneration;
+      await c.seekMs(40000);
+      expect(c.seekGeneration, generation + 1);
+      c.debugUpdateCueForPosition(10000);
+      expect(c.resumePositionMs, 40000);
+    });
+
+    // BUG-2731 后续：录屏里「HUD 一直 ±0:00、只能反复小幅滑动」的形态——第一次 seek
+    // 还在缓冲时再 seek，第二次若按滞后旧位置算，第一次的位移就丢了。
+    test('连续两次 seekRelative：第一次未落地时位移累加，不互相抹掉', () async {
+      final c = VideoPlayerController();
+      addTearDown(c.dispose);
+      c.debugSetIsPlayingForTesting(true);
+      c.debugSetIsBufferingForTesting(true);
+      c.debugSetPositionForTesting(100000);
+
+      await c.seekRelative(10000);
+      expect(c.resumePositionMs, 110000);
+      // 远端流缓冲中：真实位置还停在 seek 前。
+      c.debugUpdateCueForPosition(100000);
+      await c.seekRelative(10000);
+      expect(c.resumePositionMs, 120000, reason: '两次 +10 秒应累加成 +20 秒');
+      await c.seekRelative(-30000);
+      expect(c.resumePositionMs, 90000);
+    });
+
+    // 按「推进满 [debugSeekSettledAdvanceMs]」算拍数：每拍 125ms，第一拍只记基准。
+    int ticksToSettle() =>
+        VideoPlayerController.debugSeekSettledAdvanceMs ~/ 125;
+
+    test('seek 从未落地但下发后播放已正常推进：在途目标被清掉，不永久残留', () async {
+      final c = VideoPlayerController();
+      addTearDown(c.dispose);
+      c.debugSetIsPlayingForTesting(true);
+      c.debugSetIsBufferingForTesting(false);
+      c.debugSetPositionForTesting(300000);
+      // seek 被忽略（不可 seek 的流 / Range 出错）：位置从来没去过目标附近。
+      c.notifyExternalSeek(600000);
+      c.noteExternalSeekDispatched(Future<void>.value());
+      await Future<void>.delayed(Duration.zero);
+      expect(c.debugPendingSeekDispatched, isTrue);
+
+      int pos = 300000;
+      c.debugUpdateCueForPosition(pos); // 记基准
+      for (var i = 0; i < ticksToSettle() - 1; i++) {
+        c.debugUpdateCueForPosition(pos += 125);
+        expect(c.debugPendingSeekLandingMs, 600000, reason: '第 $i 拍还不够证据');
+      }
+      c.debugUpdateCueForPosition(pos += 125);
+      expect(c.debugPendingSeekLandingMs, isNull);
+      c.debugSetPositionForTesting(pos);
+      expect(c.resumePositionMs, pos, reason: '换档应按真实播放位置重开');
+    });
+
+    test('seek 命令还没确认下发时，旧内容正常推进不算收场（锁被占住的窗口）', () async {
+      final c = VideoPlayerController();
+      addTearDown(c.dispose);
+      c.debugSetIsPlayingForTesting(true);
+      c.debugSetIsBufferingForTesting(false);
+      c.notifyExternalSeek(600000);
+      final Completer<void> dispatch = Completer<void>();
+      c.noteExternalSeekDispatched(dispatch.future);
+
+      int pos = 300000;
+      for (var i = 0; i < ticksToSettle() * 5; i++) {
+        c.debugUpdateCueForPosition(pos += 125);
+      }
+      expect(c.debugPendingSeekDispatched, isFalse);
+      expect(c.debugPendingSeekLandingMs, 600000, reason: 'seek 还在排队，目标必须保留');
+
+      dispatch.complete();
+      await Future<void>.delayed(Duration.zero);
+      expect(c.debugPendingSeekDispatched, isTrue);
+      c.debugUpdateCueForPosition(pos);
+      for (var i = 0; i < ticksToSettle(); i++) {
+        c.debugUpdateCueForPosition(pos += 125);
+      }
+      expect(c.debugPendingSeekLandingMs, isNull);
+    });
+
+    test('下发确认迟到时目标已被新 seek 覆盖：不替新目标背书', () async {
+      final c = VideoPlayerController();
+      addTearDown(c.dispose);
+      c.notifyExternalSeek(600000);
+      final Completer<void> first = Completer<void>();
+      c.noteExternalSeekDispatched(first.future);
+      c.notifyExternalSeek(700000);
+      first.complete();
+      await Future<void>.delayed(Duration.zero);
+      expect(c.debugPendingSeekLandingMs, 700000);
+      expect(c.debugPendingSeekDispatched, isFalse);
+    });
+
+    test('seek 下发失败：在途目标作废', () async {
+      final c = VideoPlayerController();
+      addTearDown(c.dispose);
+      c.notifyExternalSeek(600000);
+      c.noteExternalSeekDispatched(Future<void>.error(StateError('seek failed')));
+      await Future<void>.delayed(Duration.zero);
+      expect(c.debugPendingSeekLandingMs, isNull);
+    });
+
+    test('seekMs 在 player.seek 返回后才确认下发', () async {
+      final c = VideoPlayerController();
+      addTearDown(c.dispose);
+      c.debugSetPositionForTesting(10000);
+      await c.seekMs(40000);
+      expect(c.debugPendingSeekLandingMs, 40000);
+      expect(c.debugPendingSeekDispatched, isTrue);
+    });
+
+    test('低帧率 / VFR：相邻两拍位置相同既不加也不归零', () async {
+      final c = VideoPlayerController();
+      addTearDown(c.dispose);
+      c.debugSetIsPlayingForTesting(true);
+      c.debugSetIsBufferingForTesting(false);
+      c.notifyExternalSeek(600000);
+      c.noteExternalSeekDispatched(Future<void>.value());
+      await Future<void>.delayed(Duration.zero);
+
+      // 约 4fps 的片源：每 250ms 才出一帧，125ms 一拍的采样一半读到同一位置。
+      int pos = 300000;
+      c.debugUpdateCueForPosition(pos);
+      final int frames = VideoPlayerController.debugSeekSettledAdvanceMs ~/ 250;
+      for (var i = 0; i < frames - 1; i++) {
+        c.debugUpdateCueForPosition(pos += 250);
+        c.debugUpdateCueForPosition(pos);
+        expect(c.debugPendingSeekLandingMs, 600000);
+      }
+      c.debugUpdateCueForPosition(pos += 250);
+      expect(c.debugPendingSeekLandingMs, isNull, reason: '累计推进够了就收场');
+    });
+
+    test('缓冲中 / 暂停 / 倒退 / 跳变都不算 seek 已收场', () async {
+      final c = VideoPlayerController();
+      addTearDown(c.dispose);
+      c.debugSetPositionForTesting(300000);
+      c.notifyExternalSeek(600000);
+      c.noteExternalSeekDispatched(Future<void>.value());
+      await Future<void>.delayed(Duration.zero);
+      final int n = ticksToSettle() * 3;
+
+      // 在播但缓冲中：位置哪怕在动也不作数（seek 真在途时就是这个形态）。
+      c.debugSetIsPlayingForTesting(true);
+      c.debugSetIsBufferingForTesting(true);
+      int pos = 300000;
+      for (var i = 0; i < n; i++) {
+        c.debugUpdateCueForPosition(pos += 125);
+      }
+      expect(c.debugPendingSeekLandingMs, 600000);
+
+      // 暂停。
+      c.debugSetIsBufferingForTesting(false);
+      c.debugSetIsPlayingForTesting(false);
+      for (var i = 0; i < n; i++) {
+        c.debugUpdateCueForPosition(pos += 125);
+      }
+      expect(c.debugPendingSeekLandingMs, 600000);
+
+      // 在播不缓冲但位置不动（卡住）。
+      c.debugSetIsPlayingForTesting(true);
+      for (var i = 0; i < n; i++) {
+        c.debugUpdateCueForPosition(pos);
+      }
+      expect(c.debugPendingSeekLandingMs, 600000);
+
+      // 推进被打断要重新累积：差一拍够数时插一拍缓冲 / 倒退 / 跳变，累计归零。
+      for (final void Function() interrupt in <void Function()>[
+        () {
+          c.debugSetIsBufferingForTesting(true);
+          c.debugUpdateCueForPosition(pos += 125);
+          c.debugSetIsBufferingForTesting(false);
+        },
+        () => c.debugUpdateCueForPosition(pos -= 500),
+        () => c.debugUpdateCueForPosition(pos += 5000),
+      ]) {
+        // 每种打断各自从一次新登记起算。
+        c.notifyExternalSeek(600000);
+        c.noteExternalSeekDispatched(Future<void>.value());
+        await Future<void>.delayed(Duration.zero);
+        c.debugUpdateCueForPosition(pos);
+        for (var i = 0; i < ticksToSettle() - 1; i++) {
+          c.debugUpdateCueForPosition(pos += 125);
+        }
+        interrupt();
+        for (var i = 0; i < ticksToSettle() - 1; i++) {
+          c.debugUpdateCueForPosition(pos += 125);
+        }
+        expect(c.debugPendingSeekLandingMs, 600000);
+      }
+    });
+
+    test('相对 seek 基准快照：captureRelativeSeekBaseMs 记下的值供 HUD 读', () {
+      final c = VideoPlayerController();
+      addTearDown(c.dispose);
+      c.debugSetPositionForTesting(100000);
+      expect(c.lastRelativeSeekBaseMs, isNull);
+      c.notifyExternalSeek(150000);
+      expect(c.captureRelativeSeekBaseMs(), 150000);
+      // 拖动途中在途目标变了，HUD 读的快照不跟着跳。
+      c.notifyExternalSeek(90000);
+      expect(c.lastRelativeSeekBaseMs, 150000);
+    });
+  });
+
   // BUG-2441：媒体没被打开时（libmpv `open` 失败 / VO 建不出来），position 恒 0——那
   // 不是「用户停在片头」，是「没东西可播」。三个位置写入点此前无法区分这两种 0，于是
   // 重开失败后的第一个 125ms tick 就把 0 写库，抹掉用户上一程的真实进度（现场实测：
@@ -2290,6 +2490,32 @@ void main() {
         );
       });
 
+      test('网络流：宽限用尽（mpv network-timeout 已过）才判死', () {
+        // Emby 流 URL 失效 / 会话被服务器收掉 / 中继 502：此前网络流永远不判死，
+        // 用户对着黑屏 00:00 无提示无重试——「有时候无法重新播放」的观感。
+        expect(
+          VideoPlayerController.shouldDiagnoseMediaNeverOpened(
+            mediaOpened: false,
+            isLocalFile: false,
+            alreadyFailed: false,
+            missingResource: false,
+            networkGraceElapsed: true,
+          ),
+          isTrue,
+        );
+        expect(
+          VideoPlayerController.shouldDiagnoseMediaNeverOpened(
+            mediaOpened: true,
+            isLocalFile: false,
+            alreadyFailed: false,
+            missingResource: false,
+            networkGraceElapsed: true,
+          ),
+          isFalse,
+          reason: '打开了就是慢，不是死',
+        );
+      });
+
       test('页面已在失败态 / 资源缺失态 → 不再盖一层', () {
         expect(
           VideoPlayerController.shouldDiagnoseMediaNeverOpened(
@@ -2308,6 +2534,46 @@ void main() {
             missingResource: true,
           ),
           isFalse,
+        );
+      });
+    });
+
+    // BUG-2441 触发侧：上一个 Player 的原生拆除与下一个 Player 的建立并发。新控制器
+    // 建 Player 前必须先等上一份释放落定（有界）。
+    group('上一个 Player 的原生释放先于下一个建立', () {
+      tearDown(() {
+        VideoPlayerController.pendingNativeDisposalForTesting = null;
+      });
+
+      test('在途释放未落定：awaitPendingNativeDisposal 等它', () async {
+        final Completer<void> disposal = Completer<void>();
+        VideoPlayerController.pendingNativeDisposalForTesting = disposal.future;
+        bool settled = false;
+        final Future<void> waiting =
+            VideoPlayerController.awaitPendingNativeDisposal().then((_) {
+          settled = true;
+        });
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+        expect(settled, isFalse, reason: '释放没落定就不能放行建新 Player');
+        disposal.complete();
+        await waiting;
+        expect(settled, isTrue);
+        expect(VideoPlayerController.pendingNativeDisposalForTesting, isNull,
+            reason: '落定后清掉，下一次不再等');
+      });
+
+      test('无在途释放：立即返回', () async {
+        VideoPlayerController.pendingNativeDisposalForTesting = null;
+        await VideoPlayerController.awaitPendingNativeDisposal()
+            .timeout(const Duration(milliseconds: 100));
+      });
+
+      test('释放永不落定：有界等待后照常放行（不把新页一起卡死）', () async {
+        VideoPlayerController.pendingNativeDisposalForTesting =
+            Completer<void>().future;
+        await VideoPlayerController.awaitPendingNativeDisposal().timeout(
+          VideoPlayerController.kNativeDisposalWait +
+              const Duration(seconds: 2),
         );
       });
     });

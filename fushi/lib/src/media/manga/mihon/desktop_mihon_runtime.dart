@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:ffi';
 import 'dart:io';
 import 'dart:math';
 import 'dart:typed_data';
@@ -528,7 +527,7 @@ class DesktopMihonRuntime extends MihonBridgeRuntime
         await process.exitCode.timeout(const Duration(seconds: 1));
       } on TimeoutException {
         // This is still the exact retained child. Startup fails rather than
-        // allowing an uncontained JVM to outlive Hibiki.
+        // allowing an uncontained JVM to outlive Fushi.
       }
       throw MihonRuntimeException(
         'PROCESS_CONTAINMENT_FAILED',
@@ -763,7 +762,7 @@ class DesktopMihonRuntime extends MihonBridgeRuntime
             headers: await _headersFor(source),
             body: jsonEncode(body),
           )
-          .timeout(const Duration(seconds: 45));
+          .timeout(kMihonBridgeRequestTimeout);
       // 先吸收 cookie 再判状态码：源返回 403 往往正是「会话过期并换发了新
       // cookie」那一刻，此时丢掉回传的增量会让下一次重试继续用作废的旧值。
       await _absorbResponseCookies(source, response.headers);
@@ -830,11 +829,10 @@ class DesktopMihonRuntime extends MihonBridgeRuntime
   }
 
   String _javaExecutablePath() {
-    final String runtimeName = Platform.isMacOS
-        ? (Abi.current() == Abi.macosArm64
-            ? 'runtime-macos-arm64'
-            : 'runtime-macos-x64')
-        : 'runtime';
+    // macOS 版只出 Apple Silicon（arm64），bundle 里只有这一份 JVM 镜像
+    // （tool/mihon/build_desktop_runtime.sh）；Intel Mac 不再支持。
+    final String runtimeName =
+        Platform.isMacOS ? 'runtime-macos-arm64' : 'runtime';
     return p.join(
       resourceDirectory.path,
       runtimeName,

@@ -18,32 +18,43 @@ enum DeleteScope {
   syncEverywhere,
 }
 
-/// 用户在删除确认框里做出的完整决定：传播范围 + 要不要连本地原始文件一起删。
+/// 用户在删除确认框里做出的完整决定：传播范围 + 本地原件 + 统计事实。
 ///
-/// 两个维度正交：[scope] 只管「其他设备删不删」（墓碑），[deleteLocalFiles] 只管
-/// 「本机磁盘上用户自己的原件删不删」（视频文件 / 有声书原始音频）。默认后者为
-/// false——现有所有入口的语义（只删库记录 + app 自己的副本）一个字都不变。
+/// 三个维度正交：[scope] 只管「其他设备删不删」（墓碑），[deleteLocalFiles] 只管
+/// 「本机磁盘上用户自己的原件删不删」（视频文件 / 有声书原始音频），
+/// [deleteStatistics] 只管「这条媒体攒下的学习/观看统计删不删」。后两者默认 false
+/// ——现有所有入口的语义（只删库记录 + app 自己的副本）一个字都不变。
+///
+/// [deleteStatistics] 单独一维而不跟着 [scope] 走：统计是**另一类事实**，删掉一部
+/// 看完的番并不等于要把看它花掉的那些小时从图表里抹掉。反过来它也不受
+/// [DeleteScope.keepLocalOnly] 约束——统计删除按媒体身份立碑（见
+/// `deleteVideoStatisticsForIdentity`），否则下一轮聚合同步会把对端还留着的段整批
+/// 灌回来（BUG-2215 的原文）。
 class DeleteDecision {
   const DeleteDecision({
     required this.scope,
     this.deleteLocalFiles = false,
+    this.deleteStatistics = false,
   });
 
   final DeleteScope scope;
   final bool deleteLocalFiles;
+  final bool deleteStatistics;
 
   @override
   bool operator ==(Object other) =>
       other is DeleteDecision &&
       other.scope == scope &&
-      other.deleteLocalFiles == deleteLocalFiles;
+      other.deleteLocalFiles == deleteLocalFiles &&
+      other.deleteStatistics == deleteStatistics;
 
   @override
-  int get hashCode => Object.hash(scope, deleteLocalFiles);
+  int get hashCode => Object.hash(scope, deleteLocalFiles, deleteStatistics);
 
   @override
-  String toString() =>
-      'DeleteDecision(${scope.name}, deleteLocalFiles: $deleteLocalFiles)';
+  String toString() => 'DeleteDecision(${scope.name}, '
+      'deleteLocalFiles: $deleteLocalFiles, '
+      'deleteStatistics: $deleteStatistics)';
 }
 
 /// 删除传播的方向：远端也删 / 本地也删。
@@ -90,7 +101,8 @@ class DeletionPropagationCandidate {
 ///
 /// 值可空：`null` = 这类资产不记录存在起始时刻（当前是 `localaudio` 与 `audiobook`），
 /// 该条目退化为旧的纯集合语义（只看在不在库）。其余资产都有真实时刻可用——书 / 字幕书 /
-/// 视频用 `importedAt`，收藏词 / 收藏句用 `createdAt`。
+/// 视频用 `localAddedAt`（v118，本机开始拥有的时刻；**不是** `importedAt`——互联下载
+/// 把后者写成对端入库时刻），收藏词 / 收藏句用 `createdAt`。
 typedef DeletionPresentEntries = Map<String, Map<String, int?>>;
 
 /// 一端的删除墓碑：`itemKey → deletedAt`（毫秒纪元）。

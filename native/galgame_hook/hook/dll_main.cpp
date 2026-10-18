@@ -44,6 +44,9 @@
 #include <vector>
 
 #include "il2cpp_thread_scope.h"
+#include "adapters/unity_mono_text.h"
+#include "adapters/unity_mono_lookup_core.h"
+#include "adapters/unity_mono_audio.h"
 #include "adapter.h"
 #include "module_settle.h"
 #include "host_executable_digest.h"
@@ -52,27 +55,45 @@
 #include "adapters/cmvs_sprite_geometry_reader.h"
 #include "lookup_overlay_geometry.h"
 #include "game_main_window.h"
+#include "overlay_cursor_guard.h"
 // KiriKiri 第三条 exporter 路径的判据（BUG-2145）。必须在**顶层**引入：adapters/*.inc 是被
 // 包进本文件匿名命名空间里的，从那里 include 会把 std:: 解析成匿名命名空间下的名字。
 #include "adapters/kirikiri_exporter_scan.h"
 #include "hunex_gge_trace.h"
 #include "leaf_d3d_trace.h"
 #include "artemis_pfs.h"
+#include "adapters/artemis_lookup_core.h"
+#include "adapters/reallive_lookup_core.h"
+#include "adapters/catsystem2_lookup_core.h"
+#include "adapters/bgi_lookup_core.h"
+#include "adapters/yuris_lookup_core.h"
+#include "adapters/yuris_voice_core.h"
+#include "adapters/fvp_lookup_core.h"
+#include "adapters/catsystem2_voice_core.h"
+#include "adapters/cmvs_voice_core.h"
 #include "lookup_selected_text.h"
 #include "asar_runtime.h"
 #include "bgi_arc.h"
+#include "yuris_ypf.h"
+#include "luca_pak.h"
+#include "adapters/luca_text_core.h"
+#include "adapters/luca_x64_text_core.h"
+#include "adapters/luca_lookup_core.h"
+#include "adapters/luca_x64_lookup_core.h"
+#include "fvp_format.h"
 #include "directsound_format_registry.h"
 #include "catsystem2_int.h"
-#include "malie_lib.h"
 #include "ffmpeg_runtime.h"
 #include "lookup_v19_runtime.h"
+#include "lookup_wheel_source.h"
 #include "hook_original_registry.h"
 #include "tracked_handle_table.h"
 #include "hunex_hfa.h"
 #include "siglus_ovk.h"
 #include "siglus_voice_binding.h"
-#include "siglus_launch.h"
+#include "siglus_launch_win32.h"
 #include "adapters/siglus_lookup.h"
+#include "adapters/siglus_selection_line.h"
 #include "adapters/siglus_image.h"
 #include "adapters/siglus_autoprofile.h"
 #include "adapters/siglus_viewport.h"
@@ -112,11 +133,15 @@
 #include "unity_text_mesh_reassembler.h"
 #include "unity_text_profile.h"
 #include "visual_arts_ovk.h"
+#include "reallive_nwk.h"
 #include "voice_hook_ipc.h"
-#include "siglus_text_owner.h"
+#include "native_text_owner.h"
 #include "voice_resource_filename.h"
 #include "voice_resource_pairing.h"
 #include "kirikiri_voice_storage_name.h"
+#include "kirikiri_tcwf.h"
+#include "x86_insn_len.h"
+#include "pcm_wav_silence.h"
 #include "lookup_line_text_match.h"
 #include "xaudio_resource_dispatch.h"
 #include "xaudio_source_format.h"
@@ -270,6 +295,7 @@ std::wstring VoiceBaseName(const wchar_t* storagename, const uint8_t* data,
 }
 
 #include "voice_resource_writer.inc"
+#include "selected_lane_candidates.inc"
 
 // 首次拿到语音格式的写入闩：多路 CreateSourceVoice 只让第一个写 header 格式字段。
 volatile LONG g_format_set = 0;
@@ -371,7 +397,7 @@ void WriteMarkerFile(DWORD pid) {
   if (f == INVALID_HANDLE_VALUE) {
     return;
   }
-  const char msg[] = "hibiki voice hook attached\n";
+  const char msg[] = "fushi voice hook attached\n";
   DWORD written = 0;
   WriteFile(f, msg, sizeof(msg) - 1, &written, nullptr);
   CloseHandle(f);
@@ -585,8 +611,8 @@ inline void RecordVoiceClip(uint32_t ring_offset, uint32_t byte_len,
 
 // 通知 injector IPC 契约已经可用。必须在任何 MinHook/引擎探测之前调用：
 // 这些重型安装可能被目标进程里已有的 hook 拖慢，不能因此让 injector 超时并释放共享内存。
-bool SignalReady(DWORD pid, bool legacy_hibiki_ipc) {
-  const std::wstring evt = ReadyEventName(pid, legacy_hibiki_ipc);
+bool SignalReady(DWORD pid) {
+  const std::wstring evt = ReadyEventName(pid);
   HANDLE ready = OpenEventW(EVENT_MODIFY_STATE, FALSE, evt.c_str());
   if (ready == nullptr) return false;
   const bool signaled = SetEvent(ready) != FALSE;
@@ -613,22 +639,16 @@ bool SignalReady(DWORD pid, bool legacy_hibiki_ipc) {
 #include "generated/adapter_includes.inc"
 
 #include "generic_input_shield.inc"
+#include "overlay_cursor_guard.inc"
 #include "adapter_registry.inc"
 
 // 工作线程：打开共享内存 -> 校验契约 -> 标记 hooked -> 由 registry 安装 adapter -> 通知 injector。
-DWORD WINAPI HookWorker(LPVOID module_context) {
+DWORD WINAPI HookWorker(LPVOID /*module_context*/) {
   const DWORD pid = GetCurrentProcessId();
   AdapterRegistry registry;
   WriteMarkerFile(pid);
 
-  wchar_t module_path[MAX_PATH] = {0};
-  const DWORD module_path_length = GetModuleFileNameW(
-      reinterpret_cast<HMODULE>(module_context), module_path, MAX_PATH);
-  const bool legacy_hibiki_ipc =
-      module_path_length > 0 && module_path_length < MAX_PATH &&
-      fushi_voice_hook::ComponentUsesLegacyHibikiIpc(
-          std::wstring(module_path, module_path_length));
-  const std::wstring shm = SharedMemoryName(pid, legacy_hibiki_ipc);
+  const std::wstring shm = SharedMemoryName(pid);
   g_mapping = OpenFileMappingW(FILE_MAP_ALL_ACCESS, FALSE, shm.c_str());
   if (g_mapping != nullptr) {
     g_header = static_cast<SharedHeader*>(
@@ -662,16 +682,18 @@ DWORD WINAPI HookWorker(LPVOID module_context) {
 
   g_header->hooked = 1;
   fushi_voice_hook::g_geometry_provider_registry.Reset(g_header);
-  // BUG-2339: proof-of-life must not let Luna claim a pending Siglus entry.
-  // This cheap engine classification precedes Ready; ABI work stays async.
-  fushi_voice_hook::InitializeSiglusTextOwner(g_header, IsSiglusEngine());
+  // BUG-2339: proof-of-life must not let Luna claim a pending native text
+  // entry (SiglusEngine, LucaSystem). This cheap engine classification
+  // precedes Ready; ABI work stays async.
+  fushi_voice_hook::InitializeNativeTextOwner(g_header,
+                                              registry.native_text_candidate());
   // 此时 DLL、共享内存与契约均已就绪，先让 injector 进入 hold 保住映射。
   // 后面的 MinHook/Siglus/KiriKiri 探测允许异步继续，不能阻塞 proof-of-life。
-  if (!SignalReady(pid, legacy_hibiki_ipc)) {
+  if (!SignalReady(pid)) {
     // This worker will never install hooks or advance Pending. A later helper
     // must not reuse its mapping as a live, ready injection session.
     fushi_voice_hook::AtomicStoreShared32(&g_header->hooked, 0u);
-    registry.FailSiglusTextStartup();
+    registry.FailNativeTextStartup();
     return 1;
   }
 
@@ -719,14 +741,16 @@ DWORD WINAPI HookWorker(LPVOID module_context) {
     g_capture_enabled = true;  // detour 上线（未加载时 hook 随后命中）。
     registry.InstallStartupAdapters();
     TryInstallGenericLookupInputShield();
+    TryInstallOverlayCursorGuard();
   } else {
-    registry.FailSiglusTextStartup();
+    registry.FailNativeTextStartup();
   }
 
   // registry 保留原有各 adapter 的 150 次重试预算和调用顺序；工作线程只管生命周期。
   while (!g_stop) {
     registry.Poll();
     TryInstallGenericLookupInputShield();
+    TryInstallOverlayCursorGuard();
     ProcessGenericLookupInputShield();
     fushi_voice_hook::g_geometry_provider_registry.Reconcile(g_header);
     // 通用位图呈现器：host 打开查词后才起，且只在没有引擎适配器认领呈现时起。

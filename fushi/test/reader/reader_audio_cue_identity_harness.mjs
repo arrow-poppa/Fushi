@@ -18,10 +18,11 @@ try {
     assert.ok(start >= 0 && end > start, 'production reader object exists');
     const source = 'const C = {};\n' + scripts.units + '\n' +
       shell.slice(start, end + 3) + '\n' + scripts.selection;
-    const result = await driver.evalOnPage('<!doctype html><meta charset="utf-8"><body>', `(() => {
+    const result = await driver.evalOnPage('<!doctype html><meta charset="utf-8"><body>', `(async () => {
       (0, eval)(${JSON.stringify(source)});
       window.flutter_inappwebview = {callHandler: (name, payload) => {
-        window.lastPayload = JSON.parse(payload);
+        if (typeof payload === 'string') window.lastPayload = JSON.parse(payload);
+        window.lastEvent = name;
       }};
       window.__fushiCssHighlightsSupported = true;
       const reader = window.fushiReader;
@@ -75,11 +76,15 @@ try {
       document.body.innerHTML = '<p><ruby>次<rt>つぎ</rt></ruby>の文。</p>';
       reader.applySentenceAudioCues([{id:'ruby', text:'次の文。', start:0, length:3}]);
       const ruby = document.querySelector('ruby');
-      selection.selectFromPosition(ruby.firstChild, 0, 1);
+      // BUG-2806: the base text is wrapped in place inside the ruby (the ruby never moves).
+      const rubyWrapper = ruby.querySelector('.fushi-sentence-audio-cue');
+      if (ruby.parentNode !== document.querySelector('p') || !rubyWrapper) throw Error('ruby stays in place, base wrapped inside');
+      const rubyBase = rubyWrapper.firstChild;
+      selection.selectFromPosition(rubyBase, 0, 1);
       check(cue(window.lastPayload).id === 'ruby' &&
         JSON.parse(reader.cueIdAtDomPoint(ruby.querySelector('rt').firstChild, 0)).id === 'ruby',
         'ruby base lookup and annotation pointer keep cue identity');
-      check(cue(native(ruby.firstChild, 0, 1)).id === 'ruby', 'ruby native selection preserves cue');
+      check(cue(native(rubyBase, 0, 1)).id === 'ruby', 'ruby native selection preserves cue');
       reader.resetSentenceAudioCues();
       document.body.innerHTML = '<p data-cue-id="12">合成文。</p><p id="missing">字幕なし。</p>';
       reader.buildNodeOffsets();

@@ -1,4 +1,6 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
 
 /// 删除目标的种类。删除确认框据此逐项披露「会删什么 / 会保留什么」，不再由各调用点
@@ -50,6 +52,7 @@ class DeletionDisclosure {
     required this.willDelete,
     required this.willKeep,
     this.localFiles,
+    this.statisticsEntry,
   });
 
   /// 确认后真的会从本机消失的东西。
@@ -60,6 +63,10 @@ class DeletionDisclosure {
 
   /// 勾选「同时删除本地文件」时对上面两组做的替换；null = 这个目标没有可删的原件。
   final LocalFilesDisclosureSwap? localFiles;
+
+  /// 勾选「同时删除统计数据」时从「会被保留」挪进「会被删除」的那一条；null = 这个
+  /// 目标的披露不涉及统计。必须是 `willKeep` 的成员。
+  final String? statisticsEntry;
 
   /// 勾选「同时删除本地文件」后的披露。
   ///
@@ -79,6 +86,23 @@ class DeletionDisclosure {
             swap.narrowedKeptEntry!,
       ],
       localFiles: swap,
+      statisticsEntry: statisticsEntry,
+    );
+  }
+
+  /// 勾选「同时删除统计数据」后的披露：[statisticsEntry] 从「会被保留」挪进「会被
+  /// 删除」。幂等，且与 [withLocalFilesDeleted] 可任意顺序叠加。
+  DeletionDisclosure withStatisticsDeleted() {
+    final String? entry = statisticsEntry;
+    if (entry == null || willDelete.contains(entry)) return this;
+    return DeletionDisclosure(
+      willDelete: <String>[...willDelete, entry],
+      willKeep: <String>[
+        for (final String item in willKeep)
+          if (item != entry) item,
+      ],
+      localFiles: localFiles,
+      statisticsEntry: entry,
     );
   }
 }
@@ -100,7 +124,9 @@ DeletionDisclosure buildDeletionDisclosure({
       //      `<documents>/audiobooks/<hash>`；
       //   3) EpubStorage.deleteBookDir(extractDir) 递归删 `<documents>/fushi_books/<key>`。
       // 不删：epub_books.epubPath 只存文件名，删除路径从不据它删用户原始文件；
-      //       reading_statistics / reading_hourly_logs 无人清理，确实留着。
+      //       reading_statistics / reading_hourly_logs 默认留着；勾了「同时删除
+      //       统计数据」才由 deleteBook 走 deleteReadingStatisticsForTitle 清掉
+      //       （statisticsEntry 随之挪进「会被删除」）。
       // 「同时删除本地文件」只对有声书 / 配对字幕书**显式登记的原始音频**有意义：
       // 书本体（EPUB / PDF / 漫画）与字幕的原件路径根本没入库，deleteBook 无从删起。
       // 所以勾选后加进「会被删除」的是那条只讲音频的措辞，而「会被保留」那条同时
@@ -121,6 +147,7 @@ DeletionDisclosure buildDeletionDisclosure({
           deletedEntry: t.delete_disclosure_audio_source_files,
           narrowedKeptEntry: t.delete_disclosure_book_source_kept,
         ),
+        statisticsEntry: t.delete_disclosure_stats_kept,
       );
     case DeletionDisclosureTarget.attachedAudiobook:
       // 真实删除集合见 AudiobookRepository.deleteAudiobook：
@@ -158,34 +185,38 @@ class DeleteScopeUnavailableNote extends StatelessWidget {
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final ColorScheme colors = Theme.of(context).colorScheme;
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: <Widget>[
-        Icon(Icons.devices_outlined, size: 16, color: colors.onSurfaceVariant),
-        SizedBox(width: tokens.spacing.gap / 2),
-        Expanded(
-          child: Text(
-            t.delete_scope_no_channel,
-            style: tokens.type.listSubtitle
-                .copyWith(color: colors.onSurfaceVariant),
-          ),
+    final bool eink = isEinkTheme(context);
+    // M3E：说明放进共享 search 色调（MD3 即 surfaceContainerHigh）的小圆角色块
+    // （墨水屏只留描边），与上下
+    // 勾选分组区分开——它不是可操作的行。
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: eink ? colors.surface : tokens.surfaces.search,
+        borderRadius: FushiM3eShape.smallRadius,
+        border: eink ? Border.all(color: colors.outline) : null,
+      ),
+      child: Padding(
+        padding: EdgeInsets.all(tokens.spacing.gap),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            FushiIcon(FushiIcons.devices,
+                size: 18, color: colors.onSurfaceVariant),
+            SizedBox(width: tokens.spacing.gap),
+            Expanded(
+              child: Text(
+                t.delete_scope_no_channel,
+                style: tokens.type.listSubtitle
+                    .copyWith(color: colors.onSurfaceVariant),
+              ),
+            ),
+          ],
         ),
-      ],
+      ),
     );
   }
 }
 
-/// 两个删除确认框（`showDeleteScopeConfirm` / `ReaderHistoryDeleteDialog`）里
-/// **唯一**的勾选行形状：「从所有设备删除」与「同时删除本地文件」共用它，两个新老
-/// 选项不会各写一套长相。
-///
-/// 不覆盖下载任务面板那个确认框：它是 `AlertDialog`，会对 content 做 intrinsic
-/// 测量，而本行内部的 `AdaptiveSettingsRow` 含 `LayoutBuilder`（
-/// 「LayoutBuilder does not support returning intrinsic dimensions」直接崩）。
-/// 要连它一起统一得先把那个弹窗换成 `FushiModalSheetFrame`，是另一件事。
-///
-/// [destructive]：勾选态用 error 色。删用户自己的原件比「同步到别的设备」重，
-/// 视觉上必须区分得开。
 class DeleteConfirmCheckboxRow extends StatelessWidget {
   const DeleteConfirmCheckboxRow({
     required this.title,
@@ -209,11 +240,15 @@ class DeleteConfirmCheckboxRow extends StatelessWidget {
       title: title,
       subtitle: subtitle,
       onTap: () => onChanged(!value),
-      trailing: Icon(
-        value ? Icons.check_box : Icons.check_box_outline_blank,
-        color: value
-            ? (destructive ? colors.error : colors.primary)
-            : colors.onSurfaceVariant,
+      // M3E 勾选框（行本身是焦点目标与点按区，勾选框不再单独抢焦点）；
+      // 破坏性选项勾上后走 error 色。
+      trailing: ExcludeFocus(
+        child: FushiCheckbox(
+          value: value,
+          isError: destructive && value,
+          activeColor: destructive && value ? colors.error : null,
+          onChanged: (bool? v) => onChanged(v ?? !value),
+        ),
       ),
     );
   }
@@ -240,6 +275,36 @@ class DeleteLocalFilesRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) => DeleteConfirmCheckboxRow(
         title: t.delete_local_files,
+        subtitle: subtitle,
+        value: value,
+        onChanged: onChanged,
+        destructive: true,
+      );
+}
+
+/// 「同时删除统计数据」勾选行。
+///
+/// [subtitle] 与 [DeleteLocalFilesRow] 同样**必填**：删掉的统计在各域口径不同
+/// （视频是观看时长/字幕字数/查词计数），没有一句通用说明能同时成立。
+///
+/// 它**不进**「记住这些选择」：那一行记的是「这台设备上删东西时的惯常选择」，而
+/// 统计删除按媒体身份立碑、其他设备同步后也跟着删，没有撤销——这种事不该因为上次
+/// 勾过就默认勾上。
+class DeleteStatisticsRow extends StatelessWidget {
+  const DeleteStatisticsRow({
+    required this.value,
+    required this.onChanged,
+    required this.subtitle,
+    super.key,
+  });
+
+  final bool value;
+  final ValueChanged<bool> onChanged;
+  final String subtitle;
+
+  @override
+  Widget build(BuildContext context) => DeleteConfirmCheckboxRow(
+        title: t.delete_statistics,
         subtitle: subtitle,
         value: value,
         onChanged: onChanged,
@@ -280,63 +345,74 @@ class DeletionDisclosureView extends StatelessWidget {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final ColorScheme colors = Theme.of(context).colorScheme;
 
+    // M3E：「会被删除」是 errorContainer 色块、「会被保留」是 secondaryContainer
+    // 色块（Apple 落到系统色淡染，墨水屏只留描边），各自一枚圆底小图标领头。
     Widget section({
       required String label,
       required IconData icon,
-      required Color color,
+      required FushiCardTone tone,
+      required Color fallbackColor,
       required List<String> items,
     }) {
-      return Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          Row(
-            children: <Widget>[
-              Icon(icon, size: 16, color: color),
-              SizedBox(width: tokens.spacing.gap / 2),
-              Flexible(
+      final FushiCardColors? toneColors = fushiCardToneColors(context, tone);
+      final Color fg = toneColors?.onContainer ?? fallbackColor;
+      return FushiCard(
+        tone: tone,
+        pressScale: false,
+        borderRadius: FushiM3eShape.smallRadius,
+        padding: EdgeInsets.all(tokens.spacing.gap + 4),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Row(
+              children: <Widget>[
+                FushiIcon(icon, size: 18, color: fg),
+                SizedBox(width: tokens.spacing.gap),
+                Flexible(
+                  child: Text(
+                    label,
+                    style: context.fushiType.labelLargeEmphasized
+                        .copyWith(color: fg),
+                  ),
+                ),
+              ],
+            ),
+            for (final String item in items)
+              Padding(
+                padding: EdgeInsets.only(
+                  left: 18 + tokens.spacing.gap,
+                  top: tokens.spacing.gap / 2,
+                ),
                 child: Text(
-                  label,
+                  '• $item',
                   style: tokens.type.listSubtitle.copyWith(
-                    color: color,
-                    fontWeight: FontWeight.w600,
+                    color: toneColors?.onContainer ?? colors.onSurfaceVariant,
                   ),
                 ),
               ),
-            ],
-          ),
-          for (final String item in items)
-            Padding(
-              padding: EdgeInsets.only(
-                left: tokens.spacing.gap + tokens.spacing.gap / 2,
-                top: tokens.spacing.gap / 4,
-              ),
-              child: Text(
-                '• $item',
-                style: tokens.type.listSubtitle.copyWith(
-                  color: colors.onSurfaceVariant,
-                ),
-              ),
-            ),
-        ],
+          ],
+        ),
       );
     }
 
     return Column(
       mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
         section(
           label: t.delete_disclosure_will_delete_label,
-          icon: Icons.delete_outline,
-          color: colors.error,
+          icon: FushiIcons.delete,
+          tone: FushiCardTone.error,
+          fallbackColor: colors.error,
           items: disclosure.willDelete,
         ),
-        SizedBox(height: tokens.spacing.gap),
+        SizedBox(height: tokens.spacing.gap / 2),
         section(
           label: t.delete_disclosure_will_keep_label,
-          icon: Icons.shield_outlined,
-          color: colors.primary,
+          icon: FushiIcons.shield,
+          tone: FushiCardTone.secondary,
+          fallbackColor: colors.primary,
           items: disclosure.willKeep,
         ),
       ],

@@ -8,7 +8,9 @@
 #include "gal_direct_card_geometry.h"
 #include "game_client_extent.h"
 #include "low_level_mouse_hook.h"
+#include "native_glog.h"
 #include "resource.h"
+#include "window_activation_policy.h"
 
 // v14 游戏内查词的输入 kind 取值真相源。只为下面那组 static_assert 而 include：
 // InjectLookupInput 的 [kind] 是跨进程契约的一部分，在这里手抄 0..4 就又造一个漂移源。
@@ -372,6 +374,8 @@ std::wstring MediaContentTypeHeader(const std::string& url) {
   return L"Content-Type: application/octet-stream";
 }
 
+}  // namespace
+
 // TODO-1153 -- native diagnostic logger for the overlay bring-up. The runner is
 // a WIN32 GUI exe with no console, so a failed WebView2 environment/controller
 // create otherwise vanishes. Appends timestamped lines to the SAME file the Dart
@@ -396,6 +400,8 @@ void NativeGlog(const std::string& message) {
               st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond);
   out << stamp << "  [native] " << message << "\n";
 }
+
+namespace {
 
 // TODO-1153 -- dedicated WebView2 user data folder for the app-external overlay.
 //
@@ -449,7 +455,7 @@ std::wstring OverlayUserDataFolder(const std::wstring& leaf) {
 // 的行序怪癖（游戏 Layer 的 pitch 可能为负，那是注入侧搬运时的事）。
 //
 // [max_width]/[max_height] 是硬裁剪上界（不是缩放）：超出就按左上角切，并置 [clamped]。
-// 缩放会让卡片文字糊掉，而卡片的价值就是"与 Hibiki 自身像素一致"——宁可切也不缩。
+// 缩放会让卡片文字糊掉，而卡片的价值就是"与 Fushi 自身像素一致"——宁可切也不缩。
 // 全程 HRESULT 校验、零异常（runner 以 _HAS_EXCEPTIONS=0 编译）。
 bool DecodeCaptureStreamToStraightBgra(IStream* stream, uint32_t max_width,
                                        uint32_t max_height,
@@ -669,9 +675,163 @@ void ApplyRoundedShellUnionAlphaMask(
   }
 }
 
+// BUG-2651 (issue #1581) — 卡片内选区的 Ctrl+C 热键 id（应用自有区间 0..0xBFFF）与
+// 「把 ContextMenuRequested 挪出 COM 回调栈再弹菜单」的窗口私有消息。菜单是模态
+// 循环，直接在 WebView2 事件回调里 TrackPopupMenu 会把 WebView2 自己的派发挂住
+// （同 beginWindowResize 必须 PostMessage 的道理）。
+constexpr int kCopySelectionHotkeyId = 0xA1C0;
+constexpr UINT kShowContextMenuMessage = WM_APP + 0x70;
+constexpr UINT kContextMenuCopyCommand = 1;
+constexpr UINT kContextMenuSelectAllCommand = 2;
+
+// ExecuteScript 回来的结果是一个 JSON 值；这里只认 JSON 字符串字面量，按 UTF-16
+// 还原（含 \uXXXX 转义——选区里的控制字符、行分隔符会以这种形式出现）。其余类型
+// 一律视为「没有文本」。
+bool DecodeJsonStringLiteral(const std::wstring& json, std::wstring* out) {
+  if (out == nullptr) {
+    return false;
+  }
+  out->clear();
+  if (json.size() < 2 || json.front() != L'"' || json.back() != L'"') {
+    return false;
+  }
+  const size_t end = json.size() - 1;
+  size_t i = 1;
+  while (i < end) {
+    const wchar_t value = json[i++];
+    if (value != L'\\') {
+      out->push_back(value);
+      continue;
+    }
+    if (i >= end) {
+      return false;
+    }
+    const wchar_t escaped = json[i++];
+    switch (escaped) {
+      case L'"':
+      case L'\\':
+      case L'/':
+        out->push_back(escaped);
+        break;
+      case L'b':
+        out->push_back(L'\b');
+        break;
+      case L'f':
+        out->push_back(L'\f');
+        break;
+      case L'n':
+        out->push_back(L'\n');
+        break;
+      case L'r':
+        out->push_back(L'\r');
+        break;
+      case L't':
+        out->push_back(L'\t');
+        break;
+      case L'u': {
+        if (i + 4 > end) {
+          return false;
+        }
+        unsigned int unit = 0;
+        for (size_t k = 0; k < 4; ++k) {
+          const wchar_t hex = json[i++];
+          unit <<= 4;
+          if (hex >= L'0' && hex <= L'9') {
+            unit |= static_cast<unsigned int>(hex - L'0');
+          } else if (hex >= L'a' && hex <= L'f') {
+            unit |= static_cast<unsigned int>(hex - L'a' + 10);
+          } else if (hex >= L'A' && hex <= L'F') {
+            unit |= static_cast<unsigned int>(hex - L'A' + 10);
+          } else {
+            return false;
+          }
+        }
+        out->push_back(static_cast<wchar_t>(unit));
+        break;
+      }
+      default:
+        return false;
+    }
+  }
+  return true;
+}
+
+// 把文本以 CF_UNICODETEXT 写进系统剪贴板。卡片永不拿焦点，页面内的
+// execCommand('copy') / navigator.clipboard 都不可靠，所以复制统一在 native 落地。
+bool WriteClipboardUnicodeText(HWND owner, const std::wstring& text) {
+  if (text.empty() || !OpenClipboard(owner)) {
+    return false;
+  }
+  bool written = false;
+  if (EmptyClipboard()) {
+    const size_t bytes = (text.size() + 1) * sizeof(wchar_t);
+    HGLOBAL memory = GlobalAlloc(GMEM_MOVEABLE, bytes);
+    if (memory != nullptr) {
+      void* locked = GlobalLock(memory);
+      if (locked != nullptr) {
+        memcpy(locked, text.c_str(), bytes);
+        GlobalUnlock(memory);
+        // 成功后内存归剪贴板所有；失败才由我们释放。
+        written = SetClipboardData(CF_UNICODETEXT, memory) != nullptr;
+      }
+      if (!written) {
+        GlobalFree(memory);
+      }
+    }
+  }
+  CloseClipboard();
+  return written;
+}
+
 }  // namespace
 
 GlobalLookupWindow* GlobalLookupWindow::s_hook_owner_ = nullptr;
+HHOOK GlobalLookupWindow::s_activation_guard_hook_ = nullptr;
+
+// BUG-2788 — 卡片与 WebView2 的 Chromium 子窗都在本线程。触摸经 SendPointerInput
+// 进 WebView2 后 Chromium 会 SetFocus 子窗，连带激活 WS_EX_NOACTIVATE 的卡片
+// （实测 HCBT_SETFOCUS(Chrome_WidgetWin_0) → HCBT_ACTIVATE(卡片)）；鼠标走
+// SendMouseInput 没有这一步。这里在焦点 / 激活落地前否决，卡片不再抢游戏的前台。
+LRESULT CALLBACK GlobalLookupWindow::ActivationGuardProc(int code,
+                                                         WPARAM wparam,
+                                                         LPARAM lparam) {
+  if (code == HCBT_ACTIVATE || code == HCBT_SETFOCUS) {
+    const HWND target = reinterpret_cast<HWND>(wparam);
+    // 焦点给子窗时判的是它所在的顶层卡片。
+    const HWND root =
+        target != nullptr ? GetAncestor(target, GA_ROOT) : nullptr;
+    wchar_t class_name[64] = {};
+    const bool is_lookup_class =
+        root != nullptr &&
+        GetClassNameW(root, class_name, ARRAYSIZE(class_name)) > 0 &&
+        wcscmp(class_name, kClassName) == 0;
+    const auto* self =
+        is_lookup_class ? reinterpret_cast<const GlobalLookupWindow*>(
+                              GetWindowLongPtr(root, GWLP_USERDATA))
+                        : nullptr;
+    if (ShouldVetoOverlayActivation(
+            self != nullptr, GetWindowLongPtr(root, GWL_EXSTYLE),
+            GetForegroundWindow() == root,
+            self != nullptr && self->self_activation_allowed_)) {
+      NativeGlog("lookup activation vetoed code=" + std::to_string(code) +
+                 " tick=" + std::to_string(GetTickCount64()));
+      return 1;
+    }
+  }
+  return CallNextHookEx(nullptr, code, wparam, lparam);
+}
+
+void GlobalLookupWindow::EnsureActivationGuard() {
+  // 线程级钩子：装在创建查词窗的平台线程上，进程内一次、随进程存活。
+  if (s_activation_guard_hook_ != nullptr) return;
+  s_activation_guard_hook_ =
+      SetWindowsHookExW(WH_CBT, &GlobalLookupWindow::ActivationGuardProc,
+                        nullptr, GetCurrentThreadId());
+  if (s_activation_guard_hook_ == nullptr) {
+    NativeGlog("lookup activation guard install failed err=" +
+               std::to_string(GetLastError()));
+  }
+}
 
 void CALLBACK GlobalLookupWindow::ForegroundHookProc(HWINEVENTHOOK, DWORD,
                                                      HWND hwnd, LONG, LONG,
@@ -680,14 +840,42 @@ void CALLBACK GlobalLookupWindow::ForegroundHookProc(HWINEVENTHOOK, DWORD,
   // The user activated another window (click outside the card). Own-process
   // events are skipped via WINEVENT_SKIPOWNPROCESS, so this never fires for our
   // own overlay/main window.
-  if (self != nullptr && self->IsShowing() && hwnd != self->hwnd_) {
+  if (self == nullptr) {
+    return;
+  }
+  // BUG-2651 — 自绘右键菜单结束后，我们把为弹菜单而临时抢来的前台还给原窗口；
+  // 那一下是本进程主动交还，不是用户点了卡外，不能关卡。只放过这一次、只认
+  // 那个窗口：用户在菜单开着时点进别的应用，那是另一个 hwnd，照常关卡。
+  if (self->context_menu_return_foreground_ != nullptr &&
+      hwnd == self->context_menu_return_foreground_) {
+    self->context_menu_return_foreground_ = nullptr;
+    return;
+  }
+  if (self->IsShowing() && hwnd != self->hwnd_) {
     self->Hide();
   }
 }
 
 void GlobalLookupWindow::HandleGlobalClick(POINT screen_pt,
-                                           bool inside_window) {
+                                           bool inside_window, bool consumed) {
+  // BUG-2710 — 一次被钩子吞掉、却既不关卡也不转发的点击对用户就是「点了没反应」。
+  // 把收到这一击时卡片的真实状态记下来，才能区分「卡片已隐藏但绑定还在」与别的路径。
+  NativeGlog("global click tick=" + std::to_string(GetTickCount64()) +
+             " inside=" + std::to_string(inside_window ? 1 : 0) +
+             " consumed=" + std::to_string(consumed ? 1 : 0) +
+             " showing=" + std::to_string(IsShowing() ? 1 : 0) +
+             " visible=" + std::to_string(visible_ ? 1 : 0) +
+             " revealed=" + std::to_string(revealed_ ? 1 : 0) +
+             " offscreen=" + std::to_string(offscreen_active_ ? 1 : 0) +
+             " direct=" + std::to_string(direct_process_client_active_ ? 1 : 0) +
+             " winVisible=" +
+             std::to_string(hwnd_ != nullptr && IsWindowVisible(hwnd_) ? 1 : 0) +
+             " armed=" + std::to_string(mouse_hook_armed_ ? 1 : 0));
   if (!IsShowing()) return;
+  // BUG-2651 — 自绘右键菜单的模态循环里，点菜单项那一下常落在卡片 rect 之外；
+  // 菜单自己负责「点菜单外即收起」，这里不能把它当成点卡外去关卡（那会在菜单
+  // 命令生效前就把宿主窗口藏掉）。
+  if (context_menu_active_) return;
   // TODO-867 P3c C4/E2 — the window is now the whole nested-stack bounding
   // box (E1): the transparent area BETWEEN cards is inside the HWND rect, so
   // a coarse "PtInRect -> Hide" would wrongly close on a click in that gap.
@@ -837,6 +1025,7 @@ void GlobalLookupWindow::SetRouteContext(std::string source,
     direct_bbox_dy_ = 0;
     direct_view_width_ = 0;
     direct_view_height_ = 0;
+    ResetDirectRootPin();
   }
 }
 
@@ -883,13 +1072,23 @@ bool GlobalLookupWindow::CommitPendingShellGeometry(
 }
 
 void GlobalLookupWindow::FinalizePendingShellGeometry(
-    int64_t geometry_epoch) {
+    int64_t geometry_epoch, double clamp_dx_css, double clamp_dy_css) {
   if (!OwnsLiveWindow()) {
     ClearPendingShellGeometry();
     return;
   }
   if (!CommitPendingShellGeometry(geometry_epoch)) {
     return;
+  }
+  // RevealStack shifts the DOM when the work-area clamp moves the HWND away
+  // from its intended bbox origin. shellRects were announced before that
+  // clamp, so apply the same correction only to the newly committed rects.
+  // Both the Win32 hit/paint region and the shadow must follow the visible DOM.
+  if (clamp_dx_css != 0.0 || clamp_dy_css != 0.0) {
+    for (std::array<double, 4>& rect : shell_rects_css_) {
+      rect[0] -= clamp_dx_css;
+      rect[1] -= clamp_dy_css;
+    }
   }
   // The host layer shift has executed, so committed shell rects and visible DOM
   // now share one window-local origin. Only here may HRGN and shadow consume the
@@ -924,6 +1123,10 @@ GlobalLookupWindow::RouteContext GlobalLookupWindow::RouteForMessage(
 
 GlobalLookupWindow::~GlobalLookupWindow() {
   ReleaseDismissHooks();
+  if (copy_hotkey_registered_ && hwnd_ != nullptr) {
+    UnregisterHotKey(hwnd_, kCopySelectionHotkeyId);
+    copy_hotkey_registered_ = false;
+  }
   if (controller_) {
     controller_->Close();
   }
@@ -946,6 +1149,7 @@ void GlobalLookupWindow::EnsureWindowClass() {
   if (s_class_registered) {
     return;
   }
+  EnsureActivationGuard();
   WNDCLASSEXW wc = {};
   wc.cbSize = sizeof(wc);
   wc.style = CS_HREDRAW | CS_VREDRAW;
@@ -970,6 +1174,28 @@ int GlobalLookupWindow::OffscreenX() const {
          GetSystemMetrics(SM_CXVIRTUALSCREEN) + 200;
 }
 
+void GlobalLookupWindow::ReparkOffscreenIfParked() {
+  // SW_HIDE 的窗不在屏上，挪不挪无所谓；只有「显示着但没 Reveal」的停放窗
+  // （PrewarmWebView / ShowAt 的离屏测量 / ResizeOffscreen 的 gal 采集面）会被
+  // 变宽的桌面吞进来。不带 SWP_SHOWWINDOW、不改尺寸与 Z 序：只换位置。
+  if (!OwnsLiveWindow() || revealed_ || !IsWindowVisible(hwnd_)) {
+    return;
+  }
+  RECT rc;
+  if (!GetWindowRect(hwnd_, &rc)) {
+    return;
+  }
+  const int off_x = OffscreenX();
+  if (rc.left == off_x && rc.top == 0) {
+    return;
+  }
+  NativeGlog("lookup repark offscreen from=" + std::to_string(rc.left) + "," +
+             std::to_string(rc.top) + " to=" + std::to_string(off_x) + ",0");
+  SetWindowPos(hwnd_, nullptr, off_x, 0, 0, 0,
+               SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE |
+                   SWP_NOOWNERZORDER);
+}
+
 bool GlobalLookupWindow::OwnsLiveWindow() const {
   if (hwnd_ == nullptr || !IsWindow(hwnd_)) {
     return false;
@@ -981,10 +1207,23 @@ bool GlobalLookupWindow::OwnsLiveWindow() const {
              GetWindowLongPtr(hwnd_, GWLP_USERDATA)) == this;
 }
 
+// BUG-1471 / BUG-2746 — 上屏前同步 Arm 的钩子，在上屏失败（Arm 未确认 / 滚轮 source
+// 未确认 / SetWindowPos 失败）时的唯一撤销出口。Reveal 与 RevealStack 的四条失败
+// 路径都走这里，解钩只剩「常规 ReleaseDismissHooks」与「上屏失败回滚」两处。
+void GlobalLookupWindow::RollBackRevealArm() {
+  fushi::DisarmLowLevelMouseHook(hwnd_);
+  mouse_hook_armed_ = false;
+}
+
 void GlobalLookupWindow::ReleaseDismissHooks() {
   if (foreground_hook_ != nullptr) {
     UnhookWinEvent(foreground_hook_);
     foreground_hook_ = nullptr;
+  }
+  // BUG-2613 — 覆盖窗口登记随 dismiss 钩子一起撤（Hide / 死句柄 / 析构三条路都
+  // 经这里）。先撤登记再 Disarm：Disarm 的宽限期卸载会问「还有没有登记」。
+  if (hwnd_ != nullptr) {
+    fushi::UnregisterOverlayClickShield(hwnd_);
   }
   if (mouse_hook_armed_) {
     fushi::DisarmLowLevelMouseHook(hwnd_);
@@ -1007,6 +1246,10 @@ void GlobalLookupWindow::ForgetDeadWindow() {
   ReleaseDismissHooks();
   // HWND 已死，定时器随它一起没了；清掉 id 免得下次 Start 以为还开着（BUG-1479）。
   topmost_guard_timer_ = 0;
+  // BUG-2651 — 热键挂在死 HWND 上，随它一起失效；重建的新窗口从「未注册」起步。
+  UnregisterHotKey(hwnd_, kCopySelectionHotkeyId);
+  copy_hotkey_registered_ = false;
+  selection_present_ = false;
   // The HWND was destroyed out from under us (WebView2 runtime crash/update,
   // owner teardown, or any external DestroyWindow) yet hwnd_ stayed non-null,
   // so every later ShowAt took the SetWindowPos(else) branch against a corpse
@@ -1063,6 +1306,7 @@ bool GlobalLookupWindow::ShowAt(int x, int y, int width, int height,
   direct_bbox_dy_ = 0;
   direct_view_width_ = 0;
   direct_view_height_ = 0;
+  ResetDirectRootPin();
   // Render OFF-SCREEN at the requested size. The page measures itself there and
   // Dart calls Reveal() with the final size, so the user only ever sees the
   // settled card (no width/height jitter on screen).
@@ -1196,11 +1440,16 @@ void GlobalLookupWindow::Reveal(int width, int height,
   // geometry work is done, so the successful direct binding is published only
   // a few instructions before SetWindowPos makes the off-screen renderer visible.
   bool prearm_direct_click_swallow = consume_outside_owner != nullptr;
+  NativeGlog("lookup reveal tick=" + std::to_string(GetTickCount64()) +
+             " consume_owner=" +
+             std::to_string(consume_outside_owner != nullptr ? 1 : 0) +
+             " visible=" + std::to_string(visible_ ? 1 : 0));
   if (prearm_direct_click_swallow) {
     if (!fushi::ArmLowLevelMouseHookAndWait(hwnd_, consume_outside_owner)) {
-      fushi::DisarmLowLevelMouseHook(hwnd_);
-      mouse_hook_armed_ = false;
-      if (consume_outside_owner != pending_outside_click_owner_) {
+      RollBackRevealArm();
+      if (fushi::LowLevelMouseWheelSourceRequired(consume_outside_owner) ||
+          consume_outside_owner != pending_outside_click_owner_) {
+        if (fushi::LowLevelMouseWheelSourceRequired(consume_outside_owner)) Hide();
         NativeGlog(
             "gal direct reveal declined: mouse hook install was not "
             "acknowledged");
@@ -1224,8 +1473,7 @@ void GlobalLookupWindow::Reveal(int width, int height,
     // to RevealOverProcessClient's bitmap fallback; otherwise the still
     // off-screen prewarm HWND reports no card while continuing to eat clicks.
     if (prearm_direct_click_swallow) {
-      fushi::DisarmLowLevelMouseHook(hwnd_);
-      mouse_hook_armed_ = false;
+      RollBackRevealArm();
     }
     revealed_ = false;
     visible_ = false;
@@ -1236,6 +1484,8 @@ void GlobalLookupWindow::Reveal(int width, int height,
   revealed_ = true;
   visible_ = true;
   offscreen_active_ = false;
+  // BUG-2651 — 选区若在卡片离屏期间就已存在，上屏这一刻补注册 Ctrl+C。
+  UpdateCopyHotkey();
   // BUG-2123：这条 legacy 路径把窗口放在**光标处、单卡尺寸**，而不是 bbox 原点 +
   // bbox 尺寸。首帧预落位（host 的 measureAndReport 在 postToHost('overlaySize') 之前
   // 把图层推了 (-minLeft,-minTop)，为的是消掉「先闪在工作区左上角」）只对后者成立：
@@ -1269,6 +1519,10 @@ void GlobalLookupWindow::Reveal(int width, int height,
     fushi::ArmLowLevelMouseHook(hwnd_);
     mouse_hook_armed_ = true;
   }
+  // BUG-2613 — 卡片上屏即登记为覆盖窗口：落在卡上的物理左键要向注入侧发布
+  // Popup 护盾请求，采样型引擎（HUNEX/Leaf 的 GetAsyncKeyState、SGRE 的
+  // DirectInput）才不会把点卡当成点游戏。没有 galgame 会话时登记是空操作。
+  fushi::RegisterOverlayClickShield(hwnd_);
   // 投影：上面 SetWindowPos 触发的 WM_WINDOWPOSCHANGED 到达时 revealed_ 还是
   // false（置位在其后），漏斗那次同步判为隐藏——首帧必须在标志置位后显式补一次。
   SyncShadow();
@@ -1306,8 +1560,25 @@ void GlobalLookupWindow::RevealStack(int dx, int dy, int width, int height,
   if (width <= 0 || height <= 0) {
     return;
   }
+  bool consume_armed = false;
+  if (pending_outside_click_owner_ != nullptr) {
+    consume_armed = fushi::ArmLowLevelMouseHookAndWait(
+        hwnd_, pending_outside_click_owner_);
+    if (!consume_armed) {
+      RollBackRevealArm();
+      if (fushi::LowLevelMouseWheelSourceRequired(pending_outside_click_owner_)) {
+        Hide();
+        NativeGlog("lookup revealStack declined: wheel source not acknowledged");
+        return;
+      }
+      NativeGlog("attached desktop revealStack: consume-owner arm was not acknowledged; falling back to pass-through arm");
+    }
+  }
   if (!SetWindowPos(hwnd_, HWND_TOPMOST, x, y, width, height,
                     SWP_NOACTIVATE | SWP_NOOWNERZORDER | SWP_SHOWWINDOW)) {
+    if (consume_armed) {
+      RollBackRevealArm();
+    }
     // A geometry epoch is an acknowledgement of the HWND bounds, not merely of
     // native control flow. Leave the host gate closed so the same epoch can be
     // retried instead of revealing into the preceding window rectangle.
@@ -1317,6 +1588,8 @@ void GlobalLookupWindow::RevealStack(int dx, int dy, int width, int height,
   revealed_ = true;
   visible_ = true;
   offscreen_active_ = false;
+  // BUG-2651 — 选区若在卡片离屏期间就已存在，上屏这一刻补注册 Ctrl+C。
+  UpdateCopyHotkey();
   // BUG-1479：只设一次不够——同置顶带里「最后一次 SetWindowPos 的赢」，
   // 而大量 galgame 会周期性重申自己的置顶。
   StartTopmostGuard();
@@ -1352,10 +1625,13 @@ void GlobalLookupWindow::RevealStack(int dx, int dy, int width, int height,
     const HRESULT shift_hr = webview_->ExecuteScript(
         shift_script.c_str(),
         Callback<ICoreWebView2ExecuteScriptCompletedHandler>(
-            [this, geometry_epoch](HRESULT error_code,
-                                   LPCWSTR result_json) -> HRESULT {
+            [this, geometry_epoch, clamp_dx_css, clamp_dy_css](
+                HRESULT error_code, LPCWSTR result_json) -> HRESULT {
               if (ScriptResultIsTrue(error_code, result_json)) {
-                FinalizePendingShellGeometry(geometry_epoch);
+                // Keep HRGN/shadow in the clamped HWND's coordinate system,
+                // exactly matching commitLayerShift's adjusted DOM origin.
+                FinalizePendingShellGeometry(geometry_epoch, clamp_dx_css,
+                                             clamp_dy_css);
               }
               return S_OK;
             })
@@ -1379,21 +1655,13 @@ void GlobalLookupWindow::RevealStack(int dx, int dy, int width, int height,
   //
   // attached 表面打开的桌面 route（pending_outside_click_owner_ 非空）：点卡外
   // 关闭的 down/up 必须成对吞掉、不得推进游戏，改走与 direct galCard 同款的
-  // 同步吞点击 Arm。失败只记日志并退回原异步穿透 Arm（卡片照常显示）。
-  bool consume_armed = false;
-  if (pending_outside_click_owner_ != nullptr) {
-    consume_armed = fushi::ArmLowLevelMouseHookAndWait(
-        hwnd_, pending_outside_click_owner_);
-    if (!consume_armed) {
-      NativeGlog(
-          "attached desktop revealStack: consume-owner arm was not "
-          "acknowledged; falling back to pass-through arm");
-    }
-  }
+  // 同步 Arm 已在上屏前完成；其它桌面 route 沿用异步 Arm。
   if (!consume_armed) {
     fushi::ArmLowLevelMouseHook(hwnd_);
   }
   mouse_hook_armed_ = true;
+  // BUG-2613 — 与 Reveal 同一条登记（级联卡片是同一个 HWND 换区域，幂等）。
+  fushi::RegisterOverlayClickShield(hwnd_);
   // 投影：与 Reveal 同因——上面 SetWindowPos 触发漏斗时 revealed_ 还是 false，
   // 标志置位后显式补一次，首帧才有影。
   SyncShadow();
@@ -1456,9 +1724,15 @@ bool GlobalLookupWindow::ResizeOffscreen(int width, int height) {
 void GlobalLookupWindow::ResizeStackForGal(int dx, int dy, int width,
                                             int height, double bbox_left,
                                             double bbox_top,
-                                            int64_t geometry_epoch) {
+                                            int64_t geometry_epoch,
+                                            int root_height) {
   if (!BeginGeometryRequest(geometry_epoch)) {
     return;
+  }
+  // BUG-2921 — 根卡实测高度随每次 revealStack 到达（0 = 旧 Dart 未上报），贴字形时用它
+  // 而不是 union 高度。
+  if (root_height > 0) {
+    direct_root_height_ = root_height;
   }
   // BUG-1835 — layout already used the FULL game viewport; width/height is the
   // resulting all-card union, not the single-card cap. If direct composition is
@@ -1506,25 +1780,32 @@ void GlobalLookupWindow::ResizeStackForGal(int dx, int dy, int width,
         const int screen_width = std::max(1, width);
         const int screen_height = std::max(1, height);
         // 嵌套 resize 必须复用 present 时的同一贴附基准，否则同一次查词里卡片会跳位。
-        double local_x = 0.0;
-        double local_y = 0.0;
-        if (direct_glyph_valid_) {
+        // BUG-2921 — 贴字形的是根卡：union 原点由根卡位置 + bbox 偏移推出，绝不拿
+        // union 尺寸重新贴字形（那会在子卡出现时把根卡整体挪走）。
+        int clamped_x = 0;
+        int clamped_y = 0;
+        if (direct_glyph_valid_ && direct_root_pin_valid_) {
           const auto placed =
-              fushi::gal_direct_card_geometry::GlyphAnchoredCardOrigin(
+              fushi::gal_direct_card_geometry::PlaceDirectUnionAroundRoot(
                   direct_glyph_left_, direct_glyph_top_, direct_glyph_width_,
-                  direct_glyph_height_, screen_width, screen_height);
-          local_x = placed.left;
-          local_y = placed.top;
+                  direct_glyph_height_, direct_root_width_,
+                  direct_root_height_, direct_root_local_left_,
+                  direct_root_local_top_, dx, dy, screen_width, screen_height,
+                  client_width, client_height);
+          clamped_x = placed.union_x;
+          clamped_y = placed.union_y;
         } else {
-          local_x = content_left + (direct_root_anchor_x_ + dx) * scale;
-          local_y = content_top + (direct_root_anchor_y_ + dy) * scale;
+          const double local_x =
+              content_left + (direct_root_anchor_x_ + dx) * scale;
+          const double local_y =
+              content_top + (direct_root_anchor_y_ + dy) * scale;
+          clamped_x = fushi::gal_direct_card_geometry::ClampDirectCardOrigin(
+              local_x, screen_width, client_width);
+          clamped_y = fushi::gal_direct_card_geometry::ClampDirectCardOrigin(
+              local_y, screen_height, client_height);
         }
-        const int screen_x =
-            origin.x + fushi::gal_direct_card_geometry::ClampDirectCardOrigin(
-                           local_x, screen_width, client_width);
-        const int screen_y =
-            origin.y + fushi::gal_direct_card_geometry::ClampDirectCardOrigin(
-                           local_y, screen_height, client_height);
+        const int screen_x = origin.x + clamped_x;
+        const int screen_y = origin.y + clamped_y;
         if (SetWindowPos(hwnd_, HWND_TOPMOST, screen_x, screen_y, screen_width,
                          screen_height,
                          SWP_NOACTIVATE | SWP_NOOWNERZORDER | SWP_SHOWWINDOW)) {
@@ -1534,6 +1815,7 @@ void GlobalLookupWindow::ResizeStackForGal(int dx, int dy, int width,
           revealed_ = true;
           offscreen_active_ = false;
           resized_in_place = true;
+          UpdateCopyHotkey();  // BUG-2651 — 同上屏补注册。
         } else {
           transient_direct_failure = true;
         }
@@ -1691,6 +1973,10 @@ void GlobalLookupWindow::Hide(bool notify) {
   // hook, both fire on one click-outside) does not double-notify Dart.
   const bool was_showing = visible_ || offscreen_active_;
   const RouteContext hidden_route = route_context_;
+  NativeGlog("lookup hide tick=" + std::to_string(GetTickCount64()) +
+             " notify=" + std::to_string(notify ? 1 : 0) +
+             " was_showing=" + std::to_string(was_showing ? 1 : 0) +
+             " armed=" + std::to_string(mouse_hook_armed_ ? 1 : 0));
   // A genuine/programmatic dismissal wins over a pending capture restore.  Do
   // this before clearing visible_ so RestoreAfterCapture can never reopen a
   // card that was dismissed while the screenshot was in flight.
@@ -1711,6 +1997,14 @@ void GlobalLookupWindow::Hide(bool notify) {
   pending_outside_click_owner_ = nullptr;
   ReleaseDismissHooks();
   StopTopmostGuard();
+  // BUG-2651 — 卡片一离屏就交还 Ctrl+C（visible_ 已清，UpdateCopyHotkey 必然注销）：
+  // 隐藏的卡片绝不能继续截走用户在别的应用里的复制。菜单还开着（例如用户 Alt+Tab
+  // 走了）就一并收起，别留一个宿主已隐藏的孤儿菜单。
+  UpdateCopyHotkey();
+  if (context_menu_active_) {
+    EndMenu();
+  }
+  context_menu_return_foreground_ = nullptr;
   // 投影窗随卡片同步隐藏（WM_WINDOWPOSCHANGED 也会兜到，这里显式先藏，
   // 避免"卡没了影子晚一拍"）。
   shadow_.Hide();
@@ -2001,6 +2295,116 @@ void GlobalLookupWindow::ForwardCompositionMouse(UINT message, WPARAM wparam,
   composition_controller_->SendMouseInput(kind, keys, mouse_data, point);
 }
 
+// BUG-2770 — 触屏 / 触控笔。composition 窗口没有子 HWND，手指落在卡片上时本窗先收
+// WM_POINTER*；交给 DefWindowProc 的话系统把它提升成鼠标消息，经上面的
+// SendMouseInput 进页面后 pointerType 恒为 'mouse'：popup.js 的触摸手势（下拉 / 横滑
+// 关闭、手指滚动）全部认不出来，关闭偏好也按鼠标那半判。这里改把触摸 / 触控笔原样
+// 经 SendPointerInput 送进 WebView2（WebView2 官方 ViewComponent::OnPointerMessage
+// 同款），处理掉的消息不再提升，鼠标路径保持不变。
+bool GlobalLookupWindow::ForwardCompositionPointer(UINT message,
+                                                   WPARAM wparam) {
+  if (!composition_active_ || composition_controller_ == nullptr ||
+      env_ == nullptr || hwnd_ == nullptr) {
+    return false;
+  }
+  // COREWEBVIEW2_POINTER_EVENT_KIND 的取值就是对应的 WM_POINTER* 消息号。
+  static_assert(COREWEBVIEW2_POINTER_EVENT_KIND_DOWN == WM_POINTERDOWN,
+                "pointer event kind drift");
+  static_assert(COREWEBVIEW2_POINTER_EVENT_KIND_UPDATE == WM_POINTERUPDATE,
+                "pointer event kind drift");
+  static_assert(COREWEBVIEW2_POINTER_EVENT_KIND_UP == WM_POINTERUP,
+                "pointer event kind drift");
+  static_assert(COREWEBVIEW2_POINTER_EVENT_KIND_ENTER == WM_POINTERENTER,
+                "pointer event kind drift");
+  static_assert(COREWEBVIEW2_POINTER_EVENT_KIND_LEAVE == WM_POINTERLEAVE,
+                "pointer event kind drift");
+  if (message != WM_POINTERDOWN && message != WM_POINTERUPDATE &&
+      message != WM_POINTERUP && message != WM_POINTERENTER &&
+      message != WM_POINTERLEAVE) {
+    return false;
+  }
+  const UINT32 pointer_id = GET_POINTERID_WPARAM(wparam);
+  POINTER_INPUT_TYPE type = PT_POINTER;
+  if (!GetPointerType(pointer_id, &type) ||
+      (type != PT_TOUCH && type != PT_PEN)) {
+    return false;
+  }
+  wil::com_ptr<ICoreWebView2Environment3> env3;
+  wil::com_ptr<ICoreWebView2PointerInfo> info;
+  if (FAILED(env_->QueryInterface(IID_PPV_ARGS(&env3))) ||
+      FAILED(env3->CreateCoreWebView2PointerInfo(&info)) || info == nullptr) {
+    return false;
+  }
+  POINTER_INFO pointer{};
+  if (type == PT_TOUCH) {
+    POINTER_TOUCH_INFO touch{};
+    if (!GetPointerTouchInfo(pointer_id, &touch)) return false;
+    pointer = touch.pointerInfo;
+    RECT contact = touch.rcContact;
+    RECT contact_raw = touch.rcContactRaw;
+    MapWindowPoints(nullptr, hwnd_, reinterpret_cast<POINT*>(&contact), 2);
+    MapWindowPoints(nullptr, hwnd_, reinterpret_cast<POINT*>(&contact_raw), 2);
+    info->put_TouchFlags(touch.touchFlags);
+    info->put_TouchMask(touch.touchMask);
+    info->put_TouchContact(contact);
+    info->put_TouchContactRaw(contact_raw);
+    info->put_TouchOrientation(touch.orientation);
+    info->put_TouchPressure(touch.pressure);
+  } else {
+    POINTER_PEN_INFO pen{};
+    if (!GetPointerPenInfo(pointer_id, &pen)) return false;
+    pointer = pen.pointerInfo;
+    info->put_PenFlags(pen.penFlags);
+    info->put_PenMask(pen.penMask);
+    info->put_PenPressure(pen.pressure);
+    info->put_PenRotation(pen.rotation);
+    info->put_PenTiltX(pen.tiltX);
+    info->put_PenTiltY(pen.tiltY);
+  }
+  // 屏幕 → 本窗客户区（= WebView 坐标，bounds 用 RAW_PIXELS 铺满客户区）。
+  POINT location = pointer.ptPixelLocation;
+  POINT location_raw = pointer.ptPixelLocationRaw;
+  ScreenToClient(hwnd_, &location);
+  ScreenToClient(hwnd_, &location_raw);
+  // HIMETRIC 按设备的 himetric/显示矩形比例从客户区像素换算；取不到设备矩形时
+  // 退回 1px = 1 单位（Chromium 只拿它做精度补充，坐标以像素为准）。
+  POINT himetric = location;
+  POINT himetric_raw = location_raw;
+  RECT himetric_rect{};
+  RECT display_rect{};
+  if (GetPointerDeviceRects(pointer.sourceDevice, &himetric_rect,
+                            &display_rect) &&
+      display_rect.right > display_rect.left &&
+      display_rect.bottom > display_rect.top) {
+    const double sx =
+        static_cast<double>(himetric_rect.right - himetric_rect.left) /
+        (display_rect.right - display_rect.left);
+    const double sy =
+        static_cast<double>(himetric_rect.bottom - himetric_rect.top) /
+        (display_rect.bottom - display_rect.top);
+    himetric = {static_cast<LONG>(location.x * sx),
+                static_cast<LONG>(location.y * sy)};
+    himetric_raw = {static_cast<LONG>(location_raw.x * sx),
+                    static_cast<LONG>(location_raw.y * sy)};
+  }
+  info->put_PointerKind(static_cast<DWORD>(type));
+  info->put_PointerId(pointer_id);
+  info->put_FrameId(pointer.frameId);
+  info->put_PointerFlags(pointer.pointerFlags);
+  info->put_PixelLocation(location);
+  info->put_PixelLocationRaw(location_raw);
+  info->put_HimetricLocation(himetric);
+  info->put_HimetricLocationRaw(himetric_raw);
+  info->put_Time(pointer.dwTime);
+  info->put_HistoryCount(pointer.historyCount);
+  info->put_InputData(pointer.InputData);
+  info->put_KeyStates(pointer.dwKeyStates);
+  info->put_PerformanceCount(pointer.PerformanceCount);
+  info->put_ButtonChangeKind(static_cast<INT32>(pointer.ButtonChangeType));
+  return SUCCEEDED(composition_controller_->SendPointerInput(
+      static_cast<COREWEBVIEW2_POINTER_EVENT_KIND>(message), info.get()));
+}
+
 // v14 游戏内查词 — 注入侧转发来的 kind 与本地映射必须锁死在契约上。手抄 0..4 就等于
 // 在 host 侧复制一份枚举，注入侧改了这边不会红——所以直接对真相源做 static_assert。
 static_assert(fushi_voice_hook::kLookupInputMove == 0, "lookup input kind drift");
@@ -2182,7 +2586,8 @@ bool GlobalLookupWindow::RevealOverProcessClient(
     uint32_t pid, int32_t anchor_x, int32_t anchor_y, uint32_t card_width,
     uint32_t card_height, uint32_t view_width, uint32_t view_height,
     int32_t glyph_x, int32_t glyph_y, uint32_t glyph_w, uint32_t glyph_h,
-    uint32_t* out_client_width, uint32_t* out_client_height) {
+    uint32_t* out_client_width, uint32_t* out_client_height,
+    int32_t* out_root_client_x, int32_t* out_root_client_y) {
   ForgetDeadWindow();
   if (capture_suppressed_) return false;
   if (hwnd_ == nullptr || composition_controller_ == nullptr ||
@@ -2246,29 +2651,51 @@ bool GlobalLookupWindow::RevealOverProcessClient(
   // 例外：此时落点与旧路径不同（水平中心对齐 vs 左对齐、垂直优先上方 vs 下方），这是
   // 有意的策略变更。只有字形缺失（glyph_w/h == 0）才退回旧的 anchor 映射，那条路径在
   // 1:1 下与旧行为逐像素相同。
-  double local_x = 0.0;
-  double local_y = 0.0;
   direct_glyph_valid_ = glyph_w > 0 && glyph_h > 0;
+  // BUG-2921 — 本次查词第一次直连上屏时只有根卡（union == 根卡），以此钉住根卡在
+  // window-local 里的位置与宽度。之后的 present（嵌套 resize 后的重投、制卡截图后的
+  // 恢复）都复用这枚钉子，union 跟着 bbox 平移，根卡在屏幕上不动。
+  if (!direct_root_pin_valid_) {
+    direct_root_pin_valid_ = true;
+    direct_root_local_left_ = direct_bbox_dx_;
+    direct_root_local_top_ = direct_bbox_dy_;
+    direct_root_width_ = screen_width;
+    if (direct_root_height_ <= 0) direct_root_height_ = screen_height;
+  }
+  int clamped_x = 0;
+  int clamped_y = 0;
+  int root_client_x = 0;
+  int root_client_y = 0;
   if (direct_glyph_valid_) {
     direct_glyph_left_ = content_left + glyph_x * scale;
     direct_glyph_top_ = content_top + glyph_y * scale;
     direct_glyph_width_ = glyph_w * scale;
     direct_glyph_height_ = glyph_h * scale;
-    const auto placed = fushi::gal_direct_card_geometry::GlyphAnchoredCardOrigin(
-        direct_glyph_left_, direct_glyph_top_, direct_glyph_width_,
-        direct_glyph_height_, screen_width, screen_height);
-    local_x = placed.left;
-    local_y = placed.top;
+    const auto placed =
+        fushi::gal_direct_card_geometry::PlaceDirectUnionAroundRoot(
+            direct_glyph_left_, direct_glyph_top_, direct_glyph_width_,
+            direct_glyph_height_, direct_root_width_, direct_root_height_,
+            direct_root_local_left_, direct_root_local_top_, direct_bbox_dx_,
+            direct_bbox_dy_, screen_width, screen_height, client_width,
+            client_height);
+    clamped_x = placed.union_x;
+    clamped_y = placed.union_y;
+    root_client_x = placed.root_x;
+    root_client_y = placed.root_y;
   } else {
-    local_x = content_left + anchor_x * scale;
-    local_y = content_top + anchor_y * scale;
+    const double local_x = content_left + anchor_x * scale;
+    const double local_y = content_top + anchor_y * scale;
+    clamped_x = fushi::gal_direct_card_geometry::ClampDirectCardOrigin(
+        local_x, screen_width, client_width);
+    clamped_y = fushi::gal_direct_card_geometry::ClampDirectCardOrigin(
+        local_y, screen_height, client_height);
+    root_client_x = clamped_x + direct_root_local_left_ - direct_bbox_dx_;
+    root_client_y = clamped_y + direct_root_local_top_ - direct_bbox_dy_;
   }
-  const int screen_x =
-      origin.x + fushi::gal_direct_card_geometry::ClampDirectCardOrigin(
-                     local_x, screen_width, client_width);
-  const int screen_y =
-      origin.y + fushi::gal_direct_card_geometry::ClampDirectCardOrigin(
-                     local_y, screen_height, client_height);
+  if (out_root_client_x != nullptr) *out_root_client_x = root_client_x;
+  if (out_root_client_y != nullptr) *out_root_client_y = root_client_y;
+  const int screen_x = origin.x + clamped_x;
+  const int screen_y = origin.y + clamped_y;
 
   // Popup owner 与父子窗口不同：不改 Fushi/WebView2 的线程与 DPI 上下文，只让 Z 序
   // 跟随游戏。WS_EX_NOACTIVATE 保证点卡片时游戏仍持有键盘焦点。
@@ -2303,6 +2730,14 @@ bool GlobalLookupWindow::RevealOverProcessClient(
     direct_game_hwnd_ = nullptr;
   }
   return shown;
+}
+
+void GlobalLookupWindow::ResetDirectRootPin() {
+  direct_root_pin_valid_ = false;
+  direct_root_local_left_ = 0;
+  direct_root_local_top_ = 0;
+  direct_root_width_ = 0;
+  direct_root_height_ = 0;
 }
 
 void GlobalLookupWindow::EnsureWebView() {
@@ -2613,6 +3048,32 @@ void GlobalLookupWindow::ConfigureWebView() {
     ReportOverlayError("put_IsStatusBarEnabled(FALSE) failed", status_bar_hr);
   }
 
+  // BUG-2651 (issue #1581) — WebView2 自带的右键菜单在这个置顶卡片**下面**弹出
+  // （用户看到的是「菜单被弹窗盖住」），菜单里的「复制」于是永远点不到。接管
+  // ContextMenuRequested，由本窗用 Win32 弹出菜单（#32768 菜单窗天然在置顶带之上）。
+  // 同样走 ConfigureWebView 这个单一漏斗，BUG-693 自愈重建后照样生效。
+  wil::com_ptr<ICoreWebView2_11> webview11;
+  if (SUCCEEDED(webview_->QueryInterface(IID_PPV_ARGS(&webview11))) &&
+      webview11 != nullptr) {
+    const HRESULT menu_hr = webview11->add_ContextMenuRequested(
+        Callback<ICoreWebView2ContextMenuRequestedEventHandler>(
+            [this](ICoreWebView2*,
+                   ICoreWebView2ContextMenuRequestedEventArgs* args)
+                -> HRESULT {
+              HandleContextMenuRequested(args);
+              return S_OK;
+            })
+            .Get(),
+        nullptr);
+    if (FAILED(menu_hr)) {
+      ReportOverlayError("add_ContextMenuRequested failed", menu_hr);
+    }
+  } else {
+    ReportOverlayError("ICoreWebView2_11 unavailable; overlay context menu "
+                       "stays under the topmost card",
+                       E_NOINTERFACE);
+  }
+
   // BUG-1139 — 关掉 WebView2 自带的页面缩放（Ctrl+滚轮 / Ctrl+加减 / 触控板捏合）。
   //
   // 这个窗的几何链**整条**按「CSS px @ zoom=1」算：host 的 measureAndReport 用
@@ -2840,6 +3301,14 @@ void GlobalLookupWindow::ConfigureWebView() {
                   FinalizePendingShellGeometry(geometry_epoch);
                 }
               }
+              // BUG-2651 — host 汇总的「卡片里有无非空选区」。纯 Win32 状态（是否
+              // 临时接管 Ctrl+C），native 就地消费、不转发 Dart。
+              if (body.find("\"handler\":\"overlaySelection\"") !=
+                  std::string::npos) {
+                OnOverlaySelectionChanged(
+                    body.find("\"args\":[true]") != std::string::npos);
+                return S_OK;
+              }
               if (body.find("\"handler\":\"beginWindowResize\"") !=
                   std::string::npos) {
                 if (hwnd_ != nullptr) {
@@ -2916,6 +3385,7 @@ void GlobalLookupWindow::ConfigureWebView() {
               // data: URL fed to playAudioRef classifies as a local file).
               const bool deferred =
                   body.find("\"resolveWordAudio\"") != std::string::npos ||
+                  body.find("\"listWordAudioSources\"") != std::string::npos ||
                   body.find("\"queryLocalAudio\"") != std::string::npos ||
                   body.find("\"favoriteEntry\"") != std::string::npos ||
                   body.find("\"favoriteCheck\"") != std::string::npos ||
@@ -2925,7 +3395,12 @@ void GlobalLookupWindow::ConfigureWebView() {
                   body.find("\"updateEntry\"") != std::string::npos ||
                   body.find("\"findMinedMatches\"") != std::string::npos ||
                   body.find("\"openMinedNote\"") != std::string::npos ||
-                  body.find("\"openInAnki\"") != std::string::npos;
+                  body.find("\"openInAnki\"") != std::string::npos ||
+                  // Fushi review (SRS) word status + open-card badge: the main
+                  // Dart engine answers from the SRS store (or null / false
+                  // while the review module is off).
+                  body.find("\"srsTermStatus\"") != std::string::npos ||
+                  body.find("\"srsOpenCard\"") != std::string::npos;
               const std::string key = "\"__bridgeId\":";
               size_t pos = body.find(key);
               if (!deferred && pos != std::string::npos) {
@@ -3388,6 +3863,202 @@ void GlobalLookupWindow::ForwardGlobalClickToHost(int screen_x, int screen_y) {
   webview_->ExecuteScript(script.c_str(), nullptr);
 }
 
+// BUG-2651 (issue #1581) — 卡片内选区复制。
+void GlobalLookupWindow::OnOverlaySelectionChanged(bool has_selection) {
+  selection_present_ = has_selection;
+  UpdateCopyHotkey();
+}
+
+void GlobalLookupWindow::UpdateCopyHotkey() {
+  // 「卡片在屏 && 卡片里有非空选区」是接管 Ctrl+C 的唯一条件：卡片一离屏
+  // （Hide 的所有来路：点卡外、前台切走、程序化重置）立刻交还，用户在别的应用
+  // 里的 Ctrl+C 永远不会被截走。
+  const bool wanted = selection_present_ && IsShowing();
+  if (wanted == copy_hotkey_registered_) {
+    return;
+  }
+  if (!wanted) {
+    if (hwnd_ != nullptr) {
+      UnregisterHotKey(hwnd_, kCopySelectionHotkeyId);
+    }
+    copy_hotkey_registered_ = false;
+    return;
+  }
+  // MOD_NOREPEAT：按住不放不连发。修饰键精确匹配，Ctrl+Shift+C 等组合不受影响。
+  if (RegisterHotKey(hwnd_, kCopySelectionHotkeyId, MOD_CONTROL | MOD_NOREPEAT,
+                     'C')) {
+    copy_hotkey_registered_ = true;
+  } else {
+    // 另一个进程已占用全局 Ctrl+C 热键：只能退回「Ctrl+C 归前台应用」的旧行为，
+    // 右键菜单的复制仍然可用。
+    ReportOverlayError("RegisterHotKey(Ctrl+C) for overlay selection failed",
+                       HRESULT_FROM_WIN32(GetLastError()));
+  }
+}
+
+void GlobalLookupWindow::CopyOverlaySelectionToClipboard() {
+  if (webview_ == nullptr || !webview_ready_) {
+    return;
+  }
+  webview_->ExecuteScript(
+      L"(function(){var h=window.__globalLookupHost;"
+      L"return h&&typeof h.selectedText==='function'?h.selectedText():'';})()",
+      Callback<ICoreWebView2ExecuteScriptCompletedHandler>(
+          [this](HRESULT error_code, LPCWSTR result_json) -> HRESULT {
+            std::wstring text;
+            if (SUCCEEDED(error_code) && result_json != nullptr) {
+              DecodeJsonStringLiteral(result_json, &text);
+            }
+            if (text.empty()) {
+              // 上报与真实选区不一致（选区在热键落地前被清掉）：以现场为准，
+              // 交还 Ctrl+C。host 的「变化才上报」去重状态也必须一起归零，否则
+              // 它还停在 true，下一次真选区被当成「没变化」不上报，Ctrl+C 又落回
+              // 前台应用（原 bug 复发）。
+              OnOverlaySelectionChanged(false);
+              if (webview_ != nullptr) {
+                webview_->ExecuteScript(
+                    L"(function(){var h=window.__globalLookupHost;"
+                    L"if(h&&typeof h.resetSelectionReport==='function')"
+                    L"h.resetSelectionReport();})()",
+                    nullptr);
+              }
+              return S_OK;
+            }
+            if (!WriteClipboardUnicodeText(hwnd_, text)) {
+              ReportOverlayError("overlay selection clipboard write failed",
+                                 HRESULT_FROM_WIN32(GetLastError()));
+            }
+            return S_OK;
+          })
+          .Get());
+}
+
+void GlobalLookupWindow::HandleContextMenuRequested(
+    ICoreWebView2ContextMenuRequestedEventArgs* args) {
+  if (args == nullptr) {
+    return;
+  }
+  // 一律接管：WebView2 自带的菜单在这个置顶窗口下面弹，用户根本够不着。
+  args->put_Handled(TRUE);
+  wil::com_ptr<ICoreWebView2Deferral> deferral;
+  if (FAILED(args->GetDeferral(&deferral)) || deferral == nullptr ||
+      hwnd_ == nullptr) {
+    return;
+  }
+  // 上一个还没弹出的请求（极快的连续右键）直接收尾，只弹最新的那个。
+  if (pending_context_menu_deferral_ != nullptr) {
+    pending_context_menu_deferral_->Complete();
+  }
+  pending_context_menu_args_ = args;
+  pending_context_menu_deferral_ = deferral;
+  PostMessage(hwnd_, kShowContextMenuMessage, 0, 0);
+}
+
+void GlobalLookupWindow::ShowPendingContextMenu() {
+  wil::com_ptr<ICoreWebView2ContextMenuRequestedEventArgs> args =
+      std::move(pending_context_menu_args_);
+  wil::com_ptr<ICoreWebView2Deferral> deferral =
+      std::move(pending_context_menu_deferral_);
+  if (args == nullptr || deferral == nullptr) {
+    return;
+  }
+  // 选区文本直接取自 WebView2 的菜单目标（右键落点所在 frame 的选区），不经 JS。
+  std::wstring selection_text;
+  wil::com_ptr<ICoreWebView2ContextMenuTarget> target;
+  if (SUCCEEDED(args->get_ContextMenuTarget(&target)) && target != nullptr) {
+    BOOL has_selection = FALSE;
+    if (SUCCEEDED(target->get_HasSelection(&has_selection)) && has_selection) {
+      wil::unique_cotaskmem_string value;
+      if (SUCCEEDED(target->get_SelectionText(&value)) && value) {
+        selection_text = value.get();
+      }
+    }
+  }
+  // 菜单文案沿用 WebView2 自己的本地化标签（跟随系统 UI 语言），只保留对只读
+  // 词典卡片有意义的两项：复制 / 全选。「全选」交回 WebView2 原生命令执行。
+  std::wstring copy_label;
+  std::wstring select_all_label;
+  INT32 select_all_command = -1;
+  wil::com_ptr<ICoreWebView2ContextMenuItemCollection> items;
+  if (SUCCEEDED(args->get_MenuItems(&items)) && items != nullptr) {
+    UINT32 count = 0;
+    items->get_Count(&count);
+    for (UINT32 index = 0; index < count; ++index) {
+      wil::com_ptr<ICoreWebView2ContextMenuItem> item;
+      if (FAILED(items->GetValueAtIndex(index, &item)) || item == nullptr) {
+        continue;
+      }
+      wil::unique_cotaskmem_string name;
+      wil::unique_cotaskmem_string label;
+      if (FAILED(item->get_Name(&name)) || !name ||
+          FAILED(item->get_Label(&label)) || !label) {
+        continue;
+      }
+      const std::wstring item_name = name.get();
+      if (item_name == L"copy") {
+        copy_label = label.get();
+      } else if (item_name == L"selectAll") {
+        select_all_label = label.get();
+        item->get_CommandId(&select_all_command);
+      }
+    }
+  }
+  HMENU menu = CreatePopupMenu();
+  if (menu == nullptr) {
+    deferral->Complete();
+    return;
+  }
+  if (!selection_text.empty()) {
+    AppendMenuW(menu, MF_STRING, kContextMenuCopyCommand,
+                copy_label.empty() ? L"&Copy" : copy_label.c_str());
+  }
+  if (select_all_command >= 0 && !select_all_label.empty()) {
+    AppendMenuW(menu, MF_STRING, kContextMenuSelectAllCommand,
+                select_all_label.c_str());
+  }
+  if (GetMenuItemCount(menu) <= 0 || !IsShowing()) {
+    DestroyMenu(menu);
+    deferral->Complete();
+    return;
+  }
+  POINT cursor{};
+  GetCursorPos(&cursor);
+  // TrackPopupMenu 的已知契约：宿主窗口不是前台时，点菜单外不会收起菜单、Esc 也
+  // 到不了菜单。卡片是 WS_EX_NOACTIVATE，所以弹菜单期间临时把前台拿过来（刚发生
+  // 的右键让本进程有资格这么做），菜单结束后若前台还在我们手里就原样还回去。
+  const HWND previous_foreground = GetForegroundWindow();
+  // BUG-2788 — 卡片唯一一处主动激活；激活守卫只放行菜单这一窗口期。
+  self_activation_allowed_ = true;
+  const bool took_foreground = previous_foreground != hwnd_ &&
+                               SetForegroundWindow(hwnd_) != FALSE;
+  context_menu_active_ = true;
+  const UINT command = static_cast<UINT>(TrackPopupMenuEx(
+      menu, TPM_RETURNCMD | TPM_RIGHTBUTTON | TPM_NONOTIFY, cursor.x, cursor.y,
+      hwnd_, nullptr));
+  context_menu_active_ = false;
+  self_activation_allowed_ = false;
+  // 同一契约的后半截：让菜单循环确实退出后再继续。
+  PostMessage(hwnd_, WM_NULL, 0, 0);
+  DestroyMenu(menu);
+  if (command == kContextMenuCopyCommand) {
+    if (!WriteClipboardUnicodeText(hwnd_, selection_text)) {
+      ReportOverlayError("overlay context-menu clipboard write failed",
+                         HRESULT_FROM_WIN32(GetLastError()));
+    }
+  } else if (command == kContextMenuSelectAllCommand) {
+    args->put_SelectedCommandId(select_all_command);
+  }
+  deferral->Complete();
+  if (took_foreground && previous_foreground != nullptr &&
+      IsWindow(previous_foreground) && GetForegroundWindow() == hwnd_) {
+    // 前台钩子会看到这次交还；它不是用户点卡外，登记一下让钩子放过它。
+    context_menu_return_foreground_ = previous_foreground;
+    if (!SetForegroundWindow(previous_foreground)) {
+      context_menu_return_foreground_ = nullptr;
+    }
+  }
+}
+
 LRESULT GlobalLookupWindow::HandleMessage(UINT message, WPARAM wparam,
                                           LPARAM lparam) {
   switch (message) {
@@ -3404,11 +4075,24 @@ LRESULT GlobalLookupWindow::HandleMessage(UINT message, WPARAM wparam,
       // 而没有返回值 —— CI 的 /WX 把 C4715 当错误（本机 debug 构建不开 /WX，
       // 所以本地那次 `flutter build windows --debug` 是绿的，别再被它骗一次）。
       return DefWindowProc(hwnd_, message, wparam, lparam);
+    case WM_HOTKEY:
+      // BUG-2651 — 只在「卡片在屏且里面有非空选区」时注册的 Ctrl+C。
+      if (wparam == static_cast<WPARAM>(kCopySelectionHotkeyId)) {
+        CopyOverlaySelectionToClipboard();
+        return 0;
+      }
+      return DefWindowProc(hwnd_, message, wparam, lparam);
+    case kShowContextMenuMessage:
+      ShowPendingContextMenu();
+      return 0;
     case fushi::kLowLevelMouseClickMessage:
       // BUG-1048 — 钩子线程投递的全局点击（wparam 打包屏幕物理坐标，lparam=是否
       // 落在本窗口 rect 内）。真正的决策（关闭 / 转发给 host）在这里做，钩子线程
       // 只搬坐标：那条线程必须随时能返回，否则整个系统的鼠标输入都跟着它排队。
-      HandleGlobalClick(fushi::UnpackMouseHookPoint(wparam), lparam != 0);
+      HandleGlobalClick(
+          fushi::UnpackMouseHookPoint(wparam),
+          (lparam & fushi::kLowLevelMouseClickInsideBit) != 0,
+          (lparam & fushi::kLowLevelMouseClickConsumedBit) != 0);
       return 0;
     case fushi::kLowLevelMouseWheelMessage:
       // BUG-1166 — 钩子线程已把这一格滚轮从输入流里吞掉（游戏收不到了），这里负责
@@ -3518,8 +4202,13 @@ LRESULT GlobalLookupWindow::HandleMessage(UINT message, WPARAM wparam,
         // 圆角区域的直径按 DPI 算（ApplyRoundedRegion），换屏必须重算。
         ApplyRoundedRegion();
       }
+      // 系统建议矩形是按旧位置换算的；停放窗要回到新拓扑下的离屏位。
+      ReparkOffscreenIfParked();
       return 0;
     }
+    case WM_DISPLAYCHANGE:
+      ReparkOffscreenIfParked();
+      return DefWindowProc(hwnd_, message, wparam, lparam);
     case WM_ENTERSIZEMOVE:
       // Phase C（弹窗尺寸精细化 2026-07-13）— 进入模态 move/size 循环（面板拖动/调整，
       // 或 —— Phase C 起 —— 瞬态覆盖窗拖右下角 grip）。瞬态窗平时按 shell 卡矩形裁剪
@@ -3592,6 +4281,26 @@ LRESULT GlobalLookupWindow::HandleMessage(UINT message, WPARAM wparam,
           TrackMouseEvent(&tme);
         }
         ForwardCompositionMouse(message, wparam, lparam);
+        return 0;
+      }
+      return DefWindowProc(hwnd_, message, wparam, lparam);
+    // BUG-2788 — WS_EX_NOACTIVATE 只挡鼠标点击激活。触摸按下时本窗仍会收到
+    // WM_POINTERACTIVATE 与（HIWORD(lParam)=WM_POINTERDOWN 的）WM_MOUSEACTIVATE，
+    // 交给 DefWindowProc 会回 MA_ACTIVATE，卡片变成前台：游戏失去前台后宿主「点卡外
+    // 吞点击」的判据（前台必须是游戏）失效，触屏点过卡片再点卡外就会推进剧情。
+    // 卡片永远不因指针按下而激活（自绘右键菜单用 SetForegroundWindow 主动拿前台，
+    // 不经过这两条消息）。Chromium 随后的 SetFocus 由 ActivationGuardProc 否决。
+    case WM_POINTERACTIVATE:
+    case WM_MOUSEACTIVATE:
+      return OverlayNoActivateReply(message);
+    // BUG-2770：触摸 / 触控笔原样进 WebView2；鼠标指针与失败时落 DefWindowProc，
+    // 由系统提升成上面的鼠标消息，行为不变。
+    case WM_POINTERDOWN:
+    case WM_POINTERUPDATE:
+    case WM_POINTERUP:
+    case WM_POINTERENTER:
+    case WM_POINTERLEAVE:
+      if (ForwardCompositionPointer(message, wparam)) {
         return 0;
       }
       return DefWindowProc(hwnd_, message, wparam, lparam);

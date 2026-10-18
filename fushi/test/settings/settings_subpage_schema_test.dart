@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/models.dart';
@@ -10,6 +10,7 @@ import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/settings/settings_detail_page.dart';
 import 'package:fushi/src/settings/settings_schema_widgets.dart';
 import 'package:fushi/src/settings/settings_search.dart';
+import 'package:fushi/src/sync/sync_settings_schema.dart';
 import 'package:fushi/src/utils/components/settings_shared.dart';
 
 import '../helpers/test_platform_services.dart';
@@ -77,6 +78,20 @@ void main() {
 
   SettingsNavigationItem navTo(SettingsDestination Function() child) =>
       SettingsNavigationItem(id: 'p.sub', title: '进入子页', child: child);
+
+  testWidgets('game receiver belongs to interconnect settings',
+      (WidgetTester tester) async {
+    await pumpContext(tester);
+    final SettingsDestination destination = buildInterconnectDestination();
+    final List<SettingsItem> entries = destination.sections
+        .expand((SettingsSection section) => section.items)
+        .where((SettingsItem item) => item.id == 'interconnect.game_stream')
+        .toList();
+    expect(entries, hasLength(1));
+    expect(entries.single, isA<SettingsActionItem>());
+    // Every platform can receive a stream, so the entry has no platform gate.
+    expect(entries.single.isVisible(sctx), isTrue);
+  });
 
   SettingsDestination parentPage(SettingsNavigationItem nav) =>
       SettingsDestination(
@@ -198,6 +213,41 @@ void main() {
       expect(detail.destination, isNull);
       expect(detail.subPageBuilder, isNotNull);
       expect(detail.subPageBuilder!().title, '子页');
+    });
+
+    testWidgets('带 child 的导航行：子页弹回后 refresh 父页（实时摘要要重算，BUG-2586）',
+        (WidgetTester tester) async {
+      await pumpContext(
+        tester,
+        child: Builder(
+          builder: (BuildContext context) => SettingsSchemaItem(
+            item: navTo(childPage),
+            settingsContext: sctx,
+            showIcons: false,
+            // ModalRoute 缓存页面内容：真 push 一页再 pop，父页不会自动重算
+            // resolveSubtitle，只能靠导航行在返回后主动 refresh。
+            routeBuilder: (BuildContext ctx, WidgetBuilder builder) =>
+                MaterialPageRoute<void>(
+              builder: (BuildContext c) => Scaffold(
+                body: TextButton(
+                  onPressed: () => Navigator.of(c).pop(),
+                  child: const Text('返回父页'),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      await tester.tap(find.text('进入子页'));
+      await tester.pumpAndSettle();
+      expect(find.text('返回父页'), findsOneWidget);
+      expect(refreshes, 0, reason: '子页还开着，父页不该被刷');
+
+      await tester.tap(find.text('返回父页'));
+      await tester.pumpAndSettle();
+      expect(find.text('进入子页'), findsOneWidget);
+      expect(refreshes, 1, reason: '弹回后父页必须 refresh 一次');
     });
 
     testWidgets('状态行：标题 + 运行期副标题；无动作时不渲染按钮', (WidgetTester tester) async {
@@ -332,15 +382,21 @@ void main() {
     test('渲染分发：状态行有专属分支；child 导航行推 SettingsDetailPage.subPage', () {
       final String widgets =
           read('lib/src/settings/settings_schema_widgets.dart');
-      expect(widgets, contains('SettingsStatusItem status => _status(status)'));
+      // _status 现在额外接收 BuildContext（按设计系统分派状态行外观），
+      // 契约仍是「状态行有专属分支」。
+      expect(widgets, contains('SettingsStatusItem status => _status(context, status)'));
       expect(widgets, contains('SettingsDetailPage.subPage(child)'));
     });
 
     test('搜索：索引递归进子页；命中后逐级推子页', () {
       expect(read('lib/src/settings/settings_search.dart'),
           contains('_flattenPageInto('));
+      // 「逐级推子页」已从主页抽到共享入口 openSettingsSearchEntry（窄屏 /
+      // 子页页头搜索 / 宽屏主从三处共用），主页只负责调用它。
+      expect(read('lib/src/settings/settings_search_sheet.dart'),
+          contains('in entry.subPagePath'));
       expect(read('lib/src/settings/settings_home_page.dart'),
-          contains('entry.subPagePath'));
+          contains('openSettingsSearchEntry('));
     });
 
     test('详情页：子页靠闭包取新鲜树，不按 id 到顶层找', () {

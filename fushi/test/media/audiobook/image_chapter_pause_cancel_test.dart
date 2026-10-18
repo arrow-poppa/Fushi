@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/media/audiobook/audiobook_controller.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:just_audio_platform_interface/just_audio_platform_interface.dart';
 import '../../helpers/source_guard.dart';
@@ -201,7 +202,7 @@ void main() {
     // 两个方向的假绿假红都可能。
     final String src = _stripDartComments(
       File(
-        '../packages/fushi_audio/lib/src/audiobook/audiobook_controller.dart',
+        'lib/src/media/audiobook/audiobook_controller.dart',
       ).readAsStringSync(),
     );
 
@@ -283,7 +284,7 @@ class _Harness {
     final _FakeJustAudioPlatform registry = _installFakeAudioPlatform();
     final AudiobookPlayerController controller = AudiobookPlayerController();
     final File audioFile = File(
-      '${Directory.systemTemp.path}/hibiki-image-chapter-pause-2389.mp3',
+      '${Directory.systemTemp.path}/fushi-image-chapter-pause-2389.mp3',
     );
     if (!audioFile.existsSync()) {
       audioFile.writeAsBytesSync(const <int>[0]);

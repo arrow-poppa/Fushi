@@ -12,7 +12,7 @@
 
 import 'dart:convert';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/popup_settings_injection.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
@@ -101,8 +101,13 @@ GlobalLookupFrameSettingsJs buildFrameSettingsJsParts({
   // 同一帧同一结果下这段 renderJs 跨渲染字节稳定（host 以 settingsJs 变更为
   // 重渲判据）：这里不得再掺任何每次查词都会变的上下文（曾经的句子横幅文本
   // 注入已随桌面剪贴板查词一并移除）。
+  //
+  // BUG-2770 — the overlay has no Flutter pointer tree, so the mobile-style
+  // horizontal "swipe to close" has to be recognised in the page. Overlay only:
+  // the in-app popup already has the Flutter body detector for the same swipe.
   const String renderJs = '''
     $kPopupTopPullReleaseJs
+    $kPopupTouchSideSwipeReleaseJs
     if (window.resetSentenceContextMirror) window.resetSentenceContextMirror();
     if (window.resetSelectedDictionaries) window.resetSelectedDictionaries();
     window.renderPopup && window.renderPopup();
@@ -345,6 +350,10 @@ StackRenderScript buildStackRenderScript({
   // nearly full-height child is clamped across the selected word. Keep this
   // opt-in so the desktop global-lookup cascade remains unchanged.
   bool fitNestedHeightToAnchorSide = false,
+  // BUG-2921 — galCard passes false: the runner places the game card's root
+  // (glyph-anchored in the client area) and pins it there; the layout root is
+  // only the children's coordinate origin, so it must stay at window-local 0.
+  bool clampRootShellToWorkArea = true,
   // BUG-1833 — static settings revisions already acknowledged by this physical
   // host. The stable root iframe survives lookup-to-lookup, so a custom font
   // (two CJK faces already run to tens of MB once base64-inlined) must not ride
@@ -376,14 +385,16 @@ StackRenderScript buildStackRenderScript({
   // 右/下 clamp 变成 no-op 后，光标靠屏右/下时根卡越出工作区被窗口边裁掉（「弹窗
   // 直接生成在窗口外面」）。这里用与子卡同语义的 clamp 把根卡钳回工作区；偏移恒
   // >= -cursorWork（= 地板），窗口原点仍从首帧冻结，父卡零位移保证不回退。
-  final ({double left, double top}) rootShellOffset = computeRootShellOffset(
-    cursorWorkX: selectionScreenOffset.dx,
-    cursorWorkY: selectionScreenOffset.dy,
-    screenWorkW: screenWidth,
-    screenWorkH: screenHeight,
-    cardW: maxWidth,
-    cardH: maxHeight,
-  );
+  final ({double left, double top}) rootShellOffset = clampRootShellToWorkArea
+      ? computeRootShellOffset(
+          cursorWorkX: selectionScreenOffset.dx,
+          cursorWorkY: selectionScreenOffset.dy,
+          screenWorkW: screenWidth,
+          screenWorkH: screenHeight,
+          cardW: maxWidth,
+          cardH: maxHeight,
+        )
+      : (left: 0.0, top: 0.0);
   final List<Map<String, Object?>> popups = <Map<String, Object?>>[];
   for (int i = 0; i < payloads.length; i++) {
     final GlobalLookupFramePayload p = payloads[i];

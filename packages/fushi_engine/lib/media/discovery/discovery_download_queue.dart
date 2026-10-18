@@ -54,13 +54,22 @@ typedef DiscoveryDownloadOpen = Future<ResumableDownloadResponse> Function(
 
 /// 一次自动入库的结果。
 class DiscoveryImportOutcome {
-  const DiscoveryImportOutcome({this.importedCount = 0, this.summary});
+  const DiscoveryImportOutcome({
+    this.importedCount = 0,
+    this.summary,
+    this.deferred = false,
+  });
 
   /// 实际新建的库条目数（0 = 已在库被跳过等）。
   final int importedCount;
 
   /// 给任务行展示的一句话结果（入库标题等）。
   final String? summary;
+
+  /// 入库被移交给后台后续步骤（有声书：排进转录后入库队列），此刻还没有条目
+  /// 落库。与「0 条新增 = 已在库被跳过」区分开，任务行据此说「转录中」而不是
+  /// 「已导入 0」。
+  final bool deferred;
 }
 
 /// 任务生命周期状态。[waitingRetry] 不是终态也不占执行位（语义同 mokuro 队列）。
@@ -395,7 +404,10 @@ class DiscoveryDownloadQueue extends EngineChangeNotifier {
         destination: destination,
         partFile: File('${destination.path}.part'),
         open: open,
-        expectedSize: payload.sizeBytes,
+        // 目录声称的体积只是提示（BUG-2649）：Calibre 下载时改写 EPUB 元数据，
+        // 当严格判据会把完整文件判 size mismatch 删掉。截断由 HttpClient 按
+        // Content-Length 兜住（连接提前断 → HttpException，走瞬时重试）。
+        sizeHint: payload.sizeBytes,
         onProgress: (int received, int? total) {
           task.receivedBytes = received;
           task.totalBytes = total;

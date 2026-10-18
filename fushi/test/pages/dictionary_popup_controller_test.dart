@@ -2,6 +2,8 @@
 import 'package:fake_async/fake_async.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/diagnostics/lookup_perf_trace.dart';
+import 'package:fushi/src/diagnostics/video_diag_log.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_controller.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart'
     show DictionaryPopupWebViewState;
@@ -29,6 +31,37 @@ void main() {
 
     final lm = DictionaryPopupController(lowMemory: true)..seedWarmSlot();
     expect(lm.entries, isEmpty);
+  });
+
+  // PR #1598 审查：在途的查词计时游标是进程级的，关栈不收尾就会被下一次别的宿主
+  // 的 revealRendered 当成自己的收尾——打出「视频页旧词 total=几分钟」的假行。
+  test('dismissAt / clear 把在途的 LookupPerfTrace 收尾成 dismissed', () {
+    VideoDiagLog.instance.resetForTesting();
+    VideoDiagLog.instance.enableForTesting();
+    addTearDown(() {
+      VideoDiagLog.instance.resetForTesting();
+      LookupPerfTrace.current = null;
+    });
+
+    final c = DictionaryPopupController(lowMemory: false)..seedWarmSlot();
+    final LookupPerfTrace trace = LookupPerfTrace.begin(
+      term: '辞書',
+      host: 'video',
+      lowMemory: false,
+    )!;
+    c.dismissAt(0);
+    expect(trace.isFinished, isTrue, reason: 'Esc / 点 barrier 关栈 = 这次查词结束');
+    expect(LookupPerfTrace.current, isNull, reason: '游标不得悬着给下一位宿主');
+
+    final c2 = DictionaryPopupController(lowMemory: false)..seedWarmSlot();
+    final LookupPerfTrace trace2 = LookupPerfTrace.begin(
+      term: '事典',
+      host: 'video',
+      lowMemory: false,
+    )!;
+    c2.clear();
+    expect(trace2.isFinished, isTrue);
+    expect(LookupPerfTrace.current, isNull);
   });
 
   test('beginTop 复用热槽（视频：搜索期即可见）', () {
@@ -574,6 +607,126 @@ void main() {
           identical(c.entries.first.result, kPopupSearchingPlaceholderResult),
           true,
           reason: '关栈复位回同一单例，下次查词 停驻→搜索 依旧无身份变化');
+    });
+  });
+
+  // 停驻的热槽页里循环加载动画：宿主曾按「结果是占位单例」推 lookupPending=true，而
+  // seed / 复位 / 停驻 realm 挂的都是那个单例——Windows WebView2 停驻仍可见，空闲持续
+  // 出帧。pending 只由「层可见 && 查询进行中 && 还没有内容」派生。
+  group('lookupPending：占位 / 空闲 与 查询进行中 分开', () {
+    final DictionarySearchResult hit = DictionarySearchResult(
+      searchTerm: 'あ',
+      entries: <DictionaryEntry>[
+        DictionaryEntry(word: '亜', reading: 'あ', meaning: 'sub'),
+      ],
+    );
+
+    test('seed 热槽（停驻空闲）pending=false', () {
+      final c = DictionaryPopupController(lowMemory: false)..seedWarmSlot();
+      final DictionaryPopupEntry slot = c.entries.first;
+      expect(identical(slot.result, kPopupSearchingPlaceholderResult), true);
+      expect(slot.lookupPending, false, reason: '预热种子是空闲，不是查询中');
+    });
+
+    test('复用热槽激活查词 pending=true（占位单例不变）→ 结果到达 false → 复位 false',
+        () {
+      final c = DictionaryPopupController(lowMemory: false)..seedWarmSlot();
+      final e = c.beginTop(
+        term: 'あ',
+        rect: Rect.zero,
+        reuseWarmSlot: true,
+        replaceStack: false,
+        visible: true,
+        initialResult: kPopupSearchingPlaceholderResult,
+      );
+      expect(identical(e.result, kPopupSearchingPlaceholderResult), true,
+          reason: '前置：结果对象身份没变，只能靠查询状态区分');
+      expect(e.lookupPending, true);
+
+      c.fillResult(e, result: hit, allLoaded: true);
+      expect(e.lookupPending, false, reason: '结果到达即不再 pending');
+
+      c.dismissAt(0);
+      final DictionaryPopupEntry slot = c.entries.first;
+      expect(identical(slot.result, kPopupSearchingPlaceholderResult), true);
+      expect(slot.lookupPending, false, reason: '关栈复位回停驻空闲');
+    });
+
+    test('结果到达前就关掉：复位后 pending=false', () {
+      final c = DictionaryPopupController(lowMemory: false)..seedWarmSlot();
+      final e = c.beginTop(
+        term: 'あ',
+        rect: Rect.zero,
+        reuseWarmSlot: true,
+        replaceStack: false,
+        visible: true,
+        initialResult: kPopupSearchingPlaceholderResult,
+      );
+      expect(e.lookupPending, true);
+      c.pruneToWarmSlot();
+      expect(c.entries.first.lookupPending, false);
+    });
+
+    test('搜索期隐藏（书内「就绪才显示」）pending=false', () {
+      final c = DictionaryPopupController(lowMemory: false)..seedWarmSlot();
+      final e = c.beginTop(
+        term: 'あ',
+        rect: Rect.zero,
+        reuseWarmSlot: true,
+        replaceStack: false,
+        visible: false,
+      );
+      expect(e.isSearching, true);
+      expect(e.lookupPending, false, reason: '层不在屏上，页面不该起加载动画');
+    });
+
+    test('已有词条的分页 load-more 不算 pending（否则全量重渲染滚回顶）', () {
+      final c = DictionaryPopupController(lowMemory: false);
+      final e = c.beginTop(
+        term: 'あ',
+        rect: Rect.zero,
+        reuseWarmSlot: false,
+        replaceStack: true,
+        visible: true,
+      );
+      c.fillResult(e, result: hit, allLoaded: false);
+      e.isSearching = true;
+      expect(e.lookupPending, false);
+    });
+
+    test('popupLookupPending 真值表', () {
+      expect(
+        popupLookupPending(
+          layerVisible: false,
+          isSearching: true,
+          result: kPopupSearchingPlaceholderResult,
+        ),
+        false,
+      );
+      expect(
+        popupLookupPending(
+          layerVisible: true,
+          isSearching: false,
+          result: kPopupSearchingPlaceholderResult,
+        ),
+        false,
+      );
+      expect(
+        popupLookupPending(layerVisible: true, isSearching: true, result: null),
+        true,
+      );
+      expect(
+        popupLookupPending(
+          layerVisible: true,
+          isSearching: true,
+          result: kPopupSearchingPlaceholderResult,
+        ),
+        true,
+      );
+      expect(
+        popupLookupPending(layerVisible: true, isSearching: true, result: hit),
+        false,
+      );
     });
   });
 

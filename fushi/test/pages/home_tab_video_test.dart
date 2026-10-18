@@ -18,11 +18,13 @@ ModuleVisibility _visibility({
   bool lookup = true,
   bool browserExtension = false,
 }) => ModuleVisibility(<ModuleId>{
+  // 首页 2026-10-09 起是可关模块；这些用例的语义是「首页开着」。
+  ModuleId.home,
   if (books) ModuleId.books,
   if (manga) ModuleId.manga,
   if (video) ModuleId.video,
   if (games) ModuleId.games,
-  if (downloads) ModuleId.downloads,
+  if (downloads) ModuleId.browse,
   if (lookup) ModuleId.lookup,
   if (browserExtension) ModuleId.browserExtension,
 });
@@ -45,7 +47,7 @@ void main() {
         HomeTab.books,
         HomeTab.manga,
         HomeTab.games,
-        HomeTab.downloads,
+        HomeTab.browse,
         HomeTab.dictionaries,
         HomeTab.settings,
       ]);
@@ -62,7 +64,7 @@ void main() {
         HomeTab.manga,
         HomeTab.video,
         HomeTab.games,
-        HomeTab.downloads,
+        HomeTab.browse,
         HomeTab.dictionaries,
         HomeTab.settings,
       ]);
@@ -77,7 +79,7 @@ void main() {
       final int manga = tabs.indexOf(HomeTab.manga);
       final int video = tabs.indexOf(HomeTab.video);
       final int games = tabs.indexOf(HomeTab.games);
-      final int downloads = tabs.indexOf(HomeTab.downloads);
+      final int downloads = tabs.indexOf(HomeTab.browse);
       final int dict = tabs.indexOf(HomeTab.dictionaries);
       expect(manga, equals(books + 1));
       expect(video, equals(manga + 1));

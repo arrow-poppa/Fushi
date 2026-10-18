@@ -1,16 +1,24 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:typed_data';
+
+import 'package:collection/collection.dart' show ListEquality;
 
 import 'package:flutter/foundation.dart'
     show ValueNotifier, immutable, mapEquals;
 import 'package:path/path.dart' as p;
 
+import 'package:fushi_engine/media/discovery/discovery_download_queue.dart'
+    show DiscoveryImportOutcome;
+import 'package:fushi_engine/media/discovery/import/discovery_import_plan.dart'
+    show DiscoveryImportBlockedException;
 import 'package:fushi_engine/media/torrent/anime_download_config.dart';
 import 'package:fushi/src/media/torrent/anime_download_plan.dart';
 import 'package:fushi/src/media/torrent/anime_download_subtitle_resolver.dart';
 import 'package:fushi_engine/media/torrent/qb_torrent_backend.dart';
 import 'package:fushi_engine/media/torrent/qbittorrent_client.dart';
 import 'package:fushi_engine/media/torrent/torrent_backend.dart';
+import 'package:fushi_engine/media/video/subtitle/embedded_reference_subtitle_sync.dart';
 import 'package:fushi_engine/media/video/video_filename_parser.dart';
 import 'package:fushi_engine/media/video/video_sidecar.dart'
     show listSidecarSubtitles;
@@ -256,13 +264,15 @@ class AnimeDownloadService {
       AnimeDownloadPlan plan,
       List<String> videoAbsolutePaths,
     )? subtitleResolver,
-    Future<int?> Function(
+    Future<DiscoveryImportOutcome?> Function(
       AnimeDownloadPlan plan,
       List<String> absolutePaths,
     )? discoveryImporter,
+    AutomaticSubtitleAligner? subtitleAligner,
     void Function()? onTick,
     this.interval = const Duration(seconds: 20),
   })  : _configProvider = configProvider,
+        _subtitleAligner = subtitleAligner,
         _importer = importer,
         _bookImporter = bookImporter,
         _subtitleResolver = subtitleResolver,
@@ -302,8 +312,9 @@ class AnimeDownloadService {
   /// 发现页新内容类型（[AnimeDownloadPlan.kindAudiobook] /
   /// [AnimeDownloadPlan.kindGame]）的入库回调（AppModel 接线
   /// `DiscoveryImportExecutor.importPaths`；null = 不支持，按失败处理）。
-  /// 返回成功入库的条目数（0/null = 无/失败）。
-  final Future<int?> Function(
+  /// 返回入库结果：条目数（0 = 无/失败），或 `deferred`（有声书只有音频、
+  /// 入库移交给转录队列——下载本身成功，不能落 failed）。
+  final Future<DiscoveryImportOutcome?> Function(
     AnimeDownloadPlan plan,
     List<String> absolutePaths,
   )? _discoveryImporter;
@@ -315,6 +326,11 @@ class AnimeDownloadService {
     AnimeDownloadPlan plan,
     List<String> videoAbsolutePaths,
   )? _subtitleResolver;
+
+  /// 暂存字幕按视频内嵌字幕轨对时间轴（见 embedded_reference_subtitle_sync.dart）；
+  /// null = 不对齐。**只在视频真正下载完成后调**：边下边播那一轮视频是残缺的
+  /// （见 [AnimeDownloadPlan.subtitleAlignPending]）。
+  final AutomaticSubtitleAligner? _subtitleAligner;
 
   final TorrentBackend Function(QbConnectionConfig config) _backendFactory;
 
@@ -820,9 +836,19 @@ class AnimeDownloadService {
     // （BUG-1206）。resolved/none 的老计划原样透传，行为不变。
     AnimeDownloadPlan resolved = plan;
 
-    // 视频：先补字幕 → 落 sidecar → 入库（播放器按 sidecar 自动发现字幕）。
+    // 视频：先补字幕 → （下完了才）对时间轴 → 落 sidecar → 入库（播放器按
+    // sidecar 自动发现字幕）。
     if (videos.isNotEmpty) {
       resolved = await _resolveSubtitles(plan, videos);
+      // 暂存字幕谁产出谁置 pending（resolver 这一轮配上 / 订阅发现期下好），这里
+      // 只认这个事实。边下边播那一轮视频还残缺，抽参考轨只会读到半截——原样放、
+      // pending 留着，等真正完成那一轮再对（B1）。
+      if (!keepDownloading &&
+          resolved.subtitleStatus == AnimeDownloadPlan.subtitleResolved &&
+          resolved.subtitleAlignPending) {
+        await _alignStagedSubtitles(videos, resolved.subtitles);
+        resolved = resolved.copyWith(subtitleAlignPending: false);
+      }
       await _placeSidecars(videos, resolved.subtitles);
       if (!plan.importedEarly) {
         resolved = resolved.copyWith(importInProgress: true);
@@ -895,20 +921,31 @@ class AnimeDownloadService {
     List<TorrentFileEntry> files,
   ) async {
     int imported = 0;
+    bool deferred = false;
     String? importError;
-    final Future<int?> Function(AnimeDownloadPlan, List<String>)? importer =
-        _discoveryImporter;
+    final Future<DiscoveryImportOutcome?> Function(
+      AnimeDownloadPlan,
+      List<String>,
+    )? importer = _discoveryImporter;
     if (importer == null) {
       importError = 'content kind ${plan.contentKind} unsupported';
     } else {
       try {
-        imported =
-            await importer(plan, resolveAllAbsolutePaths(info, files)) ?? 0;
+        final DiscoveryImportOutcome? outcome =
+            await importer(plan, resolveAllAbsolutePaths(info, files));
+        imported = outcome?.importedCount ?? 0;
+        deferred = outcome?.deferred ?? false;
+      } on DiscoveryImportBlockedException catch (e) {
+        // 内容问题（缺字幕/同名书已在库/解压失败…）落稳定原因码，任务行翻译成
+        // 用户能照着做的文案，不把异常 toString 甩给用户（BUG-2775）。
+        importError = animeDownloadBlockedFailReason(e.blocker);
       } catch (e) {
         importError = 'discovery import failed: $e';
       }
     }
-    if (imported > 0) {
+    // deferred：下载与分类都成功，入库已排进转录队列（那条任务在下载中心另有
+    // 一行），这里的使命完成了。
+    if (imported > 0 || deferred) {
       await store.save(
         plan.copyWith(
           status: AnimeDownloadPlan.statusImported,
@@ -976,6 +1013,7 @@ class AnimeDownloadService {
       return attempted.copyWith(
         subtitles: result.subtitles,
         subtitleStatus: AnimeDownloadPlan.subtitleResolved,
+        subtitleAlignPending: true,
       );
     } catch (e) {
       return attempted.copyWith(
@@ -1008,8 +1046,65 @@ class AnimeDownloadService {
       retrying: true,
     );
     if (identical(resolved, plan)) return;
-    await _placeSidecars(videos, resolved.subtitles);
-    await store.save(resolved);
+    // 重试只发生在已入库、种子仍在后端的计划上；视频没下完（边下边播后还在下）
+    // 时同样先不对，交给完成那一轮。
+    AnimeDownloadPlan next = resolved;
+    if (info.isComplete &&
+        resolved.subtitleStatus == AnimeDownloadPlan.subtitleResolved &&
+        resolved.subtitleAlignPending) {
+      await _alignStagedSubtitles(videos, resolved.subtitles);
+      next = resolved.copyWith(subtitleAlignPending: false);
+    }
+    await _placeSidecars(videos, next.subtitles);
+    await store.save(next);
+  }
+
+  /// 把配给视频的暂存字幕按该视频内嵌字幕轨对时间轴，就地改写暂存文件。
+  ///
+  /// - 同一份字幕配给同集多个版本（BD / WEB）时不对：对着其中一个对齐会把另一个
+  ///   推歪，那种原样放（与 resolver 此前的规则一致）。
+  /// - 若该集的 sidecar 已经是**未改动的原稿**（边下边播那一轮落下的），一并替换
+  ///   成对齐结果；内容不同（用户换过 / 改过）就不碰。
+  /// - 单条失败跳过，不影响其它，更不让入库失败。
+  Future<void> _alignStagedSubtitles(
+    List<String> videoAbsolutePaths,
+    List<PlanSubtitle> subtitles,
+  ) async {
+    final AutomaticSubtitleAligner? aligner = _subtitleAligner;
+    if (aligner == null) return;
+    final Map<String, PlanSubtitle> pairs = pairSubtitlesToVideos(
+      videoAbsolutePaths,
+      subtitles,
+    );
+    final Map<String, int> videosPerStaged = <String, int>{};
+    for (final PlanSubtitle sub in pairs.values) {
+      videosPerStaged.update(sub.stagedPath, (int n) => n + 1,
+          ifAbsent: () => 1);
+    }
+    for (final MapEntry<String, PlanSubtitle> entry in pairs.entries) {
+      if (videosPerStaged[entry.value.stagedPath] != 1) continue;
+      try {
+        final File staged = File(entry.value.stagedPath);
+        if (!await staged.exists()) continue;
+        final Uint8List original = await staged.readAsBytes();
+        final Uint8List aligned = await aligner(original, entry.key);
+        if (identical(aligned, original) ||
+            const ListEquality<int>().equals(aligned, original)) {
+          continue;
+        }
+        await staged.writeAsBytes(aligned, flush: true);
+        final File sidecar = File(sidecarPathFor(entry.key, entry.value));
+        if (await sidecar.exists() &&
+            const ListEquality<int>().equals(
+              await sidecar.readAsBytes(),
+              original,
+            )) {
+          await sidecar.writeAsBytes(aligned, flush: true);
+        }
+      } catch (_) {
+        // 单条失败跳过：对齐只能让字幕更好，不能让入库失败。
+      }
+    }
   }
 
   /// 把配对到的字幕从暂存复制成视频 sidecar。**该集已有任何 sidecar 就整条跳过**；

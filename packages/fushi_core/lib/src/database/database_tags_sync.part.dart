@@ -147,28 +147,97 @@ mixin _FushiDbTagsSync on _$FushiDatabase, _FushiDbInfra {
     return row.id;
   }
 
+  /// 改标签名 / 颜色。
+  ///
+  /// 标签跨设备身份是**名字**，所以改名在同步语义上等于「全部宿主移除旧名 +
+  /// 以当下时刻加入新名」：给每条映射写旧名墓碑、把 addedAt 刷成 now。否则对端
+  /// 仍挂着旧名的宿主会在下一轮互联标签同步里把旧名原样推回来（改名被撤销）。
+  /// 颜色不是跨端身份，只改本行。
   Future<void> updateTag(int id, {String? name, int? colorValue}) =>
-      (update(bookTags)..where((t) => t.id.equals(id))).write(
-        BookTagsCompanion(
-          name: name != null ? Value(name) : const Value.absent(),
-          colorValue:
-              colorValue != null ? Value(colorValue) : const Value.absent(),
-        ),
-      );
+      transaction(() async {
+        final String? oldName = await _tagNameById(id);
+        await (update(bookTags)..where((t) => t.id.equals(id))).write(
+          BookTagsCompanion(
+            name: name != null ? Value(name) : const Value.absent(),
+            colorValue:
+                colorValue != null ? Value(colorValue) : const Value.absent(),
+          ),
+        );
+        if (name == null || oldName == null || oldName == name) return;
+        final int now = DateTime.now().millisecondsSinceEpoch;
+        final List<TagAssignmentRow> rows =
+            await (select(tagAssignments)..where((t) => t.tagId.equals(id)))
+                .get();
+        for (final TagAssignmentRow r in rows) {
+          final TagHostKind? kind = _tagHostKindOf(r.mediaKind);
+          if (kind == null) continue;
+          final String domain = tagTombstoneDomainOf(kind);
+          await _upsertTagTombstone(r.entryKey, domain, oldName, now);
+          await _clearTagTombstone(r.entryKey, domain, name);
+          await _upsertAssignmentWithTime(kind, r.entryKey, id, now);
+        }
+      });
 
-  Future<int> deleteTag(int id) =>
-      (delete(bookTags)..where((t) => t.id.equals(id))).go();
+  /// 删标签（映射随 FK cascade 消失）。
+  ///
+  /// 删之前给每条映射写移除墓碑：删标签在同步语义上就是「从所有宿主移除它」，
+  /// 不写墓碑的话对端下一轮互联标签同步会按名把它整组推回来。
+  Future<int> deleteTag(int id) => transaction(() async {
+        final String? name = await _tagNameById(id);
+        if (name != null) {
+          final int now = DateTime.now().millisecondsSinceEpoch;
+          final List<TagAssignmentRow> rows =
+              await (select(tagAssignments)..where((t) => t.tagId.equals(id)))
+                  .get();
+          for (final TagAssignmentRow r in rows) {
+            final TagHostKind? kind = _tagHostKindOf(r.mediaKind);
+            if (kind == null) continue;
+            await _upsertTagTombstone(
+                r.entryKey, tagTombstoneDomainOf(kind), name, now);
+          }
+        }
+        return (delete(bookTags)..where((t) => t.id.equals(id))).go();
+      });
+
+  TagHostKind? _tagHostKindOf(String dbValue) {
+    for (final TagHostKind k in TagHostKind.values) {
+      if (k.dbValue == dbValue) return k;
+    }
+    return null;
+  }
+
+  /// 本机用户给宿主加标签：写 add 时钟（now）并清同名墓碑。五种宿主共用，
+  /// 让本地操作进入互联标签同步的同一 LWW 时钟。
+  Future<void> _addTagClocked(
+      TagHostKind kind, String entryKey, int tagId) async {
+    final int now = DateTime.now().millisecondsSinceEpoch;
+    await _upsertAssignmentWithTime(kind, entryKey, tagId, now);
+    final String? name = await _tagNameById(tagId);
+    if (name != null) {
+      await _clearTagTombstone(entryKey, tagTombstoneDomainOf(kind), name);
+    }
+  }
+
+  /// 本机用户从宿主移除标签：删映射并写移除墓碑（now），防对端并集复活。
+  Future<void> _removeTagClocked(
+      TagHostKind kind, String entryKey, int tagId) async {
+    final String? name = await _tagNameById(tagId);
+    await _deleteAssignment(kind, entryKey, tagId);
+    if (name != null) {
+      await _upsertTagTombstone(entryKey, tagTombstoneDomainOf(kind), name,
+          DateTime.now().millisecondsSinceEpoch);
+    }
+  }
 
   Future<void> setTagsForBook(String bookKey, Set<int> tagIds) =>
       _setTagsWithTombstones(TagHostKind.epub, bookKey, tagIds);
 
-  /// 带墓碑的整组替换内核（epub/video 共用；srt/collection/game 不进 sync，
-  /// 无墓碑语义，走各自的简单增删）。墓碑域由 [tombstoneMediaKindOf] 从 kind
-  /// 推导——手工传配对双参能配错且编译不拦（review5-9）。
+  /// 带墓碑的整组替换内核（五种宿主共用）。墓碑域由 [tagTombstoneDomainOf] 从
+  /// kind 推导——手工传配对双参能配错且编译不拦（review5-9）。
   Future<void> _setTagsWithTombstones(
           TagHostKind kind, String entryKey, Set<int> tagIds) =>
       transaction(() async {
-        final MediaKind tombstoneKind = tombstoneMediaKindOf(kind);
+        final String tombstoneKind = tagTombstoneDomainOf(kind);
         final int now = DateTime.now().millisecondsSinceEpoch;
         final existing = await (select(tagAssignments)
               ..where((t) =>
@@ -194,21 +263,11 @@ mixin _FushiDbTagsSync on _$FushiDatabase, _FushiDbInfra {
         }
       });
 
-  Future<void> addTagToBook(String bookKey, int tagId) async {
-    final int now = DateTime.now().millisecondsSinceEpoch;
-    await _upsertAssignmentWithTime(TagHostKind.epub, bookKey, tagId, now);
-    final String? name = await _tagNameById(tagId);
-    if (name != null) await _clearTagTombstone(bookKey, MediaKind.epub, name);
-  }
+  Future<void> addTagToBook(String bookKey, int tagId) =>
+      _addTagClocked(TagHostKind.epub, bookKey, tagId);
 
-  Future<void> removeTagFromBook(String bookKey, int tagId) async {
-    final String? name = await _tagNameById(tagId);
-    await _deleteAssignment(TagHostKind.epub, bookKey, tagId);
-    if (name != null) {
-      await _upsertTagTombstone(
-          bookKey, MediaKind.epub, name, DateTime.now().millisecondsSinceEpoch);
-    }
-  }
+  Future<void> removeTagFromBook(String bookKey, int tagId) =>
+      _removeTagClocked(TagHostKind.epub, bookKey, tagId);
 
   Future<Set<String>> getBookKeysForAllTags(Set<int> tagIds) =>
       _entryKeysForAllTags(TagHostKind.epub, tagIds);
@@ -242,11 +301,10 @@ mixin _FushiDbTagsSync on _$FushiDatabase, _FushiDbInfra {
       _tagsForHost(TagHostKind.srt, srtUid);
 
   Future<void> addTagToSrtBook(String srtUid, int tagId) =>
-      _upsertAssignmentWithTime(TagHostKind.srt, srtUid, tagId,
-          DateTime.now().millisecondsSinceEpoch);
+      _addTagClocked(TagHostKind.srt, srtUid, tagId);
 
   Future<void> removeTagFromSrtBook(String srtUid, int tagId) =>
-      _deleteAssignment(TagHostKind.srt, srtUid, tagId);
+      _removeTagClocked(TagHostKind.srt, srtUid, tagId);
 
   Future<Set<String>> getSrtUidsForAllTags(Set<int> tagIds) =>
       _entryKeysForAllTags(TagHostKind.srt, tagIds);
@@ -256,43 +314,43 @@ mixin _FushiDbTagsSync on _$FushiDatabase, _FushiDbInfra {
   Future<List<BookTagRow>> getTagsForVideoBook(String videoBookUid) =>
       _tagsForHost(TagHostKind.video, videoBookUid);
 
-  Future<void> addTagToVideoBook(String videoBookUid, int tagId) async {
-    final int now = DateTime.now().millisecondsSinceEpoch;
-    await _upsertAssignmentWithTime(
-        TagHostKind.video, videoBookUid, tagId, now);
-    final String? name = await _tagNameById(tagId);
-    if (name != null) {
-      await _clearTagTombstone(videoBookUid, MediaKind.video, name);
-    }
-  }
+  Future<void> addTagToVideoBook(String videoBookUid, int tagId) =>
+      _addTagClocked(TagHostKind.video, videoBookUid, tagId);
 
-  Future<void> removeTagFromVideoBook(String videoBookUid, int tagId) async {
-    final String? name = await _tagNameById(tagId);
-    await _deleteAssignment(TagHostKind.video, videoBookUid, tagId);
-    if (name != null) {
-      await _upsertTagTombstone(videoBookUid, MediaKind.video, name,
-          DateTime.now().millisecondsSinceEpoch);
-    }
-  }
+  Future<void> removeTagFromVideoBook(String videoBookUid, int tagId) =>
+      _removeTagClocked(TagHostKind.video, videoBookUid, tagId);
 
-  // ── 合集标签（复用 BookTags 池；只增不删并集，无墓碑——见 collection-tags 设计 §5）──
+  // ── 合集标签（复用 BookTags 池）──────────────────────────────────────
+  // 互联标签同步（tag_sync_engine）起合集标签与书/视频同一套 LWW 时钟 + 移除墓碑；
+  // 合集清单里无时钟的 tagNames 只经 [mergeRemoteCollectionTagNames] 弱并入。
 
   /// 合集当前挂的标签（按 createdAt 升序，与 getTagsForBook 一致）。
   Future<List<BookTagRow>> getTagsForCollection(int collectionId) =>
       _tagsForHost(TagHostKind.collection, collectionTagEntryKey(collectionId));
 
-  /// 给合集加标签（幂等；不写墓碑——合集标签同步不消费墓碑）。
+  /// 给合集加标签（幂等；清同名移除墓碑）。
   Future<void> addTagToCollection(int collectionId, int tagId) =>
-      _upsertAssignmentWithTime(
-          TagHostKind.collection,
-          collectionTagEntryKey(collectionId),
-          tagId,
-          DateTime.now().millisecondsSinceEpoch);
-
-  /// 从合集移除标签（纯 DELETE，本地生效；同步不传播移除——同书/视频标签现状）。
-  Future<void> removeTagFromCollection(int collectionId, int tagId) =>
-      _deleteAssignment(
+      _addTagClocked(
           TagHostKind.collection, collectionTagEntryKey(collectionId), tagId);
+
+  /// 从合集移除标签（写移除墓碑，经互联标签同步传播到对端）。
+  Future<void> removeTagFromCollection(int collectionId, int tagId) =>
+      _removeTagClocked(
+          TagHostKind.collection, collectionTagEntryKey(collectionId), tagId);
+
+  /// 合集清单（`CollectionManifestEntry.tagNames`）带来的标签名弱并入：清单只有
+  /// 名字没有时钟，按 addedAt=1（最古 add）合并——本机移除过（有墓碑）的名字不
+  /// 复活，真实时钟到了（互联标签同步）自然压过它。返回是否改了库。
+  Future<bool> mergeRemoteCollectionTagNames(
+          int collectionId, Iterable<String> names) =>
+      mergeRemoteTagClocks(
+        TagHostKind.collection,
+        collectionTagEntryKey(collectionId),
+        remoteAddedAt: <String, int>{
+          for (final String n in names)
+            if (n.isNotEmpty) n: 1,
+        },
+      );
 
   /// 含【全部】选中标签的合集 id（AND 语义，仿 getBookKeysForAllTags）。空集返回空。
   Future<Set<int>> getCollectionIdsForAllTags(Set<int> tagIds) async {
@@ -304,17 +362,17 @@ mixin _FushiDbTagsSync on _$FushiDatabase, _FushiDbInfra {
     };
   }
 
-  // ── 游戏标签（v59 / BUG-1113；复用 BookTags 池；仅本机）──────────────
+  // ── 游戏标签（v59 / BUG-1113；复用 BookTags 池）────────────────────────
+  // 宿主键是本机 galgames.id；跨设备经 GameIdentityIndex 换算成游戏跨端身份。
 
   Future<List<BookTagRow>> getTagsForGame(String gameId) =>
       _tagsForHost(TagHostKind.game, gameId);
 
   Future<void> addTagToGame(String gameId, int tagId) =>
-      _upsertAssignmentWithTime(TagHostKind.game, gameId, tagId,
-          DateTime.now().millisecondsSinceEpoch);
+      _addTagClocked(TagHostKind.game, gameId, tagId);
 
   Future<void> removeTagFromGame(String gameId, int tagId) =>
-      _deleteAssignment(TagHostKind.game, gameId, tagId);
+      _removeTagClocked(TagHostKind.game, gameId, tagId);
 
   Future<void> setTagsForGame(String gameId, Set<int> tagIds) =>
       transaction(() async {
@@ -378,11 +436,13 @@ mixin _FushiDbTagsSync on _$FushiDatabase, _FushiDbInfra {
   /// 某宿主 [itemKey]（[mediaType] 为 [MediaKind.epub]/[MediaKind.video]）的
   /// 标签移除墓碑「名 → 移除毫秒戳」。
   Future<Map<String, int>> tagTombstonesByName(
-      String itemKey, MediaKind mediaType) async {
+          String itemKey, MediaKind mediaType) =>
+      _tagTombstonesByDomain(itemKey, mediaType.dbValue);
+
+  Future<Map<String, int>> _tagTombstonesByDomain(
+      String itemKey, String domain) async {
     final rows = await (select(bookTagMembershipTombstones)
-          ..where((t) =>
-              t.itemKey.equals(itemKey) &
-              t.mediaType.equals(mediaType.dbValue)))
+          ..where((t) => t.itemKey.equals(itemKey) & t.mediaType.equals(domain)))
         .get();
     return <String, int>{for (final r in rows) r.tagName: r.deletedAt};
   }
@@ -417,9 +477,30 @@ mixin _FushiDbTagsSync on _$FushiDatabase, _FushiDbInfra {
   /// 某 [mediaType] 全部标签移除墓碑「itemKey → (名 → 移除毫秒戳)」一趟批查
   /// （替代清单端点逐条 [tagTombstonesByName]）。
   Future<Map<String, Map<String, int>>> allTagTombstonesByName(
-      MediaKind mediaType) async {
+          MediaKind mediaType) =>
+      _allTagTombstonesByDomain(mediaType.dbValue);
+
+  /// 某宿主种类全库标签时钟「entryKey → (加入 名→戳, 墓碑 名→戳)」一趟批查，
+  /// 供互联标签同步构建本机清单（tag_sync_engine）。只含有映射或有墓碑的宿主。
+  Future<Map<String, TagClockSet>> allTagClocksForKind(
+      TagHostKind kind) async {
+    final Map<String, Map<String, int>> added =
+        await _allTagAddedAtByName(kind);
+    final Map<String, Map<String, int>> tombs =
+        await _allTagTombstonesByDomain(tagTombstoneDomainOf(kind));
+    return <String, TagClockSet>{
+      for (final String key in <String>{...added.keys, ...tombs.keys})
+        key: (
+          addedAt: added[key] ?? const <String, int>{},
+          tombstones: tombs[key] ?? const <String, int>{},
+        ),
+    };
+  }
+
+  Future<Map<String, Map<String, int>>> _allTagTombstonesByDomain(
+      String domain) async {
     final rows = await (select(bookTagMembershipTombstones)
-          ..where((t) => t.mediaType.equals(mediaType.dbValue)))
+          ..where((t) => t.mediaType.equals(domain)))
         .get();
     final Map<String, Map<String, int>> out = <String, Map<String, int>>{};
     for (final r in rows) {
@@ -429,54 +510,79 @@ mixin _FushiDbTagsSync on _$FushiDatabase, _FushiDbInfra {
   }
 
   Future<void> _upsertTagTombstone(
-          String itemKey, MediaKind mediaType, String tagName, int deletedAt) =>
+          String itemKey, String domain, String tagName, int deletedAt) =>
       into(bookTagMembershipTombstones).insertOnConflictUpdate(
         BookTagMembershipTombstonesCompanion.insert(
           itemKey: itemKey,
-          mediaType: mediaType.dbValue,
+          mediaType: domain,
           tagName: tagName,
           deletedAt: deletedAt,
         ),
       );
 
   Future<void> _clearTagTombstone(
-          String itemKey, MediaKind mediaType, String tagName) =>
+          String itemKey, String domain, String tagName) =>
       (delete(bookTagMembershipTombstones)
             ..where((t) =>
                 t.itemKey.equals(itemKey) &
-                t.mediaType.equals(mediaType.dbValue) &
+                t.mediaType.equals(domain) &
                 t.tagName.equals(tagName)))
           .go();
 
-  /// LWW-element-set 合并内核（epub/video 两个 sync kind 共用）：把远端标签快照
-  /// 合并进宿主本地状态。[remoteAddedAt]=远端当前标签名→加入戳；
-  /// [remoteTombstones]=远端移除墓碑名→移除戳。按名并集两端 add 时钟与墓碑时钟，
-  /// 逐名 max(add) > max(removed) ⇒ present（写映射，addedAt=合并后 add 戳）；
-  /// 否则 removed（删映射 + 写墓碑）。幂等。
-  Future<void> _mergeRemoteTags(
+  /// LWW-element-set 合并内核（五种宿主共用）：把远端标签快照合并进宿主本地
+  /// 状态。[remoteAddedAt]=远端当前标签名→加入戳；[remoteTombstones]=远端移除
+  /// 墓碑名→移除戳。按名并集两端 add 时钟与墓碑时钟，逐名 max(add) > max(removed)
+  /// ⇒ present（写映射，addedAt=合并后 add 戳）；否则 removed（删映射 + 写墓碑）。
+  ///
+  /// **只写有变化的行**，返回是否改了库：互联标签同步由表变更观察者防抖触发，
+  /// 合并结果与本地一致时还去 upsert 会让观察者每个防抖窗自激一轮、永不停歇。
+  /// [newTagColors] 是远端标签定义的颜色：本机要新建该名标签时沿用它（已有标签
+  /// 的颜色不动——颜色没有时钟，不跨端覆盖）。
+  Future<bool> mergeRemoteTagClocks(
     TagHostKind kind,
     String entryKey, {
     required Map<String, int> remoteAddedAt,
-    required Map<String, int> remoteTombstones,
+    Map<String, int> remoteTombstones = const <String, int>{},
+    Map<String, int> newTagColors = const <String, int>{},
   }) =>
       transaction(() async {
-        final MediaKind tombstoneKind = tombstoneMediaKindOf(kind);
+        final String tombstoneKind = tagTombstoneDomainOf(kind);
         final Map<String, int> localAdded =
             await _tagAddedAtByName(kind, entryKey);
         final Map<String, int> localTomb =
-            await tagTombstonesByName(entryKey, tombstoneKind);
+            await _tagTombstonesByDomain(entryKey, tombstoneKind);
         final _MergedTagState merged = _mergeTagClocks(
             localAdded, remoteAddedAt, localTomb, remoteTombstones);
+        bool changed = false;
         for (final MapEntry<String, int> e in merged.present.entries) {
-          final int tagId = await getOrCreateTagByName(e.key);
-          await _upsertAssignmentWithTime(kind, entryKey, tagId, e.value);
-          await _clearTagTombstone(entryKey, tombstoneKind, e.key);
+          if (localAdded[e.key] != e.value) {
+            int? tagId = await _tagIdByName(e.key);
+            if (tagId == null) {
+              final int? color = newTagColors[e.key];
+              tagId = color == null
+                  ? await getOrCreateTagByName(e.key)
+                  : await createTag(e.key, color);
+            }
+            await _upsertAssignmentWithTime(kind, entryKey, tagId, e.value);
+            changed = true;
+          }
+          if (localTomb.containsKey(e.key)) {
+            await _clearTagTombstone(entryKey, tombstoneKind, e.key);
+            changed = true;
+          }
         }
         for (final MapEntry<String, int> e in merged.tombstones.entries) {
-          final int? tagId = await _tagIdByName(e.key);
-          if (tagId != null) await _deleteAssignment(kind, entryKey, tagId);
-          await _upsertTagTombstone(entryKey, tombstoneKind, e.key, e.value);
+          if (localAdded.containsKey(e.key)) {
+            final int? tagId = await _tagIdByName(e.key);
+            if (tagId != null) await _deleteAssignment(kind, entryKey, tagId);
+            changed = true;
+          }
+          if (localTomb[e.key] != e.value) {
+            await _upsertTagTombstone(entryKey, tombstoneKind, e.key, e.value);
+            changed = true;
+          }
         }
+        return changed;
       });
 
   /// LWW-element-set：把远端标签快照合并进书 [bookKey] 本地状态。
@@ -485,7 +591,7 @@ mixin _FushiDbTagsSync on _$FushiDatabase, _FushiDbInfra {
     required Map<String, int> remoteAddedAt,
     Map<String, int> remoteTombstones = const <String, int>{},
   }) =>
-      _mergeRemoteTags(TagHostKind.epub, bookKey,
+      mergeRemoteTagClocks(TagHostKind.epub, bookKey,
           remoteAddedAt: remoteAddedAt, remoteTombstones: remoteTombstones);
 
   /// LWW-element-set：把远端标签快照合并进视频 [videoBookUid] 本地状态。
@@ -494,7 +600,7 @@ mixin _FushiDbTagsSync on _$FushiDatabase, _FushiDbInfra {
     required Map<String, int> remoteAddedAt,
     Map<String, int> remoteTombstones = const <String, int>{},
   }) =>
-      _mergeRemoteTags(TagHostKind.video, videoBookUid,
+      mergeRemoteTagClocks(TagHostKind.video, videoBookUid,
           remoteAddedAt: remoteAddedAt, remoteTombstones: remoteTombstones);
 
   Future<int?> _tagIdByName(String name) async {
@@ -504,6 +610,100 @@ mixin _FushiDbTagsSync on _$FushiDatabase, _FushiDbInfra {
         .getSingleOrNull();
     return row?.id;
   }
+
+  /// Sparse per-book reader preferences, including reset tombstones for sync.
+  Future<MangaReaderOverrideRow?> getMangaReaderOverride(String bookUid) =>
+      (select(mangaReaderOverrides)..where((t) => t.bookUid.equals(bookUid)))
+          .getSingleOrNull();
+
+  Future<List<MangaReaderOverrideRow>> getAllMangaReaderOverrides() =>
+      select(mangaReaderOverrides).get();
+
+  Stream<MangaReaderOverrideRow?> watchMangaReaderOverride(String bookUid) =>
+      (select(mangaReaderOverrides)..where((t) => t.bookUid.equals(bookUid)))
+          .watchSingleOrNull();
+
+  /// 只改其中**几个键**，其余覆盖原样保留。
+  ///
+  /// [setMangaReaderOverride] 是**整行替换**语义（给设置面板用：它每次传的是合并
+  /// 后的完整 map）。顶栏那种「只切阅读模式」的局部改动必须走这条，否则用户在面板
+  /// 里调好的 scaleType / cropBorders / tapZones / background / zoomStart 等会被一
+  /// 次点击整片抹掉——而且这行带着新的 `updatedAt`，会作为权威全量快照经 sidecar 与
+  /// 互联清单发出，LWW 把**对端**的完整覆盖也一并擦掉。
+  Future<void> patchMangaReaderOverride(
+    String bookUid,
+    Map<String, Object?> patch,
+  ) async {
+    final MangaReaderOverrideRow? previous =
+        await getMangaReaderOverride(bookUid);
+    final Map<String, Object?> merged = <String, Object?>{};
+    if (previous != null && !previous.deleted) {
+      try {
+        final Object? decoded = jsonDecode(previous.overridesJson);
+        if (decoded is Map) merged.addAll(decoded.cast<String, Object?>());
+      } on FormatException {
+        // 坏 JSON 当没有覆盖：补丁照常落地，坏值不再传播。
+      }
+    }
+    merged.addAll(patch);
+    await setMangaReaderOverride(bookUid, merged);
+  }
+
+  Future<void> setMangaReaderOverride(
+    String bookUid,
+    Map<String, Object?> overrides,
+  ) => transaction(() async {
+    if (bookUid.isEmpty ||
+        await (select(epubBooks)..where((t) => t.uid.equals(bookUid)))
+                .getSingleOrNull() ==
+            null) {
+      throw ArgumentError.value(bookUid, 'bookUid', 'Unknown book');
+    }
+    final Map<String, Object?> sparse = Map<String, Object?>.from(overrides)
+      ..removeWhere((String key, Object? value) => value == null);
+    final MangaReaderOverrideRow? previous =
+        await getMangaReaderOverride(bookUid);
+    final int now = DateTime.now().millisecondsSinceEpoch;
+    await into(mangaReaderOverrides).insertOnConflictUpdate(
+      MangaReaderOverrideRow(
+        bookUid: bookUid,
+        overridesJson: jsonEncode(sparse),
+        updatedAt: previous != null && previous.updatedAt >= now
+            ? previous.updatedAt + 1
+            : now,
+        deleted: sparse.isEmpty,
+      ),
+    );
+  });
+
+  Future<bool> mergeMangaReaderOverride(
+    String bookUid, {
+    required Map<String, Object?> overrides,
+    required int updatedAt,
+    required bool deleted,
+  }) => transaction(() async {
+    if (bookUid.isEmpty ||
+        updatedAt < 0 ||
+        await (select(epubBooks)..where((t) => t.uid.equals(bookUid)))
+                .getSingleOrNull() ==
+            null) {
+      return false;
+    }
+    final MangaReaderOverrideRow? current =
+        await getMangaReaderOverride(bookUid);
+    if (current != null && current.updatedAt >= updatedAt) return false;
+    final Map<String, Object?> sparse = Map<String, Object?>.from(overrides)
+      ..removeWhere((String key, Object? value) => value == null);
+    await into(mangaReaderOverrides).insertOnConflictUpdate(
+      MangaReaderOverrideRow(
+        bookUid: bookUid,
+        overridesJson: jsonEncode(deleted ? <String, Object?>{} : sparse),
+        updatedAt: updatedAt,
+        deleted: deleted || sparse.isEmpty,
+      ),
+    );
+    return true;
+  });
 
   // ── per-book 自定义 CSS 跨端同步（LWW by updatedAt）──────────────────────────
 
@@ -564,6 +764,15 @@ mixin _FushiDbTagsSync on _$FushiDatabase, _FushiDbInfra {
     });
   }
 
+  /// 撤销书 [bookUid] 图片 [imageKey] 的揭开状态（插图册长按「恢复遮罩」）。删行而不是
+  /// 写一条「未揭开」标记：本表的语义就是「在册即已揭开」，补一个否定态会让同一事实有
+  /// 两种表示，同步与迁移都得再判一次。行不存在是正常入参（幂等）。
+  Future<void> unmarkImageRevealed(String bookUid, String imageKey) =>
+      (delete(revealedImages)
+            ..where((t) =>
+                t.bookUid.equals(bookUid) & t.imageKey.equals(imageKey)))
+          .go();
+
   /// 书 [bookUid] 全部已揭开图片 key 集合。阅读器打开时读它灌入会话集、图片库渲染时读它
   /// 判断哪些图不遮罩。
   Future<Set<String>> getRevealedImageKeys(String bookUid) async {
@@ -610,6 +819,16 @@ mixin _FushiDbTagsSync on _$FushiDatabase, _FushiDbInfra {
       (select(syncDeletionTombstones)
             ..where((t) => t.mediaType.equals(mediaType)))
           .get();
+
+  /// 某种资产的删除墓碑，按 itemKey → deletedAt（远端清单剔除本端已删条目用）。
+  Future<Map<String, int>> getSyncDeletionDeletedAtByKey(
+      String mediaType) async {
+    return <String, int>{
+      for (final SyncDeletionTombstoneRow row
+          in await getSyncDeletionTombstonesOfType(mediaType))
+        row.itemKey: row.deletedAt,
+    };
+  }
 
   /// 标记某墓碑已发布到远端（避免每轮重发；[publishedAt] = 发布时刻）。
   Future<void> markSyncDeletionPublished(
@@ -691,6 +910,58 @@ mixin _FushiDbTagsSync on _$FushiDatabase, _FushiDbInfra {
     final row = await q.getSingle();
     return row.read(cnt)!;
   }
+
+  // ── Profile 分区（v105：统计按 Profile 隔离）────────────────────
+  // 住这一层而不是 _FushiDbStatistics：删除原语在 _FushiDbContentMisc、写入 /
+  // 读取在 _FushiDbStatistics，mixin 只能向下看，公共解析点必须在两者之下。
+
+  Future<String?> _prefValueOf(String key) async {
+    final PreferenceRow? row =
+        await (select(preferences)..where((t) => t.key.equals(key)))
+            .getSingleOrNull();
+    return row?.value;
+  }
+
+  /// 当前激活的 Profile id（统计分区键的**唯一**解析点）。
+  ///
+  /// 读 `active_profile_id` 偏好并验证该 Profile 还在；不在 / 缺失时退到最早建的
+  /// Profile（与 fushi 层 `ensureDefaultProfile` 的兜底同序）；库里一个 Profile
+  /// 都没有时返回 0——只在纯 DB 测试里出现（app 启动即 `ensureDefaultProfile`），
+  /// 此时写入盖 0、读取滤 0，测试里写读自洽。**不在这里建 Profile**：建
+  /// Profile 必须连带快照设置（`snapshotCurrentSettings`，在 fushi 层），DB 层
+  /// 造一个空快照的 Profile 会让下次 `applyProfile` 把全部偏好剪光。
+  Future<int> resolveActiveProfileId() async {
+    final String? raw = await _prefValueOf(kActiveProfileIdPrefKey);
+    final int fromPref = int.tryParse(raw ?? '') ?? -1;
+    if (fromPref > 0 && await getProfileById(fromPref) != null) {
+      return fromPref;
+    }
+    final List<ProfileRow> all = await getAllProfiles();
+    return all.isEmpty ? 0 : all.first.id;
+  }
+
+  /// legacy 统计家族归属的 Profile id（[kStatLegacyProfileIdPrefKey]）；null =
+  /// 无归属 = 对所有 Profile 可见。
+  Future<int?> getStatLegacyProfileId() async {
+    final String? raw = await _prefValueOf(kStatLegacyProfileIdPrefKey);
+    final int? id = int.tryParse(raw ?? '');
+    return id != null && id > 0 ? id : null;
+  }
+
+  /// legacy 统计行对 [profileId] 是否可见（读取面与「清空全部」的 legacy 删行
+  /// 共用同一判据：看不见的历史不能被另一个 Profile 的清空连带删掉）。
+  Future<bool> legacyStatsVisibleTo(int profileId) async {
+    final int? owner = await getStatLegacyProfileId();
+    return owner == null || owner == profileId;
+  }
+
+  /// 缺席 `profileId` 的段补上当前激活 Profile（写入方不用知道 Profile）。
+  Future<StudySegmentsCompanion> _stampStudySegmentProfile(
+    StudySegmentsCompanion row,
+  ) async =>
+      row.profileId.present
+          ? row
+          : row.copyWith(profileId: Value(await resolveActiveProfileId()));
 
   // ── profile settings ─────────────────────────────────────────────
   Future<List<ProfileSettingRow>> getProfileSettings(int profileId) =>
@@ -803,538 +1074,4 @@ mixin _FushiDbTagsSync on _$FushiDatabase, _FushiDbInfra {
         dimension: Value(dimension),
         baseVersion: Value(baseVersion),
       ));
-
-  // ── v16 book-key migration ──────────────────────────────────────
-  // Legacy uid prefix that wrapped the int book id in audiobooks/audio_cues/
-  // book_profiles and in the uid-style audiobook_pos_ prefs. Single literal so
-  // the migration's int-extraction matches what buildLegacyBookUid produced.
-  static const String _kLegacyUidPrefix = 'reader_ttu/hoshi://book/';
-
-  /// Delegates to the core-local copy of `sanitizeTtuFilename`
-  /// (`../utils/ttu_sanitize.dart`). fushi_core cannot depend on the app
-  /// package, so the core copy stands in for the app truth source
-  /// `fushi/lib/src/sync/ttu_filename.dart`. Core copy and app copy MUST
-  /// stay byte-identical: the migrated bookKey has to equal the key
-  /// sync/folder code derives from the same title, or cross-device identity
-  /// drifts. A source guard (book_key_guard_test) plus the behavioral
-  /// parity test (video_book_uid_core_parity_test) lock the two together.
-  static String _sanitizeBookKey(String title) => sanitizeTtuFilename(title);
-
-  /// Re-keys every book + all reading data from the autoincrement int id to
-  /// bookKey = sanitizeTtuFilename(title). Lossless: builds an id→key map (with
-  /// dedup), then rebuilds each table by JOINing through that map.
-  ///
-  /// Atomicity is the iron rule here — this rewrites user data. drift does NOT
-  /// wrap onUpgrade in a transaction by default, so the whole migration body
-  /// runs inside an EXPLICIT `transaction()`: it either fully commits or fully
-  /// rolls back, leaving user_version at 15 for a safe retry on next launch.
-  /// `PRAGMA foreign_keys` is a no-op inside a transaction (SQLite rule), so the
-  /// OFF/ON toggles sit OUTSIDE `transaction()`, per drift's "migrations and
-  /// foreign keys" guidance. A `foreign_key_check` at the end aborts (rolls
-  /// back) the whole migration if any FK relation was left dangling.
-  Future<void> _migrateBookKeyV16(Migrator m) async {
-    await customStatement('PRAGMA foreign_keys = OFF');
-    try {
-      await transaction(() async {
-        await _runBookKeyMigrationBodyV16();
-      });
-    } finally {
-      await customStatement('PRAGMA foreign_keys = ON');
-    }
-  }
-
-  /// The full v16 re-key work, run inside the explicit transaction opened by
-  /// [_migrateBookKeyV16]. Extracted so the transaction boundary and the
-  /// foreign_keys OFF/ON toggles (which must stay outside any transaction) read
-  /// cleanly. Throwing anywhere here rolls back the entire migration.
-  Future<void> _runBookKeyMigrationBodyV16() async {
-    {
-      // Guard: only run the re-key when epub_books still carries the legacy
-      // autoincrement `id` column. A DB reaching this step with epub_books
-      // already created fresh under the v16 generated schema (its PK is
-      // `book_key`, no `id`) — e.g. a pre-v5 DB whose from<5 ladder step ran
-      // m.createTable(epubBooks) — is already on the target shape, so the whole
-      // re-key is a no-op. This also covers synthetic/partial seeds with no
-      // epub_books at all (_columnExists implies the table exists). A genuine
-      // pre-v16 DB has the int `id` column, so real upgrades still migrate.
-      if (!await _columnExists('epub_books', 'id')) {
-        return;
-      }
-
-      // 1. Read (id, title); compute key + dedup collisions deterministically.
-      final List<QueryRow> books =
-          await customSelect('SELECT id, title FROM epub_books ORDER BY id')
-              .get();
-      final Map<int, String> idToKey = <int, String>{};
-      final Set<String> used = <String>{};
-      for (final QueryRow r in books) {
-        final int id = r.read<int>('id');
-        String key = _sanitizeBookKey(r.read<String>('title'));
-        if (used.contains(key)) {
-          for (int i = 2;; i++) {
-            final String candidate = '$key ($i)';
-            if (!used.contains(candidate)) {
-              key = candidate;
-              break;
-            }
-          }
-        }
-        used.add(key);
-        idToKey[id] = key;
-      }
-
-      // 2. Temp map table (old_id -> book_key).
-      await customStatement('DROP TABLE IF EXISTS _id_key_map');
-      await customStatement(
-          'CREATE TABLE _id_key_map (old_id INTEGER PRIMARY KEY, book_key TEXT NOT NULL)');
-      for (final MapEntry<int, String> e in idToKey.entries) {
-        await customStatement(
-            'INSERT INTO _id_key_map (old_id, book_key) VALUES (?, ?)',
-            <Object?>[e.key, e.value]);
-      }
-
-      // 3. epub_books: id PK -> book_key PK.
-      await customStatement('''
-        CREATE TABLE epub_books_new (
-          book_key TEXT NOT NULL PRIMARY KEY,
-          title TEXT NOT NULL,
-          author TEXT,
-          cover_path TEXT,
-          epub_path TEXT NOT NULL,
-          extract_dir TEXT NOT NULL,
-          chapter_count INTEGER NOT NULL,
-          chapters_json TEXT NOT NULL,
-          toc_json TEXT,
-          source_metadata TEXT,
-          imported_at INTEGER NOT NULL)''');
-      await customStatement('''
-        INSERT INTO epub_books_new
-        SELECT m.book_key, b.title, b.author, b.cover_path, b.epub_path,
-               b.extract_dir, b.chapter_count, b.chapters_json, b.toc_json,
-               b.source_metadata, b.imported_at
-        FROM epub_books b JOIN _id_key_map m ON m.old_id = b.id''');
-      await customStatement('DROP TABLE epub_books');
-      await customStatement('ALTER TABLE epub_books_new RENAME TO epub_books');
-
-      // Each relation table is rebuilt ONLY if it still carries its legacy
-      // int/uid column. A DB that reached this step with a table already
-      // created fresh under the current v16 generated schema (e.g. a pre-v11 DB
-      // whose from<11 ladder step ran m.createTable) already has `book_key` and
-      // must be left untouched — rebuilding it would JOIN on a non-existent
-      // legacy column. Synthetic/partial seeds that lack the table entirely are
-      // likewise skipped (column check implies table check).
-
-      // 4. reader_positions: ttu_book_id INT UNIQUE -> book_key TEXT UNIQUE.
-      if (await _columnExists('reader_positions', 'ttu_book_id')) {
-        await customStatement('''
-        CREATE TABLE reader_positions_new (
-          id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
-          book_key TEXT NOT NULL UNIQUE,
-          section_index INTEGER NOT NULL,
-          norm_char_offset INTEGER NOT NULL,
-          ttu_char_offset INTEGER NOT NULL DEFAULT -1,
-          updated_at INTEGER NOT NULL)''');
-        await customStatement('''
-        INSERT INTO reader_positions_new
-          (book_key, section_index, norm_char_offset, ttu_char_offset, updated_at)
-        SELECT m.book_key, rp.section_index, rp.norm_char_offset,
-               rp.ttu_char_offset, rp.updated_at
-        FROM reader_positions rp JOIN _id_key_map m ON m.old_id = rp.ttu_book_id''');
-        await customStatement('DROP TABLE reader_positions');
-        await customStatement(
-            'ALTER TABLE reader_positions_new RENAME TO reader_positions');
-      }
-
-      // 5. bookmarks: ttu_book_id INT FK -> book_key TEXT FK (cascade).
-      if (await _columnExists('bookmarks', 'ttu_book_id')) {
-        await customStatement('''
-        CREATE TABLE bookmarks_new (
-          id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
-          book_key TEXT NOT NULL REFERENCES epub_books (book_key) ON DELETE CASCADE,
-          section_index INTEGER NOT NULL,
-          norm_char_offset INTEGER NOT NULL,
-          label TEXT NOT NULL,
-          created_at INTEGER NOT NULL,
-          book_title TEXT,
-          page_in_chapter INTEGER,
-          total_pages_in_chapter INTEGER)''');
-        await customStatement('''
-        INSERT INTO bookmarks_new
-          (id, book_key, section_index, norm_char_offset, label, created_at,
-           book_title, page_in_chapter, total_pages_in_chapter)
-        SELECT bm.id, m.book_key, bm.section_index, bm.norm_char_offset,
-               bm.label, bm.created_at, bm.book_title, bm.page_in_chapter,
-               bm.total_pages_in_chapter
-        FROM bookmarks bm JOIN _id_key_map m ON m.old_id = bm.ttu_book_id''');
-        await customStatement('DROP TABLE bookmarks');
-        await customStatement('ALTER TABLE bookmarks_new RENAME TO bookmarks');
-      }
-
-      // 6. book_tag_mappings: book_id INT FK -> book_key TEXT FK (cascade).
-      if (await _columnExists('book_tag_mappings', 'book_id')) {
-        await customStatement('''
-        CREATE TABLE book_tag_mappings_new (
-          id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
-          book_key TEXT NOT NULL REFERENCES epub_books (book_key) ON DELETE CASCADE,
-          tag_id INTEGER NOT NULL REFERENCES book_tags (id) ON DELETE CASCADE,
-          UNIQUE (book_key, tag_id))''');
-        await customStatement('''
-        INSERT INTO book_tag_mappings_new (id, book_key, tag_id)
-        SELECT btm.id, m.book_key, btm.tag_id
-        FROM book_tag_mappings btm JOIN _id_key_map m ON m.old_id = btm.book_id''');
-        await customStatement('DROP TABLE book_tag_mappings');
-        await customStatement(
-            'ALTER TABLE book_tag_mappings_new RENAME TO book_tag_mappings');
-      }
-
-      // 7. srt_books: ttu_book_id INT (0 = standalone) -> book_key TEXT ('').
-      //    LEFT JOIN so standalone rows (no mapped epub) keep '' sentinel.
-      if (await _columnExists('srt_books', 'ttu_book_id')) {
-        await customStatement('''
-        CREATE TABLE srt_books_new (
-          id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
-          uid TEXT NOT NULL UNIQUE,
-          title TEXT NOT NULL,
-          author TEXT,
-          audio_root TEXT,
-          audio_paths_json TEXT,
-          srt_path TEXT NOT NULL,
-          cover_path TEXT,
-          imported_at INTEGER NOT NULL,
-          book_key TEXT NOT NULL DEFAULT '')''');
-        await customStatement('''
-        INSERT INTO srt_books_new
-          (id, uid, title, author, audio_root, audio_paths_json, srt_path,
-           cover_path, imported_at, book_key)
-        SELECT sb.id, sb.uid, sb.title, sb.author, sb.audio_root,
-               sb.audio_paths_json, sb.srt_path, sb.cover_path, sb.imported_at,
-               COALESCE(m.book_key, '')
-        FROM srt_books sb LEFT JOIN _id_key_map m ON m.old_id = sb.ttu_book_id''');
-        await customStatement('DROP TABLE srt_books');
-        await customStatement('ALTER TABLE srt_books_new RENAME TO srt_books');
-      }
-
-      // 8. audiobooks: book_uid 'reader_ttu/hoshi://book/<id>' -> book_key.
-      //    Extract <id>, JOIN map. Rows whose uid doesn't map are dropped
-      //    (orphan audiobooks — their epub is gone; v12 already pruned cues).
-      if (await _columnExists('audiobooks', 'book_uid')) {
-        await customStatement('''
-        CREATE TABLE audiobooks_new (
-          id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
-          book_key TEXT NOT NULL UNIQUE,
-          audio_root TEXT,
-          audio_paths_json TEXT,
-          alignment_format TEXT NOT NULL,
-          alignment_path TEXT NOT NULL,
-          health_kind_raw TEXT,
-          match_rate_pct INTEGER,
-          health_measured_at INTEGER,
-          health_reason TEXT,
-          follow_audio INTEGER)''');
-        await customStatement('''
-        INSERT INTO audiobooks_new
-          (id, book_key, audio_root, audio_paths_json, alignment_format,
-           alignment_path, health_kind_raw, match_rate_pct, health_measured_at,
-           health_reason, follow_audio)
-        SELECT ab.id, m.book_key, ab.audio_root, ab.audio_paths_json,
-               ab.alignment_format, ab.alignment_path, ab.health_kind_raw,
-               ab.match_rate_pct, ab.health_measured_at, ab.health_reason,
-               ab.follow_audio
-        FROM audiobooks ab
-        JOIN _id_key_map m
-          ON m.old_id = CAST(
-               substr(ab.book_uid, ${_kLegacyUidPrefix.length + 1}) AS INTEGER)
-        WHERE ab.book_uid LIKE '$_kLegacyUidPrefix%' ''');
-        await customStatement('DROP TABLE audiobooks');
-        await customStatement(
-            'ALTER TABLE audiobooks_new RENAME TO audiobooks');
-      }
-
-      // 9. audio_cues: book_uid owns EITHER an audiobook uid OR an srt_books.uid.
-      //    Rename column to book_key; translate ONLY the audiobook-uid rows
-      //    ('reader_ttu/hoshi://book/<id>'), leaving srt uids untouched. Drop
-      //    audiobook-uid cues whose id no longer maps (orphans).
-      if (await _columnExists('audio_cues', 'book_uid')) {
-        await customStatement('''
-        CREATE TABLE audio_cues_new (
-          id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
-          book_key TEXT NOT NULL,
-          chapter_href TEXT NOT NULL,
-          sentence_index INTEGER NOT NULL,
-          text_fragment_id TEXT NOT NULL,
-          cue_text TEXT NOT NULL,
-          start_ms INTEGER NOT NULL,
-          end_ms INTEGER NOT NULL,
-          audio_file_index INTEGER NOT NULL)''');
-        // 9a. non-audiobook-uid cues (srt-owned) carried over verbatim.
-        await customStatement('''
-        INSERT INTO audio_cues_new
-          (id, book_key, chapter_href, sentence_index, text_fragment_id,
-           cue_text, start_ms, end_ms, audio_file_index)
-        SELECT ac.id, ac.book_uid, ac.chapter_href, ac.sentence_index,
-               ac.text_fragment_id, ac.cue_text, ac.start_ms, ac.end_ms,
-               ac.audio_file_index
-        FROM audio_cues ac
-        WHERE ac.book_uid NOT LIKE '$_kLegacyUidPrefix%' ''');
-        // 9b. audiobook-uid cues translated through the map.
-        await customStatement('''
-        INSERT INTO audio_cues_new
-          (id, book_key, chapter_href, sentence_index, text_fragment_id,
-           cue_text, start_ms, end_ms, audio_file_index)
-        SELECT ac.id, m.book_key, ac.chapter_href, ac.sentence_index,
-               ac.text_fragment_id, ac.cue_text, ac.start_ms, ac.end_ms,
-               ac.audio_file_index
-        FROM audio_cues ac
-        JOIN _id_key_map m
-          ON m.old_id = CAST(
-               substr(ac.book_uid, ${_kLegacyUidPrefix.length + 1}) AS INTEGER)
-        WHERE ac.book_uid LIKE '$_kLegacyUidPrefix%' ''');
-        await customStatement('DROP TABLE audio_cues');
-        await customStatement(
-            'ALTER TABLE audio_cues_new RENAME TO audio_cues');
-      }
-
-      // 10. book_profiles: book_uid PK 'reader_ttu/hoshi://book/<id>' -> book_key.
-      if (await _columnExists('book_profiles', 'book_uid')) {
-        await customStatement('''
-        CREATE TABLE book_profiles_new (
-          book_key TEXT NOT NULL PRIMARY KEY,
-          profile_id INTEGER NOT NULL REFERENCES profiles (id) ON DELETE CASCADE)''');
-        await customStatement('''
-        INSERT INTO book_profiles_new (book_key, profile_id)
-        SELECT m.book_key, bp.profile_id
-        FROM book_profiles bp
-        JOIN _id_key_map m
-          ON m.old_id = CAST(
-               substr(bp.book_uid, ${_kLegacyUidPrefix.length + 1}) AS INTEGER)
-        WHERE bp.book_uid LIKE '$_kLegacyUidPrefix%' ''');
-        await customStatement('DROP TABLE book_profiles');
-        await customStatement(
-            'ALTER TABLE book_profiles_new RENAME TO book_profiles');
-      }
-
-      // 11. media_items identifier/unique_key: hoshi://book/<id> -> /<key>.
-      // media_items is a v1 baseline table (created only in onCreate), so a
-      // synthetic/partial legacy seed that starts mid-ladder may lack it.
-      const String kIdentPrefix = 'hoshi://book/';
-      final List<QueryRow> items = await _tableExists('media_items')
-          ? await customSelect(
-              "SELECT id, media_identifier, unique_key FROM media_items "
-              "WHERE media_identifier LIKE 'hoshi://book/%'",
-            ).get()
-          : const <QueryRow>[];
-      for (final QueryRow it in items) {
-        final String mid = it.read<String>('media_identifier');
-        final int? oldId = int.tryParse(mid.substring(kIdentPrefix.length));
-        final String? key = oldId == null ? null : idToKey[oldId];
-        if (key == null) continue;
-        await customStatement(
-          'UPDATE media_items SET media_identifier = ?, unique_key = ? '
-          'WHERE id = ?',
-          <Object?>[
-            '$kIdentPrefix$key',
-            '$kIdentPrefix$key',
-            it.read<int>('id'),
-          ],
-        );
-      }
-
-      // 12. preferences re-key (two audiobook_pos key spaces merge to one).
-      await _migrateBookKeyPrefsV16(idToKey);
-
-      // 13. reading_statistics: align bare title -> sanitized key, merging
-      //     rows that collapse to the same (title, date_key).
-      await _migrateReadingStatsTitlesV16();
-
-      // 14. Recreate indexes under the new book_key column names.
-      await _ensureIndexes();
-
-      await customStatement('DROP TABLE _id_key_map');
-
-      // 15. Integrity gate: any dangling FK relation means the re-key was
-      //     lossy/wrong. Throw to roll back the whole transaction (FK checks
-      //     are deferred while foreign_keys=OFF, so this runs them explicitly).
-      final List<QueryRow> violations =
-          await customSelect('PRAGMA foreign_key_check').get();
-      if (violations.isNotEmpty) {
-        throw StateError(
-            'book-key migration left FK violations: ${violations.length}');
-      }
-    }
-  }
-
-  /// Re-keys all per-book preferences from int id / legacy uid to bookKey.
-  /// The two audiobook_pos_ key spaces (int-style from SyncRepository and
-  /// uid-style from AudiobookRepository's realtime writes) merge; on conflict
-  /// the uid-style value wins (it is the live player write).
-  Future<void> _migrateBookKeyPrefsV16(Map<int, String> idToKey) async {
-    if (!await _tableExists('preferences')) return;
-    final List<QueryRow> rows =
-        await customSelect('SELECT key, value FROM preferences').get();
-
-    // Resolved new key -> value, with a priority flag so uid-style audiobook_pos
-    // wins over int-style on collision.
-    final Map<String, String> resolved = <String, String>{};
-    final Set<String> uidWonPos = <String>{};
-    final Set<String> oldKeysToDelete = <String>{};
-
-    // Prefixes whose suffix is the legacy uid string (reader_ttu/hoshi://book/<id>).
-    const List<String> uidPrefixes = <String>[
-      'audiobook_pos_',
-      'audiobook_follow_',
-      'audiobook_delay_',
-      'audiobook_speed_',
-      'audiobook_volume_',
-      'audiobook_image_pause_',
-      'audiobook_health_overlay_',
-    ];
-
-    String? mapUidSuffix(String suffix) {
-      if (!suffix.startsWith(_kLegacyUidPrefix)) return null;
-      final int? oldId =
-          int.tryParse(suffix.substring(_kLegacyUidPrefix.length));
-      if (oldId == null) return null;
-      return idToKey[oldId];
-    }
-
-    for (final QueryRow r in rows) {
-      final String key = r.read<String>('key');
-      final String value = r.read<String>('value');
-
-      // audiobook_pos_ has TWO suffix shapes: bare int (SyncRepository) or the
-      // legacy uid (AudiobookRepository). Handle it explicitly so both merge.
-      if (key.startsWith('audiobook_pos_')) {
-        final String suffix = key.substring('audiobook_pos_'.length);
-        String? newKeyKey;
-        bool isUid = false;
-        if (suffix.startsWith(_kLegacyUidPrefix)) {
-          final String? bk = mapUidSuffix(suffix);
-          if (bk != null) {
-            newKeyKey = 'audiobook_pos_$bk';
-            isUid = true;
-          }
-        } else {
-          final int? oldId = int.tryParse(suffix);
-          final String? bk = oldId == null ? null : idToKey[oldId];
-          if (bk != null) newKeyKey = 'audiobook_pos_$bk';
-        }
-        if (newKeyKey != null) {
-          oldKeysToDelete.add(key);
-          if (isUid) {
-            resolved[newKeyKey] = value;
-            uidWonPos.add(newKeyKey);
-          } else if (!uidWonPos.contains(newKeyKey)) {
-            resolved[newKeyKey] = value;
-          }
-        }
-        continue;
-      }
-
-      // bookmarks_<int> (BookmarkRepository / migrateLegacyBookmarkPreferences
-      // normally consumes these into the table, but re-key any leftover).
-      if (key.startsWith('bookmarks_')) {
-        final String suffix = key.substring('bookmarks_'.length);
-        final int? oldId = int.tryParse(suffix);
-        final String? bk = oldId == null ? null : idToKey[oldId];
-        if (bk != null) {
-          oldKeysToDelete.add(key);
-          resolved['bookmarks_$bk'] = value;
-        }
-        continue;
-      }
-
-      // Remaining uid-suffix prefixes.
-      for (final String prefix in uidPrefixes) {
-        if (prefix == 'audiobook_pos_') continue; // handled above
-        if (!key.startsWith(prefix)) continue;
-        final String suffix = key.substring(prefix.length);
-        final String? bk = mapUidSuffix(suffix);
-        if (bk != null) {
-          oldKeysToDelete.add(key);
-          resolved['$prefix$bk'] = value;
-        }
-        break;
-      }
-    }
-
-    // Delete old keys first, then write resolved new keys (uid-priority applied).
-    for (final String k in oldKeysToDelete) {
-      await customStatement(
-          'DELETE FROM preferences WHERE key = ?', <Object?>[k]);
-    }
-    for (final MapEntry<String, String> e in resolved.entries) {
-      await customStatement(
-        'INSERT INTO preferences (key, value) VALUES (?, ?) '
-        'ON CONFLICT(key) DO UPDATE SET value = excluded.value',
-        <Object?>[e.key, e.value],
-      );
-    }
-  }
-
-  /// Rewrites reading_statistics.title from the bare title to the sanitized
-  /// bookKey domain so stats join the new identity. Rows that collapse to the
-  /// same (sanitized title, date_key) are merged additively.
-  ///
-  /// CONTRACT / known follow-up: reading_statistics is keyed by `title`, not by
-  /// a book id — same-title books have always shared a stats row, so merging
-  /// here is a pre-existing property, not new behaviour introduced by this
-  /// migration. After this step the stored title equals `_sanitizeBookKey(title)`
-  /// (the bookKey domain), but runtime stats writes STILL use the bare title.
-  /// Milestone 2 (the runtime-sweep pass) switches those writes to key by
-  /// bookKey; until then a stale bare-title write would create a parallel row.
-  /// That divergence is bounded and intentionally accepted for milestone 1 —
-  /// milestone 2 aligns the two.
-  Future<void> _migrateReadingStatsTitlesV16() async {
-    if (!await _tableExists('reading_statistics')) return;
-    final List<QueryRow> rows = await customSelect(
-            'SELECT id, title, date_key, characters_read, reading_time_ms, '
-            'last_statistic_modified FROM reading_statistics')
-        .get();
-
-    // Group target (sanitizedTitle, dateKey) -> accumulated values + the row id
-    // we keep (smallest id) and the row ids we delete (merged away).
-    final Map<String, _StatAccum> merged = <String, _StatAccum>{};
-    for (final QueryRow r in rows) {
-      final int id = r.read<int>('id');
-      final String sanitized = _sanitizeBookKey(r.read<String>('title'));
-      final String dateKey = r.read<String>('date_key');
-      final String groupKey = '$sanitized\u0000$dateKey';
-      final int chars = r.read<int>('characters_read');
-      final int timeMs = r.read<int>('reading_time_ms');
-      final int lastMod = r.read<int>('last_statistic_modified');
-      final _StatAccum? acc = merged[groupKey];
-      if (acc == null) {
-        merged[groupKey] = _StatAccum(
-          keepId: id,
-          title: sanitized,
-          chars: chars,
-          timeMs: timeMs,
-          lastMod: lastMod,
-        );
-      } else {
-        acc.chars += chars;
-        acc.timeMs += timeMs;
-        if (lastMod > acc.lastMod) acc.lastMod = lastMod;
-        acc.deleteIds.add(id);
-      }
-    }
-
-    for (final _StatAccum acc in merged.values) {
-      for (final int delId in acc.deleteIds) {
-        await customStatement(
-            'DELETE FROM reading_statistics WHERE id = ?', <Object?>[delId]);
-      }
-      await customStatement(
-        'UPDATE reading_statistics SET title = ?, characters_read = ?, '
-        'reading_time_ms = ?, last_statistic_modified = ? WHERE id = ?',
-        <Object?>[
-          acc.title,
-          acc.chars,
-          acc.timeMs,
-          acc.lastMod,
-          acc.keepId,
-        ],
-      );
-    }
-  }
 }

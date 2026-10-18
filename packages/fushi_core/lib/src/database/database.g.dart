@@ -2977,6 +2977,17 @@ class $SrtBooksTable extends SrtBooks
     type: DriftSqlType.int,
     requiredDuringInsert: true,
   );
+  static const VerificationMeta _localAddedAtMeta = const VerificationMeta(
+    'localAddedAt',
+  );
+  @override
+  late final GeneratedColumn<int> localAddedAt = GeneratedColumn<int>(
+    'local_added_at',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
   static const VerificationMeta _bookKeyMeta = const VerificationMeta(
     'bookKey',
   );
@@ -3011,6 +3022,7 @@ class $SrtBooksTable extends SrtBooks
     srtPath,
     coverPath,
     importedAt,
+    localAddedAt,
     bookKey,
     language,
   ];
@@ -3088,6 +3100,15 @@ class $SrtBooksTable extends SrtBooks
     } else if (isInserting) {
       context.missing(_importedAtMeta);
     }
+    if (data.containsKey('local_added_at')) {
+      context.handle(
+        _localAddedAtMeta,
+        localAddedAt.isAcceptableOrUnknown(
+          data['local_added_at']!,
+          _localAddedAtMeta,
+        ),
+      );
+    }
     if (data.containsKey('book_key')) {
       context.handle(
         _bookKeyMeta,
@@ -3145,6 +3166,10 @@ class $SrtBooksTable extends SrtBooks
         DriftSqlType.int,
         data['${effectivePrefix}imported_at'],
       )!,
+      localAddedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}local_added_at'],
+      ),
       bookKey: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}book_key'],
@@ -3171,7 +3196,14 @@ class SrtBookRow extends DataClass implements Insertable<SrtBookRow> {
   final String? audioPathsJson;
   final String srtPath;
   final String? coverPath;
+
+  /// 原始入库时刻（毫秒，跨设备保留、展示与排序用；同步资产包导入时沿用包内值）。
   final int importedAt;
+
+  /// v118：本机开始拥有这条字幕书的时刻（毫秒，设备本地，同 [EpubBooks.localAddedAt]
+  /// 的语义与理由）。写入单点 [FushiDatabase.upsertSrtBook]：插入时未携带 → now；
+  /// 冲突转更新时永不改写。v118 迁移以 importedAt 回填存量行。
+  final int? localAddedAt;
   final String bookKey;
 
   /// v88：字幕书/有声书的内容语言（BCP-47）。SRT 文件本身不声明语言，所以这一列
@@ -3187,6 +3219,7 @@ class SrtBookRow extends DataClass implements Insertable<SrtBookRow> {
     required this.srtPath,
     this.coverPath,
     required this.importedAt,
+    this.localAddedAt,
     required this.bookKey,
     this.language,
   });
@@ -3210,6 +3243,9 @@ class SrtBookRow extends DataClass implements Insertable<SrtBookRow> {
       map['cover_path'] = Variable<String>(coverPath);
     }
     map['imported_at'] = Variable<int>(importedAt);
+    if (!nullToAbsent || localAddedAt != null) {
+      map['local_added_at'] = Variable<int>(localAddedAt);
+    }
     map['book_key'] = Variable<String>(bookKey);
     if (!nullToAbsent || language != null) {
       map['language'] = Variable<String>(language);
@@ -3236,6 +3272,9 @@ class SrtBookRow extends DataClass implements Insertable<SrtBookRow> {
           ? const Value.absent()
           : Value(coverPath),
       importedAt: Value(importedAt),
+      localAddedAt: localAddedAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(localAddedAt),
       bookKey: Value(bookKey),
       language: language == null && nullToAbsent
           ? const Value.absent()
@@ -3258,6 +3297,7 @@ class SrtBookRow extends DataClass implements Insertable<SrtBookRow> {
       srtPath: serializer.fromJson<String>(json['srtPath']),
       coverPath: serializer.fromJson<String?>(json['coverPath']),
       importedAt: serializer.fromJson<int>(json['importedAt']),
+      localAddedAt: serializer.fromJson<int?>(json['localAddedAt']),
       bookKey: serializer.fromJson<String>(json['bookKey']),
       language: serializer.fromJson<String?>(json['language']),
     );
@@ -3275,6 +3315,7 @@ class SrtBookRow extends DataClass implements Insertable<SrtBookRow> {
       'srtPath': serializer.toJson<String>(srtPath),
       'coverPath': serializer.toJson<String?>(coverPath),
       'importedAt': serializer.toJson<int>(importedAt),
+      'localAddedAt': serializer.toJson<int?>(localAddedAt),
       'bookKey': serializer.toJson<String>(bookKey),
       'language': serializer.toJson<String?>(language),
     };
@@ -3290,6 +3331,7 @@ class SrtBookRow extends DataClass implements Insertable<SrtBookRow> {
     String? srtPath,
     Value<String?> coverPath = const Value.absent(),
     int? importedAt,
+    Value<int?> localAddedAt = const Value.absent(),
     String? bookKey,
     Value<String?> language = const Value.absent(),
   }) => SrtBookRow(
@@ -3304,6 +3346,7 @@ class SrtBookRow extends DataClass implements Insertable<SrtBookRow> {
     srtPath: srtPath ?? this.srtPath,
     coverPath: coverPath.present ? coverPath.value : this.coverPath,
     importedAt: importedAt ?? this.importedAt,
+    localAddedAt: localAddedAt.present ? localAddedAt.value : this.localAddedAt,
     bookKey: bookKey ?? this.bookKey,
     language: language.present ? language.value : this.language,
   );
@@ -3322,6 +3365,9 @@ class SrtBookRow extends DataClass implements Insertable<SrtBookRow> {
       importedAt: data.importedAt.present
           ? data.importedAt.value
           : this.importedAt,
+      localAddedAt: data.localAddedAt.present
+          ? data.localAddedAt.value
+          : this.localAddedAt,
       bookKey: data.bookKey.present ? data.bookKey.value : this.bookKey,
       language: data.language.present ? data.language.value : this.language,
     );
@@ -3339,6 +3385,7 @@ class SrtBookRow extends DataClass implements Insertable<SrtBookRow> {
           ..write('srtPath: $srtPath, ')
           ..write('coverPath: $coverPath, ')
           ..write('importedAt: $importedAt, ')
+          ..write('localAddedAt: $localAddedAt, ')
           ..write('bookKey: $bookKey, ')
           ..write('language: $language')
           ..write(')'))
@@ -3356,6 +3403,7 @@ class SrtBookRow extends DataClass implements Insertable<SrtBookRow> {
     srtPath,
     coverPath,
     importedAt,
+    localAddedAt,
     bookKey,
     language,
   );
@@ -3372,6 +3420,7 @@ class SrtBookRow extends DataClass implements Insertable<SrtBookRow> {
           other.srtPath == this.srtPath &&
           other.coverPath == this.coverPath &&
           other.importedAt == this.importedAt &&
+          other.localAddedAt == this.localAddedAt &&
           other.bookKey == this.bookKey &&
           other.language == this.language);
 }
@@ -3386,6 +3435,7 @@ class SrtBooksCompanion extends UpdateCompanion<SrtBookRow> {
   final Value<String> srtPath;
   final Value<String?> coverPath;
   final Value<int> importedAt;
+  final Value<int?> localAddedAt;
   final Value<String> bookKey;
   final Value<String?> language;
   const SrtBooksCompanion({
@@ -3398,6 +3448,7 @@ class SrtBooksCompanion extends UpdateCompanion<SrtBookRow> {
     this.srtPath = const Value.absent(),
     this.coverPath = const Value.absent(),
     this.importedAt = const Value.absent(),
+    this.localAddedAt = const Value.absent(),
     this.bookKey = const Value.absent(),
     this.language = const Value.absent(),
   });
@@ -3411,6 +3462,7 @@ class SrtBooksCompanion extends UpdateCompanion<SrtBookRow> {
     required String srtPath,
     this.coverPath = const Value.absent(),
     required int importedAt,
+    this.localAddedAt = const Value.absent(),
     this.bookKey = const Value.absent(),
     this.language = const Value.absent(),
   }) : uid = Value(uid),
@@ -3427,6 +3479,7 @@ class SrtBooksCompanion extends UpdateCompanion<SrtBookRow> {
     Expression<String>? srtPath,
     Expression<String>? coverPath,
     Expression<int>? importedAt,
+    Expression<int>? localAddedAt,
     Expression<String>? bookKey,
     Expression<String>? language,
   }) {
@@ -3440,6 +3493,7 @@ class SrtBooksCompanion extends UpdateCompanion<SrtBookRow> {
       if (srtPath != null) 'srt_path': srtPath,
       if (coverPath != null) 'cover_path': coverPath,
       if (importedAt != null) 'imported_at': importedAt,
+      if (localAddedAt != null) 'local_added_at': localAddedAt,
       if (bookKey != null) 'book_key': bookKey,
       if (language != null) 'language': language,
     });
@@ -3455,6 +3509,7 @@ class SrtBooksCompanion extends UpdateCompanion<SrtBookRow> {
     Value<String>? srtPath,
     Value<String?>? coverPath,
     Value<int>? importedAt,
+    Value<int?>? localAddedAt,
     Value<String>? bookKey,
     Value<String?>? language,
   }) {
@@ -3468,6 +3523,7 @@ class SrtBooksCompanion extends UpdateCompanion<SrtBookRow> {
       srtPath: srtPath ?? this.srtPath,
       coverPath: coverPath ?? this.coverPath,
       importedAt: importedAt ?? this.importedAt,
+      localAddedAt: localAddedAt ?? this.localAddedAt,
       bookKey: bookKey ?? this.bookKey,
       language: language ?? this.language,
     );
@@ -3503,6 +3559,9 @@ class SrtBooksCompanion extends UpdateCompanion<SrtBookRow> {
     if (importedAt.present) {
       map['imported_at'] = Variable<int>(importedAt.value);
     }
+    if (localAddedAt.present) {
+      map['local_added_at'] = Variable<int>(localAddedAt.value);
+    }
     if (bookKey.present) {
       map['book_key'] = Variable<String>(bookKey.value);
     }
@@ -3524,6 +3583,7 @@ class SrtBooksCompanion extends UpdateCompanion<SrtBookRow> {
           ..write('srtPath: $srtPath, ')
           ..write('coverPath: $coverPath, ')
           ..write('importedAt: $importedAt, ')
+          ..write('localAddedAt: $localAddedAt, ')
           ..write('bookKey: $bookKey, ')
           ..write('language: $language')
           ..write(')'))
@@ -7526,6 +7586,17 @@ class $EpubBooksTable extends EpubBooks
     type: DriftSqlType.int,
     requiredDuringInsert: true,
   );
+  static const VerificationMeta _localAddedAtMeta = const VerificationMeta(
+    'localAddedAt',
+  );
+  @override
+  late final GeneratedColumn<int> localAddedAt = GeneratedColumn<int>(
+    'local_added_at',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
   static const VerificationMeta _languageMeta = const VerificationMeta(
     'language',
   );
@@ -7583,6 +7654,15 @@ class $EpubBooksTable extends EpubBooks
       'REFERENCES media_sources (id) ON DELETE SET NULL',
     ),
   );
+  static const VerificationMeta _isbnMeta = const VerificationMeta('isbn');
+  @override
+  late final GeneratedColumn<String> isbn = GeneratedColumn<String>(
+    'isbn',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
   @override
   List<GeneratedColumn> get $columns => [
     bookKey,
@@ -7597,11 +7677,13 @@ class $EpubBooksTable extends EpubBooks
     tocJson,
     sourceMetadata,
     importedAt,
+    localAddedAt,
     language,
     format,
     mangaReadingMode,
     completedAt,
     sourceId,
+    isbn,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -7710,6 +7792,15 @@ class $EpubBooksTable extends EpubBooks
     } else if (isInserting) {
       context.missing(_importedAtMeta);
     }
+    if (data.containsKey('local_added_at')) {
+      context.handle(
+        _localAddedAtMeta,
+        localAddedAt.isAcceptableOrUnknown(
+          data['local_added_at']!,
+          _localAddedAtMeta,
+        ),
+      );
+    }
     if (data.containsKey('language')) {
       context.handle(
         _languageMeta,
@@ -7744,6 +7835,12 @@ class $EpubBooksTable extends EpubBooks
       context.handle(
         _sourceIdMeta,
         sourceId.isAcceptableOrUnknown(data['source_id']!, _sourceIdMeta),
+      );
+    }
+    if (data.containsKey('isbn')) {
+      context.handle(
+        _isbnMeta,
+        isbn.isAcceptableOrUnknown(data['isbn']!, _isbnMeta),
       );
     }
     return context;
@@ -7803,6 +7900,10 @@ class $EpubBooksTable extends EpubBooks
         DriftSqlType.int,
         data['${effectivePrefix}imported_at'],
       )!,
+      localAddedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}local_added_at'],
+      ),
       language: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}language'],
@@ -7822,6 +7923,10 @@ class $EpubBooksTable extends EpubBooks
       sourceId: attachedDatabase.typeMapping.read(
         DriftSqlType.int,
         data['${effectivePrefix}source_id'],
+      ),
+      isbn: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}isbn'],
       ),
     );
   }
@@ -7855,7 +7960,25 @@ class EpubBookRow extends DataClass implements Insertable<EpubBookRow> {
   final String chaptersJson;
   final String? tocJson;
   final String? sourceMetadata;
+
+  /// 条目的**原始入库时刻**（毫秒）：跨设备保留、用户可见——书架「导入时间」排序、
+  /// 「最近阅读」对没读过的书的回落键、合集组内回退序都按它。互联下载的书写对端的
+  /// 入库时刻（BUG-3452），所以它**不是**「本机从什么时候起拥有这本书」，那件事见
+  /// [localAddedAt]。
   final int importedAt;
+
+  /// v118：本机**开始拥有**这本书的时刻（毫秒）。与 [importedAt] 是两个事实：
+  /// 互联下载把 importedAt 写成对端入库时刻，而删除墓碑仲裁（「删除发生在本机
+  /// 拥有之后才管得着它」，BUG-2044）与首页「最近添加」要的是本机落地那一刻——
+  /// 共用一列时，对端早已入库、本机刚下载的书会被第三台设备在其间的「从所有设备
+  /// 删除」追着弹确认，也进不了「最近添加」。
+  ///
+  /// 设备本地语义：不进互联 / 云同步 wire。备份按整行随包、恢复时保留备份内的值
+  /// （恢复 = 重现快照时刻的拥有事实，见 `FushiDatabase.insertEpubBook`）。写入
+  /// 单点是 [FushiDatabase.insertEpubBook]（未携带 → 当时 now）；此后不再改写。
+  /// null = 时刻未知（墓碑仲裁按「无从仲裁」处理，宁可多问一次）。v118 迁移以
+  /// importedAt 回填存量行。
+  final int? localAddedAt;
 
   /// v87：书的内容语言（BCP-47，如 `ja` / `zh-Hant`），决定正文用哪条字体链。
   ///
@@ -7888,6 +8011,12 @@ class EpubBookRow extends DataClass implements Insertable<EpubBookRow> {
   /// TODO-817：归属的网络/本地来源库（[MediaSources].id）。可空 = 手动导入无来源。
   /// onDelete:setNull = 移除来源时保留书目（归 NULL），不连坐删条目。
   final int? sourceId;
+
+  /// v115（排行榜作品匹配）：OPF `dc:identifier` 里解析出的 ISBN，**统一存 ISBN-13**
+  /// （ISBN-10 转换后存），校验位不对的一律不存。null = 包里没有合法 ISBN、或是
+  /// v115 前导入且尚未回填（`backfillEpubIsbns` 只读 OPF 回填，不重新导入）。
+  /// 规范化唯一口径见 `fushi_engine/epub/isbn.dart` 的 `normalizeIsbn13`。
+  final String? isbn;
   const EpubBookRow({
     required this.bookKey,
     required this.uid,
@@ -7901,11 +8030,13 @@ class EpubBookRow extends DataClass implements Insertable<EpubBookRow> {
     this.tocJson,
     this.sourceMetadata,
     required this.importedAt,
+    this.localAddedAt,
     this.language,
     required this.format,
     this.mangaReadingMode,
     this.completedAt,
     this.sourceId,
+    this.isbn,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -7930,6 +8061,9 @@ class EpubBookRow extends DataClass implements Insertable<EpubBookRow> {
       map['source_metadata'] = Variable<String>(sourceMetadata);
     }
     map['imported_at'] = Variable<int>(importedAt);
+    if (!nullToAbsent || localAddedAt != null) {
+      map['local_added_at'] = Variable<int>(localAddedAt);
+    }
     if (!nullToAbsent || language != null) {
       map['language'] = Variable<String>(language);
     }
@@ -7942,6 +8076,9 @@ class EpubBookRow extends DataClass implements Insertable<EpubBookRow> {
     }
     if (!nullToAbsent || sourceId != null) {
       map['source_id'] = Variable<int>(sourceId);
+    }
+    if (!nullToAbsent || isbn != null) {
+      map['isbn'] = Variable<String>(isbn);
     }
     return map;
   }
@@ -7968,6 +8105,9 @@ class EpubBookRow extends DataClass implements Insertable<EpubBookRow> {
           ? const Value.absent()
           : Value(sourceMetadata),
       importedAt: Value(importedAt),
+      localAddedAt: localAddedAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(localAddedAt),
       language: language == null && nullToAbsent
           ? const Value.absent()
           : Value(language),
@@ -7981,6 +8121,7 @@ class EpubBookRow extends DataClass implements Insertable<EpubBookRow> {
       sourceId: sourceId == null && nullToAbsent
           ? const Value.absent()
           : Value(sourceId),
+      isbn: isbn == null && nullToAbsent ? const Value.absent() : Value(isbn),
     );
   }
 
@@ -8002,11 +8143,13 @@ class EpubBookRow extends DataClass implements Insertable<EpubBookRow> {
       tocJson: serializer.fromJson<String?>(json['tocJson']),
       sourceMetadata: serializer.fromJson<String?>(json['sourceMetadata']),
       importedAt: serializer.fromJson<int>(json['importedAt']),
+      localAddedAt: serializer.fromJson<int?>(json['localAddedAt']),
       language: serializer.fromJson<String?>(json['language']),
       format: serializer.fromJson<String>(json['format']),
       mangaReadingMode: serializer.fromJson<String?>(json['mangaReadingMode']),
       completedAt: serializer.fromJson<DateTime?>(json['completedAt']),
       sourceId: serializer.fromJson<int?>(json['sourceId']),
+      isbn: serializer.fromJson<String?>(json['isbn']),
     );
   }
   @override
@@ -8025,11 +8168,13 @@ class EpubBookRow extends DataClass implements Insertable<EpubBookRow> {
       'tocJson': serializer.toJson<String?>(tocJson),
       'sourceMetadata': serializer.toJson<String?>(sourceMetadata),
       'importedAt': serializer.toJson<int>(importedAt),
+      'localAddedAt': serializer.toJson<int?>(localAddedAt),
       'language': serializer.toJson<String?>(language),
       'format': serializer.toJson<String>(format),
       'mangaReadingMode': serializer.toJson<String?>(mangaReadingMode),
       'completedAt': serializer.toJson<DateTime?>(completedAt),
       'sourceId': serializer.toJson<int?>(sourceId),
+      'isbn': serializer.toJson<String?>(isbn),
     };
   }
 
@@ -8046,11 +8191,13 @@ class EpubBookRow extends DataClass implements Insertable<EpubBookRow> {
     Value<String?> tocJson = const Value.absent(),
     Value<String?> sourceMetadata = const Value.absent(),
     int? importedAt,
+    Value<int?> localAddedAt = const Value.absent(),
     Value<String?> language = const Value.absent(),
     String? format,
     Value<String?> mangaReadingMode = const Value.absent(),
     Value<DateTime?> completedAt = const Value.absent(),
     Value<int?> sourceId = const Value.absent(),
+    Value<String?> isbn = const Value.absent(),
   }) => EpubBookRow(
     bookKey: bookKey ?? this.bookKey,
     uid: uid ?? this.uid,
@@ -8066,6 +8213,7 @@ class EpubBookRow extends DataClass implements Insertable<EpubBookRow> {
         ? sourceMetadata.value
         : this.sourceMetadata,
     importedAt: importedAt ?? this.importedAt,
+    localAddedAt: localAddedAt.present ? localAddedAt.value : this.localAddedAt,
     language: language.present ? language.value : this.language,
     format: format ?? this.format,
     mangaReadingMode: mangaReadingMode.present
@@ -8073,6 +8221,7 @@ class EpubBookRow extends DataClass implements Insertable<EpubBookRow> {
         : this.mangaReadingMode,
     completedAt: completedAt.present ? completedAt.value : this.completedAt,
     sourceId: sourceId.present ? sourceId.value : this.sourceId,
+    isbn: isbn.present ? isbn.value : this.isbn,
   );
   EpubBookRow copyWithCompanion(EpubBooksCompanion data) {
     return EpubBookRow(
@@ -8098,6 +8247,9 @@ class EpubBookRow extends DataClass implements Insertable<EpubBookRow> {
       importedAt: data.importedAt.present
           ? data.importedAt.value
           : this.importedAt,
+      localAddedAt: data.localAddedAt.present
+          ? data.localAddedAt.value
+          : this.localAddedAt,
       language: data.language.present ? data.language.value : this.language,
       format: data.format.present ? data.format.value : this.format,
       mangaReadingMode: data.mangaReadingMode.present
@@ -8107,6 +8259,7 @@ class EpubBookRow extends DataClass implements Insertable<EpubBookRow> {
           ? data.completedAt.value
           : this.completedAt,
       sourceId: data.sourceId.present ? data.sourceId.value : this.sourceId,
+      isbn: data.isbn.present ? data.isbn.value : this.isbn,
     );
   }
 
@@ -8125,11 +8278,13 @@ class EpubBookRow extends DataClass implements Insertable<EpubBookRow> {
           ..write('tocJson: $tocJson, ')
           ..write('sourceMetadata: $sourceMetadata, ')
           ..write('importedAt: $importedAt, ')
+          ..write('localAddedAt: $localAddedAt, ')
           ..write('language: $language, ')
           ..write('format: $format, ')
           ..write('mangaReadingMode: $mangaReadingMode, ')
           ..write('completedAt: $completedAt, ')
-          ..write('sourceId: $sourceId')
+          ..write('sourceId: $sourceId, ')
+          ..write('isbn: $isbn')
           ..write(')'))
         .toString();
   }
@@ -8148,11 +8303,13 @@ class EpubBookRow extends DataClass implements Insertable<EpubBookRow> {
     tocJson,
     sourceMetadata,
     importedAt,
+    localAddedAt,
     language,
     format,
     mangaReadingMode,
     completedAt,
     sourceId,
+    isbn,
   );
   @override
   bool operator ==(Object other) =>
@@ -8170,11 +8327,13 @@ class EpubBookRow extends DataClass implements Insertable<EpubBookRow> {
           other.tocJson == this.tocJson &&
           other.sourceMetadata == this.sourceMetadata &&
           other.importedAt == this.importedAt &&
+          other.localAddedAt == this.localAddedAt &&
           other.language == this.language &&
           other.format == this.format &&
           other.mangaReadingMode == this.mangaReadingMode &&
           other.completedAt == this.completedAt &&
-          other.sourceId == this.sourceId);
+          other.sourceId == this.sourceId &&
+          other.isbn == this.isbn);
 }
 
 class EpubBooksCompanion extends UpdateCompanion<EpubBookRow> {
@@ -8190,11 +8349,13 @@ class EpubBooksCompanion extends UpdateCompanion<EpubBookRow> {
   final Value<String?> tocJson;
   final Value<String?> sourceMetadata;
   final Value<int> importedAt;
+  final Value<int?> localAddedAt;
   final Value<String?> language;
   final Value<String> format;
   final Value<String?> mangaReadingMode;
   final Value<DateTime?> completedAt;
   final Value<int?> sourceId;
+  final Value<String?> isbn;
   final Value<int> rowid;
   const EpubBooksCompanion({
     this.bookKey = const Value.absent(),
@@ -8209,11 +8370,13 @@ class EpubBooksCompanion extends UpdateCompanion<EpubBookRow> {
     this.tocJson = const Value.absent(),
     this.sourceMetadata = const Value.absent(),
     this.importedAt = const Value.absent(),
+    this.localAddedAt = const Value.absent(),
     this.language = const Value.absent(),
     this.format = const Value.absent(),
     this.mangaReadingMode = const Value.absent(),
     this.completedAt = const Value.absent(),
     this.sourceId = const Value.absent(),
+    this.isbn = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   EpubBooksCompanion.insert({
@@ -8229,11 +8392,13 @@ class EpubBooksCompanion extends UpdateCompanion<EpubBookRow> {
     this.tocJson = const Value.absent(),
     this.sourceMetadata = const Value.absent(),
     required int importedAt,
+    this.localAddedAt = const Value.absent(),
     this.language = const Value.absent(),
     this.format = const Value.absent(),
     this.mangaReadingMode = const Value.absent(),
     this.completedAt = const Value.absent(),
     this.sourceId = const Value.absent(),
+    this.isbn = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : bookKey = Value(bookKey),
        title = Value(title),
@@ -8255,11 +8420,13 @@ class EpubBooksCompanion extends UpdateCompanion<EpubBookRow> {
     Expression<String>? tocJson,
     Expression<String>? sourceMetadata,
     Expression<int>? importedAt,
+    Expression<int>? localAddedAt,
     Expression<String>? language,
     Expression<String>? format,
     Expression<String>? mangaReadingMode,
     Expression<DateTime>? completedAt,
     Expression<int>? sourceId,
+    Expression<String>? isbn,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -8275,11 +8442,13 @@ class EpubBooksCompanion extends UpdateCompanion<EpubBookRow> {
       if (tocJson != null) 'toc_json': tocJson,
       if (sourceMetadata != null) 'source_metadata': sourceMetadata,
       if (importedAt != null) 'imported_at': importedAt,
+      if (localAddedAt != null) 'local_added_at': localAddedAt,
       if (language != null) 'language': language,
       if (format != null) 'format': format,
       if (mangaReadingMode != null) 'manga_reading_mode': mangaReadingMode,
       if (completedAt != null) 'completed_at': completedAt,
       if (sourceId != null) 'source_id': sourceId,
+      if (isbn != null) 'isbn': isbn,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -8297,11 +8466,13 @@ class EpubBooksCompanion extends UpdateCompanion<EpubBookRow> {
     Value<String?>? tocJson,
     Value<String?>? sourceMetadata,
     Value<int>? importedAt,
+    Value<int?>? localAddedAt,
     Value<String?>? language,
     Value<String>? format,
     Value<String?>? mangaReadingMode,
     Value<DateTime?>? completedAt,
     Value<int?>? sourceId,
+    Value<String?>? isbn,
     Value<int>? rowid,
   }) {
     return EpubBooksCompanion(
@@ -8317,11 +8488,13 @@ class EpubBooksCompanion extends UpdateCompanion<EpubBookRow> {
       tocJson: tocJson ?? this.tocJson,
       sourceMetadata: sourceMetadata ?? this.sourceMetadata,
       importedAt: importedAt ?? this.importedAt,
+      localAddedAt: localAddedAt ?? this.localAddedAt,
       language: language ?? this.language,
       format: format ?? this.format,
       mangaReadingMode: mangaReadingMode ?? this.mangaReadingMode,
       completedAt: completedAt ?? this.completedAt,
       sourceId: sourceId ?? this.sourceId,
+      isbn: isbn ?? this.isbn,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -8365,6 +8538,9 @@ class EpubBooksCompanion extends UpdateCompanion<EpubBookRow> {
     if (importedAt.present) {
       map['imported_at'] = Variable<int>(importedAt.value);
     }
+    if (localAddedAt.present) {
+      map['local_added_at'] = Variable<int>(localAddedAt.value);
+    }
     if (language.present) {
       map['language'] = Variable<String>(language.value);
     }
@@ -8379,6 +8555,9 @@ class EpubBooksCompanion extends UpdateCompanion<EpubBookRow> {
     }
     if (sourceId.present) {
       map['source_id'] = Variable<int>(sourceId.value);
+    }
+    if (isbn.present) {
+      map['isbn'] = Variable<String>(isbn.value);
     }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
@@ -8401,11 +8580,13 @@ class EpubBooksCompanion extends UpdateCompanion<EpubBookRow> {
           ..write('tocJson: $tocJson, ')
           ..write('sourceMetadata: $sourceMetadata, ')
           ..write('importedAt: $importedAt, ')
+          ..write('localAddedAt: $localAddedAt, ')
           ..write('language: $language, ')
           ..write('format: $format, ')
           ..write('mangaReadingMode: $mangaReadingMode, ')
           ..write('completedAt: $completedAt, ')
           ..write('sourceId: $sourceId, ')
+          ..write('isbn: $isbn, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -9111,6 +9292,15 @@ class $ProfilesTable extends Profiles
     requiredDuringInsert: true,
     defaultConstraints: GeneratedColumn.constraintIsAlways('UNIQUE'),
   );
+  static const VerificationMeta _uidMeta = const VerificationMeta('uid');
+  @override
+  late final GeneratedColumn<String> uid = GeneratedColumn<String>(
+    'uid',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
   static const VerificationMeta _createdAtMeta = const VerificationMeta(
     'createdAt',
   );
@@ -9134,7 +9324,7 @@ class $ProfilesTable extends Profiles
     requiredDuringInsert: true,
   );
   @override
-  List<GeneratedColumn> get $columns => [id, name, createdAt, updatedAt];
+  List<GeneratedColumn> get $columns => [id, name, uid, createdAt, updatedAt];
   @override
   String get aliasedName => _alias ?? actualTableName;
   @override
@@ -9157,6 +9347,12 @@ class $ProfilesTable extends Profiles
       );
     } else if (isInserting) {
       context.missing(_nameMeta);
+    }
+    if (data.containsKey('uid')) {
+      context.handle(
+        _uidMeta,
+        uid.isAcceptableOrUnknown(data['uid']!, _uidMeta),
+      );
     }
     if (data.containsKey('created_at')) {
       context.handle(
@@ -9191,6 +9387,10 @@ class $ProfilesTable extends Profiles
         DriftSqlType.string,
         data['${effectivePrefix}name'],
       )!,
+      uid: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}uid'],
+      ),
       createdAt: attachedDatabase.typeMapping.read(
         DriftSqlType.int,
         data['${effectivePrefix}created_at'],
@@ -9211,11 +9411,17 @@ class $ProfilesTable extends Profiles
 class ProfileRow extends DataClass implements Insertable<ProfileRow> {
   final int id;
   final String name;
+
+  /// v117：profile 的全局身份（UUIDv7）。不同设备上的同一个本机自增 id 不代表同一个 profile；
+  /// SRS 的一切行与同步路径都用它（docs/specs/2026-10-14-fushi-srs-design.md 铁律 E）。
+  /// 迁移时为存量行生成；可空只为兼容迁移顺序，读取方经 FushiDatabase.profileUidOf 惰性补齐。
+  final String? uid;
   final int createdAt;
   final int updatedAt;
   const ProfileRow({
     required this.id,
     required this.name,
+    this.uid,
     required this.createdAt,
     required this.updatedAt,
   });
@@ -9224,6 +9430,9 @@ class ProfileRow extends DataClass implements Insertable<ProfileRow> {
     final map = <String, Expression>{};
     map['id'] = Variable<int>(id);
     map['name'] = Variable<String>(name);
+    if (!nullToAbsent || uid != null) {
+      map['uid'] = Variable<String>(uid);
+    }
     map['created_at'] = Variable<int>(createdAt);
     map['updated_at'] = Variable<int>(updatedAt);
     return map;
@@ -9233,6 +9442,7 @@ class ProfileRow extends DataClass implements Insertable<ProfileRow> {
     return ProfilesCompanion(
       id: Value(id),
       name: Value(name),
+      uid: uid == null && nullToAbsent ? const Value.absent() : Value(uid),
       createdAt: Value(createdAt),
       updatedAt: Value(updatedAt),
     );
@@ -9246,6 +9456,7 @@ class ProfileRow extends DataClass implements Insertable<ProfileRow> {
     return ProfileRow(
       id: serializer.fromJson<int>(json['id']),
       name: serializer.fromJson<String>(json['name']),
+      uid: serializer.fromJson<String?>(json['uid']),
       createdAt: serializer.fromJson<int>(json['createdAt']),
       updatedAt: serializer.fromJson<int>(json['updatedAt']),
     );
@@ -9256,6 +9467,7 @@ class ProfileRow extends DataClass implements Insertable<ProfileRow> {
     return <String, dynamic>{
       'id': serializer.toJson<int>(id),
       'name': serializer.toJson<String>(name),
+      'uid': serializer.toJson<String?>(uid),
       'createdAt': serializer.toJson<int>(createdAt),
       'updatedAt': serializer.toJson<int>(updatedAt),
     };
@@ -9264,11 +9476,13 @@ class ProfileRow extends DataClass implements Insertable<ProfileRow> {
   ProfileRow copyWith({
     int? id,
     String? name,
+    Value<String?> uid = const Value.absent(),
     int? createdAt,
     int? updatedAt,
   }) => ProfileRow(
     id: id ?? this.id,
     name: name ?? this.name,
+    uid: uid.present ? uid.value : this.uid,
     createdAt: createdAt ?? this.createdAt,
     updatedAt: updatedAt ?? this.updatedAt,
   );
@@ -9276,6 +9490,7 @@ class ProfileRow extends DataClass implements Insertable<ProfileRow> {
     return ProfileRow(
       id: data.id.present ? data.id.value : this.id,
       name: data.name.present ? data.name.value : this.name,
+      uid: data.uid.present ? data.uid.value : this.uid,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
       updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
     );
@@ -9286,6 +9501,7 @@ class ProfileRow extends DataClass implements Insertable<ProfileRow> {
     return (StringBuffer('ProfileRow(')
           ..write('id: $id, ')
           ..write('name: $name, ')
+          ..write('uid: $uid, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt')
           ..write(')'))
@@ -9293,13 +9509,14 @@ class ProfileRow extends DataClass implements Insertable<ProfileRow> {
   }
 
   @override
-  int get hashCode => Object.hash(id, name, createdAt, updatedAt);
+  int get hashCode => Object.hash(id, name, uid, createdAt, updatedAt);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
       (other is ProfileRow &&
           other.id == this.id &&
           other.name == this.name &&
+          other.uid == this.uid &&
           other.createdAt == this.createdAt &&
           other.updatedAt == this.updatedAt);
 }
@@ -9307,17 +9524,20 @@ class ProfileRow extends DataClass implements Insertable<ProfileRow> {
 class ProfilesCompanion extends UpdateCompanion<ProfileRow> {
   final Value<int> id;
   final Value<String> name;
+  final Value<String?> uid;
   final Value<int> createdAt;
   final Value<int> updatedAt;
   const ProfilesCompanion({
     this.id = const Value.absent(),
     this.name = const Value.absent(),
+    this.uid = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.updatedAt = const Value.absent(),
   });
   ProfilesCompanion.insert({
     this.id = const Value.absent(),
     required String name,
+    this.uid = const Value.absent(),
     required int createdAt,
     required int updatedAt,
   }) : name = Value(name),
@@ -9326,12 +9546,14 @@ class ProfilesCompanion extends UpdateCompanion<ProfileRow> {
   static Insertable<ProfileRow> custom({
     Expression<int>? id,
     Expression<String>? name,
+    Expression<String>? uid,
     Expression<int>? createdAt,
     Expression<int>? updatedAt,
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
       if (name != null) 'name': name,
+      if (uid != null) 'uid': uid,
       if (createdAt != null) 'created_at': createdAt,
       if (updatedAt != null) 'updated_at': updatedAt,
     });
@@ -9340,12 +9562,14 @@ class ProfilesCompanion extends UpdateCompanion<ProfileRow> {
   ProfilesCompanion copyWith({
     Value<int>? id,
     Value<String>? name,
+    Value<String?>? uid,
     Value<int>? createdAt,
     Value<int>? updatedAt,
   }) {
     return ProfilesCompanion(
       id: id ?? this.id,
       name: name ?? this.name,
+      uid: uid ?? this.uid,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
     );
@@ -9359,6 +9583,9 @@ class ProfilesCompanion extends UpdateCompanion<ProfileRow> {
     }
     if (name.present) {
       map['name'] = Variable<String>(name.value);
+    }
+    if (uid.present) {
+      map['uid'] = Variable<String>(uid.value);
     }
     if (createdAt.present) {
       map['created_at'] = Variable<int>(createdAt.value);
@@ -9374,6 +9601,7 @@ class ProfilesCompanion extends UpdateCompanion<ProfileRow> {
     return (StringBuffer('ProfilesCompanion(')
           ..write('id: $id, ')
           ..write('name: $name, ')
+          ..write('uid: $uid, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt')
           ..write(')'))
@@ -10825,6 +11053,17 @@ class $VideoBooksTable extends VideoBooks
     type: DriftSqlType.int,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _localAddedAtMeta = const VerificationMeta(
+    'localAddedAt',
+  );
+  @override
+  late final GeneratedColumn<int> localAddedAt = GeneratedColumn<int>(
+    'local_added_at',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
   static const VerificationMeta _playlistJsonMeta = const VerificationMeta(
     'playlistJson',
   );
@@ -10933,6 +11172,7 @@ class $VideoBooksTable extends VideoBooks
     lastPositionMs,
     lastPlayedAt,
     importedAt,
+    localAddedAt,
     playlistJson,
     currentEpisode,
     audioTrackId,
@@ -11057,6 +11297,15 @@ class $VideoBooksTable extends VideoBooks
       context.handle(
         _importedAtMeta,
         importedAt.isAcceptableOrUnknown(data['imported_at']!, _importedAtMeta),
+      );
+    }
+    if (data.containsKey('local_added_at')) {
+      context.handle(
+        _localAddedAtMeta,
+        localAddedAt.isAcceptableOrUnknown(
+          data['local_added_at']!,
+          _localAddedAtMeta,
+        ),
       );
     }
     if (data.containsKey('playlist_json')) {
@@ -11186,6 +11435,10 @@ class $VideoBooksTable extends VideoBooks
         DriftSqlType.int,
         data['${effectivePrefix}imported_at'],
       ),
+      localAddedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}local_added_at'],
+      ),
       playlistJson: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}playlist_json'],
@@ -11270,8 +11523,15 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
 
   /// 导入时间（毫秒戳，同 [EpubBooks].importedAt / [SrtBooks].importedAt int
   /// 范式）；null = 旧数据无导入时间。v57 前是 drift DateTime（Unix 秒存储），
-  /// v57 迁移统一为 int 毫秒。
+  /// v57 迁移统一为 int 毫秒。互联下载登记镜像 host 的值（BUG-2463），所以它是
+  /// 「原始入库时刻」，不是「本机从什么时候起拥有」——后者见 [localAddedAt]。
   final int? importedAt;
+
+  /// v118：本机开始拥有这条视频的时刻（毫秒，设备本地，同 [EpubBooks.localAddedAt]
+  /// 的语义与理由）。写入单点 [FushiDatabase.upsertVideoBook]：插入时未携带 → now；
+  /// 冲突转更新时永不改写（重复登记同一 bookUid 不算重新拥有）。v118 迁移以
+  /// importedAt 回填存量行；importedAt 为 null 的旧行仍为 null（时刻未知）。
+  final int? localAddedAt;
 
   /// m3u8 多集播放列表 JSON：`[{title,path}]`（绝对路径）。单视频导入时为 null。
   final String? playlistJson;
@@ -11322,6 +11582,7 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
     required this.lastPositionMs,
     this.lastPlayedAt,
     this.importedAt,
+    this.localAddedAt,
     this.playlistJson,
     required this.currentEpisode,
     this.audioTrackId,
@@ -11366,6 +11627,9 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
     }
     if (!nullToAbsent || importedAt != null) {
       map['imported_at'] = Variable<int>(importedAt);
+    }
+    if (!nullToAbsent || localAddedAt != null) {
+      map['local_added_at'] = Variable<int>(localAddedAt);
     }
     if (!nullToAbsent || playlistJson != null) {
       map['playlist_json'] = Variable<String>(playlistJson);
@@ -11423,6 +11687,9 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
       importedAt: importedAt == null && nullToAbsent
           ? const Value.absent()
           : Value(importedAt),
+      localAddedAt: localAddedAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(localAddedAt),
       playlistJson: playlistJson == null && nullToAbsent
           ? const Value.absent()
           : Value(playlistJson),
@@ -11471,6 +11738,7 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
       lastPositionMs: serializer.fromJson<int>(json['lastPositionMs']),
       lastPlayedAt: serializer.fromJson<int?>(json['lastPlayedAt']),
       importedAt: serializer.fromJson<int?>(json['importedAt']),
+      localAddedAt: serializer.fromJson<int?>(json['localAddedAt']),
       playlistJson: serializer.fromJson<String?>(json['playlistJson']),
       currentEpisode: serializer.fromJson<int>(json['currentEpisode']),
       audioTrackId: serializer.fromJson<String?>(json['audioTrackId']),
@@ -11500,6 +11768,7 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
       'lastPositionMs': serializer.toJson<int>(lastPositionMs),
       'lastPlayedAt': serializer.toJson<int?>(lastPlayedAt),
       'importedAt': serializer.toJson<int?>(importedAt),
+      'localAddedAt': serializer.toJson<int?>(localAddedAt),
       'playlistJson': serializer.toJson<String?>(playlistJson),
       'currentEpisode': serializer.toJson<int>(currentEpisode),
       'audioTrackId': serializer.toJson<String?>(audioTrackId),
@@ -11525,6 +11794,7 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
     int? lastPositionMs,
     Value<int?> lastPlayedAt = const Value.absent(),
     Value<int?> importedAt = const Value.absent(),
+    Value<int?> localAddedAt = const Value.absent(),
     Value<String?> playlistJson = const Value.absent(),
     int? currentEpisode,
     Value<String?> audioTrackId = const Value.absent(),
@@ -11557,6 +11827,7 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
     lastPositionMs: lastPositionMs ?? this.lastPositionMs,
     lastPlayedAt: lastPlayedAt.present ? lastPlayedAt.value : this.lastPlayedAt,
     importedAt: importedAt.present ? importedAt.value : this.importedAt,
+    localAddedAt: localAddedAt.present ? localAddedAt.value : this.localAddedAt,
     playlistJson: playlistJson.present ? playlistJson.value : this.playlistJson,
     currentEpisode: currentEpisode ?? this.currentEpisode,
     audioTrackId: audioTrackId.present ? audioTrackId.value : this.audioTrackId,
@@ -11601,6 +11872,9 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
       importedAt: data.importedAt.present
           ? data.importedAt.value
           : this.importedAt,
+      localAddedAt: data.localAddedAt.present
+          ? data.localAddedAt.value
+          : this.localAddedAt,
       playlistJson: data.playlistJson.present
           ? data.playlistJson.value
           : this.playlistJson,
@@ -11640,6 +11914,7 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
           ..write('lastPositionMs: $lastPositionMs, ')
           ..write('lastPlayedAt: $lastPlayedAt, ')
           ..write('importedAt: $importedAt, ')
+          ..write('localAddedAt: $localAddedAt, ')
           ..write('playlistJson: $playlistJson, ')
           ..write('currentEpisode: $currentEpisode, ')
           ..write('audioTrackId: $audioTrackId, ')
@@ -11667,6 +11942,7 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
     lastPositionMs,
     lastPlayedAt,
     importedAt,
+    localAddedAt,
     playlistJson,
     currentEpisode,
     audioTrackId,
@@ -11693,6 +11969,7 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
           other.lastPositionMs == this.lastPositionMs &&
           other.lastPlayedAt == this.lastPlayedAt &&
           other.importedAt == this.importedAt &&
+          other.localAddedAt == this.localAddedAt &&
           other.playlistJson == this.playlistJson &&
           other.currentEpisode == this.currentEpisode &&
           other.audioTrackId == this.audioTrackId &&
@@ -11717,6 +11994,7 @@ class VideoBooksCompanion extends UpdateCompanion<VideoBookRow> {
   final Value<int> lastPositionMs;
   final Value<int?> lastPlayedAt;
   final Value<int?> importedAt;
+  final Value<int?> localAddedAt;
   final Value<String?> playlistJson;
   final Value<int> currentEpisode;
   final Value<String?> audioTrackId;
@@ -11740,6 +12018,7 @@ class VideoBooksCompanion extends UpdateCompanion<VideoBookRow> {
     this.lastPositionMs = const Value.absent(),
     this.lastPlayedAt = const Value.absent(),
     this.importedAt = const Value.absent(),
+    this.localAddedAt = const Value.absent(),
     this.playlistJson = const Value.absent(),
     this.currentEpisode = const Value.absent(),
     this.audioTrackId = const Value.absent(),
@@ -11764,6 +12043,7 @@ class VideoBooksCompanion extends UpdateCompanion<VideoBookRow> {
     this.lastPositionMs = const Value.absent(),
     this.lastPlayedAt = const Value.absent(),
     this.importedAt = const Value.absent(),
+    this.localAddedAt = const Value.absent(),
     this.playlistJson = const Value.absent(),
     this.currentEpisode = const Value.absent(),
     this.audioTrackId = const Value.absent(),
@@ -11790,6 +12070,7 @@ class VideoBooksCompanion extends UpdateCompanion<VideoBookRow> {
     Expression<int>? lastPositionMs,
     Expression<int>? lastPlayedAt,
     Expression<int>? importedAt,
+    Expression<int>? localAddedAt,
     Expression<String>? playlistJson,
     Expression<int>? currentEpisode,
     Expression<String>? audioTrackId,
@@ -11816,6 +12097,7 @@ class VideoBooksCompanion extends UpdateCompanion<VideoBookRow> {
       if (lastPositionMs != null) 'last_position_ms': lastPositionMs,
       if (lastPlayedAt != null) 'last_played_at': lastPlayedAt,
       if (importedAt != null) 'imported_at': importedAt,
+      if (localAddedAt != null) 'local_added_at': localAddedAt,
       if (playlistJson != null) 'playlist_json': playlistJson,
       if (currentEpisode != null) 'current_episode': currentEpisode,
       if (audioTrackId != null) 'audio_track_id': audioTrackId,
@@ -11842,6 +12124,7 @@ class VideoBooksCompanion extends UpdateCompanion<VideoBookRow> {
     Value<int>? lastPositionMs,
     Value<int?>? lastPlayedAt,
     Value<int?>? importedAt,
+    Value<int?>? localAddedAt,
     Value<String?>? playlistJson,
     Value<int>? currentEpisode,
     Value<String?>? audioTrackId,
@@ -11868,6 +12151,7 @@ class VideoBooksCompanion extends UpdateCompanion<VideoBookRow> {
       lastPositionMs: lastPositionMs ?? this.lastPositionMs,
       lastPlayedAt: lastPlayedAt ?? this.lastPlayedAt,
       importedAt: importedAt ?? this.importedAt,
+      localAddedAt: localAddedAt ?? this.localAddedAt,
       playlistJson: playlistJson ?? this.playlistJson,
       currentEpisode: currentEpisode ?? this.currentEpisode,
       audioTrackId: audioTrackId ?? this.audioTrackId,
@@ -11926,6 +12210,9 @@ class VideoBooksCompanion extends UpdateCompanion<VideoBookRow> {
     if (importedAt.present) {
       map['imported_at'] = Variable<int>(importedAt.value);
     }
+    if (localAddedAt.present) {
+      map['local_added_at'] = Variable<int>(localAddedAt.value);
+    }
     if (playlistJson.present) {
       map['playlist_json'] = Variable<String>(playlistJson.value);
     }
@@ -11972,6 +12259,7 @@ class VideoBooksCompanion extends UpdateCompanion<VideoBookRow> {
           ..write('lastPositionMs: $lastPositionMs, ')
           ..write('lastPlayedAt: $lastPlayedAt, ')
           ..write('importedAt: $importedAt, ')
+          ..write('localAddedAt: $localAddedAt, ')
           ..write('playlistJson: $playlistJson, ')
           ..write('currentEpisode: $currentEpisode, ')
           ..write('audioTrackId: $audioTrackId, ')
@@ -12880,6 +13168,51 @@ class $FavoriteWordsTable extends FavoriteWords
     type: DriftSqlType.int,
     requiredDuringInsert: true,
   );
+  static const VerificationMeta _sentenceMeta = const VerificationMeta(
+    'sentence',
+  );
+  @override
+  late final GeneratedColumn<String> sentence = GeneratedColumn<String>(
+    'sentence',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(''),
+  );
+  static const VerificationMeta _sectionIndexMeta = const VerificationMeta(
+    'sectionIndex',
+  );
+  @override
+  late final GeneratedColumn<int> sectionIndex = GeneratedColumn<int>(
+    'section_index',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _normCharOffsetMeta = const VerificationMeta(
+    'normCharOffset',
+  );
+  @override
+  late final GeneratedColumn<int> normCharOffset = GeneratedColumn<int>(
+    'norm_char_offset',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _normCharLengthMeta = const VerificationMeta(
+    'normCharLength',
+  );
+  @override
+  late final GeneratedColumn<int> normCharLength = GeneratedColumn<int>(
+    'norm_char_length',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -12891,6 +13224,10 @@ class $FavoriteWordsTable extends FavoriteWords
     title,
     dateKey,
     createdAt,
+    sentence,
+    sectionIndex,
+    normCharOffset,
+    normCharLength,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -12963,6 +13300,39 @@ class $FavoriteWordsTable extends FavoriteWords
     } else if (isInserting) {
       context.missing(_createdAtMeta);
     }
+    if (data.containsKey('sentence')) {
+      context.handle(
+        _sentenceMeta,
+        sentence.isAcceptableOrUnknown(data['sentence']!, _sentenceMeta),
+      );
+    }
+    if (data.containsKey('section_index')) {
+      context.handle(
+        _sectionIndexMeta,
+        sectionIndex.isAcceptableOrUnknown(
+          data['section_index']!,
+          _sectionIndexMeta,
+        ),
+      );
+    }
+    if (data.containsKey('norm_char_offset')) {
+      context.handle(
+        _normCharOffsetMeta,
+        normCharOffset.isAcceptableOrUnknown(
+          data['norm_char_offset']!,
+          _normCharOffsetMeta,
+        ),
+      );
+    }
+    if (data.containsKey('norm_char_length')) {
+      context.handle(
+        _normCharLengthMeta,
+        normCharLength.isAcceptableOrUnknown(
+          data['norm_char_length']!,
+          _normCharLengthMeta,
+        ),
+      );
+    }
     return context;
   }
 
@@ -13012,6 +13382,22 @@ class $FavoriteWordsTable extends FavoriteWords
         DriftSqlType.int,
         data['${effectivePrefix}created_at'],
       )!,
+      sentence: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}sentence'],
+      )!,
+      sectionIndex: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}section_index'],
+      ),
+      normCharOffset: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}norm_char_offset'],
+      ),
+      normCharLength: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}norm_char_length'],
+      ),
     );
   }
 
@@ -13031,6 +13417,10 @@ class FavoriteWordRow extends DataClass implements Insertable<FavoriteWordRow> {
   final String title;
   final String dateKey;
   final int createdAt;
+  final String sentence;
+  final int? sectionIndex;
+  final int? normCharOffset;
+  final int? normCharLength;
   const FavoriteWordRow({
     required this.id,
     required this.expression,
@@ -13041,6 +13431,10 @@ class FavoriteWordRow extends DataClass implements Insertable<FavoriteWordRow> {
     required this.title,
     required this.dateKey,
     required this.createdAt,
+    required this.sentence,
+    this.sectionIndex,
+    this.normCharOffset,
+    this.normCharLength,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -13056,6 +13450,16 @@ class FavoriteWordRow extends DataClass implements Insertable<FavoriteWordRow> {
     map['title'] = Variable<String>(title);
     map['date_key'] = Variable<String>(dateKey);
     map['created_at'] = Variable<int>(createdAt);
+    map['sentence'] = Variable<String>(sentence);
+    if (!nullToAbsent || sectionIndex != null) {
+      map['section_index'] = Variable<int>(sectionIndex);
+    }
+    if (!nullToAbsent || normCharOffset != null) {
+      map['norm_char_offset'] = Variable<int>(normCharOffset);
+    }
+    if (!nullToAbsent || normCharLength != null) {
+      map['norm_char_length'] = Variable<int>(normCharLength);
+    }
     return map;
   }
 
@@ -13072,6 +13476,16 @@ class FavoriteWordRow extends DataClass implements Insertable<FavoriteWordRow> {
       title: Value(title),
       dateKey: Value(dateKey),
       createdAt: Value(createdAt),
+      sentence: Value(sentence),
+      sectionIndex: sectionIndex == null && nullToAbsent
+          ? const Value.absent()
+          : Value(sectionIndex),
+      normCharOffset: normCharOffset == null && nullToAbsent
+          ? const Value.absent()
+          : Value(normCharOffset),
+      normCharLength: normCharLength == null && nullToAbsent
+          ? const Value.absent()
+          : Value(normCharLength),
     );
   }
 
@@ -13090,6 +13504,10 @@ class FavoriteWordRow extends DataClass implements Insertable<FavoriteWordRow> {
       title: serializer.fromJson<String>(json['title']),
       dateKey: serializer.fromJson<String>(json['dateKey']),
       createdAt: serializer.fromJson<int>(json['createdAt']),
+      sentence: serializer.fromJson<String>(json['sentence']),
+      sectionIndex: serializer.fromJson<int?>(json['sectionIndex']),
+      normCharOffset: serializer.fromJson<int?>(json['normCharOffset']),
+      normCharLength: serializer.fromJson<int?>(json['normCharLength']),
     );
   }
   @override
@@ -13105,6 +13523,10 @@ class FavoriteWordRow extends DataClass implements Insertable<FavoriteWordRow> {
       'title': serializer.toJson<String>(title),
       'dateKey': serializer.toJson<String>(dateKey),
       'createdAt': serializer.toJson<int>(createdAt),
+      'sentence': serializer.toJson<String>(sentence),
+      'sectionIndex': serializer.toJson<int?>(sectionIndex),
+      'normCharOffset': serializer.toJson<int?>(normCharOffset),
+      'normCharLength': serializer.toJson<int?>(normCharLength),
     };
   }
 
@@ -13118,6 +13540,10 @@ class FavoriteWordRow extends DataClass implements Insertable<FavoriteWordRow> {
     String? title,
     String? dateKey,
     int? createdAt,
+    String? sentence,
+    Value<int?> sectionIndex = const Value.absent(),
+    Value<int?> normCharOffset = const Value.absent(),
+    Value<int?> normCharLength = const Value.absent(),
   }) => FavoriteWordRow(
     id: id ?? this.id,
     expression: expression ?? this.expression,
@@ -13128,6 +13554,14 @@ class FavoriteWordRow extends DataClass implements Insertable<FavoriteWordRow> {
     title: title ?? this.title,
     dateKey: dateKey ?? this.dateKey,
     createdAt: createdAt ?? this.createdAt,
+    sentence: sentence ?? this.sentence,
+    sectionIndex: sectionIndex.present ? sectionIndex.value : this.sectionIndex,
+    normCharOffset: normCharOffset.present
+        ? normCharOffset.value
+        : this.normCharOffset,
+    normCharLength: normCharLength.present
+        ? normCharLength.value
+        : this.normCharLength,
   );
   FavoriteWordRow copyWithCompanion(FavoriteWordsCompanion data) {
     return FavoriteWordRow(
@@ -13144,6 +13578,16 @@ class FavoriteWordRow extends DataClass implements Insertable<FavoriteWordRow> {
       title: data.title.present ? data.title.value : this.title,
       dateKey: data.dateKey.present ? data.dateKey.value : this.dateKey,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
+      sentence: data.sentence.present ? data.sentence.value : this.sentence,
+      sectionIndex: data.sectionIndex.present
+          ? data.sectionIndex.value
+          : this.sectionIndex,
+      normCharOffset: data.normCharOffset.present
+          ? data.normCharOffset.value
+          : this.normCharOffset,
+      normCharLength: data.normCharLength.present
+          ? data.normCharLength.value
+          : this.normCharLength,
     );
   }
 
@@ -13158,7 +13602,11 @@ class FavoriteWordRow extends DataClass implements Insertable<FavoriteWordRow> {
           ..write('bookKey: $bookKey, ')
           ..write('title: $title, ')
           ..write('dateKey: $dateKey, ')
-          ..write('createdAt: $createdAt')
+          ..write('createdAt: $createdAt, ')
+          ..write('sentence: $sentence, ')
+          ..write('sectionIndex: $sectionIndex, ')
+          ..write('normCharOffset: $normCharOffset, ')
+          ..write('normCharLength: $normCharLength')
           ..write(')'))
         .toString();
   }
@@ -13174,6 +13622,10 @@ class FavoriteWordRow extends DataClass implements Insertable<FavoriteWordRow> {
     title,
     dateKey,
     createdAt,
+    sentence,
+    sectionIndex,
+    normCharOffset,
+    normCharLength,
   );
   @override
   bool operator ==(Object other) =>
@@ -13187,7 +13639,11 @@ class FavoriteWordRow extends DataClass implements Insertable<FavoriteWordRow> {
           other.bookKey == this.bookKey &&
           other.title == this.title &&
           other.dateKey == this.dateKey &&
-          other.createdAt == this.createdAt);
+          other.createdAt == this.createdAt &&
+          other.sentence == this.sentence &&
+          other.sectionIndex == this.sectionIndex &&
+          other.normCharOffset == this.normCharOffset &&
+          other.normCharLength == this.normCharLength);
 }
 
 class FavoriteWordsCompanion extends UpdateCompanion<FavoriteWordRow> {
@@ -13200,6 +13656,10 @@ class FavoriteWordsCompanion extends UpdateCompanion<FavoriteWordRow> {
   final Value<String> title;
   final Value<String> dateKey;
   final Value<int> createdAt;
+  final Value<String> sentence;
+  final Value<int?> sectionIndex;
+  final Value<int?> normCharOffset;
+  final Value<int?> normCharLength;
   const FavoriteWordsCompanion({
     this.id = const Value.absent(),
     this.expression = const Value.absent(),
@@ -13210,6 +13670,10 @@ class FavoriteWordsCompanion extends UpdateCompanion<FavoriteWordRow> {
     this.title = const Value.absent(),
     this.dateKey = const Value.absent(),
     this.createdAt = const Value.absent(),
+    this.sentence = const Value.absent(),
+    this.sectionIndex = const Value.absent(),
+    this.normCharOffset = const Value.absent(),
+    this.normCharLength = const Value.absent(),
   });
   FavoriteWordsCompanion.insert({
     this.id = const Value.absent(),
@@ -13221,6 +13685,10 @@ class FavoriteWordsCompanion extends UpdateCompanion<FavoriteWordRow> {
     this.title = const Value.absent(),
     required String dateKey,
     required int createdAt,
+    this.sentence = const Value.absent(),
+    this.sectionIndex = const Value.absent(),
+    this.normCharOffset = const Value.absent(),
+    this.normCharLength = const Value.absent(),
   }) : expression = Value(expression),
        sourceType = Value(sourceType),
        dateKey = Value(dateKey),
@@ -13235,6 +13703,10 @@ class FavoriteWordsCompanion extends UpdateCompanion<FavoriteWordRow> {
     Expression<String>? title,
     Expression<String>? dateKey,
     Expression<int>? createdAt,
+    Expression<String>? sentence,
+    Expression<int>? sectionIndex,
+    Expression<int>? normCharOffset,
+    Expression<int>? normCharLength,
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
@@ -13246,6 +13718,10 @@ class FavoriteWordsCompanion extends UpdateCompanion<FavoriteWordRow> {
       if (title != null) 'title': title,
       if (dateKey != null) 'date_key': dateKey,
       if (createdAt != null) 'created_at': createdAt,
+      if (sentence != null) 'sentence': sentence,
+      if (sectionIndex != null) 'section_index': sectionIndex,
+      if (normCharOffset != null) 'norm_char_offset': normCharOffset,
+      if (normCharLength != null) 'norm_char_length': normCharLength,
     });
   }
 
@@ -13259,6 +13735,10 @@ class FavoriteWordsCompanion extends UpdateCompanion<FavoriteWordRow> {
     Value<String>? title,
     Value<String>? dateKey,
     Value<int>? createdAt,
+    Value<String>? sentence,
+    Value<int?>? sectionIndex,
+    Value<int?>? normCharOffset,
+    Value<int?>? normCharLength,
   }) {
     return FavoriteWordsCompanion(
       id: id ?? this.id,
@@ -13270,6 +13750,10 @@ class FavoriteWordsCompanion extends UpdateCompanion<FavoriteWordRow> {
       title: title ?? this.title,
       dateKey: dateKey ?? this.dateKey,
       createdAt: createdAt ?? this.createdAt,
+      sentence: sentence ?? this.sentence,
+      sectionIndex: sectionIndex ?? this.sectionIndex,
+      normCharOffset: normCharOffset ?? this.normCharOffset,
+      normCharLength: normCharLength ?? this.normCharLength,
     );
   }
 
@@ -13303,6 +13787,18 @@ class FavoriteWordsCompanion extends UpdateCompanion<FavoriteWordRow> {
     if (createdAt.present) {
       map['created_at'] = Variable<int>(createdAt.value);
     }
+    if (sentence.present) {
+      map['sentence'] = Variable<String>(sentence.value);
+    }
+    if (sectionIndex.present) {
+      map['section_index'] = Variable<int>(sectionIndex.value);
+    }
+    if (normCharOffset.present) {
+      map['norm_char_offset'] = Variable<int>(normCharOffset.value);
+    }
+    if (normCharLength.present) {
+      map['norm_char_length'] = Variable<int>(normCharLength.value);
+    }
     return map;
   }
 
@@ -13317,7 +13813,11 @@ class FavoriteWordsCompanion extends UpdateCompanion<FavoriteWordRow> {
           ..write('bookKey: $bookKey, ')
           ..write('title: $title, ')
           ..write('dateKey: $dateKey, ')
-          ..write('createdAt: $createdAt')
+          ..write('createdAt: $createdAt, ')
+          ..write('sentence: $sentence, ')
+          ..write('sectionIndex: $sectionIndex, ')
+          ..write('normCharOffset: $normCharOffset, ')
+          ..write('normCharLength: $normCharLength')
           ..write(')'))
         .toString();
   }
@@ -16337,8 +16837,9 @@ class MediaCollectionItemRow extends DataClass
   final String mediaType;
 
   /// 条目稳定身份：epub=bookKey / srt=uid / video=bookUid / game=galgames.id
-  /// （game 的 id 是添加时刻微秒时间戳字符串，**本机局域身份**：与 exe 路径同为
-  /// 本机事实，跨端同步时对端无对应行则该成员静默忽略）。
+  /// （game 的 id 是添加时刻微秒时间戳字符串，**本机局域身份**：跨端同步时经
+  /// `GameIdentityIndex` 换成外部 id / exe 路径 / 标题等跨端身份，对端解析不到
+  /// 本机游戏则透传保存、静默不渲染）。
   final String entryKey;
 
   /// 合集内序：playlist 的播放顺序 / collection 的展示顺序。
@@ -19246,6 +19747,332 @@ class BookCustomCssCompanion extends UpdateCompanion<BookCustomCssRow> {
           ..write('content: $content, ')
           ..write('deleted: $deleted, ')
           ..write('updatedAt: $updatedAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $MangaReaderOverridesTable extends MangaReaderOverrides
+    with TableInfo<$MangaReaderOverridesTable, MangaReaderOverrideRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $MangaReaderOverridesTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _bookUidMeta = const VerificationMeta(
+    'bookUid',
+  );
+  @override
+  late final GeneratedColumn<String> bookUid = GeneratedColumn<String>(
+    'book_uid',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _overridesJsonMeta = const VerificationMeta(
+    'overridesJson',
+  );
+  @override
+  late final GeneratedColumn<String> overridesJson = GeneratedColumn<String>(
+    'overrides_json',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant('{}'),
+  );
+  static const VerificationMeta _updatedAtMeta = const VerificationMeta(
+    'updatedAt',
+  );
+  @override
+  late final GeneratedColumn<int> updatedAt = GeneratedColumn<int>(
+    'updated_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _deletedMeta = const VerificationMeta(
+    'deleted',
+  );
+  @override
+  late final GeneratedColumn<bool> deleted = GeneratedColumn<bool>(
+    'deleted',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("deleted" IN (0, 1))',
+    ),
+    defaultValue: const Constant(false),
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    bookUid,
+    overridesJson,
+    updatedAt,
+    deleted,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'manga_reader_overrides';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<MangaReaderOverrideRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('book_uid')) {
+      context.handle(
+        _bookUidMeta,
+        bookUid.isAcceptableOrUnknown(data['book_uid']!, _bookUidMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_bookUidMeta);
+    }
+    if (data.containsKey('overrides_json')) {
+      context.handle(
+        _overridesJsonMeta,
+        overridesJson.isAcceptableOrUnknown(
+          data['overrides_json']!,
+          _overridesJsonMeta,
+        ),
+      );
+    }
+    if (data.containsKey('updated_at')) {
+      context.handle(
+        _updatedAtMeta,
+        updatedAt.isAcceptableOrUnknown(data['updated_at']!, _updatedAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_updatedAtMeta);
+    }
+    if (data.containsKey('deleted')) {
+      context.handle(
+        _deletedMeta,
+        deleted.isAcceptableOrUnknown(data['deleted']!, _deletedMeta),
+      );
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {bookUid};
+  @override
+  MangaReaderOverrideRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return MangaReaderOverrideRow(
+      bookUid: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}book_uid'],
+      )!,
+      overridesJson: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}overrides_json'],
+      )!,
+      updatedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}updated_at'],
+      )!,
+      deleted: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}deleted'],
+      )!,
+    );
+  }
+
+  @override
+  $MangaReaderOverridesTable createAlias(String alias) {
+    return $MangaReaderOverridesTable(attachedDatabase, alias);
+  }
+}
+
+class MangaReaderOverrideRow extends DataClass
+    implements Insertable<MangaReaderOverrideRow> {
+  final String bookUid;
+  final String overridesJson;
+  final int updatedAt;
+  final bool deleted;
+  const MangaReaderOverrideRow({
+    required this.bookUid,
+    required this.overridesJson,
+    required this.updatedAt,
+    required this.deleted,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['book_uid'] = Variable<String>(bookUid);
+    map['overrides_json'] = Variable<String>(overridesJson);
+    map['updated_at'] = Variable<int>(updatedAt);
+    map['deleted'] = Variable<bool>(deleted);
+    return map;
+  }
+
+  MangaReaderOverridesCompanion toCompanion(bool nullToAbsent) {
+    return MangaReaderOverridesCompanion(
+      bookUid: Value(bookUid),
+      overridesJson: Value(overridesJson),
+      updatedAt: Value(updatedAt),
+      deleted: Value(deleted),
+    );
+  }
+
+  factory MangaReaderOverrideRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return MangaReaderOverrideRow(
+      bookUid: serializer.fromJson<String>(json['bookUid']),
+      overridesJson: serializer.fromJson<String>(json['overridesJson']),
+      updatedAt: serializer.fromJson<int>(json['updatedAt']),
+      deleted: serializer.fromJson<bool>(json['deleted']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'bookUid': serializer.toJson<String>(bookUid),
+      'overridesJson': serializer.toJson<String>(overridesJson),
+      'updatedAt': serializer.toJson<int>(updatedAt),
+      'deleted': serializer.toJson<bool>(deleted),
+    };
+  }
+
+  MangaReaderOverrideRow copyWith({
+    String? bookUid,
+    String? overridesJson,
+    int? updatedAt,
+    bool? deleted,
+  }) => MangaReaderOverrideRow(
+    bookUid: bookUid ?? this.bookUid,
+    overridesJson: overridesJson ?? this.overridesJson,
+    updatedAt: updatedAt ?? this.updatedAt,
+    deleted: deleted ?? this.deleted,
+  );
+  MangaReaderOverrideRow copyWithCompanion(MangaReaderOverridesCompanion data) {
+    return MangaReaderOverrideRow(
+      bookUid: data.bookUid.present ? data.bookUid.value : this.bookUid,
+      overridesJson: data.overridesJson.present
+          ? data.overridesJson.value
+          : this.overridesJson,
+      updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
+      deleted: data.deleted.present ? data.deleted.value : this.deleted,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('MangaReaderOverrideRow(')
+          ..write('bookUid: $bookUid, ')
+          ..write('overridesJson: $overridesJson, ')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('deleted: $deleted')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(bookUid, overridesJson, updatedAt, deleted);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is MangaReaderOverrideRow &&
+          other.bookUid == this.bookUid &&
+          other.overridesJson == this.overridesJson &&
+          other.updatedAt == this.updatedAt &&
+          other.deleted == this.deleted);
+}
+
+class MangaReaderOverridesCompanion
+    extends UpdateCompanion<MangaReaderOverrideRow> {
+  final Value<String> bookUid;
+  final Value<String> overridesJson;
+  final Value<int> updatedAt;
+  final Value<bool> deleted;
+  final Value<int> rowid;
+  const MangaReaderOverridesCompanion({
+    this.bookUid = const Value.absent(),
+    this.overridesJson = const Value.absent(),
+    this.updatedAt = const Value.absent(),
+    this.deleted = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  MangaReaderOverridesCompanion.insert({
+    required String bookUid,
+    this.overridesJson = const Value.absent(),
+    required int updatedAt,
+    this.deleted = const Value.absent(),
+    this.rowid = const Value.absent(),
+  }) : bookUid = Value(bookUid),
+       updatedAt = Value(updatedAt);
+  static Insertable<MangaReaderOverrideRow> custom({
+    Expression<String>? bookUid,
+    Expression<String>? overridesJson,
+    Expression<int>? updatedAt,
+    Expression<bool>? deleted,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (bookUid != null) 'book_uid': bookUid,
+      if (overridesJson != null) 'overrides_json': overridesJson,
+      if (updatedAt != null) 'updated_at': updatedAt,
+      if (deleted != null) 'deleted': deleted,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  MangaReaderOverridesCompanion copyWith({
+    Value<String>? bookUid,
+    Value<String>? overridesJson,
+    Value<int>? updatedAt,
+    Value<bool>? deleted,
+    Value<int>? rowid,
+  }) {
+    return MangaReaderOverridesCompanion(
+      bookUid: bookUid ?? this.bookUid,
+      overridesJson: overridesJson ?? this.overridesJson,
+      updatedAt: updatedAt ?? this.updatedAt,
+      deleted: deleted ?? this.deleted,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (bookUid.present) {
+      map['book_uid'] = Variable<String>(bookUid.value);
+    }
+    if (overridesJson.present) {
+      map['overrides_json'] = Variable<String>(overridesJson.value);
+    }
+    if (updatedAt.present) {
+      map['updated_at'] = Variable<int>(updatedAt.value);
+    }
+    if (deleted.present) {
+      map['deleted'] = Variable<bool>(deleted.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('MangaReaderOverridesCompanion(')
+          ..write('bookUid: $bookUid, ')
+          ..write('overridesJson: $overridesJson, ')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('deleted: $deleted, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -23972,6 +24799,17 @@ class $GalgamesTable extends Galgames
     requiredDuringInsert: false,
     defaultValue: const Constant(0),
   );
+  static const VerificationMeta _completedAtMeta = const VerificationMeta(
+    'completedAt',
+  );
+  @override
+  late final GeneratedColumn<int> completedAt = GeneratedColumn<int>(
+    'completed_at',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -23989,6 +24827,7 @@ class $GalgamesTable extends Galgames
     releaseDate,
     customDataJson,
     sortOrder,
+    completedAt,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -24114,6 +24953,15 @@ class $GalgamesTable extends Galgames
         sortOrder.isAcceptableOrUnknown(data['sort_order']!, _sortOrderMeta),
       );
     }
+    if (data.containsKey('completed_at')) {
+      context.handle(
+        _completedAtMeta,
+        completedAt.isAcceptableOrUnknown(
+          data['completed_at']!,
+          _completedAtMeta,
+        ),
+      );
+    }
     return context;
   }
 
@@ -24183,6 +25031,10 @@ class $GalgamesTable extends Galgames
         DriftSqlType.int,
         data['${effectivePrefix}sort_order'],
       )!,
+      completedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}completed_at'],
+      ),
     );
   }
 
@@ -24266,6 +25118,15 @@ class GalgameRow extends DataClass implements Insertable<GalgameRow> {
 
   /// 手动排序位（预留，M1 不做拖拽排序）。
   final int sortOrder;
+
+  /// v115（排行榜「读完时刻」）：[playStatus] 进入 2（玩过）的毫秒戳；null = 不是
+  /// 「玩过」，或是 v115 前就已玩过但一条游玩会话都没有（日期未知）。
+  ///
+  /// 只由 DB 层一处判据维护（`resolveGalgameCompletedAt`，经 `setGalgamePlayStatus`
+  /// / `upsertGalgame` 写入）：从非 2 变成 2 时写当前时刻，保持 2 时原值不动，
+  /// 离开 2 时清空。调用方不直接写本列。v115 迁移用该游戏最后一次会话的
+  /// `end_ms` 回填存量「玩过」。
+  final int? completedAt;
   const GalgameRow({
     required this.id,
     required this.name,
@@ -24282,6 +25143,7 @@ class GalgameRow extends DataClass implements Insertable<GalgameRow> {
     this.releaseDate,
     this.customDataJson,
     required this.sortOrder,
+    this.completedAt,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -24311,6 +25173,9 @@ class GalgameRow extends DataClass implements Insertable<GalgameRow> {
       map['custom_data_json'] = Variable<String>(customDataJson);
     }
     map['sort_order'] = Variable<int>(sortOrder);
+    if (!nullToAbsent || completedAt != null) {
+      map['completed_at'] = Variable<int>(completedAt);
+    }
     return map;
   }
 
@@ -24341,6 +25206,9 @@ class GalgameRow extends DataClass implements Insertable<GalgameRow> {
           ? const Value.absent()
           : Value(customDataJson),
       sortOrder: Value(sortOrder),
+      completedAt: completedAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(completedAt),
     );
   }
 
@@ -24367,6 +25235,7 @@ class GalgameRow extends DataClass implements Insertable<GalgameRow> {
       releaseDate: serializer.fromJson<String?>(json['releaseDate']),
       customDataJson: serializer.fromJson<String?>(json['customDataJson']),
       sortOrder: serializer.fromJson<int>(json['sortOrder']),
+      completedAt: serializer.fromJson<int?>(json['completedAt']),
     );
   }
   @override
@@ -24388,6 +25257,7 @@ class GalgameRow extends DataClass implements Insertable<GalgameRow> {
       'releaseDate': serializer.toJson<String?>(releaseDate),
       'customDataJson': serializer.toJson<String?>(customDataJson),
       'sortOrder': serializer.toJson<int>(sortOrder),
+      'completedAt': serializer.toJson<int?>(completedAt),
     };
   }
 
@@ -24407,6 +25277,7 @@ class GalgameRow extends DataClass implements Insertable<GalgameRow> {
     Value<String?> releaseDate = const Value.absent(),
     Value<String?> customDataJson = const Value.absent(),
     int? sortOrder,
+    Value<int?> completedAt = const Value.absent(),
   }) => GalgameRow(
     id: id ?? this.id,
     name: name ?? this.name,
@@ -24427,6 +25298,7 @@ class GalgameRow extends DataClass implements Insertable<GalgameRow> {
         ? customDataJson.value
         : this.customDataJson,
     sortOrder: sortOrder ?? this.sortOrder,
+    completedAt: completedAt.present ? completedAt.value : this.completedAt,
   );
   GalgameRow copyWithCompanion(GalgamesCompanion data) {
     return GalgameRow(
@@ -24459,6 +25331,9 @@ class GalgameRow extends DataClass implements Insertable<GalgameRow> {
           ? data.customDataJson.value
           : this.customDataJson,
       sortOrder: data.sortOrder.present ? data.sortOrder.value : this.sortOrder,
+      completedAt: data.completedAt.present
+          ? data.completedAt.value
+          : this.completedAt,
     );
   }
 
@@ -24479,7 +25354,8 @@ class GalgameRow extends DataClass implements Insertable<GalgameRow> {
           ..write('primarySource: $primarySource, ')
           ..write('releaseDate: $releaseDate, ')
           ..write('customDataJson: $customDataJson, ')
-          ..write('sortOrder: $sortOrder')
+          ..write('sortOrder: $sortOrder, ')
+          ..write('completedAt: $completedAt')
           ..write(')'))
         .toString();
   }
@@ -24501,6 +25377,7 @@ class GalgameRow extends DataClass implements Insertable<GalgameRow> {
     releaseDate,
     customDataJson,
     sortOrder,
+    completedAt,
   );
   @override
   bool operator ==(Object other) =>
@@ -24520,7 +25397,8 @@ class GalgameRow extends DataClass implements Insertable<GalgameRow> {
           other.primarySource == this.primarySource &&
           other.releaseDate == this.releaseDate &&
           other.customDataJson == this.customDataJson &&
-          other.sortOrder == this.sortOrder);
+          other.sortOrder == this.sortOrder &&
+          other.completedAt == this.completedAt);
 }
 
 class GalgamesCompanion extends UpdateCompanion<GalgameRow> {
@@ -24539,6 +25417,7 @@ class GalgamesCompanion extends UpdateCompanion<GalgameRow> {
   final Value<String?> releaseDate;
   final Value<String?> customDataJson;
   final Value<int> sortOrder;
+  final Value<int?> completedAt;
   final Value<int> rowid;
   const GalgamesCompanion({
     this.id = const Value.absent(),
@@ -24556,6 +25435,7 @@ class GalgamesCompanion extends UpdateCompanion<GalgameRow> {
     this.releaseDate = const Value.absent(),
     this.customDataJson = const Value.absent(),
     this.sortOrder = const Value.absent(),
+    this.completedAt = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   GalgamesCompanion.insert({
@@ -24574,6 +25454,7 @@ class GalgamesCompanion extends UpdateCompanion<GalgameRow> {
     this.releaseDate = const Value.absent(),
     this.customDataJson = const Value.absent(),
     this.sortOrder = const Value.absent(),
+    this.completedAt = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : id = Value(id),
        name = Value(name),
@@ -24596,6 +25477,7 @@ class GalgamesCompanion extends UpdateCompanion<GalgameRow> {
     Expression<String>? releaseDate,
     Expression<String>? customDataJson,
     Expression<int>? sortOrder,
+    Expression<int>? completedAt,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -24615,6 +25497,7 @@ class GalgamesCompanion extends UpdateCompanion<GalgameRow> {
       if (releaseDate != null) 'release_date': releaseDate,
       if (customDataJson != null) 'custom_data_json': customDataJson,
       if (sortOrder != null) 'sort_order': sortOrder,
+      if (completedAt != null) 'completed_at': completedAt,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -24635,6 +25518,7 @@ class GalgamesCompanion extends UpdateCompanion<GalgameRow> {
     Value<String?>? releaseDate,
     Value<String?>? customDataJson,
     Value<int>? sortOrder,
+    Value<int?>? completedAt,
     Value<int>? rowid,
   }) {
     return GalgamesCompanion(
@@ -24653,6 +25537,7 @@ class GalgamesCompanion extends UpdateCompanion<GalgameRow> {
       releaseDate: releaseDate ?? this.releaseDate,
       customDataJson: customDataJson ?? this.customDataJson,
       sortOrder: sortOrder ?? this.sortOrder,
+      completedAt: completedAt ?? this.completedAt,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -24705,6 +25590,9 @@ class GalgamesCompanion extends UpdateCompanion<GalgameRow> {
     if (sortOrder.present) {
       map['sort_order'] = Variable<int>(sortOrder.value);
     }
+    if (completedAt.present) {
+      map['completed_at'] = Variable<int>(completedAt.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -24729,6 +25617,7 @@ class GalgamesCompanion extends UpdateCompanion<GalgameRow> {
           ..write('releaseDate: $releaseDate, ')
           ..write('customDataJson: $customDataJson, ')
           ..write('sortOrder: $sortOrder, ')
+          ..write('completedAt: $completedAt, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -25236,9 +26125,6 @@ class $GalgameSessionsTable extends GalgameSessions
     false,
     type: DriftSqlType.string,
     requiredDuringInsert: true,
-    defaultConstraints: GeneratedColumn.constraintIsAlways(
-      'REFERENCES galgames (id) ON DELETE CASCADE',
-    ),
   );
   static const VerificationMeta _startMsMeta = const VerificationMeta(
     'startMs',
@@ -25282,6 +26168,30 @@ class $GalgameSessionsTable extends GalgameSessions
     type: DriftSqlType.string,
     requiredDuringInsert: true,
   );
+  static const VerificationMeta _profileIdMeta = const VerificationMeta(
+    'profileId',
+  );
+  @override
+  late final GeneratedColumn<int> profileId = GeneratedColumn<int>(
+    'profile_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _gameTitleMeta = const VerificationMeta(
+    'gameTitle',
+  );
+  @override
+  late final GeneratedColumn<String> gameTitle = GeneratedColumn<String>(
+    'game_title',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(''),
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -25290,6 +26200,8 @@ class $GalgameSessionsTable extends GalgameSessions
     endMs,
     durationSeconds,
     dateKey,
+    profileId,
+    gameTitle,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -25349,6 +26261,18 @@ class $GalgameSessionsTable extends GalgameSessions
     } else if (isInserting) {
       context.missing(_dateKeyMeta);
     }
+    if (data.containsKey('profile_id')) {
+      context.handle(
+        _profileIdMeta,
+        profileId.isAcceptableOrUnknown(data['profile_id']!, _profileIdMeta),
+      );
+    }
+    if (data.containsKey('game_title')) {
+      context.handle(
+        _gameTitleMeta,
+        gameTitle.isAcceptableOrUnknown(data['game_title']!, _gameTitleMeta),
+      );
+    }
     return context;
   }
 
@@ -25382,6 +26306,14 @@ class $GalgameSessionsTable extends GalgameSessions
         DriftSqlType.string,
         data['${effectivePrefix}date_key'],
       )!,
+      profileId: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}profile_id'],
+      )!,
+      gameTitle: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}game_title'],
+      )!,
     );
   }
 
@@ -25395,7 +26327,10 @@ class GalgameSessionRow extends DataClass
     implements Insertable<GalgameSessionRow> {
   final int id;
 
-  /// 所属游戏。删游戏 cascade 清本表。
+  /// 所属游戏（`galgames.id`）。自 v113 起是**逻辑外键**：从库移除游戏不再
+  /// cascade 清本表——会话是用户攒下的游玩时长，只有删除框勾了「同时删除统计数据」
+  /// （`deleteGameStatisticsForId`）或统计页显式删除时才删。游戏移除后会话成为孤儿，
+  /// 靠 [gameTitle] 快照继续在统计页显示名字。
   final String gameId;
 
   /// 会话起始毫秒戳。
@@ -25411,6 +26346,16 @@ class GalgameSessionRow extends DataClass
   /// 冗余的按天分组键（'YYYY-MM-DD'，本地时区，取 [endMs] 的日期），
   /// 与其它统计表 dateKey 同源，避免读取端为分组反算。
   final String dateKey;
+
+  /// v105：产生本次游玩时激活的 Profile（`profiles.id`；0 = 库里还没有 Profile
+  /// 时写下的行，只在纯 DB 测试里出现）。统计按 Profile 隔离的分区键，与
+  /// [StudySegments.profileId] 同律；写入时由 DAO 从 `active_profile_id` 偏好盖戳。
+  final int profileId;
+
+  /// v113：游戏被从库移除时快照下的显示名（`deleteGalgame` 同事务写入）。游戏还在库
+  /// 里时恒为空串、读取端一律以库内当前显示名为准；游戏移除后 [gameId] 反查不到
+  /// 行，统计页 / 会话流靠它显示名字而不是裸 id。
+  final String gameTitle;
   const GalgameSessionRow({
     required this.id,
     required this.gameId,
@@ -25418,6 +26363,8 @@ class GalgameSessionRow extends DataClass
     required this.endMs,
     required this.durationSeconds,
     required this.dateKey,
+    required this.profileId,
+    required this.gameTitle,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -25428,6 +26375,8 @@ class GalgameSessionRow extends DataClass
     map['end_ms'] = Variable<int>(endMs);
     map['duration_seconds'] = Variable<int>(durationSeconds);
     map['date_key'] = Variable<String>(dateKey);
+    map['profile_id'] = Variable<int>(profileId);
+    map['game_title'] = Variable<String>(gameTitle);
     return map;
   }
 
@@ -25439,6 +26388,8 @@ class GalgameSessionRow extends DataClass
       endMs: Value(endMs),
       durationSeconds: Value(durationSeconds),
       dateKey: Value(dateKey),
+      profileId: Value(profileId),
+      gameTitle: Value(gameTitle),
     );
   }
 
@@ -25454,6 +26405,8 @@ class GalgameSessionRow extends DataClass
       endMs: serializer.fromJson<int>(json['endMs']),
       durationSeconds: serializer.fromJson<int>(json['durationSeconds']),
       dateKey: serializer.fromJson<String>(json['dateKey']),
+      profileId: serializer.fromJson<int>(json['profileId']),
+      gameTitle: serializer.fromJson<String>(json['gameTitle']),
     );
   }
   @override
@@ -25466,6 +26419,8 @@ class GalgameSessionRow extends DataClass
       'endMs': serializer.toJson<int>(endMs),
       'durationSeconds': serializer.toJson<int>(durationSeconds),
       'dateKey': serializer.toJson<String>(dateKey),
+      'profileId': serializer.toJson<int>(profileId),
+      'gameTitle': serializer.toJson<String>(gameTitle),
     };
   }
 
@@ -25476,6 +26431,8 @@ class GalgameSessionRow extends DataClass
     int? endMs,
     int? durationSeconds,
     String? dateKey,
+    int? profileId,
+    String? gameTitle,
   }) => GalgameSessionRow(
     id: id ?? this.id,
     gameId: gameId ?? this.gameId,
@@ -25483,6 +26440,8 @@ class GalgameSessionRow extends DataClass
     endMs: endMs ?? this.endMs,
     durationSeconds: durationSeconds ?? this.durationSeconds,
     dateKey: dateKey ?? this.dateKey,
+    profileId: profileId ?? this.profileId,
+    gameTitle: gameTitle ?? this.gameTitle,
   );
   GalgameSessionRow copyWithCompanion(GalgameSessionsCompanion data) {
     return GalgameSessionRow(
@@ -25494,6 +26453,8 @@ class GalgameSessionRow extends DataClass
           ? data.durationSeconds.value
           : this.durationSeconds,
       dateKey: data.dateKey.present ? data.dateKey.value : this.dateKey,
+      profileId: data.profileId.present ? data.profileId.value : this.profileId,
+      gameTitle: data.gameTitle.present ? data.gameTitle.value : this.gameTitle,
     );
   }
 
@@ -25505,14 +26466,24 @@ class GalgameSessionRow extends DataClass
           ..write('startMs: $startMs, ')
           ..write('endMs: $endMs, ')
           ..write('durationSeconds: $durationSeconds, ')
-          ..write('dateKey: $dateKey')
+          ..write('dateKey: $dateKey, ')
+          ..write('profileId: $profileId, ')
+          ..write('gameTitle: $gameTitle')
           ..write(')'))
         .toString();
   }
 
   @override
-  int get hashCode =>
-      Object.hash(id, gameId, startMs, endMs, durationSeconds, dateKey);
+  int get hashCode => Object.hash(
+    id,
+    gameId,
+    startMs,
+    endMs,
+    durationSeconds,
+    dateKey,
+    profileId,
+    gameTitle,
+  );
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -25522,7 +26493,9 @@ class GalgameSessionRow extends DataClass
           other.startMs == this.startMs &&
           other.endMs == this.endMs &&
           other.durationSeconds == this.durationSeconds &&
-          other.dateKey == this.dateKey);
+          other.dateKey == this.dateKey &&
+          other.profileId == this.profileId &&
+          other.gameTitle == this.gameTitle);
 }
 
 class GalgameSessionsCompanion extends UpdateCompanion<GalgameSessionRow> {
@@ -25532,6 +26505,8 @@ class GalgameSessionsCompanion extends UpdateCompanion<GalgameSessionRow> {
   final Value<int> endMs;
   final Value<int> durationSeconds;
   final Value<String> dateKey;
+  final Value<int> profileId;
+  final Value<String> gameTitle;
   const GalgameSessionsCompanion({
     this.id = const Value.absent(),
     this.gameId = const Value.absent(),
@@ -25539,6 +26514,8 @@ class GalgameSessionsCompanion extends UpdateCompanion<GalgameSessionRow> {
     this.endMs = const Value.absent(),
     this.durationSeconds = const Value.absent(),
     this.dateKey = const Value.absent(),
+    this.profileId = const Value.absent(),
+    this.gameTitle = const Value.absent(),
   });
   GalgameSessionsCompanion.insert({
     this.id = const Value.absent(),
@@ -25547,6 +26524,8 @@ class GalgameSessionsCompanion extends UpdateCompanion<GalgameSessionRow> {
     required int endMs,
     required int durationSeconds,
     required String dateKey,
+    this.profileId = const Value.absent(),
+    this.gameTitle = const Value.absent(),
   }) : gameId = Value(gameId),
        startMs = Value(startMs),
        endMs = Value(endMs),
@@ -25559,6 +26538,8 @@ class GalgameSessionsCompanion extends UpdateCompanion<GalgameSessionRow> {
     Expression<int>? endMs,
     Expression<int>? durationSeconds,
     Expression<String>? dateKey,
+    Expression<int>? profileId,
+    Expression<String>? gameTitle,
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
@@ -25567,6 +26548,8 @@ class GalgameSessionsCompanion extends UpdateCompanion<GalgameSessionRow> {
       if (endMs != null) 'end_ms': endMs,
       if (durationSeconds != null) 'duration_seconds': durationSeconds,
       if (dateKey != null) 'date_key': dateKey,
+      if (profileId != null) 'profile_id': profileId,
+      if (gameTitle != null) 'game_title': gameTitle,
     });
   }
 
@@ -25577,6 +26560,8 @@ class GalgameSessionsCompanion extends UpdateCompanion<GalgameSessionRow> {
     Value<int>? endMs,
     Value<int>? durationSeconds,
     Value<String>? dateKey,
+    Value<int>? profileId,
+    Value<String>? gameTitle,
   }) {
     return GalgameSessionsCompanion(
       id: id ?? this.id,
@@ -25585,6 +26570,8 @@ class GalgameSessionsCompanion extends UpdateCompanion<GalgameSessionRow> {
       endMs: endMs ?? this.endMs,
       durationSeconds: durationSeconds ?? this.durationSeconds,
       dateKey: dateKey ?? this.dateKey,
+      profileId: profileId ?? this.profileId,
+      gameTitle: gameTitle ?? this.gameTitle,
     );
   }
 
@@ -25609,6 +26596,12 @@ class GalgameSessionsCompanion extends UpdateCompanion<GalgameSessionRow> {
     if (dateKey.present) {
       map['date_key'] = Variable<String>(dateKey.value);
     }
+    if (profileId.present) {
+      map['profile_id'] = Variable<int>(profileId.value);
+    }
+    if (gameTitle.present) {
+      map['game_title'] = Variable<String>(gameTitle.value);
+    }
     return map;
   }
 
@@ -25620,7 +26613,9 @@ class GalgameSessionsCompanion extends UpdateCompanion<GalgameSessionRow> {
           ..write('startMs: $startMs, ')
           ..write('endMs: $endMs, ')
           ..write('durationSeconds: $durationSeconds, ')
-          ..write('dateKey: $dateKey')
+          ..write('dateKey: $dateKey, ')
+          ..write('profileId: $profileId, ')
+          ..write('gameTitle: $gameTitle')
           ..write(')'))
         .toString();
   }
@@ -25774,6 +26769,18 @@ class $MangaExtensionStoresTable extends MangaExtensionStores
     type: DriftSqlType.string,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _mediaKindMeta = const VerificationMeta(
+    'mediaKind',
+  );
+  @override
+  late final GeneratedColumn<String> mediaKind = GeneratedColumn<String>(
+    'media_kind',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant('manga'),
+  );
   @override
   List<GeneratedColumn> get $columns => [
     indexUrl,
@@ -25789,6 +26796,7 @@ class $MangaExtensionStoresTable extends MangaExtensionStores
     lastModified,
     lastSyncAt,
     lastError,
+    mediaKind,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -25898,6 +26906,12 @@ class $MangaExtensionStoresTable extends MangaExtensionStores
         lastError.isAcceptableOrUnknown(data['last_error']!, _lastErrorMeta),
       );
     }
+    if (data.containsKey('media_kind')) {
+      context.handle(
+        _mediaKindMeta,
+        mediaKind.isAcceptableOrUnknown(data['media_kind']!, _mediaKindMeta),
+      );
+    }
     return context;
   }
 
@@ -25959,6 +26973,10 @@ class $MangaExtensionStoresTable extends MangaExtensionStores
         DriftSqlType.string,
         data['${effectivePrefix}last_error'],
       ),
+      mediaKind: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}media_kind'],
+      )!,
     );
   }
 
@@ -25984,6 +27002,12 @@ class MangaExtensionStoreRow extends DataClass
   final String? lastModified;
   final int? lastSyncAt;
   final String? lastError;
+
+  /// v107：仓库承载的扩展媒体种类，`'manga'`（Mihon 漫画扩展）| `'anime'`
+  /// （Aniyomi 视频扩展）。两个生态的索引格式同源、宿主运行时同一个，只有扩展
+  /// APK 的 manifest feature 与源接口不同，所以共用三张表按本列分片，而不是
+  /// 复制一套 `video_*` 表。存量行全部是漫画，默认值即历史事实。
+  final String mediaKind;
   const MangaExtensionStoreRow({
     required this.indexUrl,
     required this.name,
@@ -25998,6 +27022,7 @@ class MangaExtensionStoreRow extends DataClass
     this.lastModified,
     this.lastSyncAt,
     this.lastError,
+    required this.mediaKind,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -26031,6 +27056,7 @@ class MangaExtensionStoreRow extends DataClass
     if (!nullToAbsent || lastError != null) {
       map['last_error'] = Variable<String>(lastError);
     }
+    map['media_kind'] = Variable<String>(mediaKind);
     return map;
   }
 
@@ -26063,6 +27089,7 @@ class MangaExtensionStoreRow extends DataClass
       lastError: lastError == null && nullToAbsent
           ? const Value.absent()
           : Value(lastError),
+      mediaKind: Value(mediaKind),
     );
   }
 
@@ -26085,6 +27112,7 @@ class MangaExtensionStoreRow extends DataClass
       lastModified: serializer.fromJson<String?>(json['lastModified']),
       lastSyncAt: serializer.fromJson<int?>(json['lastSyncAt']),
       lastError: serializer.fromJson<String?>(json['lastError']),
+      mediaKind: serializer.fromJson<String>(json['mediaKind']),
     );
   }
   @override
@@ -26104,6 +27132,7 @@ class MangaExtensionStoreRow extends DataClass
       'lastModified': serializer.toJson<String?>(lastModified),
       'lastSyncAt': serializer.toJson<int?>(lastSyncAt),
       'lastError': serializer.toJson<String?>(lastError),
+      'mediaKind': serializer.toJson<String>(mediaKind),
     };
   }
 
@@ -26121,6 +27150,7 @@ class MangaExtensionStoreRow extends DataClass
     Value<String?> lastModified = const Value.absent(),
     Value<int?> lastSyncAt = const Value.absent(),
     Value<String?> lastError = const Value.absent(),
+    String? mediaKind,
   }) => MangaExtensionStoreRow(
     indexUrl: indexUrl ?? this.indexUrl,
     name: name ?? this.name,
@@ -26137,6 +27167,7 @@ class MangaExtensionStoreRow extends DataClass
     lastModified: lastModified.present ? lastModified.value : this.lastModified,
     lastSyncAt: lastSyncAt.present ? lastSyncAt.value : this.lastSyncAt,
     lastError: lastError.present ? lastError.value : this.lastError,
+    mediaKind: mediaKind ?? this.mediaKind,
   );
   MangaExtensionStoreRow copyWithCompanion(MangaExtensionStoresCompanion data) {
     return MangaExtensionStoreRow(
@@ -26165,6 +27196,7 @@ class MangaExtensionStoreRow extends DataClass
           ? data.lastSyncAt.value
           : this.lastSyncAt,
       lastError: data.lastError.present ? data.lastError.value : this.lastError,
+      mediaKind: data.mediaKind.present ? data.mediaKind.value : this.mediaKind,
     );
   }
 
@@ -26183,7 +27215,8 @@ class MangaExtensionStoreRow extends DataClass
           ..write('etag: $etag, ')
           ..write('lastModified: $lastModified, ')
           ..write('lastSyncAt: $lastSyncAt, ')
-          ..write('lastError: $lastError')
+          ..write('lastError: $lastError, ')
+          ..write('mediaKind: $mediaKind')
           ..write(')'))
         .toString();
   }
@@ -26203,6 +27236,7 @@ class MangaExtensionStoreRow extends DataClass
     lastModified,
     lastSyncAt,
     lastError,
+    mediaKind,
   );
   @override
   bool operator ==(Object other) =>
@@ -26220,7 +27254,8 @@ class MangaExtensionStoreRow extends DataClass
           other.etag == this.etag &&
           other.lastModified == this.lastModified &&
           other.lastSyncAt == this.lastSyncAt &&
-          other.lastError == this.lastError);
+          other.lastError == this.lastError &&
+          other.mediaKind == this.mediaKind);
 }
 
 class MangaExtensionStoresCompanion
@@ -26238,6 +27273,7 @@ class MangaExtensionStoresCompanion
   final Value<String?> lastModified;
   final Value<int?> lastSyncAt;
   final Value<String?> lastError;
+  final Value<String> mediaKind;
   final Value<int> rowid;
   const MangaExtensionStoresCompanion({
     this.indexUrl = const Value.absent(),
@@ -26253,6 +27289,7 @@ class MangaExtensionStoresCompanion
     this.lastModified = const Value.absent(),
     this.lastSyncAt = const Value.absent(),
     this.lastError = const Value.absent(),
+    this.mediaKind = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   MangaExtensionStoresCompanion.insert({
@@ -26269,6 +27306,7 @@ class MangaExtensionStoresCompanion
     this.lastModified = const Value.absent(),
     this.lastSyncAt = const Value.absent(),
     this.lastError = const Value.absent(),
+    this.mediaKind = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : indexUrl = Value(indexUrl),
        name = Value(name),
@@ -26287,6 +27325,7 @@ class MangaExtensionStoresCompanion
     Expression<String>? lastModified,
     Expression<int>? lastSyncAt,
     Expression<String>? lastError,
+    Expression<String>? mediaKind,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -26303,6 +27342,7 @@ class MangaExtensionStoresCompanion
       if (lastModified != null) 'last_modified': lastModified,
       if (lastSyncAt != null) 'last_sync_at': lastSyncAt,
       if (lastError != null) 'last_error': lastError,
+      if (mediaKind != null) 'media_kind': mediaKind,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -26321,6 +27361,7 @@ class MangaExtensionStoresCompanion
     Value<String?>? lastModified,
     Value<int?>? lastSyncAt,
     Value<String?>? lastError,
+    Value<String>? mediaKind,
     Value<int>? rowid,
   }) {
     return MangaExtensionStoresCompanion(
@@ -26337,6 +27378,7 @@ class MangaExtensionStoresCompanion
       lastModified: lastModified ?? this.lastModified,
       lastSyncAt: lastSyncAt ?? this.lastSyncAt,
       lastError: lastError ?? this.lastError,
+      mediaKind: mediaKind ?? this.mediaKind,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -26383,6 +27425,9 @@ class MangaExtensionStoresCompanion
     if (lastError.present) {
       map['last_error'] = Variable<String>(lastError.value);
     }
+    if (mediaKind.present) {
+      map['media_kind'] = Variable<String>(mediaKind.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -26405,6 +27450,7 @@ class MangaExtensionStoresCompanion
           ..write('lastModified: $lastModified, ')
           ..write('lastSyncAt: $lastSyncAt, ')
           ..write('lastError: $lastError, ')
+          ..write('mediaKind: $mediaKind, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -26563,6 +27609,18 @@ class $MangaExtensionsTable extends MangaExtensions
     type: DriftSqlType.int,
     requiredDuringInsert: true,
   );
+  static const VerificationMeta _mediaKindMeta = const VerificationMeta(
+    'mediaKind',
+  );
+  @override
+  late final GeneratedColumn<String> mediaKind = GeneratedColumn<String>(
+    'media_kind',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant('manga'),
+  );
   @override
   List<GeneratedColumn> get $columns => [
     packageName,
@@ -26578,6 +27636,7 @@ class $MangaExtensionsTable extends MangaExtensions
     signerSha256,
     enabled,
     installedAt,
+    mediaKind,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -26707,6 +27766,12 @@ class $MangaExtensionsTable extends MangaExtensions
     } else if (isInserting) {
       context.missing(_installedAtMeta);
     }
+    if (data.containsKey('media_kind')) {
+      context.handle(
+        _mediaKindMeta,
+        mediaKind.isAcceptableOrUnknown(data['media_kind']!, _mediaKindMeta),
+      );
+    }
     return context;
   }
 
@@ -26768,6 +27833,10 @@ class $MangaExtensionsTable extends MangaExtensions
         DriftSqlType.int,
         data['${effectivePrefix}installed_at'],
       )!,
+      mediaKind: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}media_kind'],
+      )!,
     );
   }
 
@@ -26792,6 +27861,11 @@ class MangaExtensionRow extends DataClass
   final String signerSha256;
   final bool enabled;
   final int installedAt;
+
+  /// v107：`'manga'` | `'anime'`，安装时由 APK manifest feature 判定
+  /// （`tachiyomi.extension` / `tachiyomi.animeextension`）；见
+  /// [MangaExtensionStores.mediaKind]。
+  final String mediaKind;
   const MangaExtensionRow({
     required this.packageName,
     this.storeUrl,
@@ -26806,6 +27880,7 @@ class MangaExtensionRow extends DataClass
     required this.signerSha256,
     required this.enabled,
     required this.installedAt,
+    required this.mediaKind,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -26825,6 +27900,7 @@ class MangaExtensionRow extends DataClass
     map['signer_sha256'] = Variable<String>(signerSha256);
     map['enabled'] = Variable<bool>(enabled);
     map['installed_at'] = Variable<int>(installedAt);
+    map['media_kind'] = Variable<String>(mediaKind);
     return map;
   }
 
@@ -26845,6 +27921,7 @@ class MangaExtensionRow extends DataClass
       signerSha256: Value(signerSha256),
       enabled: Value(enabled),
       installedAt: Value(installedAt),
+      mediaKind: Value(mediaKind),
     );
   }
 
@@ -26867,6 +27944,7 @@ class MangaExtensionRow extends DataClass
       signerSha256: serializer.fromJson<String>(json['signerSha256']),
       enabled: serializer.fromJson<bool>(json['enabled']),
       installedAt: serializer.fromJson<int>(json['installedAt']),
+      mediaKind: serializer.fromJson<String>(json['mediaKind']),
     );
   }
   @override
@@ -26886,6 +27964,7 @@ class MangaExtensionRow extends DataClass
       'signerSha256': serializer.toJson<String>(signerSha256),
       'enabled': serializer.toJson<bool>(enabled),
       'installedAt': serializer.toJson<int>(installedAt),
+      'mediaKind': serializer.toJson<String>(mediaKind),
     };
   }
 
@@ -26903,6 +27982,7 @@ class MangaExtensionRow extends DataClass
     String? signerSha256,
     bool? enabled,
     int? installedAt,
+    String? mediaKind,
   }) => MangaExtensionRow(
     packageName: packageName ?? this.packageName,
     storeUrl: storeUrl.present ? storeUrl.value : this.storeUrl,
@@ -26917,6 +27997,7 @@ class MangaExtensionRow extends DataClass
     signerSha256: signerSha256 ?? this.signerSha256,
     enabled: enabled ?? this.enabled,
     installedAt: installedAt ?? this.installedAt,
+    mediaKind: mediaKind ?? this.mediaKind,
   );
   MangaExtensionRow copyWithCompanion(MangaExtensionsCompanion data) {
     return MangaExtensionRow(
@@ -26947,6 +28028,7 @@ class MangaExtensionRow extends DataClass
       installedAt: data.installedAt.present
           ? data.installedAt.value
           : this.installedAt,
+      mediaKind: data.mediaKind.present ? data.mediaKind.value : this.mediaKind,
     );
   }
 
@@ -26965,7 +28047,8 @@ class MangaExtensionRow extends DataClass
           ..write('apkSha256: $apkSha256, ')
           ..write('signerSha256: $signerSha256, ')
           ..write('enabled: $enabled, ')
-          ..write('installedAt: $installedAt')
+          ..write('installedAt: $installedAt, ')
+          ..write('mediaKind: $mediaKind')
           ..write(')'))
         .toString();
   }
@@ -26985,6 +28068,7 @@ class MangaExtensionRow extends DataClass
     signerSha256,
     enabled,
     installedAt,
+    mediaKind,
   );
   @override
   bool operator ==(Object other) =>
@@ -27002,7 +28086,8 @@ class MangaExtensionRow extends DataClass
           other.apkSha256 == this.apkSha256 &&
           other.signerSha256 == this.signerSha256 &&
           other.enabled == this.enabled &&
-          other.installedAt == this.installedAt);
+          other.installedAt == this.installedAt &&
+          other.mediaKind == this.mediaKind);
 }
 
 class MangaExtensionsCompanion extends UpdateCompanion<MangaExtensionRow> {
@@ -27019,6 +28104,7 @@ class MangaExtensionsCompanion extends UpdateCompanion<MangaExtensionRow> {
   final Value<String> signerSha256;
   final Value<bool> enabled;
   final Value<int> installedAt;
+  final Value<String> mediaKind;
   final Value<int> rowid;
   const MangaExtensionsCompanion({
     this.packageName = const Value.absent(),
@@ -27034,6 +28120,7 @@ class MangaExtensionsCompanion extends UpdateCompanion<MangaExtensionRow> {
     this.signerSha256 = const Value.absent(),
     this.enabled = const Value.absent(),
     this.installedAt = const Value.absent(),
+    this.mediaKind = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   MangaExtensionsCompanion.insert({
@@ -27050,6 +28137,7 @@ class MangaExtensionsCompanion extends UpdateCompanion<MangaExtensionRow> {
     required String signerSha256,
     this.enabled = const Value.absent(),
     required int installedAt,
+    this.mediaKind = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : packageName = Value(packageName),
        name = Value(name),
@@ -27075,6 +28163,7 @@ class MangaExtensionsCompanion extends UpdateCompanion<MangaExtensionRow> {
     Expression<String>? signerSha256,
     Expression<bool>? enabled,
     Expression<int>? installedAt,
+    Expression<String>? mediaKind,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -27091,6 +28180,7 @@ class MangaExtensionsCompanion extends UpdateCompanion<MangaExtensionRow> {
       if (signerSha256 != null) 'signer_sha256': signerSha256,
       if (enabled != null) 'enabled': enabled,
       if (installedAt != null) 'installed_at': installedAt,
+      if (mediaKind != null) 'media_kind': mediaKind,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -27109,6 +28199,7 @@ class MangaExtensionsCompanion extends UpdateCompanion<MangaExtensionRow> {
     Value<String>? signerSha256,
     Value<bool>? enabled,
     Value<int>? installedAt,
+    Value<String>? mediaKind,
     Value<int>? rowid,
   }) {
     return MangaExtensionsCompanion(
@@ -27125,6 +28216,7 @@ class MangaExtensionsCompanion extends UpdateCompanion<MangaExtensionRow> {
       signerSha256: signerSha256 ?? this.signerSha256,
       enabled: enabled ?? this.enabled,
       installedAt: installedAt ?? this.installedAt,
+      mediaKind: mediaKind ?? this.mediaKind,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -27171,6 +28263,9 @@ class MangaExtensionsCompanion extends UpdateCompanion<MangaExtensionRow> {
     if (installedAt.present) {
       map['installed_at'] = Variable<int>(installedAt.value);
     }
+    if (mediaKind.present) {
+      map['media_kind'] = Variable<String>(mediaKind.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -27193,6 +28288,7 @@ class MangaExtensionsCompanion extends UpdateCompanion<MangaExtensionRow> {
           ..write('signerSha256: $signerSha256, ')
           ..write('enabled: $enabled, ')
           ..write('installedAt: $installedAt, ')
+          ..write('mediaKind: $mediaKind, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -27299,6 +28395,18 @@ class $MangaOnlineSourcesTable extends MangaOnlineSources
     requiredDuringInsert: false,
     defaultValue: const Constant(0),
   );
+  static const VerificationMeta _mediaKindMeta = const VerificationMeta(
+    'mediaKind',
+  );
+  @override
+  late final GeneratedColumn<String> mediaKind = GeneratedColumn<String>(
+    'media_kind',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant('manga'),
+  );
   @override
   List<GeneratedColumn> get $columns => [
     extensionPackage,
@@ -27309,6 +28417,7 @@ class $MangaOnlineSourcesTable extends MangaOnlineSources
     enabled,
     pinned,
     sortOrder,
+    mediaKind,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -27381,6 +28490,12 @@ class $MangaOnlineSourcesTable extends MangaOnlineSources
         sortOrder.isAcceptableOrUnknown(data['sort_order']!, _sortOrderMeta),
       );
     }
+    if (data.containsKey('media_kind')) {
+      context.handle(
+        _mediaKindMeta,
+        mediaKind.isAcceptableOrUnknown(data['media_kind']!, _mediaKindMeta),
+      );
+    }
     return context;
   }
 
@@ -27422,6 +28537,10 @@ class $MangaOnlineSourcesTable extends MangaOnlineSources
         DriftSqlType.int,
         data['${effectivePrefix}sort_order'],
       )!,
+      mediaKind: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}media_kind'],
+      )!,
     );
   }
 
@@ -27443,6 +28562,10 @@ class MangaOnlineSourceRow extends DataClass
   final bool enabled;
   final bool pinned;
   final int sortOrder;
+
+  /// v107：`'manga'` | `'anime'`，冗余自所属扩展行，让「列出全部视频源」不必
+  /// 联表；见 [MangaExtensionStores.mediaKind]。
+  final String mediaKind;
   const MangaOnlineSourceRow({
     required this.extensionPackage,
     required this.sourceId,
@@ -27452,6 +28575,7 @@ class MangaOnlineSourceRow extends DataClass
     required this.enabled,
     required this.pinned,
     required this.sortOrder,
+    required this.mediaKind,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -27464,6 +28588,7 @@ class MangaOnlineSourceRow extends DataClass
     map['enabled'] = Variable<bool>(enabled);
     map['pinned'] = Variable<bool>(pinned);
     map['sort_order'] = Variable<int>(sortOrder);
+    map['media_kind'] = Variable<String>(mediaKind);
     return map;
   }
 
@@ -27477,6 +28602,7 @@ class MangaOnlineSourceRow extends DataClass
       enabled: Value(enabled),
       pinned: Value(pinned),
       sortOrder: Value(sortOrder),
+      mediaKind: Value(mediaKind),
     );
   }
 
@@ -27494,6 +28620,7 @@ class MangaOnlineSourceRow extends DataClass
       enabled: serializer.fromJson<bool>(json['enabled']),
       pinned: serializer.fromJson<bool>(json['pinned']),
       sortOrder: serializer.fromJson<int>(json['sortOrder']),
+      mediaKind: serializer.fromJson<String>(json['mediaKind']),
     );
   }
   @override
@@ -27508,6 +28635,7 @@ class MangaOnlineSourceRow extends DataClass
       'enabled': serializer.toJson<bool>(enabled),
       'pinned': serializer.toJson<bool>(pinned),
       'sortOrder': serializer.toJson<int>(sortOrder),
+      'mediaKind': serializer.toJson<String>(mediaKind),
     };
   }
 
@@ -27520,6 +28648,7 @@ class MangaOnlineSourceRow extends DataClass
     bool? enabled,
     bool? pinned,
     int? sortOrder,
+    String? mediaKind,
   }) => MangaOnlineSourceRow(
     extensionPackage: extensionPackage ?? this.extensionPackage,
     sourceId: sourceId ?? this.sourceId,
@@ -27529,6 +28658,7 @@ class MangaOnlineSourceRow extends DataClass
     enabled: enabled ?? this.enabled,
     pinned: pinned ?? this.pinned,
     sortOrder: sortOrder ?? this.sortOrder,
+    mediaKind: mediaKind ?? this.mediaKind,
   );
   MangaOnlineSourceRow copyWithCompanion(MangaOnlineSourcesCompanion data) {
     return MangaOnlineSourceRow(
@@ -27542,6 +28672,7 @@ class MangaOnlineSourceRow extends DataClass
       enabled: data.enabled.present ? data.enabled.value : this.enabled,
       pinned: data.pinned.present ? data.pinned.value : this.pinned,
       sortOrder: data.sortOrder.present ? data.sortOrder.value : this.sortOrder,
+      mediaKind: data.mediaKind.present ? data.mediaKind.value : this.mediaKind,
     );
   }
 
@@ -27555,7 +28686,8 @@ class MangaOnlineSourceRow extends DataClass
           ..write('baseUrl: $baseUrl, ')
           ..write('enabled: $enabled, ')
           ..write('pinned: $pinned, ')
-          ..write('sortOrder: $sortOrder')
+          ..write('sortOrder: $sortOrder, ')
+          ..write('mediaKind: $mediaKind')
           ..write(')'))
         .toString();
   }
@@ -27570,6 +28702,7 @@ class MangaOnlineSourceRow extends DataClass
     enabled,
     pinned,
     sortOrder,
+    mediaKind,
   );
   @override
   bool operator ==(Object other) =>
@@ -27582,7 +28715,8 @@ class MangaOnlineSourceRow extends DataClass
           other.baseUrl == this.baseUrl &&
           other.enabled == this.enabled &&
           other.pinned == this.pinned &&
-          other.sortOrder == this.sortOrder);
+          other.sortOrder == this.sortOrder &&
+          other.mediaKind == this.mediaKind);
 }
 
 class MangaOnlineSourcesCompanion
@@ -27595,6 +28729,7 @@ class MangaOnlineSourcesCompanion
   final Value<bool> enabled;
   final Value<bool> pinned;
   final Value<int> sortOrder;
+  final Value<String> mediaKind;
   final Value<int> rowid;
   const MangaOnlineSourcesCompanion({
     this.extensionPackage = const Value.absent(),
@@ -27605,6 +28740,7 @@ class MangaOnlineSourcesCompanion
     this.enabled = const Value.absent(),
     this.pinned = const Value.absent(),
     this.sortOrder = const Value.absent(),
+    this.mediaKind = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   MangaOnlineSourcesCompanion.insert({
@@ -27616,6 +28752,7 @@ class MangaOnlineSourcesCompanion
     this.enabled = const Value.absent(),
     this.pinned = const Value.absent(),
     this.sortOrder = const Value.absent(),
+    this.mediaKind = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : extensionPackage = Value(extensionPackage),
        sourceId = Value(sourceId),
@@ -27630,6 +28767,7 @@ class MangaOnlineSourcesCompanion
     Expression<bool>? enabled,
     Expression<bool>? pinned,
     Expression<int>? sortOrder,
+    Expression<String>? mediaKind,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -27641,6 +28779,7 @@ class MangaOnlineSourcesCompanion
       if (enabled != null) 'enabled': enabled,
       if (pinned != null) 'pinned': pinned,
       if (sortOrder != null) 'sort_order': sortOrder,
+      if (mediaKind != null) 'media_kind': mediaKind,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -27654,6 +28793,7 @@ class MangaOnlineSourcesCompanion
     Value<bool>? enabled,
     Value<bool>? pinned,
     Value<int>? sortOrder,
+    Value<String>? mediaKind,
     Value<int>? rowid,
   }) {
     return MangaOnlineSourcesCompanion(
@@ -27665,6 +28805,7 @@ class MangaOnlineSourcesCompanion
       enabled: enabled ?? this.enabled,
       pinned: pinned ?? this.pinned,
       sortOrder: sortOrder ?? this.sortOrder,
+      mediaKind: mediaKind ?? this.mediaKind,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -27696,6 +28837,9 @@ class MangaOnlineSourcesCompanion
     if (sortOrder.present) {
       map['sort_order'] = Variable<int>(sortOrder.value);
     }
+    if (mediaKind.present) {
+      map['media_kind'] = Variable<String>(mediaKind.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -27713,6 +28857,7 @@ class MangaOnlineSourcesCompanion
           ..write('enabled: $enabled, ')
           ..write('pinned: $pinned, ')
           ..write('sortOrder: $sortOrder, ')
+          ..write('mediaKind: $mediaKind, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -31527,7 +32672,7 @@ class $VideoMetadataEpisodesTable extends VideoMetadataEpisodes
     type: DriftSqlType.string,
     requiredDuringInsert: false,
     defaultConstraints: GeneratedColumn.constraintIsAlways(
-      'UNIQUE REFERENCES video_books (book_uid) ON DELETE SET NULL',
+      'REFERENCES video_books (book_uid) ON DELETE SET NULL',
     ),
   );
   static const VerificationMeta _episodeNumberMeta = const VerificationMeta(
@@ -31623,6 +32768,39 @@ class $VideoMetadataEpisodesTable extends VideoMetadataEpisodes
     type: DriftSqlType.int,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _anidbEpisodeIdMeta = const VerificationMeta(
+    'anidbEpisodeId',
+  );
+  @override
+  late final GeneratedColumn<int> anidbEpisodeId = GeneratedColumn<int>(
+    'anidb_episode_id',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _anidbEpisodeNumberMeta =
+      const VerificationMeta('anidbEpisodeNumber');
+  @override
+  late final GeneratedColumn<String> anidbEpisodeNumber =
+      GeneratedColumn<String>(
+        'anidb_episode_number',
+        aliasedName,
+        true,
+        type: DriftSqlType.string,
+        requiredDuringInsert: false,
+      );
+  static const VerificationMeta _anidbMatchRatingMeta = const VerificationMeta(
+    'anidbMatchRating',
+  );
+  @override
+  late final GeneratedColumn<String> anidbMatchRating = GeneratedColumn<String>(
+    'anidb_match_rating',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
   static const VerificationMeta _updatedAtMeta = const VerificationMeta(
     'updatedAt',
   );
@@ -31648,6 +32826,9 @@ class $VideoMetadataEpisodesTable extends VideoMetadataEpisodes
     rating,
     ratingCount,
     runtimeMinutes,
+    anidbEpisodeId,
+    anidbEpisodeNumber,
+    anidbMatchRating,
     updatedAt,
   ];
   @override
@@ -31747,6 +32928,33 @@ class $VideoMetadataEpisodesTable extends VideoMetadataEpisodes
         ),
       );
     }
+    if (data.containsKey('anidb_episode_id')) {
+      context.handle(
+        _anidbEpisodeIdMeta,
+        anidbEpisodeId.isAcceptableOrUnknown(
+          data['anidb_episode_id']!,
+          _anidbEpisodeIdMeta,
+        ),
+      );
+    }
+    if (data.containsKey('anidb_episode_number')) {
+      context.handle(
+        _anidbEpisodeNumberMeta,
+        anidbEpisodeNumber.isAcceptableOrUnknown(
+          data['anidb_episode_number']!,
+          _anidbEpisodeNumberMeta,
+        ),
+      );
+    }
+    if (data.containsKey('anidb_match_rating')) {
+      context.handle(
+        _anidbMatchRatingMeta,
+        anidbMatchRating.isAcceptableOrUnknown(
+          data['anidb_match_rating']!,
+          _anidbMatchRatingMeta,
+        ),
+      );
+    }
     if (data.containsKey('updated_at')) {
       context.handle(
         _updatedAtMeta,
@@ -31819,6 +33027,18 @@ class $VideoMetadataEpisodesTable extends VideoMetadataEpisodes
         DriftSqlType.int,
         data['${effectivePrefix}runtime_minutes'],
       ),
+      anidbEpisodeId: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}anidb_episode_id'],
+      ),
+      anidbEpisodeNumber: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}anidb_episode_number'],
+      ),
+      anidbMatchRating: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}anidb_match_rating'],
+      ),
       updatedAt: attachedDatabase.typeMapping.read(
         DriftSqlType.int,
         data['${effectivePrefix}updated_at'],
@@ -31838,6 +33058,9 @@ class VideoMetadataEpisodeRow extends DataClass
   final int seasonId;
 
   /// 可选的本地分集绑定。删视频只解绑，源侧季集骨架继续保留供重链。
+  /// v110 起**不再唯一**：一个文件可以绑多条分集行（AniDB FILE 的 other
+  /// episodes——`01-02` 合集文件覆盖两集；Shoko `CrossRef_File_Episode` 一文件
+  /// 多集）。播放进度仍按文件（`video_books`）记，看完一个文件两集都算完成。
   final String? bookUid;
   final int episodeNumber;
   final int? absoluteNumber;
@@ -31848,6 +33071,14 @@ class VideoMetadataEpisodeRow extends DataClass
   final double? rating;
   final int? ratingCount;
   final int? runtimeMinutes;
+
+  /// v109：绑到这一集的文件的 AniDB 集身份（Shoko `CrossRef_AniDB_TMDB_Episode`
+  /// 在本仓的落点）：AniDB eid、原生集号（`04` / `S1`）、与 TMDB 集对上的评级
+  /// （`dateAndTitle` … `dateKinda`；null = 没经 TMDB 链接、按文件名落的）。
+  /// AniDB 原生编号与 TMDB (季, 集) 两套并存，UI 可同时呈现。
+  final int? anidbEpisodeId;
+  final String? anidbEpisodeNumber;
+  final String? anidbMatchRating;
   final int updatedAt;
   const VideoMetadataEpisodeRow({
     required this.id,
@@ -31862,6 +33093,9 @@ class VideoMetadataEpisodeRow extends DataClass
     this.rating,
     this.ratingCount,
     this.runtimeMinutes,
+    this.anidbEpisodeId,
+    this.anidbEpisodeNumber,
+    this.anidbMatchRating,
     required this.updatedAt,
   });
   @override
@@ -31897,6 +33131,15 @@ class VideoMetadataEpisodeRow extends DataClass
     if (!nullToAbsent || runtimeMinutes != null) {
       map['runtime_minutes'] = Variable<int>(runtimeMinutes);
     }
+    if (!nullToAbsent || anidbEpisodeId != null) {
+      map['anidb_episode_id'] = Variable<int>(anidbEpisodeId);
+    }
+    if (!nullToAbsent || anidbEpisodeNumber != null) {
+      map['anidb_episode_number'] = Variable<String>(anidbEpisodeNumber);
+    }
+    if (!nullToAbsent || anidbMatchRating != null) {
+      map['anidb_match_rating'] = Variable<String>(anidbMatchRating);
+    }
     map['updated_at'] = Variable<int>(updatedAt);
     return map;
   }
@@ -31931,6 +33174,15 @@ class VideoMetadataEpisodeRow extends DataClass
       runtimeMinutes: runtimeMinutes == null && nullToAbsent
           ? const Value.absent()
           : Value(runtimeMinutes),
+      anidbEpisodeId: anidbEpisodeId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(anidbEpisodeId),
+      anidbEpisodeNumber: anidbEpisodeNumber == null && nullToAbsent
+          ? const Value.absent()
+          : Value(anidbEpisodeNumber),
+      anidbMatchRating: anidbMatchRating == null && nullToAbsent
+          ? const Value.absent()
+          : Value(anidbMatchRating),
       updatedAt: Value(updatedAt),
     );
   }
@@ -31953,6 +33205,11 @@ class VideoMetadataEpisodeRow extends DataClass
       rating: serializer.fromJson<double?>(json['rating']),
       ratingCount: serializer.fromJson<int?>(json['ratingCount']),
       runtimeMinutes: serializer.fromJson<int?>(json['runtimeMinutes']),
+      anidbEpisodeId: serializer.fromJson<int?>(json['anidbEpisodeId']),
+      anidbEpisodeNumber: serializer.fromJson<String?>(
+        json['anidbEpisodeNumber'],
+      ),
+      anidbMatchRating: serializer.fromJson<String?>(json['anidbMatchRating']),
       updatedAt: serializer.fromJson<int>(json['updatedAt']),
     );
   }
@@ -31972,6 +33229,9 @@ class VideoMetadataEpisodeRow extends DataClass
       'rating': serializer.toJson<double?>(rating),
       'ratingCount': serializer.toJson<int?>(ratingCount),
       'runtimeMinutes': serializer.toJson<int?>(runtimeMinutes),
+      'anidbEpisodeId': serializer.toJson<int?>(anidbEpisodeId),
+      'anidbEpisodeNumber': serializer.toJson<String?>(anidbEpisodeNumber),
+      'anidbMatchRating': serializer.toJson<String?>(anidbMatchRating),
       'updatedAt': serializer.toJson<int>(updatedAt),
     };
   }
@@ -31989,6 +33249,9 @@ class VideoMetadataEpisodeRow extends DataClass
     Value<double?> rating = const Value.absent(),
     Value<int?> ratingCount = const Value.absent(),
     Value<int?> runtimeMinutes = const Value.absent(),
+    Value<int?> anidbEpisodeId = const Value.absent(),
+    Value<String?> anidbEpisodeNumber = const Value.absent(),
+    Value<String?> anidbMatchRating = const Value.absent(),
     int? updatedAt,
   }) => VideoMetadataEpisodeRow(
     id: id ?? this.id,
@@ -32007,6 +33270,15 @@ class VideoMetadataEpisodeRow extends DataClass
     runtimeMinutes: runtimeMinutes.present
         ? runtimeMinutes.value
         : this.runtimeMinutes,
+    anidbEpisodeId: anidbEpisodeId.present
+        ? anidbEpisodeId.value
+        : this.anidbEpisodeId,
+    anidbEpisodeNumber: anidbEpisodeNumber.present
+        ? anidbEpisodeNumber.value
+        : this.anidbEpisodeNumber,
+    anidbMatchRating: anidbMatchRating.present
+        ? anidbMatchRating.value
+        : this.anidbMatchRating,
     updatedAt: updatedAt ?? this.updatedAt,
   );
   VideoMetadataEpisodeRow copyWithCompanion(
@@ -32033,6 +33305,15 @@ class VideoMetadataEpisodeRow extends DataClass
       runtimeMinutes: data.runtimeMinutes.present
           ? data.runtimeMinutes.value
           : this.runtimeMinutes,
+      anidbEpisodeId: data.anidbEpisodeId.present
+          ? data.anidbEpisodeId.value
+          : this.anidbEpisodeId,
+      anidbEpisodeNumber: data.anidbEpisodeNumber.present
+          ? data.anidbEpisodeNumber.value
+          : this.anidbEpisodeNumber,
+      anidbMatchRating: data.anidbMatchRating.present
+          ? data.anidbMatchRating.value
+          : this.anidbMatchRating,
       updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
     );
   }
@@ -32052,6 +33333,9 @@ class VideoMetadataEpisodeRow extends DataClass
           ..write('rating: $rating, ')
           ..write('ratingCount: $ratingCount, ')
           ..write('runtimeMinutes: $runtimeMinutes, ')
+          ..write('anidbEpisodeId: $anidbEpisodeId, ')
+          ..write('anidbEpisodeNumber: $anidbEpisodeNumber, ')
+          ..write('anidbMatchRating: $anidbMatchRating, ')
           ..write('updatedAt: $updatedAt')
           ..write(')'))
         .toString();
@@ -32071,6 +33355,9 @@ class VideoMetadataEpisodeRow extends DataClass
     rating,
     ratingCount,
     runtimeMinutes,
+    anidbEpisodeId,
+    anidbEpisodeNumber,
+    anidbMatchRating,
     updatedAt,
   );
   @override
@@ -32089,6 +33376,9 @@ class VideoMetadataEpisodeRow extends DataClass
           other.rating == this.rating &&
           other.ratingCount == this.ratingCount &&
           other.runtimeMinutes == this.runtimeMinutes &&
+          other.anidbEpisodeId == this.anidbEpisodeId &&
+          other.anidbEpisodeNumber == this.anidbEpisodeNumber &&
+          other.anidbMatchRating == this.anidbMatchRating &&
           other.updatedAt == this.updatedAt);
 }
 
@@ -32106,6 +33396,9 @@ class VideoMetadataEpisodesCompanion
   final Value<double?> rating;
   final Value<int?> ratingCount;
   final Value<int?> runtimeMinutes;
+  final Value<int?> anidbEpisodeId;
+  final Value<String?> anidbEpisodeNumber;
+  final Value<String?> anidbMatchRating;
   final Value<int> updatedAt;
   const VideoMetadataEpisodesCompanion({
     this.id = const Value.absent(),
@@ -32120,6 +33413,9 @@ class VideoMetadataEpisodesCompanion
     this.rating = const Value.absent(),
     this.ratingCount = const Value.absent(),
     this.runtimeMinutes = const Value.absent(),
+    this.anidbEpisodeId = const Value.absent(),
+    this.anidbEpisodeNumber = const Value.absent(),
+    this.anidbMatchRating = const Value.absent(),
     this.updatedAt = const Value.absent(),
   });
   VideoMetadataEpisodesCompanion.insert({
@@ -32135,6 +33431,9 @@ class VideoMetadataEpisodesCompanion
     this.rating = const Value.absent(),
     this.ratingCount = const Value.absent(),
     this.runtimeMinutes = const Value.absent(),
+    this.anidbEpisodeId = const Value.absent(),
+    this.anidbEpisodeNumber = const Value.absent(),
+    this.anidbMatchRating = const Value.absent(),
     required int updatedAt,
   }) : seasonId = Value(seasonId),
        episodeNumber = Value(episodeNumber),
@@ -32152,6 +33451,9 @@ class VideoMetadataEpisodesCompanion
     Expression<double>? rating,
     Expression<int>? ratingCount,
     Expression<int>? runtimeMinutes,
+    Expression<int>? anidbEpisodeId,
+    Expression<String>? anidbEpisodeNumber,
+    Expression<String>? anidbMatchRating,
     Expression<int>? updatedAt,
   }) {
     return RawValuesInsertable({
@@ -32167,6 +33469,10 @@ class VideoMetadataEpisodesCompanion
       if (rating != null) 'rating': rating,
       if (ratingCount != null) 'rating_count': ratingCount,
       if (runtimeMinutes != null) 'runtime_minutes': runtimeMinutes,
+      if (anidbEpisodeId != null) 'anidb_episode_id': anidbEpisodeId,
+      if (anidbEpisodeNumber != null)
+        'anidb_episode_number': anidbEpisodeNumber,
+      if (anidbMatchRating != null) 'anidb_match_rating': anidbMatchRating,
       if (updatedAt != null) 'updated_at': updatedAt,
     });
   }
@@ -32184,6 +33490,9 @@ class VideoMetadataEpisodesCompanion
     Value<double?>? rating,
     Value<int?>? ratingCount,
     Value<int?>? runtimeMinutes,
+    Value<int?>? anidbEpisodeId,
+    Value<String?>? anidbEpisodeNumber,
+    Value<String?>? anidbMatchRating,
     Value<int>? updatedAt,
   }) {
     return VideoMetadataEpisodesCompanion(
@@ -32199,6 +33508,9 @@ class VideoMetadataEpisodesCompanion
       rating: rating ?? this.rating,
       ratingCount: ratingCount ?? this.ratingCount,
       runtimeMinutes: runtimeMinutes ?? this.runtimeMinutes,
+      anidbEpisodeId: anidbEpisodeId ?? this.anidbEpisodeId,
+      anidbEpisodeNumber: anidbEpisodeNumber ?? this.anidbEpisodeNumber,
+      anidbMatchRating: anidbMatchRating ?? this.anidbMatchRating,
       updatedAt: updatedAt ?? this.updatedAt,
     );
   }
@@ -32242,6 +33554,15 @@ class VideoMetadataEpisodesCompanion
     if (runtimeMinutes.present) {
       map['runtime_minutes'] = Variable<int>(runtimeMinutes.value);
     }
+    if (anidbEpisodeId.present) {
+      map['anidb_episode_id'] = Variable<int>(anidbEpisodeId.value);
+    }
+    if (anidbEpisodeNumber.present) {
+      map['anidb_episode_number'] = Variable<String>(anidbEpisodeNumber.value);
+    }
+    if (anidbMatchRating.present) {
+      map['anidb_match_rating'] = Variable<String>(anidbMatchRating.value);
+    }
     if (updatedAt.present) {
       map['updated_at'] = Variable<int>(updatedAt.value);
     }
@@ -32263,6 +33584,9 @@ class VideoMetadataEpisodesCompanion
           ..write('rating: $rating, ')
           ..write('ratingCount: $ratingCount, ')
           ..write('runtimeMinutes: $runtimeMinutes, ')
+          ..write('anidbEpisodeId: $anidbEpisodeId, ')
+          ..write('anidbEpisodeNumber: $anidbEpisodeNumber, ')
+          ..write('anidbMatchRating: $anidbMatchRating, ')
           ..write('updatedAt: $updatedAt')
           ..write(')'))
         .toString();
@@ -41661,7 +42985,7 @@ class VideoDownloadJobRow extends DataClass
   final String? identityJson;
 
   /// 后端连接身份与去重身份。敏感凭据不进数据库；backendProfileId 是下载配置档
-  /// 的字符串身份，不是 Hibiki 用户 Profile，故没有 FK 到 Profiles。
+  /// 的字符串身份，不是 Fushi 用户 Profile，故没有 FK 到 Profiles。
   final String backendKind;
   final String? backendTaskId;
   final String? backendProfileId;
@@ -47944,6 +49268,18 @@ class $StudySegmentTombstonesTable extends StudySegmentTombstones
   final GeneratedDatabase attachedDatabase;
   final String? _alias;
   $StudySegmentTombstonesTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _profileIdMeta = const VerificationMeta(
+    'profileId',
+  );
+  @override
+  late final GeneratedColumn<int> profileId = GeneratedColumn<int>(
+    'profile_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
   static const VerificationMeta _mediaKindMeta = const VerificationMeta(
     'mediaKind',
   );
@@ -47978,7 +49314,12 @@ class $StudySegmentTombstonesTable extends StudySegmentTombstones
     requiredDuringInsert: true,
   );
   @override
-  List<GeneratedColumn> get $columns => [mediaKind, mediaKey, deletedAt];
+  List<GeneratedColumn> get $columns => [
+    profileId,
+    mediaKind,
+    mediaKey,
+    deletedAt,
+  ];
   @override
   String get aliasedName => _alias ?? actualTableName;
   @override
@@ -47991,6 +49332,12 @@ class $StudySegmentTombstonesTable extends StudySegmentTombstones
   }) {
     final context = VerificationContext();
     final data = instance.toColumns(true);
+    if (data.containsKey('profile_id')) {
+      context.handle(
+        _profileIdMeta,
+        profileId.isAcceptableOrUnknown(data['profile_id']!, _profileIdMeta),
+      );
+    }
     if (data.containsKey('media_kind')) {
       context.handle(
         _mediaKindMeta,
@@ -48019,7 +49366,7 @@ class $StudySegmentTombstonesTable extends StudySegmentTombstones
   }
 
   @override
-  Set<GeneratedColumn> get $primaryKey => {mediaKind, mediaKey};
+  Set<GeneratedColumn> get $primaryKey => {profileId, mediaKind, mediaKey};
   @override
   StudySegmentTombstoneRow map(
     Map<String, dynamic> data, {
@@ -48027,6 +49374,10 @@ class $StudySegmentTombstonesTable extends StudySegmentTombstones
   }) {
     final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
     return StudySegmentTombstoneRow(
+      profileId: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}profile_id'],
+      )!,
       mediaKind: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}media_kind'],
@@ -48050,10 +49401,13 @@ class $StudySegmentTombstonesTable extends StudySegmentTombstones
 
 class StudySegmentTombstoneRow extends DataClass
     implements Insertable<StudySegmentTombstoneRow> {
+  /// 立碑时的 Profile（`profiles.id`），语义同 [StudySegments.profileId]。
+  final int profileId;
   final String mediaKind;
   final String mediaKey;
   final int deletedAt;
   const StudySegmentTombstoneRow({
+    required this.profileId,
     required this.mediaKind,
     required this.mediaKey,
     required this.deletedAt,
@@ -48061,6 +49415,7 @@ class StudySegmentTombstoneRow extends DataClass
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
+    map['profile_id'] = Variable<int>(profileId);
     map['media_kind'] = Variable<String>(mediaKind);
     map['media_key'] = Variable<String>(mediaKey);
     map['deleted_at'] = Variable<int>(deletedAt);
@@ -48069,6 +49424,7 @@ class StudySegmentTombstoneRow extends DataClass
 
   StudySegmentTombstonesCompanion toCompanion(bool nullToAbsent) {
     return StudySegmentTombstonesCompanion(
+      profileId: Value(profileId),
       mediaKind: Value(mediaKind),
       mediaKey: Value(mediaKey),
       deletedAt: Value(deletedAt),
@@ -48081,6 +49437,7 @@ class StudySegmentTombstoneRow extends DataClass
   }) {
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return StudySegmentTombstoneRow(
+      profileId: serializer.fromJson<int>(json['profileId']),
       mediaKind: serializer.fromJson<String>(json['mediaKind']),
       mediaKey: serializer.fromJson<String>(json['mediaKey']),
       deletedAt: serializer.fromJson<int>(json['deletedAt']),
@@ -48090,6 +49447,7 @@ class StudySegmentTombstoneRow extends DataClass
   Map<String, dynamic> toJson({ValueSerializer? serializer}) {
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return <String, dynamic>{
+      'profileId': serializer.toJson<int>(profileId),
       'mediaKind': serializer.toJson<String>(mediaKind),
       'mediaKey': serializer.toJson<String>(mediaKey),
       'deletedAt': serializer.toJson<int>(deletedAt),
@@ -48097,10 +49455,12 @@ class StudySegmentTombstoneRow extends DataClass
   }
 
   StudySegmentTombstoneRow copyWith({
+    int? profileId,
     String? mediaKind,
     String? mediaKey,
     int? deletedAt,
   }) => StudySegmentTombstoneRow(
+    profileId: profileId ?? this.profileId,
     mediaKind: mediaKind ?? this.mediaKind,
     mediaKey: mediaKey ?? this.mediaKey,
     deletedAt: deletedAt ?? this.deletedAt,
@@ -48109,6 +49469,7 @@ class StudySegmentTombstoneRow extends DataClass
     StudySegmentTombstonesCompanion data,
   ) {
     return StudySegmentTombstoneRow(
+      profileId: data.profileId.present ? data.profileId.value : this.profileId,
       mediaKind: data.mediaKind.present ? data.mediaKind.value : this.mediaKind,
       mediaKey: data.mediaKey.present ? data.mediaKey.value : this.mediaKey,
       deletedAt: data.deletedAt.present ? data.deletedAt.value : this.deletedAt,
@@ -48118,6 +49479,7 @@ class StudySegmentTombstoneRow extends DataClass
   @override
   String toString() {
     return (StringBuffer('StudySegmentTombstoneRow(')
+          ..write('profileId: $profileId, ')
           ..write('mediaKind: $mediaKind, ')
           ..write('mediaKey: $mediaKey, ')
           ..write('deletedAt: $deletedAt')
@@ -48126,11 +49488,12 @@ class StudySegmentTombstoneRow extends DataClass
   }
 
   @override
-  int get hashCode => Object.hash(mediaKind, mediaKey, deletedAt);
+  int get hashCode => Object.hash(profileId, mediaKind, mediaKey, deletedAt);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
       (other is StudySegmentTombstoneRow &&
+          other.profileId == this.profileId &&
           other.mediaKind == this.mediaKind &&
           other.mediaKey == this.mediaKey &&
           other.deletedAt == this.deletedAt);
@@ -48138,17 +49501,20 @@ class StudySegmentTombstoneRow extends DataClass
 
 class StudySegmentTombstonesCompanion
     extends UpdateCompanion<StudySegmentTombstoneRow> {
+  final Value<int> profileId;
   final Value<String> mediaKind;
   final Value<String> mediaKey;
   final Value<int> deletedAt;
   final Value<int> rowid;
   const StudySegmentTombstonesCompanion({
+    this.profileId = const Value.absent(),
     this.mediaKind = const Value.absent(),
     this.mediaKey = const Value.absent(),
     this.deletedAt = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   StudySegmentTombstonesCompanion.insert({
+    this.profileId = const Value.absent(),
     required String mediaKind,
     required String mediaKey,
     required int deletedAt,
@@ -48157,12 +49523,14 @@ class StudySegmentTombstonesCompanion
        mediaKey = Value(mediaKey),
        deletedAt = Value(deletedAt);
   static Insertable<StudySegmentTombstoneRow> custom({
+    Expression<int>? profileId,
     Expression<String>? mediaKind,
     Expression<String>? mediaKey,
     Expression<int>? deletedAt,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
+      if (profileId != null) 'profile_id': profileId,
       if (mediaKind != null) 'media_kind': mediaKind,
       if (mediaKey != null) 'media_key': mediaKey,
       if (deletedAt != null) 'deleted_at': deletedAt,
@@ -48171,12 +49539,14 @@ class StudySegmentTombstonesCompanion
   }
 
   StudySegmentTombstonesCompanion copyWith({
+    Value<int>? profileId,
     Value<String>? mediaKind,
     Value<String>? mediaKey,
     Value<int>? deletedAt,
     Value<int>? rowid,
   }) {
     return StudySegmentTombstonesCompanion(
+      profileId: profileId ?? this.profileId,
       mediaKind: mediaKind ?? this.mediaKind,
       mediaKey: mediaKey ?? this.mediaKey,
       deletedAt: deletedAt ?? this.deletedAt,
@@ -48187,6 +49557,9 @@ class StudySegmentTombstonesCompanion
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
+    if (profileId.present) {
+      map['profile_id'] = Variable<int>(profileId.value);
+    }
     if (mediaKind.present) {
       map['media_kind'] = Variable<String>(mediaKind.value);
     }
@@ -48205,6 +49578,7 @@ class StudySegmentTombstonesCompanion
   @override
   String toString() {
     return (StringBuffer('StudySegmentTombstonesCompanion(')
+          ..write('profileId: $profileId, ')
           ..write('mediaKind: $mediaKind, ')
           ..write('mediaKey: $mediaKey, ')
           ..write('deletedAt: $deletedAt, ')
@@ -48364,6 +49738,18 @@ class $StudySegmentsTable extends StudySegments
     type: DriftSqlType.int,
     requiredDuringInsert: true,
   );
+  static const VerificationMeta _profileIdMeta = const VerificationMeta(
+    'profileId',
+  );
+  @override
+  late final GeneratedColumn<int> profileId = GeneratedColumn<int>(
+    'profile_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
   @override
   List<GeneratedColumn> get $columns => [
     uid,
@@ -48380,6 +49766,7 @@ class $StudySegmentsTable extends StudySegments
     chars,
     pages,
     updatedAt,
+    profileId,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -48497,6 +49884,12 @@ class $StudySegmentsTable extends StudySegments
     } else if (isInserting) {
       context.missing(_updatedAtMeta);
     }
+    if (data.containsKey('profile_id')) {
+      context.handle(
+        _profileIdMeta,
+        profileId.isAcceptableOrUnknown(data['profile_id']!, _profileIdMeta),
+      );
+    }
     return context;
   }
 
@@ -48562,6 +49955,10 @@ class $StudySegmentsTable extends StudySegments
         DriftSqlType.int,
         data['${effectivePrefix}updated_at'],
       )!,
+      profileId: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}profile_id'],
+      )!,
     );
   }
 
@@ -48610,6 +50007,21 @@ class StudySegmentRow extends DataClass implements Insertable<StudySegmentRow> {
 
   /// 最后写入毫秒戳：同步 v2 同 uid 取大者（LWW），墓碑仲裁用它与 deletedAt 比。
   final int updatedAt;
+
+  /// v105（统计按 Profile 隔离）：开段时激活的 Profile（`profiles.id`）。
+  ///
+  /// 分区键：读取面（`loadStatFacts` / 最近观看 / 删除 / 清空）一律只看当前激活
+  /// Profile 的行，各 Profile 之间互不可见。**只在插入时盖戳、冲突更新不改**——
+  /// 段的归属在它开始那一刻就定了，中途切 Profile 不把已开的段挪走（下一段自然
+  /// 归新 Profile）。写入方（StudyClock / galgame hook）不用知道 Profile：缺席时
+  /// DAO 从 `active_profile_id` 偏好解析（[FushiDatabase.resolveActiveProfileId]）。
+  /// 0 = 库里还没有 Profile（只在纯 DB 测试里出现；app 启动即 ensureDefaultProfile）。
+  ///
+  /// 不做 FK：删 Profile 不 cascade 删历史（同步对端可能还持有这些段，本机静默
+  /// 消失又回灌是最坏形态），行留着、对任何 Profile 都不可见即可。同步 wire 不
+  /// 传本机自增 id，传 Profile **名字**（`profileName`），对端按名字落到自己的
+  /// 同名 Profile。
+  final int profileId;
   const StudySegmentRow({
     required this.uid,
     required this.deviceId,
@@ -48625,6 +50037,7 @@ class StudySegmentRow extends DataClass implements Insertable<StudySegmentRow> {
     required this.chars,
     required this.pages,
     required this.updatedAt,
+    required this.profileId,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -48643,6 +50056,7 @@ class StudySegmentRow extends DataClass implements Insertable<StudySegmentRow> {
     map['chars'] = Variable<int>(chars);
     map['pages'] = Variable<int>(pages);
     map['updated_at'] = Variable<int>(updatedAt);
+    map['profile_id'] = Variable<int>(profileId);
     return map;
   }
 
@@ -48662,6 +50076,7 @@ class StudySegmentRow extends DataClass implements Insertable<StudySegmentRow> {
       chars: Value(chars),
       pages: Value(pages),
       updatedAt: Value(updatedAt),
+      profileId: Value(profileId),
     );
   }
 
@@ -48685,6 +50100,7 @@ class StudySegmentRow extends DataClass implements Insertable<StudySegmentRow> {
       chars: serializer.fromJson<int>(json['chars']),
       pages: serializer.fromJson<int>(json['pages']),
       updatedAt: serializer.fromJson<int>(json['updatedAt']),
+      profileId: serializer.fromJson<int>(json['profileId']),
     );
   }
   @override
@@ -48705,6 +50121,7 @@ class StudySegmentRow extends DataClass implements Insertable<StudySegmentRow> {
       'chars': serializer.toJson<int>(chars),
       'pages': serializer.toJson<int>(pages),
       'updatedAt': serializer.toJson<int>(updatedAt),
+      'profileId': serializer.toJson<int>(profileId),
     };
   }
 
@@ -48723,6 +50140,7 @@ class StudySegmentRow extends DataClass implements Insertable<StudySegmentRow> {
     int? chars,
     int? pages,
     int? updatedAt,
+    int? profileId,
   }) => StudySegmentRow(
     uid: uid ?? this.uid,
     deviceId: deviceId ?? this.deviceId,
@@ -48738,6 +50156,7 @@ class StudySegmentRow extends DataClass implements Insertable<StudySegmentRow> {
     chars: chars ?? this.chars,
     pages: pages ?? this.pages,
     updatedAt: updatedAt ?? this.updatedAt,
+    profileId: profileId ?? this.profileId,
   );
   StudySegmentRow copyWithCompanion(StudySegmentsCompanion data) {
     return StudySegmentRow(
@@ -48757,6 +50176,7 @@ class StudySegmentRow extends DataClass implements Insertable<StudySegmentRow> {
       chars: data.chars.present ? data.chars.value : this.chars,
       pages: data.pages.present ? data.pages.value : this.pages,
       updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
+      profileId: data.profileId.present ? data.profileId.value : this.profileId,
     );
   }
 
@@ -48776,7 +50196,8 @@ class StudySegmentRow extends DataClass implements Insertable<StudySegmentRow> {
           ..write('durationMs: $durationMs, ')
           ..write('chars: $chars, ')
           ..write('pages: $pages, ')
-          ..write('updatedAt: $updatedAt')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('profileId: $profileId')
           ..write(')'))
         .toString();
   }
@@ -48797,6 +50218,7 @@ class StudySegmentRow extends DataClass implements Insertable<StudySegmentRow> {
     chars,
     pages,
     updatedAt,
+    profileId,
   );
   @override
   bool operator ==(Object other) =>
@@ -48815,7 +50237,8 @@ class StudySegmentRow extends DataClass implements Insertable<StudySegmentRow> {
           other.durationMs == this.durationMs &&
           other.chars == this.chars &&
           other.pages == this.pages &&
-          other.updatedAt == this.updatedAt);
+          other.updatedAt == this.updatedAt &&
+          other.profileId == this.profileId);
 }
 
 class StudySegmentsCompanion extends UpdateCompanion<StudySegmentRow> {
@@ -48833,6 +50256,7 @@ class StudySegmentsCompanion extends UpdateCompanion<StudySegmentRow> {
   final Value<int> chars;
   final Value<int> pages;
   final Value<int> updatedAt;
+  final Value<int> profileId;
   final Value<int> rowid;
   const StudySegmentsCompanion({
     this.uid = const Value.absent(),
@@ -48849,6 +50273,7 @@ class StudySegmentsCompanion extends UpdateCompanion<StudySegmentRow> {
     this.chars = const Value.absent(),
     this.pages = const Value.absent(),
     this.updatedAt = const Value.absent(),
+    this.profileId = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   StudySegmentsCompanion.insert({
@@ -48866,6 +50291,7 @@ class StudySegmentsCompanion extends UpdateCompanion<StudySegmentRow> {
     this.chars = const Value.absent(),
     this.pages = const Value.absent(),
     required int updatedAt,
+    this.profileId = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : uid = Value(uid),
        deviceId = Value(deviceId),
@@ -48892,6 +50318,7 @@ class StudySegmentsCompanion extends UpdateCompanion<StudySegmentRow> {
     Expression<int>? chars,
     Expression<int>? pages,
     Expression<int>? updatedAt,
+    Expression<int>? profileId,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -48909,6 +50336,7 @@ class StudySegmentsCompanion extends UpdateCompanion<StudySegmentRow> {
       if (chars != null) 'chars': chars,
       if (pages != null) 'pages': pages,
       if (updatedAt != null) 'updated_at': updatedAt,
+      if (profileId != null) 'profile_id': profileId,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -48928,6 +50356,7 @@ class StudySegmentsCompanion extends UpdateCompanion<StudySegmentRow> {
     Value<int>? chars,
     Value<int>? pages,
     Value<int>? updatedAt,
+    Value<int>? profileId,
     Value<int>? rowid,
   }) {
     return StudySegmentsCompanion(
@@ -48945,6 +50374,7 @@ class StudySegmentsCompanion extends UpdateCompanion<StudySegmentRow> {
       chars: chars ?? this.chars,
       pages: pages ?? this.pages,
       updatedAt: updatedAt ?? this.updatedAt,
+      profileId: profileId ?? this.profileId,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -48994,6 +50424,9 @@ class StudySegmentsCompanion extends UpdateCompanion<StudySegmentRow> {
     if (updatedAt.present) {
       map['updated_at'] = Variable<int>(updatedAt.value);
     }
+    if (profileId.present) {
+      map['profile_id'] = Variable<int>(profileId.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -49017,6 +50450,7 @@ class StudySegmentsCompanion extends UpdateCompanion<StudySegmentRow> {
           ..write('chars: $chars, ')
           ..write('pages: $pages, ')
           ..write('updatedAt: $updatedAt, ')
+          ..write('profileId: $profileId, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -52455,6 +53889,6563 @@ class MangaDownloadJobsCompanion extends UpdateCompanion<MangaDownloadJobRow> {
   }
 }
 
+class $AnidbFileIdentitiesTable extends AnidbFileIdentities
+    with TableInfo<$AnidbFileIdentitiesTable, AnidbFileIdentityRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $AnidbFileIdentitiesTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _ed2kMeta = const VerificationMeta('ed2k');
+  @override
+  late final GeneratedColumn<String> ed2k = GeneratedColumn<String>(
+    'ed2k',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _fileSizeMeta = const VerificationMeta(
+    'fileSize',
+  );
+  @override
+  late final GeneratedColumn<int> fileSize = GeneratedColumn<int>(
+    'file_size',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _anidbFileIdMeta = const VerificationMeta(
+    'anidbFileId',
+  );
+  @override
+  late final GeneratedColumn<int> anidbFileId = GeneratedColumn<int>(
+    'anidb_file_id',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _anidbAnimeIdMeta = const VerificationMeta(
+    'anidbAnimeId',
+  );
+  @override
+  late final GeneratedColumn<int> anidbAnimeId = GeneratedColumn<int>(
+    'anidb_anime_id',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _anidbEpisodeIdMeta = const VerificationMeta(
+    'anidbEpisodeId',
+  );
+  @override
+  late final GeneratedColumn<int> anidbEpisodeId = GeneratedColumn<int>(
+    'anidb_episode_id',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _episodeNumberMeta = const VerificationMeta(
+    'episodeNumber',
+  );
+  @override
+  late final GeneratedColumn<String> episodeNumber = GeneratedColumn<String>(
+    'episode_number',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(''),
+  );
+  static const VerificationMeta _romajiTitleMeta = const VerificationMeta(
+    'romajiTitle',
+  );
+  @override
+  late final GeneratedColumn<String> romajiTitle = GeneratedColumn<String>(
+    'romaji_title',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(''),
+  );
+  static const VerificationMeta _kanjiTitleMeta = const VerificationMeta(
+    'kanjiTitle',
+  );
+  @override
+  late final GeneratedColumn<String> kanjiTitle = GeneratedColumn<String>(
+    'kanji_title',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(''),
+  );
+  static const VerificationMeta _englishTitleMeta = const VerificationMeta(
+    'englishTitle',
+  );
+  @override
+  late final GeneratedColumn<String> englishTitle = GeneratedColumn<String>(
+    'english_title',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(''),
+  );
+  static const VerificationMeta _episodeTitleMeta = const VerificationMeta(
+    'episodeTitle',
+  );
+  @override
+  late final GeneratedColumn<String> episodeTitle = GeneratedColumn<String>(
+    'episode_title',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(''),
+  );
+  static const VerificationMeta _episodeRomajiTitleMeta =
+      const VerificationMeta('episodeRomajiTitle');
+  @override
+  late final GeneratedColumn<String> episodeRomajiTitle =
+      GeneratedColumn<String>(
+        'episode_romaji_title',
+        aliasedName,
+        false,
+        type: DriftSqlType.string,
+        requiredDuringInsert: false,
+        defaultValue: const Constant(''),
+      );
+  static const VerificationMeta _episodeKanjiTitleMeta = const VerificationMeta(
+    'episodeKanjiTitle',
+  );
+  @override
+  late final GeneratedColumn<String> episodeKanjiTitle =
+      GeneratedColumn<String>(
+        'episode_kanji_title',
+        aliasedName,
+        false,
+        type: DriftSqlType.string,
+        requiredDuringInsert: false,
+        defaultValue: const Constant(''),
+      );
+  static const VerificationMeta _filePathMeta = const VerificationMeta(
+    'filePath',
+  );
+  @override
+  late final GeneratedColumn<String> filePath = GeneratedColumn<String>(
+    'file_path',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _fileModifiedAtMeta = const VerificationMeta(
+    'fileModifiedAt',
+  );
+  @override
+  late final GeneratedColumn<int> fileModifiedAt = GeneratedColumn<int>(
+    'file_modified_at',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _missAttemptsMeta = const VerificationMeta(
+    'missAttempts',
+  );
+  @override
+  late final GeneratedColumn<int> missAttempts = GeneratedColumn<int>(
+    'miss_attempts',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _episodeAiredAtMeta = const VerificationMeta(
+    'episodeAiredAt',
+  );
+  @override
+  late final GeneratedColumn<int> episodeAiredAt = GeneratedColumn<int>(
+    'episode_aired_at',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _otherEpisodesMeta = const VerificationMeta(
+    'otherEpisodes',
+  );
+  @override
+  late final GeneratedColumn<String> otherEpisodes = GeneratedColumn<String>(
+    'other_episodes',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(''),
+  );
+  static const VerificationMeta _isDeprecatedMeta = const VerificationMeta(
+    'isDeprecated',
+  );
+  @override
+  late final GeneratedColumn<bool> isDeprecated = GeneratedColumn<bool>(
+    'is_deprecated',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("is_deprecated" IN (0, 1))',
+    ),
+    defaultValue: const Constant(false),
+  );
+  static const VerificationMeta _fileStateMeta = const VerificationMeta(
+    'fileState',
+  );
+  @override
+  late final GeneratedColumn<int> fileState = GeneratedColumn<int>(
+    'file_state',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _animeTypeMeta = const VerificationMeta(
+    'animeType',
+  );
+  @override
+  late final GeneratedColumn<String> animeType = GeneratedColumn<String>(
+    'anime_type',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(''),
+  );
+  static const VerificationMeta _resolvedAtMeta = const VerificationMeta(
+    'resolvedAt',
+  );
+  @override
+  late final GeneratedColumn<int> resolvedAt = GeneratedColumn<int>(
+    'resolved_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _updatedAtMeta = const VerificationMeta(
+    'updatedAt',
+  );
+  @override
+  late final GeneratedColumn<int> updatedAt = GeneratedColumn<int>(
+    'updated_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    ed2k,
+    fileSize,
+    anidbFileId,
+    anidbAnimeId,
+    anidbEpisodeId,
+    episodeNumber,
+    romajiTitle,
+    kanjiTitle,
+    englishTitle,
+    episodeTitle,
+    episodeRomajiTitle,
+    episodeKanjiTitle,
+    filePath,
+    fileModifiedAt,
+    missAttempts,
+    episodeAiredAt,
+    otherEpisodes,
+    isDeprecated,
+    fileState,
+    animeType,
+    resolvedAt,
+    updatedAt,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'anidb_file_identities';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<AnidbFileIdentityRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('ed2k')) {
+      context.handle(
+        _ed2kMeta,
+        ed2k.isAcceptableOrUnknown(data['ed2k']!, _ed2kMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_ed2kMeta);
+    }
+    if (data.containsKey('file_size')) {
+      context.handle(
+        _fileSizeMeta,
+        fileSize.isAcceptableOrUnknown(data['file_size']!, _fileSizeMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_fileSizeMeta);
+    }
+    if (data.containsKey('anidb_file_id')) {
+      context.handle(
+        _anidbFileIdMeta,
+        anidbFileId.isAcceptableOrUnknown(
+          data['anidb_file_id']!,
+          _anidbFileIdMeta,
+        ),
+      );
+    }
+    if (data.containsKey('anidb_anime_id')) {
+      context.handle(
+        _anidbAnimeIdMeta,
+        anidbAnimeId.isAcceptableOrUnknown(
+          data['anidb_anime_id']!,
+          _anidbAnimeIdMeta,
+        ),
+      );
+    }
+    if (data.containsKey('anidb_episode_id')) {
+      context.handle(
+        _anidbEpisodeIdMeta,
+        anidbEpisodeId.isAcceptableOrUnknown(
+          data['anidb_episode_id']!,
+          _anidbEpisodeIdMeta,
+        ),
+      );
+    }
+    if (data.containsKey('episode_number')) {
+      context.handle(
+        _episodeNumberMeta,
+        episodeNumber.isAcceptableOrUnknown(
+          data['episode_number']!,
+          _episodeNumberMeta,
+        ),
+      );
+    }
+    if (data.containsKey('romaji_title')) {
+      context.handle(
+        _romajiTitleMeta,
+        romajiTitle.isAcceptableOrUnknown(
+          data['romaji_title']!,
+          _romajiTitleMeta,
+        ),
+      );
+    }
+    if (data.containsKey('kanji_title')) {
+      context.handle(
+        _kanjiTitleMeta,
+        kanjiTitle.isAcceptableOrUnknown(data['kanji_title']!, _kanjiTitleMeta),
+      );
+    }
+    if (data.containsKey('english_title')) {
+      context.handle(
+        _englishTitleMeta,
+        englishTitle.isAcceptableOrUnknown(
+          data['english_title']!,
+          _englishTitleMeta,
+        ),
+      );
+    }
+    if (data.containsKey('episode_title')) {
+      context.handle(
+        _episodeTitleMeta,
+        episodeTitle.isAcceptableOrUnknown(
+          data['episode_title']!,
+          _episodeTitleMeta,
+        ),
+      );
+    }
+    if (data.containsKey('episode_romaji_title')) {
+      context.handle(
+        _episodeRomajiTitleMeta,
+        episodeRomajiTitle.isAcceptableOrUnknown(
+          data['episode_romaji_title']!,
+          _episodeRomajiTitleMeta,
+        ),
+      );
+    }
+    if (data.containsKey('episode_kanji_title')) {
+      context.handle(
+        _episodeKanjiTitleMeta,
+        episodeKanjiTitle.isAcceptableOrUnknown(
+          data['episode_kanji_title']!,
+          _episodeKanjiTitleMeta,
+        ),
+      );
+    }
+    if (data.containsKey('file_path')) {
+      context.handle(
+        _filePathMeta,
+        filePath.isAcceptableOrUnknown(data['file_path']!, _filePathMeta),
+      );
+    }
+    if (data.containsKey('file_modified_at')) {
+      context.handle(
+        _fileModifiedAtMeta,
+        fileModifiedAt.isAcceptableOrUnknown(
+          data['file_modified_at']!,
+          _fileModifiedAtMeta,
+        ),
+      );
+    }
+    if (data.containsKey('miss_attempts')) {
+      context.handle(
+        _missAttemptsMeta,
+        missAttempts.isAcceptableOrUnknown(
+          data['miss_attempts']!,
+          _missAttemptsMeta,
+        ),
+      );
+    }
+    if (data.containsKey('episode_aired_at')) {
+      context.handle(
+        _episodeAiredAtMeta,
+        episodeAiredAt.isAcceptableOrUnknown(
+          data['episode_aired_at']!,
+          _episodeAiredAtMeta,
+        ),
+      );
+    }
+    if (data.containsKey('other_episodes')) {
+      context.handle(
+        _otherEpisodesMeta,
+        otherEpisodes.isAcceptableOrUnknown(
+          data['other_episodes']!,
+          _otherEpisodesMeta,
+        ),
+      );
+    }
+    if (data.containsKey('is_deprecated')) {
+      context.handle(
+        _isDeprecatedMeta,
+        isDeprecated.isAcceptableOrUnknown(
+          data['is_deprecated']!,
+          _isDeprecatedMeta,
+        ),
+      );
+    }
+    if (data.containsKey('file_state')) {
+      context.handle(
+        _fileStateMeta,
+        fileState.isAcceptableOrUnknown(data['file_state']!, _fileStateMeta),
+      );
+    }
+    if (data.containsKey('anime_type')) {
+      context.handle(
+        _animeTypeMeta,
+        animeType.isAcceptableOrUnknown(data['anime_type']!, _animeTypeMeta),
+      );
+    }
+    if (data.containsKey('resolved_at')) {
+      context.handle(
+        _resolvedAtMeta,
+        resolvedAt.isAcceptableOrUnknown(data['resolved_at']!, _resolvedAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_resolvedAtMeta);
+    }
+    if (data.containsKey('updated_at')) {
+      context.handle(
+        _updatedAtMeta,
+        updatedAt.isAcceptableOrUnknown(data['updated_at']!, _updatedAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_updatedAtMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {ed2k, fileSize};
+  @override
+  AnidbFileIdentityRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return AnidbFileIdentityRow(
+      ed2k: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}ed2k'],
+      )!,
+      fileSize: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}file_size'],
+      )!,
+      anidbFileId: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}anidb_file_id'],
+      ),
+      anidbAnimeId: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}anidb_anime_id'],
+      ),
+      anidbEpisodeId: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}anidb_episode_id'],
+      ),
+      episodeNumber: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}episode_number'],
+      )!,
+      romajiTitle: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}romaji_title'],
+      )!,
+      kanjiTitle: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}kanji_title'],
+      )!,
+      englishTitle: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}english_title'],
+      )!,
+      episodeTitle: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}episode_title'],
+      )!,
+      episodeRomajiTitle: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}episode_romaji_title'],
+      )!,
+      episodeKanjiTitle: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}episode_kanji_title'],
+      )!,
+      filePath: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}file_path'],
+      ),
+      fileModifiedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}file_modified_at'],
+      ),
+      missAttempts: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}miss_attempts'],
+      )!,
+      episodeAiredAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}episode_aired_at'],
+      ),
+      otherEpisodes: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}other_episodes'],
+      )!,
+      isDeprecated: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}is_deprecated'],
+      )!,
+      fileState: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}file_state'],
+      )!,
+      animeType: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}anime_type'],
+      )!,
+      resolvedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}resolved_at'],
+      )!,
+      updatedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}updated_at'],
+      )!,
+    );
+  }
+
+  @override
+  $AnidbFileIdentitiesTable createAlias(String alias) {
+    return $AnidbFileIdentitiesTable(attachedDatabase, alias);
+  }
+}
+
+class AnidbFileIdentityRow extends DataClass
+    implements Insertable<AnidbFileIdentityRow> {
+  final String ed2k;
+  final int fileSize;
+  final int? anidbFileId;
+  final int? anidbAnimeId;
+  final int? anidbEpisodeId;
+  final String episodeNumber;
+  final String romajiTitle;
+  final String kanjiTitle;
+  final String englishTitle;
+  final String episodeTitle;
+  final String episodeRomajiTitle;
+  final String episodeKanjiTitle;
+  final String? filePath;
+  final int? fileModifiedAt;
+
+  /// v108：AniDB FILE 回 320「未收录」的连续复查次数，对齐 Shoko
+  /// `MaxAutoScanAttemptsPerFile`；识别成功时归零。
+  final int missAttempts;
+
+  /// v109：AniDB 集播出日（UDP `EPISODE` 的 `aired`，UTC 零点毫秒）。Shoko
+  /// `MatchAnidbToTmdbEpisodes` 第一评级 DateAndTitle 的输入；null = 尚未取到
+  /// （存量行 / EPISODE 未答），下次 sweep 补问。
+  final int? episodeAiredAt;
+
+  /// v109：主集之外本文件还覆盖的 AniDB 集，JSON `[[eid, 百分比], …]`（Shoko
+  /// `CrossRef_File_Episode` 的 Percentage）；单集文件为 `''`。
+  final String otherEpisodes;
+
+  /// v109：AniDB FILE `deprecated` 位——该文件已被标为过时版本。
+  final bool isDeprecated;
+
+  /// v109：AniDB FILE `state` 位图（CRC 正误 / 文件版本 / 有无审查 / 章节）。
+  final int fileState;
+
+  /// v111：AniDB 动画类型原文（FILE amask 的 anime type：`TV Series` / `Movie` /
+  /// `OVA` / `Web` / `TV Special` / `Music Video` / `Other`）；'' = 旧行未取到。
+  /// Shoko 的作品形态（剧集 / 电影）由它决定，本仓单文件作品的 kind 跟它走。
+  final String animeType;
+  final int resolvedAt;
+  final int updatedAt;
+  const AnidbFileIdentityRow({
+    required this.ed2k,
+    required this.fileSize,
+    this.anidbFileId,
+    this.anidbAnimeId,
+    this.anidbEpisodeId,
+    required this.episodeNumber,
+    required this.romajiTitle,
+    required this.kanjiTitle,
+    required this.englishTitle,
+    required this.episodeTitle,
+    required this.episodeRomajiTitle,
+    required this.episodeKanjiTitle,
+    this.filePath,
+    this.fileModifiedAt,
+    required this.missAttempts,
+    this.episodeAiredAt,
+    required this.otherEpisodes,
+    required this.isDeprecated,
+    required this.fileState,
+    required this.animeType,
+    required this.resolvedAt,
+    required this.updatedAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['ed2k'] = Variable<String>(ed2k);
+    map['file_size'] = Variable<int>(fileSize);
+    if (!nullToAbsent || anidbFileId != null) {
+      map['anidb_file_id'] = Variable<int>(anidbFileId);
+    }
+    if (!nullToAbsent || anidbAnimeId != null) {
+      map['anidb_anime_id'] = Variable<int>(anidbAnimeId);
+    }
+    if (!nullToAbsent || anidbEpisodeId != null) {
+      map['anidb_episode_id'] = Variable<int>(anidbEpisodeId);
+    }
+    map['episode_number'] = Variable<String>(episodeNumber);
+    map['romaji_title'] = Variable<String>(romajiTitle);
+    map['kanji_title'] = Variable<String>(kanjiTitle);
+    map['english_title'] = Variable<String>(englishTitle);
+    map['episode_title'] = Variable<String>(episodeTitle);
+    map['episode_romaji_title'] = Variable<String>(episodeRomajiTitle);
+    map['episode_kanji_title'] = Variable<String>(episodeKanjiTitle);
+    if (!nullToAbsent || filePath != null) {
+      map['file_path'] = Variable<String>(filePath);
+    }
+    if (!nullToAbsent || fileModifiedAt != null) {
+      map['file_modified_at'] = Variable<int>(fileModifiedAt);
+    }
+    map['miss_attempts'] = Variable<int>(missAttempts);
+    if (!nullToAbsent || episodeAiredAt != null) {
+      map['episode_aired_at'] = Variable<int>(episodeAiredAt);
+    }
+    map['other_episodes'] = Variable<String>(otherEpisodes);
+    map['is_deprecated'] = Variable<bool>(isDeprecated);
+    map['file_state'] = Variable<int>(fileState);
+    map['anime_type'] = Variable<String>(animeType);
+    map['resolved_at'] = Variable<int>(resolvedAt);
+    map['updated_at'] = Variable<int>(updatedAt);
+    return map;
+  }
+
+  AnidbFileIdentitiesCompanion toCompanion(bool nullToAbsent) {
+    return AnidbFileIdentitiesCompanion(
+      ed2k: Value(ed2k),
+      fileSize: Value(fileSize),
+      anidbFileId: anidbFileId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(anidbFileId),
+      anidbAnimeId: anidbAnimeId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(anidbAnimeId),
+      anidbEpisodeId: anidbEpisodeId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(anidbEpisodeId),
+      episodeNumber: Value(episodeNumber),
+      romajiTitle: Value(romajiTitle),
+      kanjiTitle: Value(kanjiTitle),
+      englishTitle: Value(englishTitle),
+      episodeTitle: Value(episodeTitle),
+      episodeRomajiTitle: Value(episodeRomajiTitle),
+      episodeKanjiTitle: Value(episodeKanjiTitle),
+      filePath: filePath == null && nullToAbsent
+          ? const Value.absent()
+          : Value(filePath),
+      fileModifiedAt: fileModifiedAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(fileModifiedAt),
+      missAttempts: Value(missAttempts),
+      episodeAiredAt: episodeAiredAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(episodeAiredAt),
+      otherEpisodes: Value(otherEpisodes),
+      isDeprecated: Value(isDeprecated),
+      fileState: Value(fileState),
+      animeType: Value(animeType),
+      resolvedAt: Value(resolvedAt),
+      updatedAt: Value(updatedAt),
+    );
+  }
+
+  factory AnidbFileIdentityRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return AnidbFileIdentityRow(
+      ed2k: serializer.fromJson<String>(json['ed2k']),
+      fileSize: serializer.fromJson<int>(json['fileSize']),
+      anidbFileId: serializer.fromJson<int?>(json['anidbFileId']),
+      anidbAnimeId: serializer.fromJson<int?>(json['anidbAnimeId']),
+      anidbEpisodeId: serializer.fromJson<int?>(json['anidbEpisodeId']),
+      episodeNumber: serializer.fromJson<String>(json['episodeNumber']),
+      romajiTitle: serializer.fromJson<String>(json['romajiTitle']),
+      kanjiTitle: serializer.fromJson<String>(json['kanjiTitle']),
+      englishTitle: serializer.fromJson<String>(json['englishTitle']),
+      episodeTitle: serializer.fromJson<String>(json['episodeTitle']),
+      episodeRomajiTitle: serializer.fromJson<String>(
+        json['episodeRomajiTitle'],
+      ),
+      episodeKanjiTitle: serializer.fromJson<String>(json['episodeKanjiTitle']),
+      filePath: serializer.fromJson<String?>(json['filePath']),
+      fileModifiedAt: serializer.fromJson<int?>(json['fileModifiedAt']),
+      missAttempts: serializer.fromJson<int>(json['missAttempts']),
+      episodeAiredAt: serializer.fromJson<int?>(json['episodeAiredAt']),
+      otherEpisodes: serializer.fromJson<String>(json['otherEpisodes']),
+      isDeprecated: serializer.fromJson<bool>(json['isDeprecated']),
+      fileState: serializer.fromJson<int>(json['fileState']),
+      animeType: serializer.fromJson<String>(json['animeType']),
+      resolvedAt: serializer.fromJson<int>(json['resolvedAt']),
+      updatedAt: serializer.fromJson<int>(json['updatedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'ed2k': serializer.toJson<String>(ed2k),
+      'fileSize': serializer.toJson<int>(fileSize),
+      'anidbFileId': serializer.toJson<int?>(anidbFileId),
+      'anidbAnimeId': serializer.toJson<int?>(anidbAnimeId),
+      'anidbEpisodeId': serializer.toJson<int?>(anidbEpisodeId),
+      'episodeNumber': serializer.toJson<String>(episodeNumber),
+      'romajiTitle': serializer.toJson<String>(romajiTitle),
+      'kanjiTitle': serializer.toJson<String>(kanjiTitle),
+      'englishTitle': serializer.toJson<String>(englishTitle),
+      'episodeTitle': serializer.toJson<String>(episodeTitle),
+      'episodeRomajiTitle': serializer.toJson<String>(episodeRomajiTitle),
+      'episodeKanjiTitle': serializer.toJson<String>(episodeKanjiTitle),
+      'filePath': serializer.toJson<String?>(filePath),
+      'fileModifiedAt': serializer.toJson<int?>(fileModifiedAt),
+      'missAttempts': serializer.toJson<int>(missAttempts),
+      'episodeAiredAt': serializer.toJson<int?>(episodeAiredAt),
+      'otherEpisodes': serializer.toJson<String>(otherEpisodes),
+      'isDeprecated': serializer.toJson<bool>(isDeprecated),
+      'fileState': serializer.toJson<int>(fileState),
+      'animeType': serializer.toJson<String>(animeType),
+      'resolvedAt': serializer.toJson<int>(resolvedAt),
+      'updatedAt': serializer.toJson<int>(updatedAt),
+    };
+  }
+
+  AnidbFileIdentityRow copyWith({
+    String? ed2k,
+    int? fileSize,
+    Value<int?> anidbFileId = const Value.absent(),
+    Value<int?> anidbAnimeId = const Value.absent(),
+    Value<int?> anidbEpisodeId = const Value.absent(),
+    String? episodeNumber,
+    String? romajiTitle,
+    String? kanjiTitle,
+    String? englishTitle,
+    String? episodeTitle,
+    String? episodeRomajiTitle,
+    String? episodeKanjiTitle,
+    Value<String?> filePath = const Value.absent(),
+    Value<int?> fileModifiedAt = const Value.absent(),
+    int? missAttempts,
+    Value<int?> episodeAiredAt = const Value.absent(),
+    String? otherEpisodes,
+    bool? isDeprecated,
+    int? fileState,
+    String? animeType,
+    int? resolvedAt,
+    int? updatedAt,
+  }) => AnidbFileIdentityRow(
+    ed2k: ed2k ?? this.ed2k,
+    fileSize: fileSize ?? this.fileSize,
+    anidbFileId: anidbFileId.present ? anidbFileId.value : this.anidbFileId,
+    anidbAnimeId: anidbAnimeId.present ? anidbAnimeId.value : this.anidbAnimeId,
+    anidbEpisodeId: anidbEpisodeId.present
+        ? anidbEpisodeId.value
+        : this.anidbEpisodeId,
+    episodeNumber: episodeNumber ?? this.episodeNumber,
+    romajiTitle: romajiTitle ?? this.romajiTitle,
+    kanjiTitle: kanjiTitle ?? this.kanjiTitle,
+    englishTitle: englishTitle ?? this.englishTitle,
+    episodeTitle: episodeTitle ?? this.episodeTitle,
+    episodeRomajiTitle: episodeRomajiTitle ?? this.episodeRomajiTitle,
+    episodeKanjiTitle: episodeKanjiTitle ?? this.episodeKanjiTitle,
+    filePath: filePath.present ? filePath.value : this.filePath,
+    fileModifiedAt: fileModifiedAt.present
+        ? fileModifiedAt.value
+        : this.fileModifiedAt,
+    missAttempts: missAttempts ?? this.missAttempts,
+    episodeAiredAt: episodeAiredAt.present
+        ? episodeAiredAt.value
+        : this.episodeAiredAt,
+    otherEpisodes: otherEpisodes ?? this.otherEpisodes,
+    isDeprecated: isDeprecated ?? this.isDeprecated,
+    fileState: fileState ?? this.fileState,
+    animeType: animeType ?? this.animeType,
+    resolvedAt: resolvedAt ?? this.resolvedAt,
+    updatedAt: updatedAt ?? this.updatedAt,
+  );
+  AnidbFileIdentityRow copyWithCompanion(AnidbFileIdentitiesCompanion data) {
+    return AnidbFileIdentityRow(
+      ed2k: data.ed2k.present ? data.ed2k.value : this.ed2k,
+      fileSize: data.fileSize.present ? data.fileSize.value : this.fileSize,
+      anidbFileId: data.anidbFileId.present
+          ? data.anidbFileId.value
+          : this.anidbFileId,
+      anidbAnimeId: data.anidbAnimeId.present
+          ? data.anidbAnimeId.value
+          : this.anidbAnimeId,
+      anidbEpisodeId: data.anidbEpisodeId.present
+          ? data.anidbEpisodeId.value
+          : this.anidbEpisodeId,
+      episodeNumber: data.episodeNumber.present
+          ? data.episodeNumber.value
+          : this.episodeNumber,
+      romajiTitle: data.romajiTitle.present
+          ? data.romajiTitle.value
+          : this.romajiTitle,
+      kanjiTitle: data.kanjiTitle.present
+          ? data.kanjiTitle.value
+          : this.kanjiTitle,
+      englishTitle: data.englishTitle.present
+          ? data.englishTitle.value
+          : this.englishTitle,
+      episodeTitle: data.episodeTitle.present
+          ? data.episodeTitle.value
+          : this.episodeTitle,
+      episodeRomajiTitle: data.episodeRomajiTitle.present
+          ? data.episodeRomajiTitle.value
+          : this.episodeRomajiTitle,
+      episodeKanjiTitle: data.episodeKanjiTitle.present
+          ? data.episodeKanjiTitle.value
+          : this.episodeKanjiTitle,
+      filePath: data.filePath.present ? data.filePath.value : this.filePath,
+      fileModifiedAt: data.fileModifiedAt.present
+          ? data.fileModifiedAt.value
+          : this.fileModifiedAt,
+      missAttempts: data.missAttempts.present
+          ? data.missAttempts.value
+          : this.missAttempts,
+      episodeAiredAt: data.episodeAiredAt.present
+          ? data.episodeAiredAt.value
+          : this.episodeAiredAt,
+      otherEpisodes: data.otherEpisodes.present
+          ? data.otherEpisodes.value
+          : this.otherEpisodes,
+      isDeprecated: data.isDeprecated.present
+          ? data.isDeprecated.value
+          : this.isDeprecated,
+      fileState: data.fileState.present ? data.fileState.value : this.fileState,
+      animeType: data.animeType.present ? data.animeType.value : this.animeType,
+      resolvedAt: data.resolvedAt.present
+          ? data.resolvedAt.value
+          : this.resolvedAt,
+      updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('AnidbFileIdentityRow(')
+          ..write('ed2k: $ed2k, ')
+          ..write('fileSize: $fileSize, ')
+          ..write('anidbFileId: $anidbFileId, ')
+          ..write('anidbAnimeId: $anidbAnimeId, ')
+          ..write('anidbEpisodeId: $anidbEpisodeId, ')
+          ..write('episodeNumber: $episodeNumber, ')
+          ..write('romajiTitle: $romajiTitle, ')
+          ..write('kanjiTitle: $kanjiTitle, ')
+          ..write('englishTitle: $englishTitle, ')
+          ..write('episodeTitle: $episodeTitle, ')
+          ..write('episodeRomajiTitle: $episodeRomajiTitle, ')
+          ..write('episodeKanjiTitle: $episodeKanjiTitle, ')
+          ..write('filePath: $filePath, ')
+          ..write('fileModifiedAt: $fileModifiedAt, ')
+          ..write('missAttempts: $missAttempts, ')
+          ..write('episodeAiredAt: $episodeAiredAt, ')
+          ..write('otherEpisodes: $otherEpisodes, ')
+          ..write('isDeprecated: $isDeprecated, ')
+          ..write('fileState: $fileState, ')
+          ..write('animeType: $animeType, ')
+          ..write('resolvedAt: $resolvedAt, ')
+          ..write('updatedAt: $updatedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hashAll([
+    ed2k,
+    fileSize,
+    anidbFileId,
+    anidbAnimeId,
+    anidbEpisodeId,
+    episodeNumber,
+    romajiTitle,
+    kanjiTitle,
+    englishTitle,
+    episodeTitle,
+    episodeRomajiTitle,
+    episodeKanjiTitle,
+    filePath,
+    fileModifiedAt,
+    missAttempts,
+    episodeAiredAt,
+    otherEpisodes,
+    isDeprecated,
+    fileState,
+    animeType,
+    resolvedAt,
+    updatedAt,
+  ]);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is AnidbFileIdentityRow &&
+          other.ed2k == this.ed2k &&
+          other.fileSize == this.fileSize &&
+          other.anidbFileId == this.anidbFileId &&
+          other.anidbAnimeId == this.anidbAnimeId &&
+          other.anidbEpisodeId == this.anidbEpisodeId &&
+          other.episodeNumber == this.episodeNumber &&
+          other.romajiTitle == this.romajiTitle &&
+          other.kanjiTitle == this.kanjiTitle &&
+          other.englishTitle == this.englishTitle &&
+          other.episodeTitle == this.episodeTitle &&
+          other.episodeRomajiTitle == this.episodeRomajiTitle &&
+          other.episodeKanjiTitle == this.episodeKanjiTitle &&
+          other.filePath == this.filePath &&
+          other.fileModifiedAt == this.fileModifiedAt &&
+          other.missAttempts == this.missAttempts &&
+          other.episodeAiredAt == this.episodeAiredAt &&
+          other.otherEpisodes == this.otherEpisodes &&
+          other.isDeprecated == this.isDeprecated &&
+          other.fileState == this.fileState &&
+          other.animeType == this.animeType &&
+          other.resolvedAt == this.resolvedAt &&
+          other.updatedAt == this.updatedAt);
+}
+
+class AnidbFileIdentitiesCompanion
+    extends UpdateCompanion<AnidbFileIdentityRow> {
+  final Value<String> ed2k;
+  final Value<int> fileSize;
+  final Value<int?> anidbFileId;
+  final Value<int?> anidbAnimeId;
+  final Value<int?> anidbEpisodeId;
+  final Value<String> episodeNumber;
+  final Value<String> romajiTitle;
+  final Value<String> kanjiTitle;
+  final Value<String> englishTitle;
+  final Value<String> episodeTitle;
+  final Value<String> episodeRomajiTitle;
+  final Value<String> episodeKanjiTitle;
+  final Value<String?> filePath;
+  final Value<int?> fileModifiedAt;
+  final Value<int> missAttempts;
+  final Value<int?> episodeAiredAt;
+  final Value<String> otherEpisodes;
+  final Value<bool> isDeprecated;
+  final Value<int> fileState;
+  final Value<String> animeType;
+  final Value<int> resolvedAt;
+  final Value<int> updatedAt;
+  final Value<int> rowid;
+  const AnidbFileIdentitiesCompanion({
+    this.ed2k = const Value.absent(),
+    this.fileSize = const Value.absent(),
+    this.anidbFileId = const Value.absent(),
+    this.anidbAnimeId = const Value.absent(),
+    this.anidbEpisodeId = const Value.absent(),
+    this.episodeNumber = const Value.absent(),
+    this.romajiTitle = const Value.absent(),
+    this.kanjiTitle = const Value.absent(),
+    this.englishTitle = const Value.absent(),
+    this.episodeTitle = const Value.absent(),
+    this.episodeRomajiTitle = const Value.absent(),
+    this.episodeKanjiTitle = const Value.absent(),
+    this.filePath = const Value.absent(),
+    this.fileModifiedAt = const Value.absent(),
+    this.missAttempts = const Value.absent(),
+    this.episodeAiredAt = const Value.absent(),
+    this.otherEpisodes = const Value.absent(),
+    this.isDeprecated = const Value.absent(),
+    this.fileState = const Value.absent(),
+    this.animeType = const Value.absent(),
+    this.resolvedAt = const Value.absent(),
+    this.updatedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  AnidbFileIdentitiesCompanion.insert({
+    required String ed2k,
+    required int fileSize,
+    this.anidbFileId = const Value.absent(),
+    this.anidbAnimeId = const Value.absent(),
+    this.anidbEpisodeId = const Value.absent(),
+    this.episodeNumber = const Value.absent(),
+    this.romajiTitle = const Value.absent(),
+    this.kanjiTitle = const Value.absent(),
+    this.englishTitle = const Value.absent(),
+    this.episodeTitle = const Value.absent(),
+    this.episodeRomajiTitle = const Value.absent(),
+    this.episodeKanjiTitle = const Value.absent(),
+    this.filePath = const Value.absent(),
+    this.fileModifiedAt = const Value.absent(),
+    this.missAttempts = const Value.absent(),
+    this.episodeAiredAt = const Value.absent(),
+    this.otherEpisodes = const Value.absent(),
+    this.isDeprecated = const Value.absent(),
+    this.fileState = const Value.absent(),
+    this.animeType = const Value.absent(),
+    required int resolvedAt,
+    required int updatedAt,
+    this.rowid = const Value.absent(),
+  }) : ed2k = Value(ed2k),
+       fileSize = Value(fileSize),
+       resolvedAt = Value(resolvedAt),
+       updatedAt = Value(updatedAt);
+  static Insertable<AnidbFileIdentityRow> custom({
+    Expression<String>? ed2k,
+    Expression<int>? fileSize,
+    Expression<int>? anidbFileId,
+    Expression<int>? anidbAnimeId,
+    Expression<int>? anidbEpisodeId,
+    Expression<String>? episodeNumber,
+    Expression<String>? romajiTitle,
+    Expression<String>? kanjiTitle,
+    Expression<String>? englishTitle,
+    Expression<String>? episodeTitle,
+    Expression<String>? episodeRomajiTitle,
+    Expression<String>? episodeKanjiTitle,
+    Expression<String>? filePath,
+    Expression<int>? fileModifiedAt,
+    Expression<int>? missAttempts,
+    Expression<int>? episodeAiredAt,
+    Expression<String>? otherEpisodes,
+    Expression<bool>? isDeprecated,
+    Expression<int>? fileState,
+    Expression<String>? animeType,
+    Expression<int>? resolvedAt,
+    Expression<int>? updatedAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (ed2k != null) 'ed2k': ed2k,
+      if (fileSize != null) 'file_size': fileSize,
+      if (anidbFileId != null) 'anidb_file_id': anidbFileId,
+      if (anidbAnimeId != null) 'anidb_anime_id': anidbAnimeId,
+      if (anidbEpisodeId != null) 'anidb_episode_id': anidbEpisodeId,
+      if (episodeNumber != null) 'episode_number': episodeNumber,
+      if (romajiTitle != null) 'romaji_title': romajiTitle,
+      if (kanjiTitle != null) 'kanji_title': kanjiTitle,
+      if (englishTitle != null) 'english_title': englishTitle,
+      if (episodeTitle != null) 'episode_title': episodeTitle,
+      if (episodeRomajiTitle != null)
+        'episode_romaji_title': episodeRomajiTitle,
+      if (episodeKanjiTitle != null) 'episode_kanji_title': episodeKanjiTitle,
+      if (filePath != null) 'file_path': filePath,
+      if (fileModifiedAt != null) 'file_modified_at': fileModifiedAt,
+      if (missAttempts != null) 'miss_attempts': missAttempts,
+      if (episodeAiredAt != null) 'episode_aired_at': episodeAiredAt,
+      if (otherEpisodes != null) 'other_episodes': otherEpisodes,
+      if (isDeprecated != null) 'is_deprecated': isDeprecated,
+      if (fileState != null) 'file_state': fileState,
+      if (animeType != null) 'anime_type': animeType,
+      if (resolvedAt != null) 'resolved_at': resolvedAt,
+      if (updatedAt != null) 'updated_at': updatedAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  AnidbFileIdentitiesCompanion copyWith({
+    Value<String>? ed2k,
+    Value<int>? fileSize,
+    Value<int?>? anidbFileId,
+    Value<int?>? anidbAnimeId,
+    Value<int?>? anidbEpisodeId,
+    Value<String>? episodeNumber,
+    Value<String>? romajiTitle,
+    Value<String>? kanjiTitle,
+    Value<String>? englishTitle,
+    Value<String>? episodeTitle,
+    Value<String>? episodeRomajiTitle,
+    Value<String>? episodeKanjiTitle,
+    Value<String?>? filePath,
+    Value<int?>? fileModifiedAt,
+    Value<int>? missAttempts,
+    Value<int?>? episodeAiredAt,
+    Value<String>? otherEpisodes,
+    Value<bool>? isDeprecated,
+    Value<int>? fileState,
+    Value<String>? animeType,
+    Value<int>? resolvedAt,
+    Value<int>? updatedAt,
+    Value<int>? rowid,
+  }) {
+    return AnidbFileIdentitiesCompanion(
+      ed2k: ed2k ?? this.ed2k,
+      fileSize: fileSize ?? this.fileSize,
+      anidbFileId: anidbFileId ?? this.anidbFileId,
+      anidbAnimeId: anidbAnimeId ?? this.anidbAnimeId,
+      anidbEpisodeId: anidbEpisodeId ?? this.anidbEpisodeId,
+      episodeNumber: episodeNumber ?? this.episodeNumber,
+      romajiTitle: romajiTitle ?? this.romajiTitle,
+      kanjiTitle: kanjiTitle ?? this.kanjiTitle,
+      englishTitle: englishTitle ?? this.englishTitle,
+      episodeTitle: episodeTitle ?? this.episodeTitle,
+      episodeRomajiTitle: episodeRomajiTitle ?? this.episodeRomajiTitle,
+      episodeKanjiTitle: episodeKanjiTitle ?? this.episodeKanjiTitle,
+      filePath: filePath ?? this.filePath,
+      fileModifiedAt: fileModifiedAt ?? this.fileModifiedAt,
+      missAttempts: missAttempts ?? this.missAttempts,
+      episodeAiredAt: episodeAiredAt ?? this.episodeAiredAt,
+      otherEpisodes: otherEpisodes ?? this.otherEpisodes,
+      isDeprecated: isDeprecated ?? this.isDeprecated,
+      fileState: fileState ?? this.fileState,
+      animeType: animeType ?? this.animeType,
+      resolvedAt: resolvedAt ?? this.resolvedAt,
+      updatedAt: updatedAt ?? this.updatedAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (ed2k.present) {
+      map['ed2k'] = Variable<String>(ed2k.value);
+    }
+    if (fileSize.present) {
+      map['file_size'] = Variable<int>(fileSize.value);
+    }
+    if (anidbFileId.present) {
+      map['anidb_file_id'] = Variable<int>(anidbFileId.value);
+    }
+    if (anidbAnimeId.present) {
+      map['anidb_anime_id'] = Variable<int>(anidbAnimeId.value);
+    }
+    if (anidbEpisodeId.present) {
+      map['anidb_episode_id'] = Variable<int>(anidbEpisodeId.value);
+    }
+    if (episodeNumber.present) {
+      map['episode_number'] = Variable<String>(episodeNumber.value);
+    }
+    if (romajiTitle.present) {
+      map['romaji_title'] = Variable<String>(romajiTitle.value);
+    }
+    if (kanjiTitle.present) {
+      map['kanji_title'] = Variable<String>(kanjiTitle.value);
+    }
+    if (englishTitle.present) {
+      map['english_title'] = Variable<String>(englishTitle.value);
+    }
+    if (episodeTitle.present) {
+      map['episode_title'] = Variable<String>(episodeTitle.value);
+    }
+    if (episodeRomajiTitle.present) {
+      map['episode_romaji_title'] = Variable<String>(episodeRomajiTitle.value);
+    }
+    if (episodeKanjiTitle.present) {
+      map['episode_kanji_title'] = Variable<String>(episodeKanjiTitle.value);
+    }
+    if (filePath.present) {
+      map['file_path'] = Variable<String>(filePath.value);
+    }
+    if (fileModifiedAt.present) {
+      map['file_modified_at'] = Variable<int>(fileModifiedAt.value);
+    }
+    if (missAttempts.present) {
+      map['miss_attempts'] = Variable<int>(missAttempts.value);
+    }
+    if (episodeAiredAt.present) {
+      map['episode_aired_at'] = Variable<int>(episodeAiredAt.value);
+    }
+    if (otherEpisodes.present) {
+      map['other_episodes'] = Variable<String>(otherEpisodes.value);
+    }
+    if (isDeprecated.present) {
+      map['is_deprecated'] = Variable<bool>(isDeprecated.value);
+    }
+    if (fileState.present) {
+      map['file_state'] = Variable<int>(fileState.value);
+    }
+    if (animeType.present) {
+      map['anime_type'] = Variable<String>(animeType.value);
+    }
+    if (resolvedAt.present) {
+      map['resolved_at'] = Variable<int>(resolvedAt.value);
+    }
+    if (updatedAt.present) {
+      map['updated_at'] = Variable<int>(updatedAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('AnidbFileIdentitiesCompanion(')
+          ..write('ed2k: $ed2k, ')
+          ..write('fileSize: $fileSize, ')
+          ..write('anidbFileId: $anidbFileId, ')
+          ..write('anidbAnimeId: $anidbAnimeId, ')
+          ..write('anidbEpisodeId: $anidbEpisodeId, ')
+          ..write('episodeNumber: $episodeNumber, ')
+          ..write('romajiTitle: $romajiTitle, ')
+          ..write('kanjiTitle: $kanjiTitle, ')
+          ..write('englishTitle: $englishTitle, ')
+          ..write('episodeTitle: $episodeTitle, ')
+          ..write('episodeRomajiTitle: $episodeRomajiTitle, ')
+          ..write('episodeKanjiTitle: $episodeKanjiTitle, ')
+          ..write('filePath: $filePath, ')
+          ..write('fileModifiedAt: $fileModifiedAt, ')
+          ..write('missAttempts: $missAttempts, ')
+          ..write('episodeAiredAt: $episodeAiredAt, ')
+          ..write('otherEpisodes: $otherEpisodes, ')
+          ..write('isDeprecated: $isDeprecated, ')
+          ..write('fileState: $fileState, ')
+          ..write('animeType: $animeType, ')
+          ..write('resolvedAt: $resolvedAt, ')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $VideoEpisodeBindingOverridesTable extends VideoEpisodeBindingOverrides
+    with
+        TableInfo<
+          $VideoEpisodeBindingOverridesTable,
+          VideoEpisodeBindingOverrideRow
+        > {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $VideoEpisodeBindingOverridesTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _bookUidMeta = const VerificationMeta(
+    'bookUid',
+  );
+  @override
+  late final GeneratedColumn<String> bookUid = GeneratedColumn<String>(
+    'book_uid',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'REFERENCES video_books (book_uid) ON DELETE CASCADE',
+    ),
+  );
+  static const VerificationMeta _seasonNumberMeta = const VerificationMeta(
+    'seasonNumber',
+  );
+  @override
+  late final GeneratedColumn<int> seasonNumber = GeneratedColumn<int>(
+    'season_number',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _episodeNumberMeta = const VerificationMeta(
+    'episodeNumber',
+  );
+  @override
+  late final GeneratedColumn<int> episodeNumber = GeneratedColumn<int>(
+    'episode_number',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _updatedAtMeta = const VerificationMeta(
+    'updatedAt',
+  );
+  @override
+  late final GeneratedColumn<int> updatedAt = GeneratedColumn<int>(
+    'updated_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    bookUid,
+    seasonNumber,
+    episodeNumber,
+    updatedAt,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'video_episode_binding_overrides';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<VideoEpisodeBindingOverrideRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('book_uid')) {
+      context.handle(
+        _bookUidMeta,
+        bookUid.isAcceptableOrUnknown(data['book_uid']!, _bookUidMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_bookUidMeta);
+    }
+    if (data.containsKey('season_number')) {
+      context.handle(
+        _seasonNumberMeta,
+        seasonNumber.isAcceptableOrUnknown(
+          data['season_number']!,
+          _seasonNumberMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_seasonNumberMeta);
+    }
+    if (data.containsKey('episode_number')) {
+      context.handle(
+        _episodeNumberMeta,
+        episodeNumber.isAcceptableOrUnknown(
+          data['episode_number']!,
+          _episodeNumberMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_episodeNumberMeta);
+    }
+    if (data.containsKey('updated_at')) {
+      context.handle(
+        _updatedAtMeta,
+        updatedAt.isAcceptableOrUnknown(data['updated_at']!, _updatedAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_updatedAtMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {bookUid};
+  @override
+  VideoEpisodeBindingOverrideRow map(
+    Map<String, dynamic> data, {
+    String? tablePrefix,
+  }) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return VideoEpisodeBindingOverrideRow(
+      bookUid: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}book_uid'],
+      )!,
+      seasonNumber: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}season_number'],
+      )!,
+      episodeNumber: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}episode_number'],
+      )!,
+      updatedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}updated_at'],
+      )!,
+    );
+  }
+
+  @override
+  $VideoEpisodeBindingOverridesTable createAlias(String alias) {
+    return $VideoEpisodeBindingOverridesTable(attachedDatabase, alias);
+  }
+}
+
+class VideoEpisodeBindingOverrideRow extends DataClass
+    implements Insertable<VideoEpisodeBindingOverrideRow> {
+  final String bookUid;
+  final int seasonNumber;
+  final int episodeNumber;
+  final int updatedAt;
+  const VideoEpisodeBindingOverrideRow({
+    required this.bookUid,
+    required this.seasonNumber,
+    required this.episodeNumber,
+    required this.updatedAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['book_uid'] = Variable<String>(bookUid);
+    map['season_number'] = Variable<int>(seasonNumber);
+    map['episode_number'] = Variable<int>(episodeNumber);
+    map['updated_at'] = Variable<int>(updatedAt);
+    return map;
+  }
+
+  VideoEpisodeBindingOverridesCompanion toCompanion(bool nullToAbsent) {
+    return VideoEpisodeBindingOverridesCompanion(
+      bookUid: Value(bookUid),
+      seasonNumber: Value(seasonNumber),
+      episodeNumber: Value(episodeNumber),
+      updatedAt: Value(updatedAt),
+    );
+  }
+
+  factory VideoEpisodeBindingOverrideRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return VideoEpisodeBindingOverrideRow(
+      bookUid: serializer.fromJson<String>(json['bookUid']),
+      seasonNumber: serializer.fromJson<int>(json['seasonNumber']),
+      episodeNumber: serializer.fromJson<int>(json['episodeNumber']),
+      updatedAt: serializer.fromJson<int>(json['updatedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'bookUid': serializer.toJson<String>(bookUid),
+      'seasonNumber': serializer.toJson<int>(seasonNumber),
+      'episodeNumber': serializer.toJson<int>(episodeNumber),
+      'updatedAt': serializer.toJson<int>(updatedAt),
+    };
+  }
+
+  VideoEpisodeBindingOverrideRow copyWith({
+    String? bookUid,
+    int? seasonNumber,
+    int? episodeNumber,
+    int? updatedAt,
+  }) => VideoEpisodeBindingOverrideRow(
+    bookUid: bookUid ?? this.bookUid,
+    seasonNumber: seasonNumber ?? this.seasonNumber,
+    episodeNumber: episodeNumber ?? this.episodeNumber,
+    updatedAt: updatedAt ?? this.updatedAt,
+  );
+  VideoEpisodeBindingOverrideRow copyWithCompanion(
+    VideoEpisodeBindingOverridesCompanion data,
+  ) {
+    return VideoEpisodeBindingOverrideRow(
+      bookUid: data.bookUid.present ? data.bookUid.value : this.bookUid,
+      seasonNumber: data.seasonNumber.present
+          ? data.seasonNumber.value
+          : this.seasonNumber,
+      episodeNumber: data.episodeNumber.present
+          ? data.episodeNumber.value
+          : this.episodeNumber,
+      updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('VideoEpisodeBindingOverrideRow(')
+          ..write('bookUid: $bookUid, ')
+          ..write('seasonNumber: $seasonNumber, ')
+          ..write('episodeNumber: $episodeNumber, ')
+          ..write('updatedAt: $updatedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode =>
+      Object.hash(bookUid, seasonNumber, episodeNumber, updatedAt);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is VideoEpisodeBindingOverrideRow &&
+          other.bookUid == this.bookUid &&
+          other.seasonNumber == this.seasonNumber &&
+          other.episodeNumber == this.episodeNumber &&
+          other.updatedAt == this.updatedAt);
+}
+
+class VideoEpisodeBindingOverridesCompanion
+    extends UpdateCompanion<VideoEpisodeBindingOverrideRow> {
+  final Value<String> bookUid;
+  final Value<int> seasonNumber;
+  final Value<int> episodeNumber;
+  final Value<int> updatedAt;
+  final Value<int> rowid;
+  const VideoEpisodeBindingOverridesCompanion({
+    this.bookUid = const Value.absent(),
+    this.seasonNumber = const Value.absent(),
+    this.episodeNumber = const Value.absent(),
+    this.updatedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  VideoEpisodeBindingOverridesCompanion.insert({
+    required String bookUid,
+    required int seasonNumber,
+    required int episodeNumber,
+    required int updatedAt,
+    this.rowid = const Value.absent(),
+  }) : bookUid = Value(bookUid),
+       seasonNumber = Value(seasonNumber),
+       episodeNumber = Value(episodeNumber),
+       updatedAt = Value(updatedAt);
+  static Insertable<VideoEpisodeBindingOverrideRow> custom({
+    Expression<String>? bookUid,
+    Expression<int>? seasonNumber,
+    Expression<int>? episodeNumber,
+    Expression<int>? updatedAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (bookUid != null) 'book_uid': bookUid,
+      if (seasonNumber != null) 'season_number': seasonNumber,
+      if (episodeNumber != null) 'episode_number': episodeNumber,
+      if (updatedAt != null) 'updated_at': updatedAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  VideoEpisodeBindingOverridesCompanion copyWith({
+    Value<String>? bookUid,
+    Value<int>? seasonNumber,
+    Value<int>? episodeNumber,
+    Value<int>? updatedAt,
+    Value<int>? rowid,
+  }) {
+    return VideoEpisodeBindingOverridesCompanion(
+      bookUid: bookUid ?? this.bookUid,
+      seasonNumber: seasonNumber ?? this.seasonNumber,
+      episodeNumber: episodeNumber ?? this.episodeNumber,
+      updatedAt: updatedAt ?? this.updatedAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (bookUid.present) {
+      map['book_uid'] = Variable<String>(bookUid.value);
+    }
+    if (seasonNumber.present) {
+      map['season_number'] = Variable<int>(seasonNumber.value);
+    }
+    if (episodeNumber.present) {
+      map['episode_number'] = Variable<int>(episodeNumber.value);
+    }
+    if (updatedAt.present) {
+      map['updated_at'] = Variable<int>(updatedAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('VideoEpisodeBindingOverridesCompanion(')
+          ..write('bookUid: $bookUid, ')
+          ..write('seasonNumber: $seasonNumber, ')
+          ..write('episodeNumber: $episodeNumber, ')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $PendingMineQueueTable extends PendingMineQueue
+    with TableInfo<$PendingMineQueueTable, PendingMineRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $PendingMineQueueTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<String> id = GeneratedColumn<String>(
+    'id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _createdAtMeta = const VerificationMeta(
+    'createdAt',
+  );
+  @override
+  late final GeneratedColumn<int> createdAt = GeneratedColumn<int>(
+    'created_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _expressionMeta = const VerificationMeta(
+    'expression',
+  );
+  @override
+  late final GeneratedColumn<String> expression = GeneratedColumn<String>(
+    'expression',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _readingMeta = const VerificationMeta(
+    'reading',
+  );
+  @override
+  late final GeneratedColumn<String> reading = GeneratedColumn<String>(
+    'reading',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(''),
+  );
+  static const VerificationMeta _statusMeta = const VerificationMeta('status');
+  @override
+  late final GeneratedColumn<String> status = GeneratedColumn<String>(
+    'status',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant('pending'),
+  );
+  static const VerificationMeta _attemptsMeta = const VerificationMeta(
+    'attempts',
+  );
+  @override
+  late final GeneratedColumn<int> attempts = GeneratedColumn<int>(
+    'attempts',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _lastErrorMeta = const VerificationMeta(
+    'lastError',
+  );
+  @override
+  late final GeneratedColumn<String> lastError = GeneratedColumn<String>(
+    'last_error',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _lastAttemptAtMeta = const VerificationMeta(
+    'lastAttemptAt',
+  );
+  @override
+  late final GeneratedColumn<int> lastAttemptAt = GeneratedColumn<int>(
+    'last_attempt_at',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _originDeviceIdMeta = const VerificationMeta(
+    'originDeviceId',
+  );
+  @override
+  late final GeneratedColumn<String> originDeviceId = GeneratedColumn<String>(
+    'origin_device_id',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _uploadedMeta = const VerificationMeta(
+    'uploaded',
+  );
+  @override
+  late final GeneratedColumn<bool> uploaded = GeneratedColumn<bool>(
+    'uploaded',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("uploaded" IN (0, 1))',
+    ),
+    defaultValue: const Constant(false),
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    id,
+    createdAt,
+    expression,
+    reading,
+    status,
+    attempts,
+    lastError,
+    lastAttemptAt,
+    originDeviceId,
+    uploaded,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'pending_mine_queue';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<PendingMineRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    } else if (isInserting) {
+      context.missing(_idMeta);
+    }
+    if (data.containsKey('created_at')) {
+      context.handle(
+        _createdAtMeta,
+        createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_createdAtMeta);
+    }
+    if (data.containsKey('expression')) {
+      context.handle(
+        _expressionMeta,
+        expression.isAcceptableOrUnknown(data['expression']!, _expressionMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_expressionMeta);
+    }
+    if (data.containsKey('reading')) {
+      context.handle(
+        _readingMeta,
+        reading.isAcceptableOrUnknown(data['reading']!, _readingMeta),
+      );
+    }
+    if (data.containsKey('status')) {
+      context.handle(
+        _statusMeta,
+        status.isAcceptableOrUnknown(data['status']!, _statusMeta),
+      );
+    }
+    if (data.containsKey('attempts')) {
+      context.handle(
+        _attemptsMeta,
+        attempts.isAcceptableOrUnknown(data['attempts']!, _attemptsMeta),
+      );
+    }
+    if (data.containsKey('last_error')) {
+      context.handle(
+        _lastErrorMeta,
+        lastError.isAcceptableOrUnknown(data['last_error']!, _lastErrorMeta),
+      );
+    }
+    if (data.containsKey('last_attempt_at')) {
+      context.handle(
+        _lastAttemptAtMeta,
+        lastAttemptAt.isAcceptableOrUnknown(
+          data['last_attempt_at']!,
+          _lastAttemptAtMeta,
+        ),
+      );
+    }
+    if (data.containsKey('origin_device_id')) {
+      context.handle(
+        _originDeviceIdMeta,
+        originDeviceId.isAcceptableOrUnknown(
+          data['origin_device_id']!,
+          _originDeviceIdMeta,
+        ),
+      );
+    }
+    if (data.containsKey('uploaded')) {
+      context.handle(
+        _uploadedMeta,
+        uploaded.isAcceptableOrUnknown(data['uploaded']!, _uploadedMeta),
+      );
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  PendingMineRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return PendingMineRow(
+      id: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}id'],
+      )!,
+      createdAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}created_at'],
+      )!,
+      expression: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}expression'],
+      )!,
+      reading: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}reading'],
+      )!,
+      status: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}status'],
+      )!,
+      attempts: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}attempts'],
+      )!,
+      lastError: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}last_error'],
+      ),
+      lastAttemptAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}last_attempt_at'],
+      ),
+      originDeviceId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}origin_device_id'],
+      ),
+      uploaded: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}uploaded'],
+      )!,
+    );
+  }
+
+  @override
+  $PendingMineQueueTable createAlias(String alias) {
+    return $PendingMineQueueTable(attachedDatabase, alias);
+  }
+}
+
+class PendingMineRow extends DataClass implements Insertable<PendingMineRow> {
+  /// 128-bit 随机 hex；同时决定载荷文件名。
+  final String id;
+
+  /// 入队时刻（毫秒）。
+  final int createdAt;
+
+  /// 列表显示用的词条与读音。
+  final String expression;
+  final String reading;
+
+  /// [PendingMineStatus]。
+  final String status;
+
+  /// 已尝试补发次数与最近一次失败信息 / 时刻（毫秒）。
+  final int attempts;
+  final String? lastError;
+  final int? lastAttemptAt;
+
+  /// 制卡来源设备（同步 deviceId）。null = 本机制的；非 null = 经跨设备中转
+  /// 收到、由本机（落地设备）负责交给 Anki 的。
+  final String? originDeviceId;
+
+  /// 本机制的卡是否已上传到同步后端的中转命名空间。上传过的卡落地后要先删掉远端
+  /// 那份，否则落地设备会再落一次。
+  final bool uploaded;
+  const PendingMineRow({
+    required this.id,
+    required this.createdAt,
+    required this.expression,
+    required this.reading,
+    required this.status,
+    required this.attempts,
+    this.lastError,
+    this.lastAttemptAt,
+    this.originDeviceId,
+    required this.uploaded,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<String>(id);
+    map['created_at'] = Variable<int>(createdAt);
+    map['expression'] = Variable<String>(expression);
+    map['reading'] = Variable<String>(reading);
+    map['status'] = Variable<String>(status);
+    map['attempts'] = Variable<int>(attempts);
+    if (!nullToAbsent || lastError != null) {
+      map['last_error'] = Variable<String>(lastError);
+    }
+    if (!nullToAbsent || lastAttemptAt != null) {
+      map['last_attempt_at'] = Variable<int>(lastAttemptAt);
+    }
+    if (!nullToAbsent || originDeviceId != null) {
+      map['origin_device_id'] = Variable<String>(originDeviceId);
+    }
+    map['uploaded'] = Variable<bool>(uploaded);
+    return map;
+  }
+
+  PendingMineQueueCompanion toCompanion(bool nullToAbsent) {
+    return PendingMineQueueCompanion(
+      id: Value(id),
+      createdAt: Value(createdAt),
+      expression: Value(expression),
+      reading: Value(reading),
+      status: Value(status),
+      attempts: Value(attempts),
+      lastError: lastError == null && nullToAbsent
+          ? const Value.absent()
+          : Value(lastError),
+      lastAttemptAt: lastAttemptAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(lastAttemptAt),
+      originDeviceId: originDeviceId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(originDeviceId),
+      uploaded: Value(uploaded),
+    );
+  }
+
+  factory PendingMineRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return PendingMineRow(
+      id: serializer.fromJson<String>(json['id']),
+      createdAt: serializer.fromJson<int>(json['createdAt']),
+      expression: serializer.fromJson<String>(json['expression']),
+      reading: serializer.fromJson<String>(json['reading']),
+      status: serializer.fromJson<String>(json['status']),
+      attempts: serializer.fromJson<int>(json['attempts']),
+      lastError: serializer.fromJson<String?>(json['lastError']),
+      lastAttemptAt: serializer.fromJson<int?>(json['lastAttemptAt']),
+      originDeviceId: serializer.fromJson<String?>(json['originDeviceId']),
+      uploaded: serializer.fromJson<bool>(json['uploaded']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<String>(id),
+      'createdAt': serializer.toJson<int>(createdAt),
+      'expression': serializer.toJson<String>(expression),
+      'reading': serializer.toJson<String>(reading),
+      'status': serializer.toJson<String>(status),
+      'attempts': serializer.toJson<int>(attempts),
+      'lastError': serializer.toJson<String?>(lastError),
+      'lastAttemptAt': serializer.toJson<int?>(lastAttemptAt),
+      'originDeviceId': serializer.toJson<String?>(originDeviceId),
+      'uploaded': serializer.toJson<bool>(uploaded),
+    };
+  }
+
+  PendingMineRow copyWith({
+    String? id,
+    int? createdAt,
+    String? expression,
+    String? reading,
+    String? status,
+    int? attempts,
+    Value<String?> lastError = const Value.absent(),
+    Value<int?> lastAttemptAt = const Value.absent(),
+    Value<String?> originDeviceId = const Value.absent(),
+    bool? uploaded,
+  }) => PendingMineRow(
+    id: id ?? this.id,
+    createdAt: createdAt ?? this.createdAt,
+    expression: expression ?? this.expression,
+    reading: reading ?? this.reading,
+    status: status ?? this.status,
+    attempts: attempts ?? this.attempts,
+    lastError: lastError.present ? lastError.value : this.lastError,
+    lastAttemptAt: lastAttemptAt.present
+        ? lastAttemptAt.value
+        : this.lastAttemptAt,
+    originDeviceId: originDeviceId.present
+        ? originDeviceId.value
+        : this.originDeviceId,
+    uploaded: uploaded ?? this.uploaded,
+  );
+  PendingMineRow copyWithCompanion(PendingMineQueueCompanion data) {
+    return PendingMineRow(
+      id: data.id.present ? data.id.value : this.id,
+      createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
+      expression: data.expression.present
+          ? data.expression.value
+          : this.expression,
+      reading: data.reading.present ? data.reading.value : this.reading,
+      status: data.status.present ? data.status.value : this.status,
+      attempts: data.attempts.present ? data.attempts.value : this.attempts,
+      lastError: data.lastError.present ? data.lastError.value : this.lastError,
+      lastAttemptAt: data.lastAttemptAt.present
+          ? data.lastAttemptAt.value
+          : this.lastAttemptAt,
+      originDeviceId: data.originDeviceId.present
+          ? data.originDeviceId.value
+          : this.originDeviceId,
+      uploaded: data.uploaded.present ? data.uploaded.value : this.uploaded,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('PendingMineRow(')
+          ..write('id: $id, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('expression: $expression, ')
+          ..write('reading: $reading, ')
+          ..write('status: $status, ')
+          ..write('attempts: $attempts, ')
+          ..write('lastError: $lastError, ')
+          ..write('lastAttemptAt: $lastAttemptAt, ')
+          ..write('originDeviceId: $originDeviceId, ')
+          ..write('uploaded: $uploaded')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    id,
+    createdAt,
+    expression,
+    reading,
+    status,
+    attempts,
+    lastError,
+    lastAttemptAt,
+    originDeviceId,
+    uploaded,
+  );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is PendingMineRow &&
+          other.id == this.id &&
+          other.createdAt == this.createdAt &&
+          other.expression == this.expression &&
+          other.reading == this.reading &&
+          other.status == this.status &&
+          other.attempts == this.attempts &&
+          other.lastError == this.lastError &&
+          other.lastAttemptAt == this.lastAttemptAt &&
+          other.originDeviceId == this.originDeviceId &&
+          other.uploaded == this.uploaded);
+}
+
+class PendingMineQueueCompanion extends UpdateCompanion<PendingMineRow> {
+  final Value<String> id;
+  final Value<int> createdAt;
+  final Value<String> expression;
+  final Value<String> reading;
+  final Value<String> status;
+  final Value<int> attempts;
+  final Value<String?> lastError;
+  final Value<int?> lastAttemptAt;
+  final Value<String?> originDeviceId;
+  final Value<bool> uploaded;
+  final Value<int> rowid;
+  const PendingMineQueueCompanion({
+    this.id = const Value.absent(),
+    this.createdAt = const Value.absent(),
+    this.expression = const Value.absent(),
+    this.reading = const Value.absent(),
+    this.status = const Value.absent(),
+    this.attempts = const Value.absent(),
+    this.lastError = const Value.absent(),
+    this.lastAttemptAt = const Value.absent(),
+    this.originDeviceId = const Value.absent(),
+    this.uploaded = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  PendingMineQueueCompanion.insert({
+    required String id,
+    required int createdAt,
+    required String expression,
+    this.reading = const Value.absent(),
+    this.status = const Value.absent(),
+    this.attempts = const Value.absent(),
+    this.lastError = const Value.absent(),
+    this.lastAttemptAt = const Value.absent(),
+    this.originDeviceId = const Value.absent(),
+    this.uploaded = const Value.absent(),
+    this.rowid = const Value.absent(),
+  }) : id = Value(id),
+       createdAt = Value(createdAt),
+       expression = Value(expression);
+  static Insertable<PendingMineRow> custom({
+    Expression<String>? id,
+    Expression<int>? createdAt,
+    Expression<String>? expression,
+    Expression<String>? reading,
+    Expression<String>? status,
+    Expression<int>? attempts,
+    Expression<String>? lastError,
+    Expression<int>? lastAttemptAt,
+    Expression<String>? originDeviceId,
+    Expression<bool>? uploaded,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (createdAt != null) 'created_at': createdAt,
+      if (expression != null) 'expression': expression,
+      if (reading != null) 'reading': reading,
+      if (status != null) 'status': status,
+      if (attempts != null) 'attempts': attempts,
+      if (lastError != null) 'last_error': lastError,
+      if (lastAttemptAt != null) 'last_attempt_at': lastAttemptAt,
+      if (originDeviceId != null) 'origin_device_id': originDeviceId,
+      if (uploaded != null) 'uploaded': uploaded,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  PendingMineQueueCompanion copyWith({
+    Value<String>? id,
+    Value<int>? createdAt,
+    Value<String>? expression,
+    Value<String>? reading,
+    Value<String>? status,
+    Value<int>? attempts,
+    Value<String?>? lastError,
+    Value<int?>? lastAttemptAt,
+    Value<String?>? originDeviceId,
+    Value<bool>? uploaded,
+    Value<int>? rowid,
+  }) {
+    return PendingMineQueueCompanion(
+      id: id ?? this.id,
+      createdAt: createdAt ?? this.createdAt,
+      expression: expression ?? this.expression,
+      reading: reading ?? this.reading,
+      status: status ?? this.status,
+      attempts: attempts ?? this.attempts,
+      lastError: lastError ?? this.lastError,
+      lastAttemptAt: lastAttemptAt ?? this.lastAttemptAt,
+      originDeviceId: originDeviceId ?? this.originDeviceId,
+      uploaded: uploaded ?? this.uploaded,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<String>(id.value);
+    }
+    if (createdAt.present) {
+      map['created_at'] = Variable<int>(createdAt.value);
+    }
+    if (expression.present) {
+      map['expression'] = Variable<String>(expression.value);
+    }
+    if (reading.present) {
+      map['reading'] = Variable<String>(reading.value);
+    }
+    if (status.present) {
+      map['status'] = Variable<String>(status.value);
+    }
+    if (attempts.present) {
+      map['attempts'] = Variable<int>(attempts.value);
+    }
+    if (lastError.present) {
+      map['last_error'] = Variable<String>(lastError.value);
+    }
+    if (lastAttemptAt.present) {
+      map['last_attempt_at'] = Variable<int>(lastAttemptAt.value);
+    }
+    if (originDeviceId.present) {
+      map['origin_device_id'] = Variable<String>(originDeviceId.value);
+    }
+    if (uploaded.present) {
+      map['uploaded'] = Variable<bool>(uploaded.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('PendingMineQueueCompanion(')
+          ..write('id: $id, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('expression: $expression, ')
+          ..write('reading: $reading, ')
+          ..write('status: $status, ')
+          ..write('attempts: $attempts, ')
+          ..write('lastError: $lastError, ')
+          ..write('lastAttemptAt: $lastAttemptAt, ')
+          ..write('originDeviceId: $originDeviceId, ')
+          ..write('uploaded: $uploaded, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $SrsEntitiesTable extends SrsEntities
+    with TableInfo<$SrsEntitiesTable, SrsEntityRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $SrsEntitiesTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<String> id = GeneratedColumn<String>(
+    'id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _profileUidMeta = const VerificationMeta(
+    'profileUid',
+  );
+  @override
+  late final GeneratedColumn<String> profileUid = GeneratedColumn<String>(
+    'profile_uid',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _kindMeta = const VerificationMeta('kind');
+  @override
+  late final GeneratedColumn<String> kind = GeneratedColumn<String>(
+    'kind',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _payloadJsonMeta = const VerificationMeta(
+    'payloadJson',
+  );
+  @override
+  late final GeneratedColumn<String> payloadJson = GeneratedColumn<String>(
+    'payload_json',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _createdAtMeta = const VerificationMeta(
+    'createdAt',
+  );
+  @override
+  late final GeneratedColumn<int> createdAt = GeneratedColumn<int>(
+    'created_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    id,
+    profileUid,
+    kind,
+    payloadJson,
+    createdAt,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'srs_entities';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<SrsEntityRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    } else if (isInserting) {
+      context.missing(_idMeta);
+    }
+    if (data.containsKey('profile_uid')) {
+      context.handle(
+        _profileUidMeta,
+        profileUid.isAcceptableOrUnknown(data['profile_uid']!, _profileUidMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_profileUidMeta);
+    }
+    if (data.containsKey('kind')) {
+      context.handle(
+        _kindMeta,
+        kind.isAcceptableOrUnknown(data['kind']!, _kindMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_kindMeta);
+    }
+    if (data.containsKey('payload_json')) {
+      context.handle(
+        _payloadJsonMeta,
+        payloadJson.isAcceptableOrUnknown(
+          data['payload_json']!,
+          _payloadJsonMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_payloadJsonMeta);
+    }
+    if (data.containsKey('created_at')) {
+      context.handle(
+        _createdAtMeta,
+        createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta),
+      );
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  SrsEntityRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return SrsEntityRow(
+      id: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}id'],
+      )!,
+      profileUid: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}profile_uid'],
+      )!,
+      kind: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}kind'],
+      )!,
+      payloadJson: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}payload_json'],
+      )!,
+      createdAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}created_at'],
+      )!,
+    );
+  }
+
+  @override
+  $SrsEntitiesTable createAlias(String alias) {
+    return $SrsEntitiesTable(attachedDatabase, alias);
+  }
+}
+
+class SrsEntityRow extends DataClass implements Insertable<SrsEntityRow> {
+  final String id;
+  final String profileUid;
+
+  /// deck / notetype / note（SrsEntityKind.wire）。
+  final String kind;
+
+  /// 规范 JSON（SrsEntityRecord.payload）。
+  final String payloadJson;
+  final int createdAt;
+  const SrsEntityRow({
+    required this.id,
+    required this.profileUid,
+    required this.kind,
+    required this.payloadJson,
+    required this.createdAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<String>(id);
+    map['profile_uid'] = Variable<String>(profileUid);
+    map['kind'] = Variable<String>(kind);
+    map['payload_json'] = Variable<String>(payloadJson);
+    map['created_at'] = Variable<int>(createdAt);
+    return map;
+  }
+
+  SrsEntitiesCompanion toCompanion(bool nullToAbsent) {
+    return SrsEntitiesCompanion(
+      id: Value(id),
+      profileUid: Value(profileUid),
+      kind: Value(kind),
+      payloadJson: Value(payloadJson),
+      createdAt: Value(createdAt),
+    );
+  }
+
+  factory SrsEntityRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return SrsEntityRow(
+      id: serializer.fromJson<String>(json['id']),
+      profileUid: serializer.fromJson<String>(json['profileUid']),
+      kind: serializer.fromJson<String>(json['kind']),
+      payloadJson: serializer.fromJson<String>(json['payloadJson']),
+      createdAt: serializer.fromJson<int>(json['createdAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<String>(id),
+      'profileUid': serializer.toJson<String>(profileUid),
+      'kind': serializer.toJson<String>(kind),
+      'payloadJson': serializer.toJson<String>(payloadJson),
+      'createdAt': serializer.toJson<int>(createdAt),
+    };
+  }
+
+  SrsEntityRow copyWith({
+    String? id,
+    String? profileUid,
+    String? kind,
+    String? payloadJson,
+    int? createdAt,
+  }) => SrsEntityRow(
+    id: id ?? this.id,
+    profileUid: profileUid ?? this.profileUid,
+    kind: kind ?? this.kind,
+    payloadJson: payloadJson ?? this.payloadJson,
+    createdAt: createdAt ?? this.createdAt,
+  );
+  SrsEntityRow copyWithCompanion(SrsEntitiesCompanion data) {
+    return SrsEntityRow(
+      id: data.id.present ? data.id.value : this.id,
+      profileUid: data.profileUid.present
+          ? data.profileUid.value
+          : this.profileUid,
+      kind: data.kind.present ? data.kind.value : this.kind,
+      payloadJson: data.payloadJson.present
+          ? data.payloadJson.value
+          : this.payloadJson,
+      createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('SrsEntityRow(')
+          ..write('id: $id, ')
+          ..write('profileUid: $profileUid, ')
+          ..write('kind: $kind, ')
+          ..write('payloadJson: $payloadJson, ')
+          ..write('createdAt: $createdAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(id, profileUid, kind, payloadJson, createdAt);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is SrsEntityRow &&
+          other.id == this.id &&
+          other.profileUid == this.profileUid &&
+          other.kind == this.kind &&
+          other.payloadJson == this.payloadJson &&
+          other.createdAt == this.createdAt);
+}
+
+class SrsEntitiesCompanion extends UpdateCompanion<SrsEntityRow> {
+  final Value<String> id;
+  final Value<String> profileUid;
+  final Value<String> kind;
+  final Value<String> payloadJson;
+  final Value<int> createdAt;
+  final Value<int> rowid;
+  const SrsEntitiesCompanion({
+    this.id = const Value.absent(),
+    this.profileUid = const Value.absent(),
+    this.kind = const Value.absent(),
+    this.payloadJson = const Value.absent(),
+    this.createdAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  SrsEntitiesCompanion.insert({
+    required String id,
+    required String profileUid,
+    required String kind,
+    required String payloadJson,
+    this.createdAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  }) : id = Value(id),
+       profileUid = Value(profileUid),
+       kind = Value(kind),
+       payloadJson = Value(payloadJson);
+  static Insertable<SrsEntityRow> custom({
+    Expression<String>? id,
+    Expression<String>? profileUid,
+    Expression<String>? kind,
+    Expression<String>? payloadJson,
+    Expression<int>? createdAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (profileUid != null) 'profile_uid': profileUid,
+      if (kind != null) 'kind': kind,
+      if (payloadJson != null) 'payload_json': payloadJson,
+      if (createdAt != null) 'created_at': createdAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  SrsEntitiesCompanion copyWith({
+    Value<String>? id,
+    Value<String>? profileUid,
+    Value<String>? kind,
+    Value<String>? payloadJson,
+    Value<int>? createdAt,
+    Value<int>? rowid,
+  }) {
+    return SrsEntitiesCompanion(
+      id: id ?? this.id,
+      profileUid: profileUid ?? this.profileUid,
+      kind: kind ?? this.kind,
+      payloadJson: payloadJson ?? this.payloadJson,
+      createdAt: createdAt ?? this.createdAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<String>(id.value);
+    }
+    if (profileUid.present) {
+      map['profile_uid'] = Variable<String>(profileUid.value);
+    }
+    if (kind.present) {
+      map['kind'] = Variable<String>(kind.value);
+    }
+    if (payloadJson.present) {
+      map['payload_json'] = Variable<String>(payloadJson.value);
+    }
+    if (createdAt.present) {
+      map['created_at'] = Variable<int>(createdAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('SrsEntitiesCompanion(')
+          ..write('id: $id, ')
+          ..write('profileUid: $profileUid, ')
+          ..write('kind: $kind, ')
+          ..write('payloadJson: $payloadJson, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $SrsFieldEditsTable extends SrsFieldEdits
+    with TableInfo<$SrsFieldEditsTable, SrsFieldEditRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $SrsFieldEditsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<String> id = GeneratedColumn<String>(
+    'id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _profileUidMeta = const VerificationMeta(
+    'profileUid',
+  );
+  @override
+  late final GeneratedColumn<String> profileUid = GeneratedColumn<String>(
+    'profile_uid',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _entityKindMeta = const VerificationMeta(
+    'entityKind',
+  );
+  @override
+  late final GeneratedColumn<String> entityKind = GeneratedColumn<String>(
+    'entity_kind',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _entityIdMeta = const VerificationMeta(
+    'entityId',
+  );
+  @override
+  late final GeneratedColumn<String> entityId = GeneratedColumn<String>(
+    'entity_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _fieldKeyMeta = const VerificationMeta(
+    'fieldKey',
+  );
+  @override
+  late final GeneratedColumn<String> fieldKey = GeneratedColumn<String>(
+    'field_key',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _writerIdMeta = const VerificationMeta(
+    'writerId',
+  );
+  @override
+  late final GeneratedColumn<String> writerId = GeneratedColumn<String>(
+    'writer_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _seqMeta = const VerificationMeta('seq');
+  @override
+  late final GeneratedColumn<int> seq = GeneratedColumn<int>(
+    'seq',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _jsonMeta = const VerificationMeta('json');
+  @override
+  late final GeneratedColumn<String> json = GeneratedColumn<String>(
+    'json',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    id,
+    profileUid,
+    entityKind,
+    entityId,
+    fieldKey,
+    writerId,
+    seq,
+    json,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'srs_field_edits';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<SrsFieldEditRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    } else if (isInserting) {
+      context.missing(_idMeta);
+    }
+    if (data.containsKey('profile_uid')) {
+      context.handle(
+        _profileUidMeta,
+        profileUid.isAcceptableOrUnknown(data['profile_uid']!, _profileUidMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_profileUidMeta);
+    }
+    if (data.containsKey('entity_kind')) {
+      context.handle(
+        _entityKindMeta,
+        entityKind.isAcceptableOrUnknown(data['entity_kind']!, _entityKindMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_entityKindMeta);
+    }
+    if (data.containsKey('entity_id')) {
+      context.handle(
+        _entityIdMeta,
+        entityId.isAcceptableOrUnknown(data['entity_id']!, _entityIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_entityIdMeta);
+    }
+    if (data.containsKey('field_key')) {
+      context.handle(
+        _fieldKeyMeta,
+        fieldKey.isAcceptableOrUnknown(data['field_key']!, _fieldKeyMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_fieldKeyMeta);
+    }
+    if (data.containsKey('writer_id')) {
+      context.handle(
+        _writerIdMeta,
+        writerId.isAcceptableOrUnknown(data['writer_id']!, _writerIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_writerIdMeta);
+    }
+    if (data.containsKey('seq')) {
+      context.handle(
+        _seqMeta,
+        seq.isAcceptableOrUnknown(data['seq']!, _seqMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_seqMeta);
+    }
+    if (data.containsKey('json')) {
+      context.handle(
+        _jsonMeta,
+        json.isAcceptableOrUnknown(data['json']!, _jsonMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_jsonMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  SrsFieldEditRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return SrsFieldEditRow(
+      id: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}id'],
+      )!,
+      profileUid: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}profile_uid'],
+      )!,
+      entityKind: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}entity_kind'],
+      )!,
+      entityId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}entity_id'],
+      )!,
+      fieldKey: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}field_key'],
+      )!,
+      writerId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}writer_id'],
+      )!,
+      seq: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}seq'],
+      )!,
+      json: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}json'],
+      )!,
+    );
+  }
+
+  @override
+  $SrsFieldEditsTable createAlias(String alias) {
+    return $SrsFieldEditsTable(attachedDatabase, alias);
+  }
+}
+
+class SrsFieldEditRow extends DataClass implements Insertable<SrsFieldEditRow> {
+  final String id;
+  final String profileUid;
+  final String entityKind;
+  final String entityId;
+  final String fieldKey;
+  final String writerId;
+  final int seq;
+
+  /// 完整事件的规范 JSON（含 ctx / 值 / hlc），读回时整条解析，不靠列拼装。
+  final String json;
+  const SrsFieldEditRow({
+    required this.id,
+    required this.profileUid,
+    required this.entityKind,
+    required this.entityId,
+    required this.fieldKey,
+    required this.writerId,
+    required this.seq,
+    required this.json,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<String>(id);
+    map['profile_uid'] = Variable<String>(profileUid);
+    map['entity_kind'] = Variable<String>(entityKind);
+    map['entity_id'] = Variable<String>(entityId);
+    map['field_key'] = Variable<String>(fieldKey);
+    map['writer_id'] = Variable<String>(writerId);
+    map['seq'] = Variable<int>(seq);
+    map['json'] = Variable<String>(json);
+    return map;
+  }
+
+  SrsFieldEditsCompanion toCompanion(bool nullToAbsent) {
+    return SrsFieldEditsCompanion(
+      id: Value(id),
+      profileUid: Value(profileUid),
+      entityKind: Value(entityKind),
+      entityId: Value(entityId),
+      fieldKey: Value(fieldKey),
+      writerId: Value(writerId),
+      seq: Value(seq),
+      json: Value(json),
+    );
+  }
+
+  factory SrsFieldEditRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return SrsFieldEditRow(
+      id: serializer.fromJson<String>(json['id']),
+      profileUid: serializer.fromJson<String>(json['profileUid']),
+      entityKind: serializer.fromJson<String>(json['entityKind']),
+      entityId: serializer.fromJson<String>(json['entityId']),
+      fieldKey: serializer.fromJson<String>(json['fieldKey']),
+      writerId: serializer.fromJson<String>(json['writerId']),
+      seq: serializer.fromJson<int>(json['seq']),
+      json: serializer.fromJson<String>(json['json']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<String>(id),
+      'profileUid': serializer.toJson<String>(profileUid),
+      'entityKind': serializer.toJson<String>(entityKind),
+      'entityId': serializer.toJson<String>(entityId),
+      'fieldKey': serializer.toJson<String>(fieldKey),
+      'writerId': serializer.toJson<String>(writerId),
+      'seq': serializer.toJson<int>(seq),
+      'json': serializer.toJson<String>(json),
+    };
+  }
+
+  SrsFieldEditRow copyWith({
+    String? id,
+    String? profileUid,
+    String? entityKind,
+    String? entityId,
+    String? fieldKey,
+    String? writerId,
+    int? seq,
+    String? json,
+  }) => SrsFieldEditRow(
+    id: id ?? this.id,
+    profileUid: profileUid ?? this.profileUid,
+    entityKind: entityKind ?? this.entityKind,
+    entityId: entityId ?? this.entityId,
+    fieldKey: fieldKey ?? this.fieldKey,
+    writerId: writerId ?? this.writerId,
+    seq: seq ?? this.seq,
+    json: json ?? this.json,
+  );
+  SrsFieldEditRow copyWithCompanion(SrsFieldEditsCompanion data) {
+    return SrsFieldEditRow(
+      id: data.id.present ? data.id.value : this.id,
+      profileUid: data.profileUid.present
+          ? data.profileUid.value
+          : this.profileUid,
+      entityKind: data.entityKind.present
+          ? data.entityKind.value
+          : this.entityKind,
+      entityId: data.entityId.present ? data.entityId.value : this.entityId,
+      fieldKey: data.fieldKey.present ? data.fieldKey.value : this.fieldKey,
+      writerId: data.writerId.present ? data.writerId.value : this.writerId,
+      seq: data.seq.present ? data.seq.value : this.seq,
+      json: data.json.present ? data.json.value : this.json,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('SrsFieldEditRow(')
+          ..write('id: $id, ')
+          ..write('profileUid: $profileUid, ')
+          ..write('entityKind: $entityKind, ')
+          ..write('entityId: $entityId, ')
+          ..write('fieldKey: $fieldKey, ')
+          ..write('writerId: $writerId, ')
+          ..write('seq: $seq, ')
+          ..write('json: $json')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    id,
+    profileUid,
+    entityKind,
+    entityId,
+    fieldKey,
+    writerId,
+    seq,
+    json,
+  );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is SrsFieldEditRow &&
+          other.id == this.id &&
+          other.profileUid == this.profileUid &&
+          other.entityKind == this.entityKind &&
+          other.entityId == this.entityId &&
+          other.fieldKey == this.fieldKey &&
+          other.writerId == this.writerId &&
+          other.seq == this.seq &&
+          other.json == this.json);
+}
+
+class SrsFieldEditsCompanion extends UpdateCompanion<SrsFieldEditRow> {
+  final Value<String> id;
+  final Value<String> profileUid;
+  final Value<String> entityKind;
+  final Value<String> entityId;
+  final Value<String> fieldKey;
+  final Value<String> writerId;
+  final Value<int> seq;
+  final Value<String> json;
+  final Value<int> rowid;
+  const SrsFieldEditsCompanion({
+    this.id = const Value.absent(),
+    this.profileUid = const Value.absent(),
+    this.entityKind = const Value.absent(),
+    this.entityId = const Value.absent(),
+    this.fieldKey = const Value.absent(),
+    this.writerId = const Value.absent(),
+    this.seq = const Value.absent(),
+    this.json = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  SrsFieldEditsCompanion.insert({
+    required String id,
+    required String profileUid,
+    required String entityKind,
+    required String entityId,
+    required String fieldKey,
+    required String writerId,
+    required int seq,
+    required String json,
+    this.rowid = const Value.absent(),
+  }) : id = Value(id),
+       profileUid = Value(profileUid),
+       entityKind = Value(entityKind),
+       entityId = Value(entityId),
+       fieldKey = Value(fieldKey),
+       writerId = Value(writerId),
+       seq = Value(seq),
+       json = Value(json);
+  static Insertable<SrsFieldEditRow> custom({
+    Expression<String>? id,
+    Expression<String>? profileUid,
+    Expression<String>? entityKind,
+    Expression<String>? entityId,
+    Expression<String>? fieldKey,
+    Expression<String>? writerId,
+    Expression<int>? seq,
+    Expression<String>? json,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (profileUid != null) 'profile_uid': profileUid,
+      if (entityKind != null) 'entity_kind': entityKind,
+      if (entityId != null) 'entity_id': entityId,
+      if (fieldKey != null) 'field_key': fieldKey,
+      if (writerId != null) 'writer_id': writerId,
+      if (seq != null) 'seq': seq,
+      if (json != null) 'json': json,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  SrsFieldEditsCompanion copyWith({
+    Value<String>? id,
+    Value<String>? profileUid,
+    Value<String>? entityKind,
+    Value<String>? entityId,
+    Value<String>? fieldKey,
+    Value<String>? writerId,
+    Value<int>? seq,
+    Value<String>? json,
+    Value<int>? rowid,
+  }) {
+    return SrsFieldEditsCompanion(
+      id: id ?? this.id,
+      profileUid: profileUid ?? this.profileUid,
+      entityKind: entityKind ?? this.entityKind,
+      entityId: entityId ?? this.entityId,
+      fieldKey: fieldKey ?? this.fieldKey,
+      writerId: writerId ?? this.writerId,
+      seq: seq ?? this.seq,
+      json: json ?? this.json,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<String>(id.value);
+    }
+    if (profileUid.present) {
+      map['profile_uid'] = Variable<String>(profileUid.value);
+    }
+    if (entityKind.present) {
+      map['entity_kind'] = Variable<String>(entityKind.value);
+    }
+    if (entityId.present) {
+      map['entity_id'] = Variable<String>(entityId.value);
+    }
+    if (fieldKey.present) {
+      map['field_key'] = Variable<String>(fieldKey.value);
+    }
+    if (writerId.present) {
+      map['writer_id'] = Variable<String>(writerId.value);
+    }
+    if (seq.present) {
+      map['seq'] = Variable<int>(seq.value);
+    }
+    if (json.present) {
+      map['json'] = Variable<String>(json.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('SrsFieldEditsCompanion(')
+          ..write('id: $id, ')
+          ..write('profileUid: $profileUid, ')
+          ..write('entityKind: $entityKind, ')
+          ..write('entityId: $entityId, ')
+          ..write('fieldKey: $fieldKey, ')
+          ..write('writerId: $writerId, ')
+          ..write('seq: $seq, ')
+          ..write('json: $json, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $SrsReviewLogsTable extends SrsReviewLogs
+    with TableInfo<$SrsReviewLogsTable, SrsReviewLogRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $SrsReviewLogsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<String> id = GeneratedColumn<String>(
+    'id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _profileUidMeta = const VerificationMeta(
+    'profileUid',
+  );
+  @override
+  late final GeneratedColumn<String> profileUid = GeneratedColumn<String>(
+    'profile_uid',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _cardIdMeta = const VerificationMeta('cardId');
+  @override
+  late final GeneratedColumn<String> cardId = GeneratedColumn<String>(
+    'card_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _kindMeta = const VerificationMeta('kind');
+  @override
+  late final GeneratedColumn<String> kind = GeneratedColumn<String>(
+    'kind',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _ratingMeta = const VerificationMeta('rating');
+  @override
+  late final GeneratedColumn<int> rating = GeneratedColumn<int>(
+    'rating',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _occurredAtMeta = const VerificationMeta(
+    'occurredAt',
+  );
+  @override
+  late final GeneratedColumn<int> occurredAt = GeneratedColumn<int>(
+    'occurred_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _reviewTypeMeta = const VerificationMeta(
+    'reviewType',
+  );
+  @override
+  late final GeneratedColumn<String> reviewType = GeneratedColumn<String>(
+    'review_type',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _originMeta = const VerificationMeta('origin');
+  @override
+  late final GeneratedColumn<String> origin = GeneratedColumn<String>(
+    'origin',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _durationMsMeta = const VerificationMeta(
+    'durationMs',
+  );
+  @override
+  late final GeneratedColumn<int> durationMs = GeneratedColumn<int>(
+    'duration_ms',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _jsonMeta = const VerificationMeta('json');
+  @override
+  late final GeneratedColumn<String> json = GeneratedColumn<String>(
+    'json',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    id,
+    profileUid,
+    cardId,
+    kind,
+    rating,
+    occurredAt,
+    reviewType,
+    origin,
+    durationMs,
+    json,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'srs_review_logs';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<SrsReviewLogRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    } else if (isInserting) {
+      context.missing(_idMeta);
+    }
+    if (data.containsKey('profile_uid')) {
+      context.handle(
+        _profileUidMeta,
+        profileUid.isAcceptableOrUnknown(data['profile_uid']!, _profileUidMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_profileUidMeta);
+    }
+    if (data.containsKey('card_id')) {
+      context.handle(
+        _cardIdMeta,
+        cardId.isAcceptableOrUnknown(data['card_id']!, _cardIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_cardIdMeta);
+    }
+    if (data.containsKey('kind')) {
+      context.handle(
+        _kindMeta,
+        kind.isAcceptableOrUnknown(data['kind']!, _kindMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_kindMeta);
+    }
+    if (data.containsKey('rating')) {
+      context.handle(
+        _ratingMeta,
+        rating.isAcceptableOrUnknown(data['rating']!, _ratingMeta),
+      );
+    }
+    if (data.containsKey('occurred_at')) {
+      context.handle(
+        _occurredAtMeta,
+        occurredAt.isAcceptableOrUnknown(data['occurred_at']!, _occurredAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_occurredAtMeta);
+    }
+    if (data.containsKey('review_type')) {
+      context.handle(
+        _reviewTypeMeta,
+        reviewType.isAcceptableOrUnknown(data['review_type']!, _reviewTypeMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_reviewTypeMeta);
+    }
+    if (data.containsKey('origin')) {
+      context.handle(
+        _originMeta,
+        origin.isAcceptableOrUnknown(data['origin']!, _originMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_originMeta);
+    }
+    if (data.containsKey('duration_ms')) {
+      context.handle(
+        _durationMsMeta,
+        durationMs.isAcceptableOrUnknown(data['duration_ms']!, _durationMsMeta),
+      );
+    }
+    if (data.containsKey('json')) {
+      context.handle(
+        _jsonMeta,
+        json.isAcceptableOrUnknown(data['json']!, _jsonMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_jsonMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  SrsReviewLogRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return SrsReviewLogRow(
+      id: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}id'],
+      )!,
+      profileUid: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}profile_uid'],
+      )!,
+      cardId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}card_id'],
+      )!,
+      kind: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}kind'],
+      )!,
+      rating: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}rating'],
+      ),
+      occurredAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}occurred_at'],
+      )!,
+      reviewType: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}review_type'],
+      )!,
+      origin: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}origin'],
+      )!,
+      durationMs: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}duration_ms'],
+      )!,
+      json: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}json'],
+      )!,
+    );
+  }
+
+  @override
+  $SrsReviewLogsTable createAlias(String alias) {
+    return $SrsReviewLogsTable(attachedDatabase, alias);
+  }
+}
+
+class SrsReviewLogRow extends DataClass implements Insertable<SrsReviewLogRow> {
+  final String id;
+  final String profileUid;
+  final String cardId;
+  final String kind;
+  final int? rating;
+  final int occurredAt;
+  final String reviewType;
+  final String origin;
+  final int durationMs;
+  final String json;
+  const SrsReviewLogRow({
+    required this.id,
+    required this.profileUid,
+    required this.cardId,
+    required this.kind,
+    this.rating,
+    required this.occurredAt,
+    required this.reviewType,
+    required this.origin,
+    required this.durationMs,
+    required this.json,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<String>(id);
+    map['profile_uid'] = Variable<String>(profileUid);
+    map['card_id'] = Variable<String>(cardId);
+    map['kind'] = Variable<String>(kind);
+    if (!nullToAbsent || rating != null) {
+      map['rating'] = Variable<int>(rating);
+    }
+    map['occurred_at'] = Variable<int>(occurredAt);
+    map['review_type'] = Variable<String>(reviewType);
+    map['origin'] = Variable<String>(origin);
+    map['duration_ms'] = Variable<int>(durationMs);
+    map['json'] = Variable<String>(json);
+    return map;
+  }
+
+  SrsReviewLogsCompanion toCompanion(bool nullToAbsent) {
+    return SrsReviewLogsCompanion(
+      id: Value(id),
+      profileUid: Value(profileUid),
+      cardId: Value(cardId),
+      kind: Value(kind),
+      rating: rating == null && nullToAbsent
+          ? const Value.absent()
+          : Value(rating),
+      occurredAt: Value(occurredAt),
+      reviewType: Value(reviewType),
+      origin: Value(origin),
+      durationMs: Value(durationMs),
+      json: Value(json),
+    );
+  }
+
+  factory SrsReviewLogRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return SrsReviewLogRow(
+      id: serializer.fromJson<String>(json['id']),
+      profileUid: serializer.fromJson<String>(json['profileUid']),
+      cardId: serializer.fromJson<String>(json['cardId']),
+      kind: serializer.fromJson<String>(json['kind']),
+      rating: serializer.fromJson<int?>(json['rating']),
+      occurredAt: serializer.fromJson<int>(json['occurredAt']),
+      reviewType: serializer.fromJson<String>(json['reviewType']),
+      origin: serializer.fromJson<String>(json['origin']),
+      durationMs: serializer.fromJson<int>(json['durationMs']),
+      json: serializer.fromJson<String>(json['json']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<String>(id),
+      'profileUid': serializer.toJson<String>(profileUid),
+      'cardId': serializer.toJson<String>(cardId),
+      'kind': serializer.toJson<String>(kind),
+      'rating': serializer.toJson<int?>(rating),
+      'occurredAt': serializer.toJson<int>(occurredAt),
+      'reviewType': serializer.toJson<String>(reviewType),
+      'origin': serializer.toJson<String>(origin),
+      'durationMs': serializer.toJson<int>(durationMs),
+      'json': serializer.toJson<String>(json),
+    };
+  }
+
+  SrsReviewLogRow copyWith({
+    String? id,
+    String? profileUid,
+    String? cardId,
+    String? kind,
+    Value<int?> rating = const Value.absent(),
+    int? occurredAt,
+    String? reviewType,
+    String? origin,
+    int? durationMs,
+    String? json,
+  }) => SrsReviewLogRow(
+    id: id ?? this.id,
+    profileUid: profileUid ?? this.profileUid,
+    cardId: cardId ?? this.cardId,
+    kind: kind ?? this.kind,
+    rating: rating.present ? rating.value : this.rating,
+    occurredAt: occurredAt ?? this.occurredAt,
+    reviewType: reviewType ?? this.reviewType,
+    origin: origin ?? this.origin,
+    durationMs: durationMs ?? this.durationMs,
+    json: json ?? this.json,
+  );
+  SrsReviewLogRow copyWithCompanion(SrsReviewLogsCompanion data) {
+    return SrsReviewLogRow(
+      id: data.id.present ? data.id.value : this.id,
+      profileUid: data.profileUid.present
+          ? data.profileUid.value
+          : this.profileUid,
+      cardId: data.cardId.present ? data.cardId.value : this.cardId,
+      kind: data.kind.present ? data.kind.value : this.kind,
+      rating: data.rating.present ? data.rating.value : this.rating,
+      occurredAt: data.occurredAt.present
+          ? data.occurredAt.value
+          : this.occurredAt,
+      reviewType: data.reviewType.present
+          ? data.reviewType.value
+          : this.reviewType,
+      origin: data.origin.present ? data.origin.value : this.origin,
+      durationMs: data.durationMs.present
+          ? data.durationMs.value
+          : this.durationMs,
+      json: data.json.present ? data.json.value : this.json,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('SrsReviewLogRow(')
+          ..write('id: $id, ')
+          ..write('profileUid: $profileUid, ')
+          ..write('cardId: $cardId, ')
+          ..write('kind: $kind, ')
+          ..write('rating: $rating, ')
+          ..write('occurredAt: $occurredAt, ')
+          ..write('reviewType: $reviewType, ')
+          ..write('origin: $origin, ')
+          ..write('durationMs: $durationMs, ')
+          ..write('json: $json')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    id,
+    profileUid,
+    cardId,
+    kind,
+    rating,
+    occurredAt,
+    reviewType,
+    origin,
+    durationMs,
+    json,
+  );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is SrsReviewLogRow &&
+          other.id == this.id &&
+          other.profileUid == this.profileUid &&
+          other.cardId == this.cardId &&
+          other.kind == this.kind &&
+          other.rating == this.rating &&
+          other.occurredAt == this.occurredAt &&
+          other.reviewType == this.reviewType &&
+          other.origin == this.origin &&
+          other.durationMs == this.durationMs &&
+          other.json == this.json);
+}
+
+class SrsReviewLogsCompanion extends UpdateCompanion<SrsReviewLogRow> {
+  final Value<String> id;
+  final Value<String> profileUid;
+  final Value<String> cardId;
+  final Value<String> kind;
+  final Value<int?> rating;
+  final Value<int> occurredAt;
+  final Value<String> reviewType;
+  final Value<String> origin;
+  final Value<int> durationMs;
+  final Value<String> json;
+  final Value<int> rowid;
+  const SrsReviewLogsCompanion({
+    this.id = const Value.absent(),
+    this.profileUid = const Value.absent(),
+    this.cardId = const Value.absent(),
+    this.kind = const Value.absent(),
+    this.rating = const Value.absent(),
+    this.occurredAt = const Value.absent(),
+    this.reviewType = const Value.absent(),
+    this.origin = const Value.absent(),
+    this.durationMs = const Value.absent(),
+    this.json = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  SrsReviewLogsCompanion.insert({
+    required String id,
+    required String profileUid,
+    required String cardId,
+    required String kind,
+    this.rating = const Value.absent(),
+    required int occurredAt,
+    required String reviewType,
+    required String origin,
+    this.durationMs = const Value.absent(),
+    required String json,
+    this.rowid = const Value.absent(),
+  }) : id = Value(id),
+       profileUid = Value(profileUid),
+       cardId = Value(cardId),
+       kind = Value(kind),
+       occurredAt = Value(occurredAt),
+       reviewType = Value(reviewType),
+       origin = Value(origin),
+       json = Value(json);
+  static Insertable<SrsReviewLogRow> custom({
+    Expression<String>? id,
+    Expression<String>? profileUid,
+    Expression<String>? cardId,
+    Expression<String>? kind,
+    Expression<int>? rating,
+    Expression<int>? occurredAt,
+    Expression<String>? reviewType,
+    Expression<String>? origin,
+    Expression<int>? durationMs,
+    Expression<String>? json,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (profileUid != null) 'profile_uid': profileUid,
+      if (cardId != null) 'card_id': cardId,
+      if (kind != null) 'kind': kind,
+      if (rating != null) 'rating': rating,
+      if (occurredAt != null) 'occurred_at': occurredAt,
+      if (reviewType != null) 'review_type': reviewType,
+      if (origin != null) 'origin': origin,
+      if (durationMs != null) 'duration_ms': durationMs,
+      if (json != null) 'json': json,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  SrsReviewLogsCompanion copyWith({
+    Value<String>? id,
+    Value<String>? profileUid,
+    Value<String>? cardId,
+    Value<String>? kind,
+    Value<int?>? rating,
+    Value<int>? occurredAt,
+    Value<String>? reviewType,
+    Value<String>? origin,
+    Value<int>? durationMs,
+    Value<String>? json,
+    Value<int>? rowid,
+  }) {
+    return SrsReviewLogsCompanion(
+      id: id ?? this.id,
+      profileUid: profileUid ?? this.profileUid,
+      cardId: cardId ?? this.cardId,
+      kind: kind ?? this.kind,
+      rating: rating ?? this.rating,
+      occurredAt: occurredAt ?? this.occurredAt,
+      reviewType: reviewType ?? this.reviewType,
+      origin: origin ?? this.origin,
+      durationMs: durationMs ?? this.durationMs,
+      json: json ?? this.json,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<String>(id.value);
+    }
+    if (profileUid.present) {
+      map['profile_uid'] = Variable<String>(profileUid.value);
+    }
+    if (cardId.present) {
+      map['card_id'] = Variable<String>(cardId.value);
+    }
+    if (kind.present) {
+      map['kind'] = Variable<String>(kind.value);
+    }
+    if (rating.present) {
+      map['rating'] = Variable<int>(rating.value);
+    }
+    if (occurredAt.present) {
+      map['occurred_at'] = Variable<int>(occurredAt.value);
+    }
+    if (reviewType.present) {
+      map['review_type'] = Variable<String>(reviewType.value);
+    }
+    if (origin.present) {
+      map['origin'] = Variable<String>(origin.value);
+    }
+    if (durationMs.present) {
+      map['duration_ms'] = Variable<int>(durationMs.value);
+    }
+    if (json.present) {
+      map['json'] = Variable<String>(json.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('SrsReviewLogsCompanion(')
+          ..write('id: $id, ')
+          ..write('profileUid: $profileUid, ')
+          ..write('cardId: $cardId, ')
+          ..write('kind: $kind, ')
+          ..write('rating: $rating, ')
+          ..write('occurredAt: $occurredAt, ')
+          ..write('reviewType: $reviewType, ')
+          ..write('origin: $origin, ')
+          ..write('durationMs: $durationMs, ')
+          ..write('json: $json, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $SrsUnknownEventsTable extends SrsUnknownEvents
+    with TableInfo<$SrsUnknownEventsTable, SrsUnknownEventRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $SrsUnknownEventsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<String> id = GeneratedColumn<String>(
+    'id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _profileUidMeta = const VerificationMeta(
+    'profileUid',
+  );
+  @override
+  late final GeneratedColumn<String> profileUid = GeneratedColumn<String>(
+    'profile_uid',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _jsonMeta = const VerificationMeta('json');
+  @override
+  late final GeneratedColumn<String> json = GeneratedColumn<String>(
+    'json',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [id, profileUid, json];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'srs_unknown_events';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<SrsUnknownEventRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    } else if (isInserting) {
+      context.missing(_idMeta);
+    }
+    if (data.containsKey('profile_uid')) {
+      context.handle(
+        _profileUidMeta,
+        profileUid.isAcceptableOrUnknown(data['profile_uid']!, _profileUidMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_profileUidMeta);
+    }
+    if (data.containsKey('json')) {
+      context.handle(
+        _jsonMeta,
+        json.isAcceptableOrUnknown(data['json']!, _jsonMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_jsonMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  SrsUnknownEventRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return SrsUnknownEventRow(
+      id: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}id'],
+      )!,
+      profileUid: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}profile_uid'],
+      )!,
+      json: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}json'],
+      )!,
+    );
+  }
+
+  @override
+  $SrsUnknownEventsTable createAlias(String alias) {
+    return $SrsUnknownEventsTable(attachedDatabase, alias);
+  }
+}
+
+class SrsUnknownEventRow extends DataClass
+    implements Insertable<SrsUnknownEventRow> {
+  final String id;
+  final String profileUid;
+  final String json;
+  const SrsUnknownEventRow({
+    required this.id,
+    required this.profileUid,
+    required this.json,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<String>(id);
+    map['profile_uid'] = Variable<String>(profileUid);
+    map['json'] = Variable<String>(json);
+    return map;
+  }
+
+  SrsUnknownEventsCompanion toCompanion(bool nullToAbsent) {
+    return SrsUnknownEventsCompanion(
+      id: Value(id),
+      profileUid: Value(profileUid),
+      json: Value(json),
+    );
+  }
+
+  factory SrsUnknownEventRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return SrsUnknownEventRow(
+      id: serializer.fromJson<String>(json['id']),
+      profileUid: serializer.fromJson<String>(json['profileUid']),
+      json: serializer.fromJson<String>(json['json']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<String>(id),
+      'profileUid': serializer.toJson<String>(profileUid),
+      'json': serializer.toJson<String>(json),
+    };
+  }
+
+  SrsUnknownEventRow copyWith({String? id, String? profileUid, String? json}) =>
+      SrsUnknownEventRow(
+        id: id ?? this.id,
+        profileUid: profileUid ?? this.profileUid,
+        json: json ?? this.json,
+      );
+  SrsUnknownEventRow copyWithCompanion(SrsUnknownEventsCompanion data) {
+    return SrsUnknownEventRow(
+      id: data.id.present ? data.id.value : this.id,
+      profileUid: data.profileUid.present
+          ? data.profileUid.value
+          : this.profileUid,
+      json: data.json.present ? data.json.value : this.json,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('SrsUnknownEventRow(')
+          ..write('id: $id, ')
+          ..write('profileUid: $profileUid, ')
+          ..write('json: $json')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(id, profileUid, json);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is SrsUnknownEventRow &&
+          other.id == this.id &&
+          other.profileUid == this.profileUid &&
+          other.json == this.json);
+}
+
+class SrsUnknownEventsCompanion extends UpdateCompanion<SrsUnknownEventRow> {
+  final Value<String> id;
+  final Value<String> profileUid;
+  final Value<String> json;
+  final Value<int> rowid;
+  const SrsUnknownEventsCompanion({
+    this.id = const Value.absent(),
+    this.profileUid = const Value.absent(),
+    this.json = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  SrsUnknownEventsCompanion.insert({
+    required String id,
+    required String profileUid,
+    required String json,
+    this.rowid = const Value.absent(),
+  }) : id = Value(id),
+       profileUid = Value(profileUid),
+       json = Value(json);
+  static Insertable<SrsUnknownEventRow> custom({
+    Expression<String>? id,
+    Expression<String>? profileUid,
+    Expression<String>? json,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (profileUid != null) 'profile_uid': profileUid,
+      if (json != null) 'json': json,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  SrsUnknownEventsCompanion copyWith({
+    Value<String>? id,
+    Value<String>? profileUid,
+    Value<String>? json,
+    Value<int>? rowid,
+  }) {
+    return SrsUnknownEventsCompanion(
+      id: id ?? this.id,
+      profileUid: profileUid ?? this.profileUid,
+      json: json ?? this.json,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<String>(id.value);
+    }
+    if (profileUid.present) {
+      map['profile_uid'] = Variable<String>(profileUid.value);
+    }
+    if (json.present) {
+      map['json'] = Variable<String>(json.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('SrsUnknownEventsCompanion(')
+          ..write('id: $id, ')
+          ..write('profileUid: $profileUid, ')
+          ..write('json: $json, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $SrsEventLocalTable extends SrsEventLocal
+    with TableInfo<$SrsEventLocalTable, SrsEventLocalRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $SrsEventLocalTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _eventIdMeta = const VerificationMeta(
+    'eventId',
+  );
+  @override
+  late final GeneratedColumn<String> eventId = GeneratedColumn<String>(
+    'event_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _profileUidMeta = const VerificationMeta(
+    'profileUid',
+  );
+  @override
+  late final GeneratedColumn<String> profileUid = GeneratedColumn<String>(
+    'profile_uid',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _outboxSeqMeta = const VerificationMeta(
+    'outboxSeq',
+  );
+  @override
+  late final GeneratedColumn<int> outboxSeq = GeneratedColumn<int>(
+    'outbox_seq',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _serverTimeMeta = const VerificationMeta(
+    'serverTime',
+  );
+  @override
+  late final GeneratedColumn<int> serverTime = GeneratedColumn<int>(
+    'server_time',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _receivedAtMeta = const VerificationMeta(
+    'receivedAt',
+  );
+  @override
+  late final GeneratedColumn<int> receivedAt = GeneratedColumn<int>(
+    'received_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    eventId,
+    profileUid,
+    outboxSeq,
+    serverTime,
+    receivedAt,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'srs_event_local';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<SrsEventLocalRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('event_id')) {
+      context.handle(
+        _eventIdMeta,
+        eventId.isAcceptableOrUnknown(data['event_id']!, _eventIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_eventIdMeta);
+    }
+    if (data.containsKey('profile_uid')) {
+      context.handle(
+        _profileUidMeta,
+        profileUid.isAcceptableOrUnknown(data['profile_uid']!, _profileUidMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_profileUidMeta);
+    }
+    if (data.containsKey('outbox_seq')) {
+      context.handle(
+        _outboxSeqMeta,
+        outboxSeq.isAcceptableOrUnknown(data['outbox_seq']!, _outboxSeqMeta),
+      );
+    }
+    if (data.containsKey('server_time')) {
+      context.handle(
+        _serverTimeMeta,
+        serverTime.isAcceptableOrUnknown(data['server_time']!, _serverTimeMeta),
+      );
+    }
+    if (data.containsKey('received_at')) {
+      context.handle(
+        _receivedAtMeta,
+        receivedAt.isAcceptableOrUnknown(data['received_at']!, _receivedAtMeta),
+      );
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {eventId};
+  @override
+  SrsEventLocalRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return SrsEventLocalRow(
+      eventId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}event_id'],
+      )!,
+      profileUid: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}profile_uid'],
+      )!,
+      outboxSeq: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}outbox_seq'],
+      ),
+      serverTime: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}server_time'],
+      ),
+      receivedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}received_at'],
+      )!,
+    );
+  }
+
+  @override
+  $SrsEventLocalTable createAlias(String alias) {
+    return $SrsEventLocalTable(attachedDatabase, alias);
+  }
+}
+
+class SrsEventLocalRow extends DataClass
+    implements Insertable<SrsEventLocalRow> {
+  final String eventId;
+  final String profileUid;
+
+  /// 本机产生的事件在发件箱里的顺序；null = 对端来的或已发布。
+  final int? outboxSeq;
+
+  /// S(e)：所有已见到的、包含该事件的批次的 S 的最小值。
+  final int? serverTime;
+  final int receivedAt;
+  const SrsEventLocalRow({
+    required this.eventId,
+    required this.profileUid,
+    this.outboxSeq,
+    this.serverTime,
+    required this.receivedAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['event_id'] = Variable<String>(eventId);
+    map['profile_uid'] = Variable<String>(profileUid);
+    if (!nullToAbsent || outboxSeq != null) {
+      map['outbox_seq'] = Variable<int>(outboxSeq);
+    }
+    if (!nullToAbsent || serverTime != null) {
+      map['server_time'] = Variable<int>(serverTime);
+    }
+    map['received_at'] = Variable<int>(receivedAt);
+    return map;
+  }
+
+  SrsEventLocalCompanion toCompanion(bool nullToAbsent) {
+    return SrsEventLocalCompanion(
+      eventId: Value(eventId),
+      profileUid: Value(profileUid),
+      outboxSeq: outboxSeq == null && nullToAbsent
+          ? const Value.absent()
+          : Value(outboxSeq),
+      serverTime: serverTime == null && nullToAbsent
+          ? const Value.absent()
+          : Value(serverTime),
+      receivedAt: Value(receivedAt),
+    );
+  }
+
+  factory SrsEventLocalRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return SrsEventLocalRow(
+      eventId: serializer.fromJson<String>(json['eventId']),
+      profileUid: serializer.fromJson<String>(json['profileUid']),
+      outboxSeq: serializer.fromJson<int?>(json['outboxSeq']),
+      serverTime: serializer.fromJson<int?>(json['serverTime']),
+      receivedAt: serializer.fromJson<int>(json['receivedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'eventId': serializer.toJson<String>(eventId),
+      'profileUid': serializer.toJson<String>(profileUid),
+      'outboxSeq': serializer.toJson<int?>(outboxSeq),
+      'serverTime': serializer.toJson<int?>(serverTime),
+      'receivedAt': serializer.toJson<int>(receivedAt),
+    };
+  }
+
+  SrsEventLocalRow copyWith({
+    String? eventId,
+    String? profileUid,
+    Value<int?> outboxSeq = const Value.absent(),
+    Value<int?> serverTime = const Value.absent(),
+    int? receivedAt,
+  }) => SrsEventLocalRow(
+    eventId: eventId ?? this.eventId,
+    profileUid: profileUid ?? this.profileUid,
+    outboxSeq: outboxSeq.present ? outboxSeq.value : this.outboxSeq,
+    serverTime: serverTime.present ? serverTime.value : this.serverTime,
+    receivedAt: receivedAt ?? this.receivedAt,
+  );
+  SrsEventLocalRow copyWithCompanion(SrsEventLocalCompanion data) {
+    return SrsEventLocalRow(
+      eventId: data.eventId.present ? data.eventId.value : this.eventId,
+      profileUid: data.profileUid.present
+          ? data.profileUid.value
+          : this.profileUid,
+      outboxSeq: data.outboxSeq.present ? data.outboxSeq.value : this.outboxSeq,
+      serverTime: data.serverTime.present
+          ? data.serverTime.value
+          : this.serverTime,
+      receivedAt: data.receivedAt.present
+          ? data.receivedAt.value
+          : this.receivedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('SrsEventLocalRow(')
+          ..write('eventId: $eventId, ')
+          ..write('profileUid: $profileUid, ')
+          ..write('outboxSeq: $outboxSeq, ')
+          ..write('serverTime: $serverTime, ')
+          ..write('receivedAt: $receivedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode =>
+      Object.hash(eventId, profileUid, outboxSeq, serverTime, receivedAt);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is SrsEventLocalRow &&
+          other.eventId == this.eventId &&
+          other.profileUid == this.profileUid &&
+          other.outboxSeq == this.outboxSeq &&
+          other.serverTime == this.serverTime &&
+          other.receivedAt == this.receivedAt);
+}
+
+class SrsEventLocalCompanion extends UpdateCompanion<SrsEventLocalRow> {
+  final Value<String> eventId;
+  final Value<String> profileUid;
+  final Value<int?> outboxSeq;
+  final Value<int?> serverTime;
+  final Value<int> receivedAt;
+  final Value<int> rowid;
+  const SrsEventLocalCompanion({
+    this.eventId = const Value.absent(),
+    this.profileUid = const Value.absent(),
+    this.outboxSeq = const Value.absent(),
+    this.serverTime = const Value.absent(),
+    this.receivedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  SrsEventLocalCompanion.insert({
+    required String eventId,
+    required String profileUid,
+    this.outboxSeq = const Value.absent(),
+    this.serverTime = const Value.absent(),
+    this.receivedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  }) : eventId = Value(eventId),
+       profileUid = Value(profileUid);
+  static Insertable<SrsEventLocalRow> custom({
+    Expression<String>? eventId,
+    Expression<String>? profileUid,
+    Expression<int>? outboxSeq,
+    Expression<int>? serverTime,
+    Expression<int>? receivedAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (eventId != null) 'event_id': eventId,
+      if (profileUid != null) 'profile_uid': profileUid,
+      if (outboxSeq != null) 'outbox_seq': outboxSeq,
+      if (serverTime != null) 'server_time': serverTime,
+      if (receivedAt != null) 'received_at': receivedAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  SrsEventLocalCompanion copyWith({
+    Value<String>? eventId,
+    Value<String>? profileUid,
+    Value<int?>? outboxSeq,
+    Value<int?>? serverTime,
+    Value<int>? receivedAt,
+    Value<int>? rowid,
+  }) {
+    return SrsEventLocalCompanion(
+      eventId: eventId ?? this.eventId,
+      profileUid: profileUid ?? this.profileUid,
+      outboxSeq: outboxSeq ?? this.outboxSeq,
+      serverTime: serverTime ?? this.serverTime,
+      receivedAt: receivedAt ?? this.receivedAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (eventId.present) {
+      map['event_id'] = Variable<String>(eventId.value);
+    }
+    if (profileUid.present) {
+      map['profile_uid'] = Variable<String>(profileUid.value);
+    }
+    if (outboxSeq.present) {
+      map['outbox_seq'] = Variable<int>(outboxSeq.value);
+    }
+    if (serverTime.present) {
+      map['server_time'] = Variable<int>(serverTime.value);
+    }
+    if (receivedAt.present) {
+      map['received_at'] = Variable<int>(receivedAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('SrsEventLocalCompanion(')
+          ..write('eventId: $eventId, ')
+          ..write('profileUid: $profileUid, ')
+          ..write('outboxSeq: $outboxSeq, ')
+          ..write('serverTime: $serverTime, ')
+          ..write('receivedAt: $receivedAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $SrsLocalStateTable extends SrsLocalState
+    with TableInfo<$SrsLocalStateTable, SrsLocalStateRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $SrsLocalStateTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _profileUidMeta = const VerificationMeta(
+    'profileUid',
+  );
+  @override
+  late final GeneratedColumn<String> profileUid = GeneratedColumn<String>(
+    'profile_uid',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _jsonMeta = const VerificationMeta('json');
+  @override
+  late final GeneratedColumn<String> json = GeneratedColumn<String>(
+    'json',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [profileUid, json];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'srs_local_state';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<SrsLocalStateRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('profile_uid')) {
+      context.handle(
+        _profileUidMeta,
+        profileUid.isAcceptableOrUnknown(data['profile_uid']!, _profileUidMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_profileUidMeta);
+    }
+    if (data.containsKey('json')) {
+      context.handle(
+        _jsonMeta,
+        json.isAcceptableOrUnknown(data['json']!, _jsonMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_jsonMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {profileUid};
+  @override
+  SrsLocalStateRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return SrsLocalStateRow(
+      profileUid: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}profile_uid'],
+      )!,
+      json: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}json'],
+      )!,
+    );
+  }
+
+  @override
+  $SrsLocalStateTable createAlias(String alias) {
+    return $SrsLocalStateTable(attachedDatabase, alias);
+  }
+}
+
+class SrsLocalStateRow extends DataClass
+    implements Insertable<SrsLocalStateRow> {
+  final String profileUid;
+  final String json;
+  const SrsLocalStateRow({required this.profileUid, required this.json});
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['profile_uid'] = Variable<String>(profileUid);
+    map['json'] = Variable<String>(json);
+    return map;
+  }
+
+  SrsLocalStateCompanion toCompanion(bool nullToAbsent) {
+    return SrsLocalStateCompanion(
+      profileUid: Value(profileUid),
+      json: Value(json),
+    );
+  }
+
+  factory SrsLocalStateRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return SrsLocalStateRow(
+      profileUid: serializer.fromJson<String>(json['profileUid']),
+      json: serializer.fromJson<String>(json['json']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'profileUid': serializer.toJson<String>(profileUid),
+      'json': serializer.toJson<String>(json),
+    };
+  }
+
+  SrsLocalStateRow copyWith({String? profileUid, String? json}) =>
+      SrsLocalStateRow(
+        profileUid: profileUid ?? this.profileUid,
+        json: json ?? this.json,
+      );
+  SrsLocalStateRow copyWithCompanion(SrsLocalStateCompanion data) {
+    return SrsLocalStateRow(
+      profileUid: data.profileUid.present
+          ? data.profileUid.value
+          : this.profileUid,
+      json: data.json.present ? data.json.value : this.json,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('SrsLocalStateRow(')
+          ..write('profileUid: $profileUid, ')
+          ..write('json: $json')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(profileUid, json);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is SrsLocalStateRow &&
+          other.profileUid == this.profileUid &&
+          other.json == this.json);
+}
+
+class SrsLocalStateCompanion extends UpdateCompanion<SrsLocalStateRow> {
+  final Value<String> profileUid;
+  final Value<String> json;
+  final Value<int> rowid;
+  const SrsLocalStateCompanion({
+    this.profileUid = const Value.absent(),
+    this.json = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  SrsLocalStateCompanion.insert({
+    required String profileUid,
+    required String json,
+    this.rowid = const Value.absent(),
+  }) : profileUid = Value(profileUid),
+       json = Value(json);
+  static Insertable<SrsLocalStateRow> custom({
+    Expression<String>? profileUid,
+    Expression<String>? json,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (profileUid != null) 'profile_uid': profileUid,
+      if (json != null) 'json': json,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  SrsLocalStateCompanion copyWith({
+    Value<String>? profileUid,
+    Value<String>? json,
+    Value<int>? rowid,
+  }) {
+    return SrsLocalStateCompanion(
+      profileUid: profileUid ?? this.profileUid,
+      json: json ?? this.json,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (profileUid.present) {
+      map['profile_uid'] = Variable<String>(profileUid.value);
+    }
+    if (json.present) {
+      map['json'] = Variable<String>(json.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('SrsLocalStateCompanion(')
+          ..write('profileUid: $profileUid, ')
+          ..write('json: $json, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $SrsNotesCacheTable extends SrsNotesCache
+    with TableInfo<$SrsNotesCacheTable, SrsNoteCacheRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $SrsNotesCacheTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<String> id = GeneratedColumn<String>(
+    'id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _profileUidMeta = const VerificationMeta(
+    'profileUid',
+  );
+  @override
+  late final GeneratedColumn<String> profileUid = GeneratedColumn<String>(
+    'profile_uid',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _noteTypeIdMeta = const VerificationMeta(
+    'noteTypeId',
+  );
+  @override
+  late final GeneratedColumn<String> noteTypeId = GeneratedColumn<String>(
+    'note_type_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _guidMeta = const VerificationMeta('guid');
+  @override
+  late final GeneratedColumn<String> guid = GeneratedColumn<String>(
+    'guid',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _createdAtMeta = const VerificationMeta(
+    'createdAt',
+  );
+  @override
+  late final GeneratedColumn<int> createdAt = GeneratedColumn<int>(
+    'created_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _deckIdMeta = const VerificationMeta('deckId');
+  @override
+  late final GeneratedColumn<String> deckId = GeneratedColumn<String>(
+    'deck_id',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _deletedAtMeta = const VerificationMeta(
+    'deletedAt',
+  );
+  @override
+  late final GeneratedColumn<int> deletedAt = GeneratedColumn<int>(
+    'deleted_at',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _termKeyMeta = const VerificationMeta(
+    'termKey',
+  );
+  @override
+  late final GeneratedColumn<String> termKey = GeneratedColumn<String>(
+    'term_key',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(''),
+  );
+  static const VerificationMeta _readingKeyMeta = const VerificationMeta(
+    'readingKey',
+  );
+  @override
+  late final GeneratedColumn<String> readingKey = GeneratedColumn<String>(
+    'reading_key',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(''),
+  );
+  static const VerificationMeta _sortFieldMeta = const VerificationMeta(
+    'sortField',
+  );
+  @override
+  late final GeneratedColumn<String> sortField = GeneratedColumn<String>(
+    'sort_field',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(''),
+  );
+  static const VerificationMeta _tagsJsonMeta = const VerificationMeta(
+    'tagsJson',
+  );
+  @override
+  late final GeneratedColumn<String> tagsJson = GeneratedColumn<String>(
+    'tags_json',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant('[]'),
+  );
+  static const VerificationMeta _pendingDecisionMeta = const VerificationMeta(
+    'pendingDecision',
+  );
+  @override
+  late final GeneratedColumn<bool> pendingDecision = GeneratedColumn<bool>(
+    'pending_decision',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("pending_decision" IN (0, 1))',
+    ),
+    defaultValue: const Constant(false),
+  );
+  static const VerificationMeta _updatedAtMeta = const VerificationMeta(
+    'updatedAt',
+  );
+  @override
+  late final GeneratedColumn<int> updatedAt = GeneratedColumn<int>(
+    'updated_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    id,
+    profileUid,
+    noteTypeId,
+    guid,
+    createdAt,
+    deckId,
+    deletedAt,
+    termKey,
+    readingKey,
+    sortField,
+    tagsJson,
+    pendingDecision,
+    updatedAt,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'srs_notes_cache';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<SrsNoteCacheRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    } else if (isInserting) {
+      context.missing(_idMeta);
+    }
+    if (data.containsKey('profile_uid')) {
+      context.handle(
+        _profileUidMeta,
+        profileUid.isAcceptableOrUnknown(data['profile_uid']!, _profileUidMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_profileUidMeta);
+    }
+    if (data.containsKey('note_type_id')) {
+      context.handle(
+        _noteTypeIdMeta,
+        noteTypeId.isAcceptableOrUnknown(
+          data['note_type_id']!,
+          _noteTypeIdMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_noteTypeIdMeta);
+    }
+    if (data.containsKey('guid')) {
+      context.handle(
+        _guidMeta,
+        guid.isAcceptableOrUnknown(data['guid']!, _guidMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_guidMeta);
+    }
+    if (data.containsKey('created_at')) {
+      context.handle(
+        _createdAtMeta,
+        createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_createdAtMeta);
+    }
+    if (data.containsKey('deck_id')) {
+      context.handle(
+        _deckIdMeta,
+        deckId.isAcceptableOrUnknown(data['deck_id']!, _deckIdMeta),
+      );
+    }
+    if (data.containsKey('deleted_at')) {
+      context.handle(
+        _deletedAtMeta,
+        deletedAt.isAcceptableOrUnknown(data['deleted_at']!, _deletedAtMeta),
+      );
+    }
+    if (data.containsKey('term_key')) {
+      context.handle(
+        _termKeyMeta,
+        termKey.isAcceptableOrUnknown(data['term_key']!, _termKeyMeta),
+      );
+    }
+    if (data.containsKey('reading_key')) {
+      context.handle(
+        _readingKeyMeta,
+        readingKey.isAcceptableOrUnknown(data['reading_key']!, _readingKeyMeta),
+      );
+    }
+    if (data.containsKey('sort_field')) {
+      context.handle(
+        _sortFieldMeta,
+        sortField.isAcceptableOrUnknown(data['sort_field']!, _sortFieldMeta),
+      );
+    }
+    if (data.containsKey('tags_json')) {
+      context.handle(
+        _tagsJsonMeta,
+        tagsJson.isAcceptableOrUnknown(data['tags_json']!, _tagsJsonMeta),
+      );
+    }
+    if (data.containsKey('pending_decision')) {
+      context.handle(
+        _pendingDecisionMeta,
+        pendingDecision.isAcceptableOrUnknown(
+          data['pending_decision']!,
+          _pendingDecisionMeta,
+        ),
+      );
+    }
+    if (data.containsKey('updated_at')) {
+      context.handle(
+        _updatedAtMeta,
+        updatedAt.isAcceptableOrUnknown(data['updated_at']!, _updatedAtMeta),
+      );
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  SrsNoteCacheRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return SrsNoteCacheRow(
+      id: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}id'],
+      )!,
+      profileUid: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}profile_uid'],
+      )!,
+      noteTypeId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}note_type_id'],
+      )!,
+      guid: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}guid'],
+      )!,
+      createdAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}created_at'],
+      )!,
+      deckId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}deck_id'],
+      ),
+      deletedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}deleted_at'],
+      ),
+      termKey: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}term_key'],
+      )!,
+      readingKey: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}reading_key'],
+      )!,
+      sortField: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}sort_field'],
+      )!,
+      tagsJson: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}tags_json'],
+      )!,
+      pendingDecision: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}pending_decision'],
+      )!,
+      updatedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}updated_at'],
+      )!,
+    );
+  }
+
+  @override
+  $SrsNotesCacheTable createAlias(String alias) {
+    return $SrsNotesCacheTable(attachedDatabase, alias);
+  }
+}
+
+class SrsNoteCacheRow extends DataClass implements Insertable<SrsNoteCacheRow> {
+  final String id;
+  final String profileUid;
+  final String noteTypeId;
+  final String guid;
+  final int createdAt;
+  final String? deckId;
+  final int? deletedAt;
+
+  /// 词状态索引：词形 / 读音归一化（第六轮审查第 20 条）。
+  final String termKey;
+  final String readingKey;
+
+  /// 排序 / 列表显示用的第一个字段（去 HTML）。
+  final String sortField;
+  final String tagsJson;
+  final bool pendingDecision;
+  final int updatedAt;
+  const SrsNoteCacheRow({
+    required this.id,
+    required this.profileUid,
+    required this.noteTypeId,
+    required this.guid,
+    required this.createdAt,
+    this.deckId,
+    this.deletedAt,
+    required this.termKey,
+    required this.readingKey,
+    required this.sortField,
+    required this.tagsJson,
+    required this.pendingDecision,
+    required this.updatedAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<String>(id);
+    map['profile_uid'] = Variable<String>(profileUid);
+    map['note_type_id'] = Variable<String>(noteTypeId);
+    map['guid'] = Variable<String>(guid);
+    map['created_at'] = Variable<int>(createdAt);
+    if (!nullToAbsent || deckId != null) {
+      map['deck_id'] = Variable<String>(deckId);
+    }
+    if (!nullToAbsent || deletedAt != null) {
+      map['deleted_at'] = Variable<int>(deletedAt);
+    }
+    map['term_key'] = Variable<String>(termKey);
+    map['reading_key'] = Variable<String>(readingKey);
+    map['sort_field'] = Variable<String>(sortField);
+    map['tags_json'] = Variable<String>(tagsJson);
+    map['pending_decision'] = Variable<bool>(pendingDecision);
+    map['updated_at'] = Variable<int>(updatedAt);
+    return map;
+  }
+
+  SrsNotesCacheCompanion toCompanion(bool nullToAbsent) {
+    return SrsNotesCacheCompanion(
+      id: Value(id),
+      profileUid: Value(profileUid),
+      noteTypeId: Value(noteTypeId),
+      guid: Value(guid),
+      createdAt: Value(createdAt),
+      deckId: deckId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(deckId),
+      deletedAt: deletedAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(deletedAt),
+      termKey: Value(termKey),
+      readingKey: Value(readingKey),
+      sortField: Value(sortField),
+      tagsJson: Value(tagsJson),
+      pendingDecision: Value(pendingDecision),
+      updatedAt: Value(updatedAt),
+    );
+  }
+
+  factory SrsNoteCacheRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return SrsNoteCacheRow(
+      id: serializer.fromJson<String>(json['id']),
+      profileUid: serializer.fromJson<String>(json['profileUid']),
+      noteTypeId: serializer.fromJson<String>(json['noteTypeId']),
+      guid: serializer.fromJson<String>(json['guid']),
+      createdAt: serializer.fromJson<int>(json['createdAt']),
+      deckId: serializer.fromJson<String?>(json['deckId']),
+      deletedAt: serializer.fromJson<int?>(json['deletedAt']),
+      termKey: serializer.fromJson<String>(json['termKey']),
+      readingKey: serializer.fromJson<String>(json['readingKey']),
+      sortField: serializer.fromJson<String>(json['sortField']),
+      tagsJson: serializer.fromJson<String>(json['tagsJson']),
+      pendingDecision: serializer.fromJson<bool>(json['pendingDecision']),
+      updatedAt: serializer.fromJson<int>(json['updatedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<String>(id),
+      'profileUid': serializer.toJson<String>(profileUid),
+      'noteTypeId': serializer.toJson<String>(noteTypeId),
+      'guid': serializer.toJson<String>(guid),
+      'createdAt': serializer.toJson<int>(createdAt),
+      'deckId': serializer.toJson<String?>(deckId),
+      'deletedAt': serializer.toJson<int?>(deletedAt),
+      'termKey': serializer.toJson<String>(termKey),
+      'readingKey': serializer.toJson<String>(readingKey),
+      'sortField': serializer.toJson<String>(sortField),
+      'tagsJson': serializer.toJson<String>(tagsJson),
+      'pendingDecision': serializer.toJson<bool>(pendingDecision),
+      'updatedAt': serializer.toJson<int>(updatedAt),
+    };
+  }
+
+  SrsNoteCacheRow copyWith({
+    String? id,
+    String? profileUid,
+    String? noteTypeId,
+    String? guid,
+    int? createdAt,
+    Value<String?> deckId = const Value.absent(),
+    Value<int?> deletedAt = const Value.absent(),
+    String? termKey,
+    String? readingKey,
+    String? sortField,
+    String? tagsJson,
+    bool? pendingDecision,
+    int? updatedAt,
+  }) => SrsNoteCacheRow(
+    id: id ?? this.id,
+    profileUid: profileUid ?? this.profileUid,
+    noteTypeId: noteTypeId ?? this.noteTypeId,
+    guid: guid ?? this.guid,
+    createdAt: createdAt ?? this.createdAt,
+    deckId: deckId.present ? deckId.value : this.deckId,
+    deletedAt: deletedAt.present ? deletedAt.value : this.deletedAt,
+    termKey: termKey ?? this.termKey,
+    readingKey: readingKey ?? this.readingKey,
+    sortField: sortField ?? this.sortField,
+    tagsJson: tagsJson ?? this.tagsJson,
+    pendingDecision: pendingDecision ?? this.pendingDecision,
+    updatedAt: updatedAt ?? this.updatedAt,
+  );
+  SrsNoteCacheRow copyWithCompanion(SrsNotesCacheCompanion data) {
+    return SrsNoteCacheRow(
+      id: data.id.present ? data.id.value : this.id,
+      profileUid: data.profileUid.present
+          ? data.profileUid.value
+          : this.profileUid,
+      noteTypeId: data.noteTypeId.present
+          ? data.noteTypeId.value
+          : this.noteTypeId,
+      guid: data.guid.present ? data.guid.value : this.guid,
+      createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
+      deckId: data.deckId.present ? data.deckId.value : this.deckId,
+      deletedAt: data.deletedAt.present ? data.deletedAt.value : this.deletedAt,
+      termKey: data.termKey.present ? data.termKey.value : this.termKey,
+      readingKey: data.readingKey.present
+          ? data.readingKey.value
+          : this.readingKey,
+      sortField: data.sortField.present ? data.sortField.value : this.sortField,
+      tagsJson: data.tagsJson.present ? data.tagsJson.value : this.tagsJson,
+      pendingDecision: data.pendingDecision.present
+          ? data.pendingDecision.value
+          : this.pendingDecision,
+      updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('SrsNoteCacheRow(')
+          ..write('id: $id, ')
+          ..write('profileUid: $profileUid, ')
+          ..write('noteTypeId: $noteTypeId, ')
+          ..write('guid: $guid, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('deckId: $deckId, ')
+          ..write('deletedAt: $deletedAt, ')
+          ..write('termKey: $termKey, ')
+          ..write('readingKey: $readingKey, ')
+          ..write('sortField: $sortField, ')
+          ..write('tagsJson: $tagsJson, ')
+          ..write('pendingDecision: $pendingDecision, ')
+          ..write('updatedAt: $updatedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    id,
+    profileUid,
+    noteTypeId,
+    guid,
+    createdAt,
+    deckId,
+    deletedAt,
+    termKey,
+    readingKey,
+    sortField,
+    tagsJson,
+    pendingDecision,
+    updatedAt,
+  );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is SrsNoteCacheRow &&
+          other.id == this.id &&
+          other.profileUid == this.profileUid &&
+          other.noteTypeId == this.noteTypeId &&
+          other.guid == this.guid &&
+          other.createdAt == this.createdAt &&
+          other.deckId == this.deckId &&
+          other.deletedAt == this.deletedAt &&
+          other.termKey == this.termKey &&
+          other.readingKey == this.readingKey &&
+          other.sortField == this.sortField &&
+          other.tagsJson == this.tagsJson &&
+          other.pendingDecision == this.pendingDecision &&
+          other.updatedAt == this.updatedAt);
+}
+
+class SrsNotesCacheCompanion extends UpdateCompanion<SrsNoteCacheRow> {
+  final Value<String> id;
+  final Value<String> profileUid;
+  final Value<String> noteTypeId;
+  final Value<String> guid;
+  final Value<int> createdAt;
+  final Value<String?> deckId;
+  final Value<int?> deletedAt;
+  final Value<String> termKey;
+  final Value<String> readingKey;
+  final Value<String> sortField;
+  final Value<String> tagsJson;
+  final Value<bool> pendingDecision;
+  final Value<int> updatedAt;
+  final Value<int> rowid;
+  const SrsNotesCacheCompanion({
+    this.id = const Value.absent(),
+    this.profileUid = const Value.absent(),
+    this.noteTypeId = const Value.absent(),
+    this.guid = const Value.absent(),
+    this.createdAt = const Value.absent(),
+    this.deckId = const Value.absent(),
+    this.deletedAt = const Value.absent(),
+    this.termKey = const Value.absent(),
+    this.readingKey = const Value.absent(),
+    this.sortField = const Value.absent(),
+    this.tagsJson = const Value.absent(),
+    this.pendingDecision = const Value.absent(),
+    this.updatedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  SrsNotesCacheCompanion.insert({
+    required String id,
+    required String profileUid,
+    required String noteTypeId,
+    required String guid,
+    required int createdAt,
+    this.deckId = const Value.absent(),
+    this.deletedAt = const Value.absent(),
+    this.termKey = const Value.absent(),
+    this.readingKey = const Value.absent(),
+    this.sortField = const Value.absent(),
+    this.tagsJson = const Value.absent(),
+    this.pendingDecision = const Value.absent(),
+    this.updatedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  }) : id = Value(id),
+       profileUid = Value(profileUid),
+       noteTypeId = Value(noteTypeId),
+       guid = Value(guid),
+       createdAt = Value(createdAt);
+  static Insertable<SrsNoteCacheRow> custom({
+    Expression<String>? id,
+    Expression<String>? profileUid,
+    Expression<String>? noteTypeId,
+    Expression<String>? guid,
+    Expression<int>? createdAt,
+    Expression<String>? deckId,
+    Expression<int>? deletedAt,
+    Expression<String>? termKey,
+    Expression<String>? readingKey,
+    Expression<String>? sortField,
+    Expression<String>? tagsJson,
+    Expression<bool>? pendingDecision,
+    Expression<int>? updatedAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (profileUid != null) 'profile_uid': profileUid,
+      if (noteTypeId != null) 'note_type_id': noteTypeId,
+      if (guid != null) 'guid': guid,
+      if (createdAt != null) 'created_at': createdAt,
+      if (deckId != null) 'deck_id': deckId,
+      if (deletedAt != null) 'deleted_at': deletedAt,
+      if (termKey != null) 'term_key': termKey,
+      if (readingKey != null) 'reading_key': readingKey,
+      if (sortField != null) 'sort_field': sortField,
+      if (tagsJson != null) 'tags_json': tagsJson,
+      if (pendingDecision != null) 'pending_decision': pendingDecision,
+      if (updatedAt != null) 'updated_at': updatedAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  SrsNotesCacheCompanion copyWith({
+    Value<String>? id,
+    Value<String>? profileUid,
+    Value<String>? noteTypeId,
+    Value<String>? guid,
+    Value<int>? createdAt,
+    Value<String?>? deckId,
+    Value<int?>? deletedAt,
+    Value<String>? termKey,
+    Value<String>? readingKey,
+    Value<String>? sortField,
+    Value<String>? tagsJson,
+    Value<bool>? pendingDecision,
+    Value<int>? updatedAt,
+    Value<int>? rowid,
+  }) {
+    return SrsNotesCacheCompanion(
+      id: id ?? this.id,
+      profileUid: profileUid ?? this.profileUid,
+      noteTypeId: noteTypeId ?? this.noteTypeId,
+      guid: guid ?? this.guid,
+      createdAt: createdAt ?? this.createdAt,
+      deckId: deckId ?? this.deckId,
+      deletedAt: deletedAt ?? this.deletedAt,
+      termKey: termKey ?? this.termKey,
+      readingKey: readingKey ?? this.readingKey,
+      sortField: sortField ?? this.sortField,
+      tagsJson: tagsJson ?? this.tagsJson,
+      pendingDecision: pendingDecision ?? this.pendingDecision,
+      updatedAt: updatedAt ?? this.updatedAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<String>(id.value);
+    }
+    if (profileUid.present) {
+      map['profile_uid'] = Variable<String>(profileUid.value);
+    }
+    if (noteTypeId.present) {
+      map['note_type_id'] = Variable<String>(noteTypeId.value);
+    }
+    if (guid.present) {
+      map['guid'] = Variable<String>(guid.value);
+    }
+    if (createdAt.present) {
+      map['created_at'] = Variable<int>(createdAt.value);
+    }
+    if (deckId.present) {
+      map['deck_id'] = Variable<String>(deckId.value);
+    }
+    if (deletedAt.present) {
+      map['deleted_at'] = Variable<int>(deletedAt.value);
+    }
+    if (termKey.present) {
+      map['term_key'] = Variable<String>(termKey.value);
+    }
+    if (readingKey.present) {
+      map['reading_key'] = Variable<String>(readingKey.value);
+    }
+    if (sortField.present) {
+      map['sort_field'] = Variable<String>(sortField.value);
+    }
+    if (tagsJson.present) {
+      map['tags_json'] = Variable<String>(tagsJson.value);
+    }
+    if (pendingDecision.present) {
+      map['pending_decision'] = Variable<bool>(pendingDecision.value);
+    }
+    if (updatedAt.present) {
+      map['updated_at'] = Variable<int>(updatedAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('SrsNotesCacheCompanion(')
+          ..write('id: $id, ')
+          ..write('profileUid: $profileUid, ')
+          ..write('noteTypeId: $noteTypeId, ')
+          ..write('guid: $guid, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('deckId: $deckId, ')
+          ..write('deletedAt: $deletedAt, ')
+          ..write('termKey: $termKey, ')
+          ..write('readingKey: $readingKey, ')
+          ..write('sortField: $sortField, ')
+          ..write('tagsJson: $tagsJson, ')
+          ..write('pendingDecision: $pendingDecision, ')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $SrsCardsCacheTable extends SrsCardsCache
+    with TableInfo<$SrsCardsCacheTable, SrsCardCacheRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $SrsCardsCacheTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<String> id = GeneratedColumn<String>(
+    'id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _profileUidMeta = const VerificationMeta(
+    'profileUid',
+  );
+  @override
+  late final GeneratedColumn<String> profileUid = GeneratedColumn<String>(
+    'profile_uid',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _noteIdMeta = const VerificationMeta('noteId');
+  @override
+  late final GeneratedColumn<String> noteId = GeneratedColumn<String>(
+    'note_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _templateIdMeta = const VerificationMeta(
+    'templateId',
+  );
+  @override
+  late final GeneratedColumn<String> templateId = GeneratedColumn<String>(
+    'template_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _clozeOrdMeta = const VerificationMeta(
+    'clozeOrd',
+  );
+  @override
+  late final GeneratedColumn<int> clozeOrd = GeneratedColumn<int>(
+    'cloze_ord',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _deckIdMeta = const VerificationMeta('deckId');
+  @override
+  late final GeneratedColumn<String> deckId = GeneratedColumn<String>(
+    'deck_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _suspendedMeta = const VerificationMeta(
+    'suspended',
+  );
+  @override
+  late final GeneratedColumn<bool> suspended = GeneratedColumn<bool>(
+    'suspended',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("suspended" IN (0, 1))',
+    ),
+    defaultValue: const Constant(false),
+  );
+  static const VerificationMeta _buriedUntilDayMeta = const VerificationMeta(
+    'buriedUntilDay',
+  );
+  @override
+  late final GeneratedColumn<int> buriedUntilDay = GeneratedColumn<int>(
+    'buried_until_day',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _flagMeta = const VerificationMeta('flag');
+  @override
+  late final GeneratedColumn<int> flag = GeneratedColumn<int>(
+    'flag',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _hiddenMeta = const VerificationMeta('hidden');
+  @override
+  late final GeneratedColumn<bool> hidden = GeneratedColumn<bool>(
+    'hidden',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("hidden" IN (0, 1))',
+    ),
+    defaultValue: const Constant(false),
+  );
+  static const VerificationMeta _queueMeta = const VerificationMeta('queue');
+  @override
+  late final GeneratedColumn<String> queue = GeneratedColumn<String>(
+    'queue',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant('new'),
+  );
+  static const VerificationMeta _dueDayMeta = const VerificationMeta('dueDay');
+  @override
+  late final GeneratedColumn<int> dueDay = GeneratedColumn<int>(
+    'due_day',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _dueAtMeta = const VerificationMeta('dueAt');
+  @override
+  late final GeneratedColumn<int> dueAt = GeneratedColumn<int>(
+    'due_at',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _scheduledDaysMeta = const VerificationMeta(
+    'scheduledDays',
+  );
+  @override
+  late final GeneratedColumn<int> scheduledDays = GeneratedColumn<int>(
+    'scheduled_days',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _repsMeta = const VerificationMeta('reps');
+  @override
+  late final GeneratedColumn<int> reps = GeneratedColumn<int>(
+    'reps',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _lapsesMeta = const VerificationMeta('lapses');
+  @override
+  late final GeneratedColumn<int> lapses = GeneratedColumn<int>(
+    'lapses',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _stabilityMeta = const VerificationMeta(
+    'stability',
+  );
+  @override
+  late final GeneratedColumn<double> stability = GeneratedColumn<double>(
+    'stability',
+    aliasedName,
+    true,
+    type: DriftSqlType.double,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _difficultyMeta = const VerificationMeta(
+    'difficulty',
+  );
+  @override
+  late final GeneratedColumn<double> difficulty = GeneratedColumn<double>(
+    'difficulty',
+    aliasedName,
+    true,
+    type: DriftSqlType.double,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _lastReviewedAtMeta = const VerificationMeta(
+    'lastReviewedAt',
+  );
+  @override
+  late final GeneratedColumn<int> lastReviewedAt = GeneratedColumn<int>(
+    'last_reviewed_at',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _lastLogIdMeta = const VerificationMeta(
+    'lastLogId',
+  );
+  @override
+  late final GeneratedColumn<String> lastLogId = GeneratedColumn<String>(
+    'last_log_id',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _schedulerMeta = const VerificationMeta(
+    'scheduler',
+  );
+  @override
+  late final GeneratedColumn<String> scheduler = GeneratedColumn<String>(
+    'scheduler',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant('fushi'),
+  );
+  static const VerificationMeta _noteCreatedAtMeta = const VerificationMeta(
+    'noteCreatedAt',
+  );
+  @override
+  late final GeneratedColumn<int> noteCreatedAt = GeneratedColumn<int>(
+    'note_created_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    id,
+    profileUid,
+    noteId,
+    templateId,
+    clozeOrd,
+    deckId,
+    suspended,
+    buriedUntilDay,
+    flag,
+    hidden,
+    queue,
+    dueDay,
+    dueAt,
+    scheduledDays,
+    reps,
+    lapses,
+    stability,
+    difficulty,
+    lastReviewedAt,
+    lastLogId,
+    scheduler,
+    noteCreatedAt,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'srs_cards_cache';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<SrsCardCacheRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    } else if (isInserting) {
+      context.missing(_idMeta);
+    }
+    if (data.containsKey('profile_uid')) {
+      context.handle(
+        _profileUidMeta,
+        profileUid.isAcceptableOrUnknown(data['profile_uid']!, _profileUidMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_profileUidMeta);
+    }
+    if (data.containsKey('note_id')) {
+      context.handle(
+        _noteIdMeta,
+        noteId.isAcceptableOrUnknown(data['note_id']!, _noteIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_noteIdMeta);
+    }
+    if (data.containsKey('template_id')) {
+      context.handle(
+        _templateIdMeta,
+        templateId.isAcceptableOrUnknown(data['template_id']!, _templateIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_templateIdMeta);
+    }
+    if (data.containsKey('cloze_ord')) {
+      context.handle(
+        _clozeOrdMeta,
+        clozeOrd.isAcceptableOrUnknown(data['cloze_ord']!, _clozeOrdMeta),
+      );
+    }
+    if (data.containsKey('deck_id')) {
+      context.handle(
+        _deckIdMeta,
+        deckId.isAcceptableOrUnknown(data['deck_id']!, _deckIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_deckIdMeta);
+    }
+    if (data.containsKey('suspended')) {
+      context.handle(
+        _suspendedMeta,
+        suspended.isAcceptableOrUnknown(data['suspended']!, _suspendedMeta),
+      );
+    }
+    if (data.containsKey('buried_until_day')) {
+      context.handle(
+        _buriedUntilDayMeta,
+        buriedUntilDay.isAcceptableOrUnknown(
+          data['buried_until_day']!,
+          _buriedUntilDayMeta,
+        ),
+      );
+    }
+    if (data.containsKey('flag')) {
+      context.handle(
+        _flagMeta,
+        flag.isAcceptableOrUnknown(data['flag']!, _flagMeta),
+      );
+    }
+    if (data.containsKey('hidden')) {
+      context.handle(
+        _hiddenMeta,
+        hidden.isAcceptableOrUnknown(data['hidden']!, _hiddenMeta),
+      );
+    }
+    if (data.containsKey('queue')) {
+      context.handle(
+        _queueMeta,
+        queue.isAcceptableOrUnknown(data['queue']!, _queueMeta),
+      );
+    }
+    if (data.containsKey('due_day')) {
+      context.handle(
+        _dueDayMeta,
+        dueDay.isAcceptableOrUnknown(data['due_day']!, _dueDayMeta),
+      );
+    }
+    if (data.containsKey('due_at')) {
+      context.handle(
+        _dueAtMeta,
+        dueAt.isAcceptableOrUnknown(data['due_at']!, _dueAtMeta),
+      );
+    }
+    if (data.containsKey('scheduled_days')) {
+      context.handle(
+        _scheduledDaysMeta,
+        scheduledDays.isAcceptableOrUnknown(
+          data['scheduled_days']!,
+          _scheduledDaysMeta,
+        ),
+      );
+    }
+    if (data.containsKey('reps')) {
+      context.handle(
+        _repsMeta,
+        reps.isAcceptableOrUnknown(data['reps']!, _repsMeta),
+      );
+    }
+    if (data.containsKey('lapses')) {
+      context.handle(
+        _lapsesMeta,
+        lapses.isAcceptableOrUnknown(data['lapses']!, _lapsesMeta),
+      );
+    }
+    if (data.containsKey('stability')) {
+      context.handle(
+        _stabilityMeta,
+        stability.isAcceptableOrUnknown(data['stability']!, _stabilityMeta),
+      );
+    }
+    if (data.containsKey('difficulty')) {
+      context.handle(
+        _difficultyMeta,
+        difficulty.isAcceptableOrUnknown(data['difficulty']!, _difficultyMeta),
+      );
+    }
+    if (data.containsKey('last_reviewed_at')) {
+      context.handle(
+        _lastReviewedAtMeta,
+        lastReviewedAt.isAcceptableOrUnknown(
+          data['last_reviewed_at']!,
+          _lastReviewedAtMeta,
+        ),
+      );
+    }
+    if (data.containsKey('last_log_id')) {
+      context.handle(
+        _lastLogIdMeta,
+        lastLogId.isAcceptableOrUnknown(data['last_log_id']!, _lastLogIdMeta),
+      );
+    }
+    if (data.containsKey('scheduler')) {
+      context.handle(
+        _schedulerMeta,
+        scheduler.isAcceptableOrUnknown(data['scheduler']!, _schedulerMeta),
+      );
+    }
+    if (data.containsKey('note_created_at')) {
+      context.handle(
+        _noteCreatedAtMeta,
+        noteCreatedAt.isAcceptableOrUnknown(
+          data['note_created_at']!,
+          _noteCreatedAtMeta,
+        ),
+      );
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  SrsCardCacheRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return SrsCardCacheRow(
+      id: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}id'],
+      )!,
+      profileUid: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}profile_uid'],
+      )!,
+      noteId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}note_id'],
+      )!,
+      templateId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}template_id'],
+      )!,
+      clozeOrd: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}cloze_ord'],
+      )!,
+      deckId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}deck_id'],
+      )!,
+      suspended: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}suspended'],
+      )!,
+      buriedUntilDay: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}buried_until_day'],
+      ),
+      flag: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}flag'],
+      )!,
+      hidden: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}hidden'],
+      )!,
+      queue: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}queue'],
+      )!,
+      dueDay: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}due_day'],
+      ),
+      dueAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}due_at'],
+      ),
+      scheduledDays: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}scheduled_days'],
+      )!,
+      reps: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}reps'],
+      )!,
+      lapses: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}lapses'],
+      )!,
+      stability: attachedDatabase.typeMapping.read(
+        DriftSqlType.double,
+        data['${effectivePrefix}stability'],
+      ),
+      difficulty: attachedDatabase.typeMapping.read(
+        DriftSqlType.double,
+        data['${effectivePrefix}difficulty'],
+      ),
+      lastReviewedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}last_reviewed_at'],
+      ),
+      lastLogId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}last_log_id'],
+      ),
+      scheduler: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}scheduler'],
+      )!,
+      noteCreatedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}note_created_at'],
+      )!,
+    );
+  }
+
+  @override
+  $SrsCardsCacheTable createAlias(String alias) {
+    return $SrsCardsCacheTable(attachedDatabase, alias);
+  }
+}
+
+class SrsCardCacheRow extends DataClass implements Insertable<SrsCardCacheRow> {
+  final String id;
+  final String profileUid;
+  final String noteId;
+  final String templateId;
+  final int clozeOrd;
+  final String deckId;
+  final bool suspended;
+  final int? buriedUntilDay;
+  final int flag;
+
+  /// 生成门（铁律 D，第六轮审查第 13 条）：笔记已删 / 模板已删 / 条件模板为空 / cN 已删时为真，
+  /// 查询层据此不显示、不进队列，不写任何同步行。
+  final bool hidden;
+  final String queue;
+  final int? dueDay;
+  final int? dueAt;
+  final int scheduledDays;
+  final int reps;
+  final int lapses;
+  final double? stability;
+  final double? difficulty;
+  final int? lastReviewedAt;
+  final String? lastLogId;
+  final String scheduler;
+
+  /// 新卡出卡顺序（笔记 createdAt, cardId）。
+  final int noteCreatedAt;
+  const SrsCardCacheRow({
+    required this.id,
+    required this.profileUid,
+    required this.noteId,
+    required this.templateId,
+    required this.clozeOrd,
+    required this.deckId,
+    required this.suspended,
+    this.buriedUntilDay,
+    required this.flag,
+    required this.hidden,
+    required this.queue,
+    this.dueDay,
+    this.dueAt,
+    required this.scheduledDays,
+    required this.reps,
+    required this.lapses,
+    this.stability,
+    this.difficulty,
+    this.lastReviewedAt,
+    this.lastLogId,
+    required this.scheduler,
+    required this.noteCreatedAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<String>(id);
+    map['profile_uid'] = Variable<String>(profileUid);
+    map['note_id'] = Variable<String>(noteId);
+    map['template_id'] = Variable<String>(templateId);
+    map['cloze_ord'] = Variable<int>(clozeOrd);
+    map['deck_id'] = Variable<String>(deckId);
+    map['suspended'] = Variable<bool>(suspended);
+    if (!nullToAbsent || buriedUntilDay != null) {
+      map['buried_until_day'] = Variable<int>(buriedUntilDay);
+    }
+    map['flag'] = Variable<int>(flag);
+    map['hidden'] = Variable<bool>(hidden);
+    map['queue'] = Variable<String>(queue);
+    if (!nullToAbsent || dueDay != null) {
+      map['due_day'] = Variable<int>(dueDay);
+    }
+    if (!nullToAbsent || dueAt != null) {
+      map['due_at'] = Variable<int>(dueAt);
+    }
+    map['scheduled_days'] = Variable<int>(scheduledDays);
+    map['reps'] = Variable<int>(reps);
+    map['lapses'] = Variable<int>(lapses);
+    if (!nullToAbsent || stability != null) {
+      map['stability'] = Variable<double>(stability);
+    }
+    if (!nullToAbsent || difficulty != null) {
+      map['difficulty'] = Variable<double>(difficulty);
+    }
+    if (!nullToAbsent || lastReviewedAt != null) {
+      map['last_reviewed_at'] = Variable<int>(lastReviewedAt);
+    }
+    if (!nullToAbsent || lastLogId != null) {
+      map['last_log_id'] = Variable<String>(lastLogId);
+    }
+    map['scheduler'] = Variable<String>(scheduler);
+    map['note_created_at'] = Variable<int>(noteCreatedAt);
+    return map;
+  }
+
+  SrsCardsCacheCompanion toCompanion(bool nullToAbsent) {
+    return SrsCardsCacheCompanion(
+      id: Value(id),
+      profileUid: Value(profileUid),
+      noteId: Value(noteId),
+      templateId: Value(templateId),
+      clozeOrd: Value(clozeOrd),
+      deckId: Value(deckId),
+      suspended: Value(suspended),
+      buriedUntilDay: buriedUntilDay == null && nullToAbsent
+          ? const Value.absent()
+          : Value(buriedUntilDay),
+      flag: Value(flag),
+      hidden: Value(hidden),
+      queue: Value(queue),
+      dueDay: dueDay == null && nullToAbsent
+          ? const Value.absent()
+          : Value(dueDay),
+      dueAt: dueAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(dueAt),
+      scheduledDays: Value(scheduledDays),
+      reps: Value(reps),
+      lapses: Value(lapses),
+      stability: stability == null && nullToAbsent
+          ? const Value.absent()
+          : Value(stability),
+      difficulty: difficulty == null && nullToAbsent
+          ? const Value.absent()
+          : Value(difficulty),
+      lastReviewedAt: lastReviewedAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(lastReviewedAt),
+      lastLogId: lastLogId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(lastLogId),
+      scheduler: Value(scheduler),
+      noteCreatedAt: Value(noteCreatedAt),
+    );
+  }
+
+  factory SrsCardCacheRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return SrsCardCacheRow(
+      id: serializer.fromJson<String>(json['id']),
+      profileUid: serializer.fromJson<String>(json['profileUid']),
+      noteId: serializer.fromJson<String>(json['noteId']),
+      templateId: serializer.fromJson<String>(json['templateId']),
+      clozeOrd: serializer.fromJson<int>(json['clozeOrd']),
+      deckId: serializer.fromJson<String>(json['deckId']),
+      suspended: serializer.fromJson<bool>(json['suspended']),
+      buriedUntilDay: serializer.fromJson<int?>(json['buriedUntilDay']),
+      flag: serializer.fromJson<int>(json['flag']),
+      hidden: serializer.fromJson<bool>(json['hidden']),
+      queue: serializer.fromJson<String>(json['queue']),
+      dueDay: serializer.fromJson<int?>(json['dueDay']),
+      dueAt: serializer.fromJson<int?>(json['dueAt']),
+      scheduledDays: serializer.fromJson<int>(json['scheduledDays']),
+      reps: serializer.fromJson<int>(json['reps']),
+      lapses: serializer.fromJson<int>(json['lapses']),
+      stability: serializer.fromJson<double?>(json['stability']),
+      difficulty: serializer.fromJson<double?>(json['difficulty']),
+      lastReviewedAt: serializer.fromJson<int?>(json['lastReviewedAt']),
+      lastLogId: serializer.fromJson<String?>(json['lastLogId']),
+      scheduler: serializer.fromJson<String>(json['scheduler']),
+      noteCreatedAt: serializer.fromJson<int>(json['noteCreatedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<String>(id),
+      'profileUid': serializer.toJson<String>(profileUid),
+      'noteId': serializer.toJson<String>(noteId),
+      'templateId': serializer.toJson<String>(templateId),
+      'clozeOrd': serializer.toJson<int>(clozeOrd),
+      'deckId': serializer.toJson<String>(deckId),
+      'suspended': serializer.toJson<bool>(suspended),
+      'buriedUntilDay': serializer.toJson<int?>(buriedUntilDay),
+      'flag': serializer.toJson<int>(flag),
+      'hidden': serializer.toJson<bool>(hidden),
+      'queue': serializer.toJson<String>(queue),
+      'dueDay': serializer.toJson<int?>(dueDay),
+      'dueAt': serializer.toJson<int?>(dueAt),
+      'scheduledDays': serializer.toJson<int>(scheduledDays),
+      'reps': serializer.toJson<int>(reps),
+      'lapses': serializer.toJson<int>(lapses),
+      'stability': serializer.toJson<double?>(stability),
+      'difficulty': serializer.toJson<double?>(difficulty),
+      'lastReviewedAt': serializer.toJson<int?>(lastReviewedAt),
+      'lastLogId': serializer.toJson<String?>(lastLogId),
+      'scheduler': serializer.toJson<String>(scheduler),
+      'noteCreatedAt': serializer.toJson<int>(noteCreatedAt),
+    };
+  }
+
+  SrsCardCacheRow copyWith({
+    String? id,
+    String? profileUid,
+    String? noteId,
+    String? templateId,
+    int? clozeOrd,
+    String? deckId,
+    bool? suspended,
+    Value<int?> buriedUntilDay = const Value.absent(),
+    int? flag,
+    bool? hidden,
+    String? queue,
+    Value<int?> dueDay = const Value.absent(),
+    Value<int?> dueAt = const Value.absent(),
+    int? scheduledDays,
+    int? reps,
+    int? lapses,
+    Value<double?> stability = const Value.absent(),
+    Value<double?> difficulty = const Value.absent(),
+    Value<int?> lastReviewedAt = const Value.absent(),
+    Value<String?> lastLogId = const Value.absent(),
+    String? scheduler,
+    int? noteCreatedAt,
+  }) => SrsCardCacheRow(
+    id: id ?? this.id,
+    profileUid: profileUid ?? this.profileUid,
+    noteId: noteId ?? this.noteId,
+    templateId: templateId ?? this.templateId,
+    clozeOrd: clozeOrd ?? this.clozeOrd,
+    deckId: deckId ?? this.deckId,
+    suspended: suspended ?? this.suspended,
+    buriedUntilDay: buriedUntilDay.present
+        ? buriedUntilDay.value
+        : this.buriedUntilDay,
+    flag: flag ?? this.flag,
+    hidden: hidden ?? this.hidden,
+    queue: queue ?? this.queue,
+    dueDay: dueDay.present ? dueDay.value : this.dueDay,
+    dueAt: dueAt.present ? dueAt.value : this.dueAt,
+    scheduledDays: scheduledDays ?? this.scheduledDays,
+    reps: reps ?? this.reps,
+    lapses: lapses ?? this.lapses,
+    stability: stability.present ? stability.value : this.stability,
+    difficulty: difficulty.present ? difficulty.value : this.difficulty,
+    lastReviewedAt: lastReviewedAt.present
+        ? lastReviewedAt.value
+        : this.lastReviewedAt,
+    lastLogId: lastLogId.present ? lastLogId.value : this.lastLogId,
+    scheduler: scheduler ?? this.scheduler,
+    noteCreatedAt: noteCreatedAt ?? this.noteCreatedAt,
+  );
+  SrsCardCacheRow copyWithCompanion(SrsCardsCacheCompanion data) {
+    return SrsCardCacheRow(
+      id: data.id.present ? data.id.value : this.id,
+      profileUid: data.profileUid.present
+          ? data.profileUid.value
+          : this.profileUid,
+      noteId: data.noteId.present ? data.noteId.value : this.noteId,
+      templateId: data.templateId.present
+          ? data.templateId.value
+          : this.templateId,
+      clozeOrd: data.clozeOrd.present ? data.clozeOrd.value : this.clozeOrd,
+      deckId: data.deckId.present ? data.deckId.value : this.deckId,
+      suspended: data.suspended.present ? data.suspended.value : this.suspended,
+      buriedUntilDay: data.buriedUntilDay.present
+          ? data.buriedUntilDay.value
+          : this.buriedUntilDay,
+      flag: data.flag.present ? data.flag.value : this.flag,
+      hidden: data.hidden.present ? data.hidden.value : this.hidden,
+      queue: data.queue.present ? data.queue.value : this.queue,
+      dueDay: data.dueDay.present ? data.dueDay.value : this.dueDay,
+      dueAt: data.dueAt.present ? data.dueAt.value : this.dueAt,
+      scheduledDays: data.scheduledDays.present
+          ? data.scheduledDays.value
+          : this.scheduledDays,
+      reps: data.reps.present ? data.reps.value : this.reps,
+      lapses: data.lapses.present ? data.lapses.value : this.lapses,
+      stability: data.stability.present ? data.stability.value : this.stability,
+      difficulty: data.difficulty.present
+          ? data.difficulty.value
+          : this.difficulty,
+      lastReviewedAt: data.lastReviewedAt.present
+          ? data.lastReviewedAt.value
+          : this.lastReviewedAt,
+      lastLogId: data.lastLogId.present ? data.lastLogId.value : this.lastLogId,
+      scheduler: data.scheduler.present ? data.scheduler.value : this.scheduler,
+      noteCreatedAt: data.noteCreatedAt.present
+          ? data.noteCreatedAt.value
+          : this.noteCreatedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('SrsCardCacheRow(')
+          ..write('id: $id, ')
+          ..write('profileUid: $profileUid, ')
+          ..write('noteId: $noteId, ')
+          ..write('templateId: $templateId, ')
+          ..write('clozeOrd: $clozeOrd, ')
+          ..write('deckId: $deckId, ')
+          ..write('suspended: $suspended, ')
+          ..write('buriedUntilDay: $buriedUntilDay, ')
+          ..write('flag: $flag, ')
+          ..write('hidden: $hidden, ')
+          ..write('queue: $queue, ')
+          ..write('dueDay: $dueDay, ')
+          ..write('dueAt: $dueAt, ')
+          ..write('scheduledDays: $scheduledDays, ')
+          ..write('reps: $reps, ')
+          ..write('lapses: $lapses, ')
+          ..write('stability: $stability, ')
+          ..write('difficulty: $difficulty, ')
+          ..write('lastReviewedAt: $lastReviewedAt, ')
+          ..write('lastLogId: $lastLogId, ')
+          ..write('scheduler: $scheduler, ')
+          ..write('noteCreatedAt: $noteCreatedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hashAll([
+    id,
+    profileUid,
+    noteId,
+    templateId,
+    clozeOrd,
+    deckId,
+    suspended,
+    buriedUntilDay,
+    flag,
+    hidden,
+    queue,
+    dueDay,
+    dueAt,
+    scheduledDays,
+    reps,
+    lapses,
+    stability,
+    difficulty,
+    lastReviewedAt,
+    lastLogId,
+    scheduler,
+    noteCreatedAt,
+  ]);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is SrsCardCacheRow &&
+          other.id == this.id &&
+          other.profileUid == this.profileUid &&
+          other.noteId == this.noteId &&
+          other.templateId == this.templateId &&
+          other.clozeOrd == this.clozeOrd &&
+          other.deckId == this.deckId &&
+          other.suspended == this.suspended &&
+          other.buriedUntilDay == this.buriedUntilDay &&
+          other.flag == this.flag &&
+          other.hidden == this.hidden &&
+          other.queue == this.queue &&
+          other.dueDay == this.dueDay &&
+          other.dueAt == this.dueAt &&
+          other.scheduledDays == this.scheduledDays &&
+          other.reps == this.reps &&
+          other.lapses == this.lapses &&
+          other.stability == this.stability &&
+          other.difficulty == this.difficulty &&
+          other.lastReviewedAt == this.lastReviewedAt &&
+          other.lastLogId == this.lastLogId &&
+          other.scheduler == this.scheduler &&
+          other.noteCreatedAt == this.noteCreatedAt);
+}
+
+class SrsCardsCacheCompanion extends UpdateCompanion<SrsCardCacheRow> {
+  final Value<String> id;
+  final Value<String> profileUid;
+  final Value<String> noteId;
+  final Value<String> templateId;
+  final Value<int> clozeOrd;
+  final Value<String> deckId;
+  final Value<bool> suspended;
+  final Value<int?> buriedUntilDay;
+  final Value<int> flag;
+  final Value<bool> hidden;
+  final Value<String> queue;
+  final Value<int?> dueDay;
+  final Value<int?> dueAt;
+  final Value<int> scheduledDays;
+  final Value<int> reps;
+  final Value<int> lapses;
+  final Value<double?> stability;
+  final Value<double?> difficulty;
+  final Value<int?> lastReviewedAt;
+  final Value<String?> lastLogId;
+  final Value<String> scheduler;
+  final Value<int> noteCreatedAt;
+  final Value<int> rowid;
+  const SrsCardsCacheCompanion({
+    this.id = const Value.absent(),
+    this.profileUid = const Value.absent(),
+    this.noteId = const Value.absent(),
+    this.templateId = const Value.absent(),
+    this.clozeOrd = const Value.absent(),
+    this.deckId = const Value.absent(),
+    this.suspended = const Value.absent(),
+    this.buriedUntilDay = const Value.absent(),
+    this.flag = const Value.absent(),
+    this.hidden = const Value.absent(),
+    this.queue = const Value.absent(),
+    this.dueDay = const Value.absent(),
+    this.dueAt = const Value.absent(),
+    this.scheduledDays = const Value.absent(),
+    this.reps = const Value.absent(),
+    this.lapses = const Value.absent(),
+    this.stability = const Value.absent(),
+    this.difficulty = const Value.absent(),
+    this.lastReviewedAt = const Value.absent(),
+    this.lastLogId = const Value.absent(),
+    this.scheduler = const Value.absent(),
+    this.noteCreatedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  SrsCardsCacheCompanion.insert({
+    required String id,
+    required String profileUid,
+    required String noteId,
+    required String templateId,
+    this.clozeOrd = const Value.absent(),
+    required String deckId,
+    this.suspended = const Value.absent(),
+    this.buriedUntilDay = const Value.absent(),
+    this.flag = const Value.absent(),
+    this.hidden = const Value.absent(),
+    this.queue = const Value.absent(),
+    this.dueDay = const Value.absent(),
+    this.dueAt = const Value.absent(),
+    this.scheduledDays = const Value.absent(),
+    this.reps = const Value.absent(),
+    this.lapses = const Value.absent(),
+    this.stability = const Value.absent(),
+    this.difficulty = const Value.absent(),
+    this.lastReviewedAt = const Value.absent(),
+    this.lastLogId = const Value.absent(),
+    this.scheduler = const Value.absent(),
+    this.noteCreatedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  }) : id = Value(id),
+       profileUid = Value(profileUid),
+       noteId = Value(noteId),
+       templateId = Value(templateId),
+       deckId = Value(deckId);
+  static Insertable<SrsCardCacheRow> custom({
+    Expression<String>? id,
+    Expression<String>? profileUid,
+    Expression<String>? noteId,
+    Expression<String>? templateId,
+    Expression<int>? clozeOrd,
+    Expression<String>? deckId,
+    Expression<bool>? suspended,
+    Expression<int>? buriedUntilDay,
+    Expression<int>? flag,
+    Expression<bool>? hidden,
+    Expression<String>? queue,
+    Expression<int>? dueDay,
+    Expression<int>? dueAt,
+    Expression<int>? scheduledDays,
+    Expression<int>? reps,
+    Expression<int>? lapses,
+    Expression<double>? stability,
+    Expression<double>? difficulty,
+    Expression<int>? lastReviewedAt,
+    Expression<String>? lastLogId,
+    Expression<String>? scheduler,
+    Expression<int>? noteCreatedAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (profileUid != null) 'profile_uid': profileUid,
+      if (noteId != null) 'note_id': noteId,
+      if (templateId != null) 'template_id': templateId,
+      if (clozeOrd != null) 'cloze_ord': clozeOrd,
+      if (deckId != null) 'deck_id': deckId,
+      if (suspended != null) 'suspended': suspended,
+      if (buriedUntilDay != null) 'buried_until_day': buriedUntilDay,
+      if (flag != null) 'flag': flag,
+      if (hidden != null) 'hidden': hidden,
+      if (queue != null) 'queue': queue,
+      if (dueDay != null) 'due_day': dueDay,
+      if (dueAt != null) 'due_at': dueAt,
+      if (scheduledDays != null) 'scheduled_days': scheduledDays,
+      if (reps != null) 'reps': reps,
+      if (lapses != null) 'lapses': lapses,
+      if (stability != null) 'stability': stability,
+      if (difficulty != null) 'difficulty': difficulty,
+      if (lastReviewedAt != null) 'last_reviewed_at': lastReviewedAt,
+      if (lastLogId != null) 'last_log_id': lastLogId,
+      if (scheduler != null) 'scheduler': scheduler,
+      if (noteCreatedAt != null) 'note_created_at': noteCreatedAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  SrsCardsCacheCompanion copyWith({
+    Value<String>? id,
+    Value<String>? profileUid,
+    Value<String>? noteId,
+    Value<String>? templateId,
+    Value<int>? clozeOrd,
+    Value<String>? deckId,
+    Value<bool>? suspended,
+    Value<int?>? buriedUntilDay,
+    Value<int>? flag,
+    Value<bool>? hidden,
+    Value<String>? queue,
+    Value<int?>? dueDay,
+    Value<int?>? dueAt,
+    Value<int>? scheduledDays,
+    Value<int>? reps,
+    Value<int>? lapses,
+    Value<double?>? stability,
+    Value<double?>? difficulty,
+    Value<int?>? lastReviewedAt,
+    Value<String?>? lastLogId,
+    Value<String>? scheduler,
+    Value<int>? noteCreatedAt,
+    Value<int>? rowid,
+  }) {
+    return SrsCardsCacheCompanion(
+      id: id ?? this.id,
+      profileUid: profileUid ?? this.profileUid,
+      noteId: noteId ?? this.noteId,
+      templateId: templateId ?? this.templateId,
+      clozeOrd: clozeOrd ?? this.clozeOrd,
+      deckId: deckId ?? this.deckId,
+      suspended: suspended ?? this.suspended,
+      buriedUntilDay: buriedUntilDay ?? this.buriedUntilDay,
+      flag: flag ?? this.flag,
+      hidden: hidden ?? this.hidden,
+      queue: queue ?? this.queue,
+      dueDay: dueDay ?? this.dueDay,
+      dueAt: dueAt ?? this.dueAt,
+      scheduledDays: scheduledDays ?? this.scheduledDays,
+      reps: reps ?? this.reps,
+      lapses: lapses ?? this.lapses,
+      stability: stability ?? this.stability,
+      difficulty: difficulty ?? this.difficulty,
+      lastReviewedAt: lastReviewedAt ?? this.lastReviewedAt,
+      lastLogId: lastLogId ?? this.lastLogId,
+      scheduler: scheduler ?? this.scheduler,
+      noteCreatedAt: noteCreatedAt ?? this.noteCreatedAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<String>(id.value);
+    }
+    if (profileUid.present) {
+      map['profile_uid'] = Variable<String>(profileUid.value);
+    }
+    if (noteId.present) {
+      map['note_id'] = Variable<String>(noteId.value);
+    }
+    if (templateId.present) {
+      map['template_id'] = Variable<String>(templateId.value);
+    }
+    if (clozeOrd.present) {
+      map['cloze_ord'] = Variable<int>(clozeOrd.value);
+    }
+    if (deckId.present) {
+      map['deck_id'] = Variable<String>(deckId.value);
+    }
+    if (suspended.present) {
+      map['suspended'] = Variable<bool>(suspended.value);
+    }
+    if (buriedUntilDay.present) {
+      map['buried_until_day'] = Variable<int>(buriedUntilDay.value);
+    }
+    if (flag.present) {
+      map['flag'] = Variable<int>(flag.value);
+    }
+    if (hidden.present) {
+      map['hidden'] = Variable<bool>(hidden.value);
+    }
+    if (queue.present) {
+      map['queue'] = Variable<String>(queue.value);
+    }
+    if (dueDay.present) {
+      map['due_day'] = Variable<int>(dueDay.value);
+    }
+    if (dueAt.present) {
+      map['due_at'] = Variable<int>(dueAt.value);
+    }
+    if (scheduledDays.present) {
+      map['scheduled_days'] = Variable<int>(scheduledDays.value);
+    }
+    if (reps.present) {
+      map['reps'] = Variable<int>(reps.value);
+    }
+    if (lapses.present) {
+      map['lapses'] = Variable<int>(lapses.value);
+    }
+    if (stability.present) {
+      map['stability'] = Variable<double>(stability.value);
+    }
+    if (difficulty.present) {
+      map['difficulty'] = Variable<double>(difficulty.value);
+    }
+    if (lastReviewedAt.present) {
+      map['last_reviewed_at'] = Variable<int>(lastReviewedAt.value);
+    }
+    if (lastLogId.present) {
+      map['last_log_id'] = Variable<String>(lastLogId.value);
+    }
+    if (scheduler.present) {
+      map['scheduler'] = Variable<String>(scheduler.value);
+    }
+    if (noteCreatedAt.present) {
+      map['note_created_at'] = Variable<int>(noteCreatedAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('SrsCardsCacheCompanion(')
+          ..write('id: $id, ')
+          ..write('profileUid: $profileUid, ')
+          ..write('noteId: $noteId, ')
+          ..write('templateId: $templateId, ')
+          ..write('clozeOrd: $clozeOrd, ')
+          ..write('deckId: $deckId, ')
+          ..write('suspended: $suspended, ')
+          ..write('buriedUntilDay: $buriedUntilDay, ')
+          ..write('flag: $flag, ')
+          ..write('hidden: $hidden, ')
+          ..write('queue: $queue, ')
+          ..write('dueDay: $dueDay, ')
+          ..write('dueAt: $dueAt, ')
+          ..write('scheduledDays: $scheduledDays, ')
+          ..write('reps: $reps, ')
+          ..write('lapses: $lapses, ')
+          ..write('stability: $stability, ')
+          ..write('difficulty: $difficulty, ')
+          ..write('lastReviewedAt: $lastReviewedAt, ')
+          ..write('lastLogId: $lastLogId, ')
+          ..write('scheduler: $scheduler, ')
+          ..write('noteCreatedAt: $noteCreatedAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$FushiDatabase extends GeneratedDatabase {
   _$FushiDatabase(QueryExecutor e) : super(e);
   $FushiDatabaseManager get managers => $FushiDatabaseManager(this);
@@ -52528,6 +60519,8 @@ abstract class _$FushiDatabase extends GeneratedDatabase {
   late final $BookTagMembershipTombstonesTable bookTagMembershipTombstones =
       $BookTagMembershipTombstonesTable(this);
   late final $BookCustomCssTable bookCustomCss = $BookCustomCssTable(this);
+  late final $MangaReaderOverridesTable mangaReaderOverrides =
+      $MangaReaderOverridesTable(this);
   late final $SyncDeletionTombstonesTable syncDeletionTombstones =
       $SyncDeletionTombstonesTable(this);
   late final $RevealedImagesTable revealedImages = $RevealedImagesTable(this);
@@ -52614,6 +60607,23 @@ abstract class _$FushiDatabase extends GeneratedDatabase {
       $UpdateFeedEntriesTable(this);
   late final $MangaDownloadJobsTable mangaDownloadJobs =
       $MangaDownloadJobsTable(this);
+  late final $AnidbFileIdentitiesTable anidbFileIdentities =
+      $AnidbFileIdentitiesTable(this);
+  late final $VideoEpisodeBindingOverridesTable videoEpisodeBindingOverrides =
+      $VideoEpisodeBindingOverridesTable(this);
+  late final $PendingMineQueueTable pendingMineQueue = $PendingMineQueueTable(
+    this,
+  );
+  late final $SrsEntitiesTable srsEntities = $SrsEntitiesTable(this);
+  late final $SrsFieldEditsTable srsFieldEdits = $SrsFieldEditsTable(this);
+  late final $SrsReviewLogsTable srsReviewLogs = $SrsReviewLogsTable(this);
+  late final $SrsUnknownEventsTable srsUnknownEvents = $SrsUnknownEventsTable(
+    this,
+  );
+  late final $SrsEventLocalTable srsEventLocal = $SrsEventLocalTable(this);
+  late final $SrsLocalStateTable srsLocalState = $SrsLocalStateTable(this);
+  late final $SrsNotesCacheTable srsNotesCache = $SrsNotesCacheTable(this);
+  late final $SrsCardsCacheTable srsCardsCache = $SrsCardsCacheTable(this);
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -52660,6 +60670,7 @@ abstract class _$FushiDatabase extends GeneratedDatabase {
     statisticsTombstones,
     bookTagMembershipTombstones,
     bookCustomCss,
+    mangaReaderOverrides,
     syncDeletionTombstones,
     revealedImages,
     activityEvents,
@@ -52705,6 +60716,17 @@ abstract class _$FushiDatabase extends GeneratedDatabase {
     videoFileSpecs,
     updateFeedEntries,
     mangaDownloadJobs,
+    anidbFileIdentities,
+    videoEpisodeBindingOverrides,
+    pendingMineQueue,
+    srsEntities,
+    srsFieldEdits,
+    srsReviewLogs,
+    srsUnknownEvents,
+    srsEventLocal,
+    srsLocalState,
+    srsNotesCache,
+    srsCardsCache,
   ];
   @override
   StreamQueryUpdateRules get streamUpdateRules => const StreamQueryUpdateRules([
@@ -52798,13 +60820,6 @@ abstract class _$FushiDatabase extends GeneratedDatabase {
         limitUpdateKind: UpdateKind.delete,
       ),
       result: [TableUpdate('galgame_sources', kind: UpdateKind.delete)],
-    ),
-    WritePropagation(
-      on: TableUpdateQuery.onTableName(
-        'galgames',
-        limitUpdateKind: UpdateKind.delete,
-      ),
-      result: [TableUpdate('galgame_sessions', kind: UpdateKind.delete)],
     ),
     WritePropagation(
       on: TableUpdateQuery.onTableName(
@@ -53174,6 +61189,15 @@ abstract class _$FushiDatabase extends GeneratedDatabase {
           'video_download_subscription_items',
           kind: UpdateKind.update,
         ),
+      ],
+    ),
+    WritePropagation(
+      on: TableUpdateQuery.onTableName(
+        'video_books',
+        limitUpdateKind: UpdateKind.delete,
+      ),
+      result: [
+        TableUpdate('video_episode_binding_overrides', kind: UpdateKind.delete),
       ],
     ),
   ]);
@@ -54599,6 +62623,7 @@ typedef $$SrtBooksTableCreateCompanionBuilder =
       required String srtPath,
       Value<String?> coverPath,
       required int importedAt,
+      Value<int?> localAddedAt,
       Value<String> bookKey,
       Value<String?> language,
     });
@@ -54613,6 +62638,7 @@ typedef $$SrtBooksTableUpdateCompanionBuilder =
       Value<String> srtPath,
       Value<String?> coverPath,
       Value<int> importedAt,
+      Value<int?> localAddedAt,
       Value<String> bookKey,
       Value<String?> language,
     });
@@ -54668,6 +62694,11 @@ class $$SrtBooksTableFilterComposer
 
   ColumnFilters<int> get importedAt => $composableBuilder(
     column: $table.importedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get localAddedAt => $composableBuilder(
+    column: $table.localAddedAt,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -54736,6 +62767,11 @@ class $$SrtBooksTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<int> get localAddedAt => $composableBuilder(
+    column: $table.localAddedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<String> get bookKey => $composableBuilder(
     column: $table.bookKey,
     builder: (column) => ColumnOrderings(column),
@@ -54787,6 +62823,11 @@ class $$SrtBooksTableAnnotationComposer
     builder: (column) => column,
   );
 
+  GeneratedColumn<int> get localAddedAt => $composableBuilder(
+    column: $table.localAddedAt,
+    builder: (column) => column,
+  );
+
   GeneratedColumn<String> get bookKey =>
       $composableBuilder(column: $table.bookKey, builder: (column) => column);
 
@@ -54834,6 +62875,7 @@ class $$SrtBooksTableTableManager
                 Value<String> srtPath = const Value.absent(),
                 Value<String?> coverPath = const Value.absent(),
                 Value<int> importedAt = const Value.absent(),
+                Value<int?> localAddedAt = const Value.absent(),
                 Value<String> bookKey = const Value.absent(),
                 Value<String?> language = const Value.absent(),
               }) => SrtBooksCompanion(
@@ -54846,6 +62888,7 @@ class $$SrtBooksTableTableManager
                 srtPath: srtPath,
                 coverPath: coverPath,
                 importedAt: importedAt,
+                localAddedAt: localAddedAt,
                 bookKey: bookKey,
                 language: language,
               ),
@@ -54860,6 +62903,7 @@ class $$SrtBooksTableTableManager
                 required String srtPath,
                 Value<String?> coverPath = const Value.absent(),
                 required int importedAt,
+                Value<int?> localAddedAt = const Value.absent(),
                 Value<String> bookKey = const Value.absent(),
                 Value<String?> language = const Value.absent(),
               }) => SrtBooksCompanion.insert(
@@ -54872,6 +62916,7 @@ class $$SrtBooksTableTableManager
                 srtPath: srtPath,
                 coverPath: coverPath,
                 importedAt: importedAt,
+                localAddedAt: localAddedAt,
                 bookKey: bookKey,
                 language: language,
               ),
@@ -57607,11 +65652,13 @@ typedef $$EpubBooksTableCreateCompanionBuilder =
       Value<String?> tocJson,
       Value<String?> sourceMetadata,
       required int importedAt,
+      Value<int?> localAddedAt,
       Value<String?> language,
       Value<String> format,
       Value<String?> mangaReadingMode,
       Value<DateTime?> completedAt,
       Value<int?> sourceId,
+      Value<String?> isbn,
       Value<int> rowid,
     });
 typedef $$EpubBooksTableUpdateCompanionBuilder =
@@ -57628,11 +65675,13 @@ typedef $$EpubBooksTableUpdateCompanionBuilder =
       Value<String?> tocJson,
       Value<String?> sourceMetadata,
       Value<int> importedAt,
+      Value<int?> localAddedAt,
       Value<String?> language,
       Value<String> format,
       Value<String?> mangaReadingMode,
       Value<DateTime?> completedAt,
       Value<int?> sourceId,
+      Value<String?> isbn,
       Value<int> rowid,
     });
 
@@ -57727,6 +65776,11 @@ class $$EpubBooksTableFilterComposer
     builder: (column) => ColumnFilters(column),
   );
 
+  ColumnFilters<int> get localAddedAt => $composableBuilder(
+    column: $table.localAddedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
   ColumnFilters<String> get language => $composableBuilder(
     column: $table.language,
     builder: (column) => ColumnFilters(column),
@@ -57744,6 +65798,11 @@ class $$EpubBooksTableFilterComposer
 
   ColumnFilters<DateTime> get completedAt => $composableBuilder(
     column: $table.completedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get isbn => $composableBuilder(
+    column: $table.isbn,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -57840,6 +65899,11 @@ class $$EpubBooksTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<int> get localAddedAt => $composableBuilder(
+    column: $table.localAddedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<String> get language => $composableBuilder(
     column: $table.language,
     builder: (column) => ColumnOrderings(column),
@@ -57857,6 +65921,11 @@ class $$EpubBooksTableOrderingComposer
 
   ColumnOrderings<DateTime> get completedAt => $composableBuilder(
     column: $table.completedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get isbn => $composableBuilder(
+    column: $table.isbn,
     builder: (column) => ColumnOrderings(column),
   );
 
@@ -57939,6 +66008,11 @@ class $$EpubBooksTableAnnotationComposer
     builder: (column) => column,
   );
 
+  GeneratedColumn<int> get localAddedAt => $composableBuilder(
+    column: $table.localAddedAt,
+    builder: (column) => column,
+  );
+
   GeneratedColumn<String> get language =>
       $composableBuilder(column: $table.language, builder: (column) => column);
 
@@ -57954,6 +66028,9 @@ class $$EpubBooksTableAnnotationComposer
     column: $table.completedAt,
     builder: (column) => column,
   );
+
+  GeneratedColumn<String> get isbn =>
+      $composableBuilder(column: $table.isbn, builder: (column) => column);
 
   $$MediaSourcesTableAnnotationComposer get sourceId {
     final $$MediaSourcesTableAnnotationComposer composer = $composerBuilder(
@@ -58019,11 +66096,13 @@ class $$EpubBooksTableTableManager
                 Value<String?> tocJson = const Value.absent(),
                 Value<String?> sourceMetadata = const Value.absent(),
                 Value<int> importedAt = const Value.absent(),
+                Value<int?> localAddedAt = const Value.absent(),
                 Value<String?> language = const Value.absent(),
                 Value<String> format = const Value.absent(),
                 Value<String?> mangaReadingMode = const Value.absent(),
                 Value<DateTime?> completedAt = const Value.absent(),
                 Value<int?> sourceId = const Value.absent(),
+                Value<String?> isbn = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => EpubBooksCompanion(
                 bookKey: bookKey,
@@ -58038,11 +66117,13 @@ class $$EpubBooksTableTableManager
                 tocJson: tocJson,
                 sourceMetadata: sourceMetadata,
                 importedAt: importedAt,
+                localAddedAt: localAddedAt,
                 language: language,
                 format: format,
                 mangaReadingMode: mangaReadingMode,
                 completedAt: completedAt,
                 sourceId: sourceId,
+                isbn: isbn,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -58059,11 +66140,13 @@ class $$EpubBooksTableTableManager
                 Value<String?> tocJson = const Value.absent(),
                 Value<String?> sourceMetadata = const Value.absent(),
                 required int importedAt,
+                Value<int?> localAddedAt = const Value.absent(),
                 Value<String?> language = const Value.absent(),
                 Value<String> format = const Value.absent(),
                 Value<String?> mangaReadingMode = const Value.absent(),
                 Value<DateTime?> completedAt = const Value.absent(),
                 Value<int?> sourceId = const Value.absent(),
+                Value<String?> isbn = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => EpubBooksCompanion.insert(
                 bookKey: bookKey,
@@ -58078,11 +66161,13 @@ class $$EpubBooksTableTableManager
                 tocJson: tocJson,
                 sourceMetadata: sourceMetadata,
                 importedAt: importedAt,
+                localAddedAt: localAddedAt,
                 language: language,
                 format: format,
                 mangaReadingMode: mangaReadingMode,
                 completedAt: completedAt,
                 sourceId: sourceId,
+                isbn: isbn,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
@@ -58764,6 +66849,7 @@ typedef $$ProfilesTableCreateCompanionBuilder =
     ProfilesCompanion Function({
       Value<int> id,
       required String name,
+      Value<String?> uid,
       required int createdAt,
       required int updatedAt,
     });
@@ -58771,6 +66857,7 @@ typedef $$ProfilesTableUpdateCompanionBuilder =
     ProfilesCompanion Function({
       Value<int> id,
       Value<String> name,
+      Value<String?> uid,
       Value<int> createdAt,
       Value<int> updatedAt,
     });
@@ -58877,6 +66964,11 @@ class $$ProfilesTableFilterComposer
 
   ColumnFilters<String> get name => $composableBuilder(
     column: $table.name,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get uid => $composableBuilder(
+    column: $table.uid,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -59010,6 +67102,11 @@ class $$ProfilesTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get uid => $composableBuilder(
+    column: $table.uid,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<int> get createdAt => $composableBuilder(
     column: $table.createdAt,
     builder: (column) => ColumnOrderings(column),
@@ -59035,6 +67132,9 @@ class $$ProfilesTableAnnotationComposer
 
   GeneratedColumn<String> get name =>
       $composableBuilder(column: $table.name, builder: (column) => column);
+
+  GeneratedColumn<String> get uid =>
+      $composableBuilder(column: $table.uid, builder: (column) => column);
 
   GeneratedColumn<int> get createdAt =>
       $composableBuilder(column: $table.createdAt, builder: (column) => column);
@@ -59179,11 +67279,13 @@ class $$ProfilesTableTableManager
               ({
                 Value<int> id = const Value.absent(),
                 Value<String> name = const Value.absent(),
+                Value<String?> uid = const Value.absent(),
                 Value<int> createdAt = const Value.absent(),
                 Value<int> updatedAt = const Value.absent(),
               }) => ProfilesCompanion(
                 id: id,
                 name: name,
+                uid: uid,
                 createdAt: createdAt,
                 updatedAt: updatedAt,
               ),
@@ -59191,11 +67293,13 @@ class $$ProfilesTableTableManager
               ({
                 Value<int> id = const Value.absent(),
                 required String name,
+                Value<String?> uid = const Value.absent(),
                 required int createdAt,
                 required int updatedAt,
               }) => ProfilesCompanion.insert(
                 id: id,
                 name: name,
+                uid: uid,
                 createdAt: createdAt,
                 updatedAt: updatedAt,
               ),
@@ -60657,6 +68761,7 @@ typedef $$VideoBooksTableCreateCompanionBuilder =
       Value<int> lastPositionMs,
       Value<int?> lastPlayedAt,
       Value<int?> importedAt,
+      Value<int?> localAddedAt,
       Value<String?> playlistJson,
       Value<int> currentEpisode,
       Value<String?> audioTrackId,
@@ -60682,6 +68787,7 @@ typedef $$VideoBooksTableUpdateCompanionBuilder =
       Value<int> lastPositionMs,
       Value<int?> lastPlayedAt,
       Value<int?> importedAt,
+      Value<int?> localAddedAt,
       Value<String?> playlistJson,
       Value<int> currentEpisode,
       Value<String?> audioTrackId,
@@ -60834,6 +68940,35 @@ final class $$VideoBooksTableReferences
       manager.$state.copyWith(prefetchedData: cache),
     );
   }
+
+  static MultiTypedResultKey<
+    $VideoEpisodeBindingOverridesTable,
+    List<VideoEpisodeBindingOverrideRow>
+  >
+  _videoEpisodeBindingOverridesRefsTable(_$FushiDatabase db) =>
+      MultiTypedResultKey.fromTable(
+        db.videoEpisodeBindingOverrides,
+        aliasName:
+            'video_books__book_uid__video_episode_binding_overrides__book_uid',
+      );
+
+  $$VideoEpisodeBindingOverridesTableProcessedTableManager
+  get videoEpisodeBindingOverridesRefs {
+    final manager =
+        $$VideoEpisodeBindingOverridesTableTableManager(
+          $_db,
+          $_db.videoEpisodeBindingOverrides,
+        ).filter(
+          (f) => f.bookUid.bookUid.sqlEquals($_itemColumn<String>('book_uid')!),
+        );
+
+    final cache = $_typedResult.readTableOrNull(
+      _videoEpisodeBindingOverridesRefsTable($_db),
+    );
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: cache),
+    );
+  }
 }
 
 class $$VideoBooksTableFilterComposer
@@ -60907,6 +69042,11 @@ class $$VideoBooksTableFilterComposer
 
   ColumnFilters<int> get importedAt => $composableBuilder(
     column: $table.importedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get localAddedAt => $composableBuilder(
+    column: $table.localAddedAt,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -61093,6 +69233,35 @@ class $$VideoBooksTableFilterComposer
     );
     return f(composer);
   }
+
+  Expression<bool> videoEpisodeBindingOverridesRefs(
+    Expression<bool> Function(
+      $$VideoEpisodeBindingOverridesTableFilterComposer f,
+    )
+    f,
+  ) {
+    final $$VideoEpisodeBindingOverridesTableFilterComposer composer =
+        $composerBuilder(
+          composer: this,
+          getCurrentColumn: (t) => t.bookUid,
+          referencedTable: $db.videoEpisodeBindingOverrides,
+          getReferencedColumn: (t) => t.bookUid,
+          builder:
+              (
+                joinBuilder, {
+                $addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer,
+              }) => $$VideoEpisodeBindingOverridesTableFilterComposer(
+                $db: $db,
+                $table: $db.videoEpisodeBindingOverrides,
+                $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+                joinBuilder: joinBuilder,
+                $removeJoinBuilderFromRootComposer:
+                    $removeJoinBuilderFromRootComposer,
+              ),
+        );
+    return f(composer);
+  }
 }
 
 class $$VideoBooksTableOrderingComposer
@@ -61166,6 +69335,11 @@ class $$VideoBooksTableOrderingComposer
 
   ColumnOrderings<int> get importedAt => $composableBuilder(
     column: $table.importedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get localAddedAt => $composableBuilder(
+    column: $table.localAddedAt,
     builder: (column) => ColumnOrderings(column),
   );
 
@@ -61289,6 +69463,11 @@ class $$VideoBooksTableAnnotationComposer
 
   GeneratedColumn<int> get importedAt => $composableBuilder(
     column: $table.importedAt,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get localAddedAt => $composableBuilder(
+    column: $table.localAddedAt,
     builder: (column) => column,
   );
 
@@ -61475,6 +69654,35 @@ class $$VideoBooksTableAnnotationComposer
         );
     return f(composer);
   }
+
+  Expression<T> videoEpisodeBindingOverridesRefs<T extends Object>(
+    Expression<T> Function(
+      $$VideoEpisodeBindingOverridesTableAnnotationComposer a,
+    )
+    f,
+  ) {
+    final $$VideoEpisodeBindingOverridesTableAnnotationComposer composer =
+        $composerBuilder(
+          composer: this,
+          getCurrentColumn: (t) => t.bookUid,
+          referencedTable: $db.videoEpisodeBindingOverrides,
+          getReferencedColumn: (t) => t.bookUid,
+          builder:
+              (
+                joinBuilder, {
+                $addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer,
+              }) => $$VideoEpisodeBindingOverridesTableAnnotationComposer(
+                $db: $db,
+                $table: $db.videoEpisodeBindingOverrides,
+                $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+                joinBuilder: joinBuilder,
+                $removeJoinBuilderFromRootComposer:
+                    $removeJoinBuilderFromRootComposer,
+              ),
+        );
+    return f(composer);
+  }
 }
 
 class $$VideoBooksTableTableManager
@@ -61497,6 +69705,7 @@ class $$VideoBooksTableTableManager
             bool videoMetadataWorksRefs,
             bool videoMetadataEpisodesRefs,
             bool videoMetadataExtrasRefs,
+            bool videoEpisodeBindingOverridesRefs,
           })
         > {
   $$VideoBooksTableTableManager(_$FushiDatabase db, $VideoBooksTable table)
@@ -61525,6 +69734,7 @@ class $$VideoBooksTableTableManager
                 Value<int> lastPositionMs = const Value.absent(),
                 Value<int?> lastPlayedAt = const Value.absent(),
                 Value<int?> importedAt = const Value.absent(),
+                Value<int?> localAddedAt = const Value.absent(),
                 Value<String?> playlistJson = const Value.absent(),
                 Value<int> currentEpisode = const Value.absent(),
                 Value<String?> audioTrackId = const Value.absent(),
@@ -61548,6 +69758,7 @@ class $$VideoBooksTableTableManager
                 lastPositionMs: lastPositionMs,
                 lastPlayedAt: lastPlayedAt,
                 importedAt: importedAt,
+                localAddedAt: localAddedAt,
                 playlistJson: playlistJson,
                 currentEpisode: currentEpisode,
                 audioTrackId: audioTrackId,
@@ -61573,6 +69784,7 @@ class $$VideoBooksTableTableManager
                 Value<int> lastPositionMs = const Value.absent(),
                 Value<int?> lastPlayedAt = const Value.absent(),
                 Value<int?> importedAt = const Value.absent(),
+                Value<int?> localAddedAt = const Value.absent(),
                 Value<String?> playlistJson = const Value.absent(),
                 Value<int> currentEpisode = const Value.absent(),
                 Value<String?> audioTrackId = const Value.absent(),
@@ -61596,6 +69808,7 @@ class $$VideoBooksTableTableManager
                 lastPositionMs: lastPositionMs,
                 lastPlayedAt: lastPlayedAt,
                 importedAt: importedAt,
+                localAddedAt: localAddedAt,
                 playlistJson: playlistJson,
                 currentEpisode: currentEpisode,
                 audioTrackId: audioTrackId,
@@ -61622,6 +69835,7 @@ class $$VideoBooksTableTableManager
                 videoMetadataWorksRefs = false,
                 videoMetadataEpisodesRefs = false,
                 videoMetadataExtrasRefs = false,
+                videoEpisodeBindingOverridesRefs = false,
               }) {
                 return PrefetchHooks(
                   db: db,
@@ -61631,6 +69845,8 @@ class $$VideoBooksTableTableManager
                     if (videoMetadataWorksRefs) db.videoMetadataWorks,
                     if (videoMetadataEpisodesRefs) db.videoMetadataEpisodes,
                     if (videoMetadataExtrasRefs) db.videoMetadataExtras,
+                    if (videoEpisodeBindingOverridesRefs)
+                      db.videoEpisodeBindingOverrides,
                   ],
                   addJoins:
                       <
@@ -61772,6 +69988,27 @@ class $$VideoBooksTableTableManager
                               ),
                           typedResults: items,
                         ),
+                      if (videoEpisodeBindingOverridesRefs)
+                        await $_getPrefetchedData<
+                          VideoBookRow,
+                          $VideoBooksTable,
+                          VideoEpisodeBindingOverrideRow
+                        >(
+                          currentTable: table,
+                          referencedTable: $$VideoBooksTableReferences
+                              ._videoEpisodeBindingOverridesRefsTable(db),
+                          managerFromTypedResult: (p0) =>
+                              $$VideoBooksTableReferences(
+                                db,
+                                table,
+                                p0,
+                              ).videoEpisodeBindingOverridesRefs,
+                          referencedItemsForCurrentItem:
+                              (item, referencedItems) => referencedItems.where(
+                                (e) => e.bookUid == item.bookUid,
+                              ),
+                          typedResults: items,
+                        ),
                     ];
                   },
                 );
@@ -61799,6 +70036,7 @@ typedef $$VideoBooksTableProcessedTableManager =
         bool videoMetadataWorksRefs,
         bool videoMetadataEpisodesRefs,
         bool videoMetadataExtrasRefs,
+        bool videoEpisodeBindingOverridesRefs,
       })
     >;
 typedef $$VideoWatchStatisticsTableCreateCompanionBuilder =
@@ -62253,6 +70491,10 @@ typedef $$FavoriteWordsTableCreateCompanionBuilder =
       Value<String> title,
       required String dateKey,
       required int createdAt,
+      Value<String> sentence,
+      Value<int?> sectionIndex,
+      Value<int?> normCharOffset,
+      Value<int?> normCharLength,
     });
 typedef $$FavoriteWordsTableUpdateCompanionBuilder =
     FavoriteWordsCompanion Function({
@@ -62265,6 +70507,10 @@ typedef $$FavoriteWordsTableUpdateCompanionBuilder =
       Value<String> title,
       Value<String> dateKey,
       Value<int> createdAt,
+      Value<String> sentence,
+      Value<int?> sectionIndex,
+      Value<int?> normCharOffset,
+      Value<int?> normCharLength,
     });
 
 class $$FavoriteWordsTableFilterComposer
@@ -62318,6 +70564,26 @@ class $$FavoriteWordsTableFilterComposer
 
   ColumnFilters<int> get createdAt => $composableBuilder(
     column: $table.createdAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get sentence => $composableBuilder(
+    column: $table.sentence,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get sectionIndex => $composableBuilder(
+    column: $table.sectionIndex,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get normCharOffset => $composableBuilder(
+    column: $table.normCharOffset,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get normCharLength => $composableBuilder(
+    column: $table.normCharLength,
     builder: (column) => ColumnFilters(column),
   );
 }
@@ -62375,6 +70641,26 @@ class $$FavoriteWordsTableOrderingComposer
     column: $table.createdAt,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<String> get sentence => $composableBuilder(
+    column: $table.sentence,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get sectionIndex => $composableBuilder(
+    column: $table.sectionIndex,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get normCharOffset => $composableBuilder(
+    column: $table.normCharOffset,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get normCharLength => $composableBuilder(
+    column: $table.normCharLength,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$FavoriteWordsTableAnnotationComposer
@@ -62416,6 +70702,24 @@ class $$FavoriteWordsTableAnnotationComposer
 
   GeneratedColumn<int> get createdAt =>
       $composableBuilder(column: $table.createdAt, builder: (column) => column);
+
+  GeneratedColumn<String> get sentence =>
+      $composableBuilder(column: $table.sentence, builder: (column) => column);
+
+  GeneratedColumn<int> get sectionIndex => $composableBuilder(
+    column: $table.sectionIndex,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get normCharOffset => $composableBuilder(
+    column: $table.normCharOffset,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get normCharLength => $composableBuilder(
+    column: $table.normCharLength,
+    builder: (column) => column,
+  );
 }
 
 class $$FavoriteWordsTableTableManager
@@ -62464,6 +70768,10 @@ class $$FavoriteWordsTableTableManager
                 Value<String> title = const Value.absent(),
                 Value<String> dateKey = const Value.absent(),
                 Value<int> createdAt = const Value.absent(),
+                Value<String> sentence = const Value.absent(),
+                Value<int?> sectionIndex = const Value.absent(),
+                Value<int?> normCharOffset = const Value.absent(),
+                Value<int?> normCharLength = const Value.absent(),
               }) => FavoriteWordsCompanion(
                 id: id,
                 expression: expression,
@@ -62474,6 +70782,10 @@ class $$FavoriteWordsTableTableManager
                 title: title,
                 dateKey: dateKey,
                 createdAt: createdAt,
+                sentence: sentence,
+                sectionIndex: sectionIndex,
+                normCharOffset: normCharOffset,
+                normCharLength: normCharLength,
               ),
           createCompanionCallback:
               ({
@@ -62486,6 +70798,10 @@ class $$FavoriteWordsTableTableManager
                 Value<String> title = const Value.absent(),
                 required String dateKey,
                 required int createdAt,
+                Value<String> sentence = const Value.absent(),
+                Value<int?> sectionIndex = const Value.absent(),
+                Value<int?> normCharOffset = const Value.absent(),
+                Value<int?> normCharLength = const Value.absent(),
               }) => FavoriteWordsCompanion.insert(
                 id: id,
                 expression: expression,
@@ -62496,6 +70812,10 @@ class $$FavoriteWordsTableTableManager
                 title: title,
                 dateKey: dateKey,
                 createdAt: createdAt,
+                sentence: sentence,
+                sectionIndex: sectionIndex,
+                normCharOffset: normCharOffset,
+                normCharLength: normCharLength,
               ),
           withReferenceMapper: (p0) => p0
               .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
@@ -66660,6 +74980,205 @@ typedef $$BookCustomCssTableProcessedTableManager =
       BookCustomCssRow,
       PrefetchHooks Function()
     >;
+typedef $$MangaReaderOverridesTableCreateCompanionBuilder =
+    MangaReaderOverridesCompanion Function({
+      required String bookUid,
+      Value<String> overridesJson,
+      required int updatedAt,
+      Value<bool> deleted,
+      Value<int> rowid,
+    });
+typedef $$MangaReaderOverridesTableUpdateCompanionBuilder =
+    MangaReaderOverridesCompanion Function({
+      Value<String> bookUid,
+      Value<String> overridesJson,
+      Value<int> updatedAt,
+      Value<bool> deleted,
+      Value<int> rowid,
+    });
+
+class $$MangaReaderOverridesTableFilterComposer
+    extends Composer<_$FushiDatabase, $MangaReaderOverridesTable> {
+  $$MangaReaderOverridesTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get bookUid => $composableBuilder(
+    column: $table.bookUid,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get overridesJson => $composableBuilder(
+    column: $table.overridesJson,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get deleted => $composableBuilder(
+    column: $table.deleted,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$MangaReaderOverridesTableOrderingComposer
+    extends Composer<_$FushiDatabase, $MangaReaderOverridesTable> {
+  $$MangaReaderOverridesTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get bookUid => $composableBuilder(
+    column: $table.bookUid,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get overridesJson => $composableBuilder(
+    column: $table.overridesJson,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<bool> get deleted => $composableBuilder(
+    column: $table.deleted,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$MangaReaderOverridesTableAnnotationComposer
+    extends Composer<_$FushiDatabase, $MangaReaderOverridesTable> {
+  $$MangaReaderOverridesTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get bookUid =>
+      $composableBuilder(column: $table.bookUid, builder: (column) => column);
+
+  GeneratedColumn<String> get overridesJson => $composableBuilder(
+    column: $table.overridesJson,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get updatedAt =>
+      $composableBuilder(column: $table.updatedAt, builder: (column) => column);
+
+  GeneratedColumn<bool> get deleted =>
+      $composableBuilder(column: $table.deleted, builder: (column) => column);
+}
+
+class $$MangaReaderOverridesTableTableManager
+    extends
+        RootTableManager<
+          _$FushiDatabase,
+          $MangaReaderOverridesTable,
+          MangaReaderOverrideRow,
+          $$MangaReaderOverridesTableFilterComposer,
+          $$MangaReaderOverridesTableOrderingComposer,
+          $$MangaReaderOverridesTableAnnotationComposer,
+          $$MangaReaderOverridesTableCreateCompanionBuilder,
+          $$MangaReaderOverridesTableUpdateCompanionBuilder,
+          (
+            MangaReaderOverrideRow,
+            BaseReferences<
+              _$FushiDatabase,
+              $MangaReaderOverridesTable,
+              MangaReaderOverrideRow
+            >,
+          ),
+          MangaReaderOverrideRow,
+          PrefetchHooks Function()
+        > {
+  $$MangaReaderOverridesTableTableManager(
+    _$FushiDatabase db,
+    $MangaReaderOverridesTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$MangaReaderOverridesTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$MangaReaderOverridesTableOrderingComposer(
+                $db: db,
+                $table: table,
+              ),
+          createComputedFieldComposer: () =>
+              $$MangaReaderOverridesTableAnnotationComposer(
+                $db: db,
+                $table: table,
+              ),
+          updateCompanionCallback:
+              ({
+                Value<String> bookUid = const Value.absent(),
+                Value<String> overridesJson = const Value.absent(),
+                Value<int> updatedAt = const Value.absent(),
+                Value<bool> deleted = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => MangaReaderOverridesCompanion(
+                bookUid: bookUid,
+                overridesJson: overridesJson,
+                updatedAt: updatedAt,
+                deleted: deleted,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String bookUid,
+                Value<String> overridesJson = const Value.absent(),
+                required int updatedAt,
+                Value<bool> deleted = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => MangaReaderOverridesCompanion.insert(
+                bookUid: bookUid,
+                overridesJson: overridesJson,
+                updatedAt: updatedAt,
+                deleted: deleted,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$MangaReaderOverridesTableProcessedTableManager =
+    ProcessedTableManager<
+      _$FushiDatabase,
+      $MangaReaderOverridesTable,
+      MangaReaderOverrideRow,
+      $$MangaReaderOverridesTableFilterComposer,
+      $$MangaReaderOverridesTableOrderingComposer,
+      $$MangaReaderOverridesTableAnnotationComposer,
+      $$MangaReaderOverridesTableCreateCompanionBuilder,
+      $$MangaReaderOverridesTableUpdateCompanionBuilder,
+      (
+        MangaReaderOverrideRow,
+        BaseReferences<
+          _$FushiDatabase,
+          $MangaReaderOverridesTable,
+          MangaReaderOverrideRow
+        >,
+      ),
+      MangaReaderOverrideRow,
+      PrefetchHooks Function()
+    >;
 typedef $$SyncDeletionTombstonesTableCreateCompanionBuilder =
     SyncDeletionTombstonesCompanion Function({
       required String mediaType,
@@ -69427,6 +77946,7 @@ typedef $$GalgamesTableCreateCompanionBuilder =
       Value<String?> releaseDate,
       Value<String?> customDataJson,
       Value<int> sortOrder,
+      Value<int?> completedAt,
       Value<int> rowid,
     });
 typedef $$GalgamesTableUpdateCompanionBuilder =
@@ -69446,6 +77966,7 @@ typedef $$GalgamesTableUpdateCompanionBuilder =
       Value<String?> releaseDate,
       Value<String?> customDataJson,
       Value<int> sortOrder,
+      Value<int?> completedAt,
       Value<int> rowid,
     });
 
@@ -69466,27 +77987,6 @@ final class $$GalgamesTableReferences
     ).filter((f) => f.gameId.id.sqlEquals($_itemColumn<String>('id')!));
 
     final cache = $_typedResult.readTableOrNull(_galgameSourcesRefsTable($_db));
-    return ProcessedTableManager(
-      manager.$state.copyWith(prefetchedData: cache),
-    );
-  }
-
-  static MultiTypedResultKey<$GalgameSessionsTable, List<GalgameSessionRow>>
-  _galgameSessionsRefsTable(_$FushiDatabase db) =>
-      MultiTypedResultKey.fromTable(
-        db.galgameSessions,
-        aliasName: 'galgames__id__galgame_sessions__game_id',
-      );
-
-  $$GalgameSessionsTableProcessedTableManager get galgameSessionsRefs {
-    final manager = $$GalgameSessionsTableTableManager(
-      $_db,
-      $_db.galgameSessions,
-    ).filter((f) => f.gameId.id.sqlEquals($_itemColumn<String>('id')!));
-
-    final cache = $_typedResult.readTableOrNull(
-      _galgameSessionsRefsTable($_db),
-    );
     return ProcessedTableManager(
       manager.$state.copyWith(prefetchedData: cache),
     );
@@ -69577,6 +78077,11 @@ class $$GalgamesTableFilterComposer
     builder: (column) => ColumnFilters(column),
   );
 
+  ColumnFilters<int> get completedAt => $composableBuilder(
+    column: $table.completedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
   Expression<bool> galgameSourcesRefs(
     Expression<bool> Function($$GalgameSourcesTableFilterComposer f) f,
   ) {
@@ -69593,31 +78098,6 @@ class $$GalgamesTableFilterComposer
           }) => $$GalgameSourcesTableFilterComposer(
             $db: $db,
             $table: $db.galgameSources,
-            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
-            joinBuilder: joinBuilder,
-            $removeJoinBuilderFromRootComposer:
-                $removeJoinBuilderFromRootComposer,
-          ),
-    );
-    return f(composer);
-  }
-
-  Expression<bool> galgameSessionsRefs(
-    Expression<bool> Function($$GalgameSessionsTableFilterComposer f) f,
-  ) {
-    final $$GalgameSessionsTableFilterComposer composer = $composerBuilder(
-      composer: this,
-      getCurrentColumn: (t) => t.id,
-      referencedTable: $db.galgameSessions,
-      getReferencedColumn: (t) => t.gameId,
-      builder:
-          (
-            joinBuilder, {
-            $addJoinBuilderToRootComposer,
-            $removeJoinBuilderFromRootComposer,
-          }) => $$GalgameSessionsTableFilterComposer(
-            $db: $db,
-            $table: $db.galgameSessions,
             $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
             joinBuilder: joinBuilder,
             $removeJoinBuilderFromRootComposer:
@@ -69711,6 +78191,11 @@ class $$GalgamesTableOrderingComposer
     column: $table.sortOrder,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<int> get completedAt => $composableBuilder(
+    column: $table.completedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$GalgamesTableAnnotationComposer
@@ -69781,6 +78266,11 @@ class $$GalgamesTableAnnotationComposer
   GeneratedColumn<int> get sortOrder =>
       $composableBuilder(column: $table.sortOrder, builder: (column) => column);
 
+  GeneratedColumn<int> get completedAt => $composableBuilder(
+    column: $table.completedAt,
+    builder: (column) => column,
+  );
+
   Expression<T> galgameSourcesRefs<T extends Object>(
     Expression<T> Function($$GalgameSourcesTableAnnotationComposer a) f,
   ) {
@@ -69805,31 +78295,6 @@ class $$GalgamesTableAnnotationComposer
     );
     return f(composer);
   }
-
-  Expression<T> galgameSessionsRefs<T extends Object>(
-    Expression<T> Function($$GalgameSessionsTableAnnotationComposer a) f,
-  ) {
-    final $$GalgameSessionsTableAnnotationComposer composer = $composerBuilder(
-      composer: this,
-      getCurrentColumn: (t) => t.id,
-      referencedTable: $db.galgameSessions,
-      getReferencedColumn: (t) => t.gameId,
-      builder:
-          (
-            joinBuilder, {
-            $addJoinBuilderToRootComposer,
-            $removeJoinBuilderFromRootComposer,
-          }) => $$GalgameSessionsTableAnnotationComposer(
-            $db: $db,
-            $table: $db.galgameSessions,
-            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
-            joinBuilder: joinBuilder,
-            $removeJoinBuilderFromRootComposer:
-                $removeJoinBuilderFromRootComposer,
-          ),
-    );
-    return f(composer);
-  }
 }
 
 class $$GalgamesTableTableManager
@@ -69845,10 +78310,7 @@ class $$GalgamesTableTableManager
           $$GalgamesTableUpdateCompanionBuilder,
           (GalgameRow, $$GalgamesTableReferences),
           GalgameRow,
-          PrefetchHooks Function({
-            bool galgameSourcesRefs,
-            bool galgameSessionsRefs,
-          })
+          PrefetchHooks Function({bool galgameSourcesRefs})
         > {
   $$GalgamesTableTableManager(_$FushiDatabase db, $GalgamesTable table)
     : super(
@@ -69878,6 +78340,7 @@ class $$GalgamesTableTableManager
                 Value<String?> releaseDate = const Value.absent(),
                 Value<String?> customDataJson = const Value.absent(),
                 Value<int> sortOrder = const Value.absent(),
+                Value<int?> completedAt = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => GalgamesCompanion(
                 id: id,
@@ -69895,6 +78358,7 @@ class $$GalgamesTableTableManager
                 releaseDate: releaseDate,
                 customDataJson: customDataJson,
                 sortOrder: sortOrder,
+                completedAt: completedAt,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -69914,6 +78378,7 @@ class $$GalgamesTableTableManager
                 Value<String?> releaseDate = const Value.absent(),
                 Value<String?> customDataJson = const Value.absent(),
                 Value<int> sortOrder = const Value.absent(),
+                Value<int?> completedAt = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => GalgamesCompanion.insert(
                 id: id,
@@ -69931,6 +78396,7 @@ class $$GalgamesTableTableManager
                 releaseDate: releaseDate,
                 customDataJson: customDataJson,
                 sortOrder: sortOrder,
+                completedAt: completedAt,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
@@ -69941,63 +78407,37 @@ class $$GalgamesTableTableManager
                 ),
               )
               .toList(),
-          prefetchHooksCallback:
-              ({galgameSourcesRefs = false, galgameSessionsRefs = false}) {
-                return PrefetchHooks(
-                  db: db,
-                  explicitlyWatchedTables: [
-                    if (galgameSourcesRefs) db.galgameSources,
-                    if (galgameSessionsRefs) db.galgameSessions,
-                  ],
-                  addJoins: null,
-                  getPrefetchedDataCallback: (items) async {
-                    return [
-                      if (galgameSourcesRefs)
-                        await $_getPrefetchedData<
-                          GalgameRow,
-                          $GalgamesTable,
-                          GalgameSourceRow
-                        >(
-                          currentTable: table,
-                          referencedTable: $$GalgamesTableReferences
-                              ._galgameSourcesRefsTable(db),
-                          managerFromTypedResult: (p0) =>
-                              $$GalgamesTableReferences(
-                                db,
-                                table,
-                                p0,
-                              ).galgameSourcesRefs,
-                          referencedItemsForCurrentItem:
-                              (item, referencedItems) => referencedItems.where(
-                                (e) => e.gameId == item.id,
-                              ),
-                          typedResults: items,
-                        ),
-                      if (galgameSessionsRefs)
-                        await $_getPrefetchedData<
-                          GalgameRow,
-                          $GalgamesTable,
-                          GalgameSessionRow
-                        >(
-                          currentTable: table,
-                          referencedTable: $$GalgamesTableReferences
-                              ._galgameSessionsRefsTable(db),
-                          managerFromTypedResult: (p0) =>
-                              $$GalgamesTableReferences(
-                                db,
-                                table,
-                                p0,
-                              ).galgameSessionsRefs,
-                          referencedItemsForCurrentItem:
-                              (item, referencedItems) => referencedItems.where(
-                                (e) => e.gameId == item.id,
-                              ),
-                          typedResults: items,
-                        ),
-                    ];
-                  },
-                );
+          prefetchHooksCallback: ({galgameSourcesRefs = false}) {
+            return PrefetchHooks(
+              db: db,
+              explicitlyWatchedTables: [
+                if (galgameSourcesRefs) db.galgameSources,
+              ],
+              addJoins: null,
+              getPrefetchedDataCallback: (items) async {
+                return [
+                  if (galgameSourcesRefs)
+                    await $_getPrefetchedData<
+                      GalgameRow,
+                      $GalgamesTable,
+                      GalgameSourceRow
+                    >(
+                      currentTable: table,
+                      referencedTable: $$GalgamesTableReferences
+                          ._galgameSourcesRefsTable(db),
+                      managerFromTypedResult: (p0) => $$GalgamesTableReferences(
+                        db,
+                        table,
+                        p0,
+                      ).galgameSourcesRefs,
+                      referencedItemsForCurrentItem: (item, referencedItems) =>
+                          referencedItems.where((e) => e.gameId == item.id),
+                      typedResults: items,
+                    ),
+                ];
               },
+            );
+          },
         ),
       );
 }
@@ -70014,10 +78454,7 @@ typedef $$GalgamesTableProcessedTableManager =
       $$GalgamesTableUpdateCompanionBuilder,
       (GalgameRow, $$GalgamesTableReferences),
       GalgameRow,
-      PrefetchHooks Function({
-        bool galgameSourcesRefs,
-        bool galgameSessionsRefs,
-      })
+      PrefetchHooks Function({bool galgameSourcesRefs})
     >;
 typedef $$GalgameSourcesTableCreateCompanionBuilder =
     GalgameSourcesCompanion Function({
@@ -70396,6 +78833,8 @@ typedef $$GalgameSessionsTableCreateCompanionBuilder =
       required int endMs,
       required int durationSeconds,
       required String dateKey,
+      Value<int> profileId,
+      Value<String> gameTitle,
     });
 typedef $$GalgameSessionsTableUpdateCompanionBuilder =
     GalgameSessionsCompanion Function({
@@ -70405,38 +78844,9 @@ typedef $$GalgameSessionsTableUpdateCompanionBuilder =
       Value<int> endMs,
       Value<int> durationSeconds,
       Value<String> dateKey,
+      Value<int> profileId,
+      Value<String> gameTitle,
     });
-
-final class $$GalgameSessionsTableReferences
-    extends
-        BaseReferences<
-          _$FushiDatabase,
-          $GalgameSessionsTable,
-          GalgameSessionRow
-        > {
-  $$GalgameSessionsTableReferences(
-    super.$_db,
-    super.$_table,
-    super.$_typedResult,
-  );
-
-  static $GalgamesTable _gameIdTable(_$FushiDatabase db) =>
-      db.galgames.createAlias('galgame_sessions__game_id__galgames__id');
-
-  $$GalgamesTableProcessedTableManager get gameId {
-    final $_column = $_itemColumn<String>('game_id')!;
-
-    final manager = $$GalgamesTableTableManager(
-      $_db,
-      $_db.galgames,
-    ).filter((f) => f.id.sqlEquals($_column));
-    final item = $_typedResult.readTableOrNull(_gameIdTable($_db));
-    if (item == null) return manager;
-    return ProcessedTableManager(
-      manager.$state.copyWith(prefetchedData: [item]),
-    );
-  }
-}
 
 class $$GalgameSessionsTableFilterComposer
     extends Composer<_$FushiDatabase, $GalgameSessionsTable> {
@@ -70449,6 +78859,11 @@ class $$GalgameSessionsTableFilterComposer
   });
   ColumnFilters<int> get id => $composableBuilder(
     column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get gameId => $composableBuilder(
+    column: $table.gameId,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -70472,28 +78887,15 @@ class $$GalgameSessionsTableFilterComposer
     builder: (column) => ColumnFilters(column),
   );
 
-  $$GalgamesTableFilterComposer get gameId {
-    final $$GalgamesTableFilterComposer composer = $composerBuilder(
-      composer: this,
-      getCurrentColumn: (t) => t.gameId,
-      referencedTable: $db.galgames,
-      getReferencedColumn: (t) => t.id,
-      builder:
-          (
-            joinBuilder, {
-            $addJoinBuilderToRootComposer,
-            $removeJoinBuilderFromRootComposer,
-          }) => $$GalgamesTableFilterComposer(
-            $db: $db,
-            $table: $db.galgames,
-            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
-            joinBuilder: joinBuilder,
-            $removeJoinBuilderFromRootComposer:
-                $removeJoinBuilderFromRootComposer,
-          ),
-    );
-    return composer;
-  }
+  ColumnFilters<int> get profileId => $composableBuilder(
+    column: $table.profileId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get gameTitle => $composableBuilder(
+    column: $table.gameTitle,
+    builder: (column) => ColumnFilters(column),
+  );
 }
 
 class $$GalgameSessionsTableOrderingComposer
@@ -70507,6 +78909,11 @@ class $$GalgameSessionsTableOrderingComposer
   });
   ColumnOrderings<int> get id => $composableBuilder(
     column: $table.id,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get gameId => $composableBuilder(
+    column: $table.gameId,
     builder: (column) => ColumnOrderings(column),
   );
 
@@ -70530,28 +78937,15 @@ class $$GalgameSessionsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
-  $$GalgamesTableOrderingComposer get gameId {
-    final $$GalgamesTableOrderingComposer composer = $composerBuilder(
-      composer: this,
-      getCurrentColumn: (t) => t.gameId,
-      referencedTable: $db.galgames,
-      getReferencedColumn: (t) => t.id,
-      builder:
-          (
-            joinBuilder, {
-            $addJoinBuilderToRootComposer,
-            $removeJoinBuilderFromRootComposer,
-          }) => $$GalgamesTableOrderingComposer(
-            $db: $db,
-            $table: $db.galgames,
-            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
-            joinBuilder: joinBuilder,
-            $removeJoinBuilderFromRootComposer:
-                $removeJoinBuilderFromRootComposer,
-          ),
-    );
-    return composer;
-  }
+  ColumnOrderings<int> get profileId => $composableBuilder(
+    column: $table.profileId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get gameTitle => $composableBuilder(
+    column: $table.gameTitle,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$GalgameSessionsTableAnnotationComposer
@@ -70565,6 +78959,9 @@ class $$GalgameSessionsTableAnnotationComposer
   });
   GeneratedColumn<int> get id =>
       $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get gameId =>
+      $composableBuilder(column: $table.gameId, builder: (column) => column);
 
   GeneratedColumn<int> get startMs =>
       $composableBuilder(column: $table.startMs, builder: (column) => column);
@@ -70580,28 +78977,11 @@ class $$GalgameSessionsTableAnnotationComposer
   GeneratedColumn<String> get dateKey =>
       $composableBuilder(column: $table.dateKey, builder: (column) => column);
 
-  $$GalgamesTableAnnotationComposer get gameId {
-    final $$GalgamesTableAnnotationComposer composer = $composerBuilder(
-      composer: this,
-      getCurrentColumn: (t) => t.gameId,
-      referencedTable: $db.galgames,
-      getReferencedColumn: (t) => t.id,
-      builder:
-          (
-            joinBuilder, {
-            $addJoinBuilderToRootComposer,
-            $removeJoinBuilderFromRootComposer,
-          }) => $$GalgamesTableAnnotationComposer(
-            $db: $db,
-            $table: $db.galgames,
-            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
-            joinBuilder: joinBuilder,
-            $removeJoinBuilderFromRootComposer:
-                $removeJoinBuilderFromRootComposer,
-          ),
-    );
-    return composer;
-  }
+  GeneratedColumn<int> get profileId =>
+      $composableBuilder(column: $table.profileId, builder: (column) => column);
+
+  GeneratedColumn<String> get gameTitle =>
+      $composableBuilder(column: $table.gameTitle, builder: (column) => column);
 }
 
 class $$GalgameSessionsTableTableManager
@@ -70615,9 +78995,16 @@ class $$GalgameSessionsTableTableManager
           $$GalgameSessionsTableAnnotationComposer,
           $$GalgameSessionsTableCreateCompanionBuilder,
           $$GalgameSessionsTableUpdateCompanionBuilder,
-          (GalgameSessionRow, $$GalgameSessionsTableReferences),
+          (
+            GalgameSessionRow,
+            BaseReferences<
+              _$FushiDatabase,
+              $GalgameSessionsTable,
+              GalgameSessionRow
+            >,
+          ),
           GalgameSessionRow,
-          PrefetchHooks Function({bool gameId})
+          PrefetchHooks Function()
         > {
   $$GalgameSessionsTableTableManager(
     _$FushiDatabase db,
@@ -70640,6 +79027,8 @@ class $$GalgameSessionsTableTableManager
                 Value<int> endMs = const Value.absent(),
                 Value<int> durationSeconds = const Value.absent(),
                 Value<String> dateKey = const Value.absent(),
+                Value<int> profileId = const Value.absent(),
+                Value<String> gameTitle = const Value.absent(),
               }) => GalgameSessionsCompanion(
                 id: id,
                 gameId: gameId,
@@ -70647,6 +79036,8 @@ class $$GalgameSessionsTableTableManager
                 endMs: endMs,
                 durationSeconds: durationSeconds,
                 dateKey: dateKey,
+                profileId: profileId,
+                gameTitle: gameTitle,
               ),
           createCompanionCallback:
               ({
@@ -70656,6 +79047,8 @@ class $$GalgameSessionsTableTableManager
                 required int endMs,
                 required int durationSeconds,
                 required String dateKey,
+                Value<int> profileId = const Value.absent(),
+                Value<String> gameTitle = const Value.absent(),
               }) => GalgameSessionsCompanion.insert(
                 id: id,
                 gameId: gameId,
@@ -70663,58 +79056,13 @@ class $$GalgameSessionsTableTableManager
                 endMs: endMs,
                 durationSeconds: durationSeconds,
                 dateKey: dateKey,
+                profileId: profileId,
+                gameTitle: gameTitle,
               ),
           withReferenceMapper: (p0) => p0
-              .map(
-                (e) => (
-                  e.readTable(table),
-                  $$GalgameSessionsTableReferences(db, table, e),
-                ),
-              )
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
               .toList(),
-          prefetchHooksCallback: ({gameId = false}) {
-            return PrefetchHooks(
-              db: db,
-              explicitlyWatchedTables: [],
-              addJoins:
-                  <
-                    T extends TableManagerState<
-                      dynamic,
-                      dynamic,
-                      dynamic,
-                      dynamic,
-                      dynamic,
-                      dynamic,
-                      dynamic,
-                      dynamic,
-                      dynamic,
-                      dynamic,
-                      dynamic
-                    >
-                  >(state) {
-                    if (gameId) {
-                      state =
-                          state.withJoin(
-                                currentTable: table,
-                                currentColumn: table.gameId,
-                                referencedTable:
-                                    $$GalgameSessionsTableReferences
-                                        ._gameIdTable(db),
-                                referencedColumn:
-                                    $$GalgameSessionsTableReferences
-                                        ._gameIdTable(db)
-                                        .id,
-                              )
-                              as T;
-                    }
-
-                    return state;
-                  },
-              getPrefetchedDataCallback: (items) async {
-                return [];
-              },
-            );
-          },
+          prefetchHooksCallback: null,
         ),
       );
 }
@@ -70729,9 +79077,16 @@ typedef $$GalgameSessionsTableProcessedTableManager =
       $$GalgameSessionsTableAnnotationComposer,
       $$GalgameSessionsTableCreateCompanionBuilder,
       $$GalgameSessionsTableUpdateCompanionBuilder,
-      (GalgameSessionRow, $$GalgameSessionsTableReferences),
+      (
+        GalgameSessionRow,
+        BaseReferences<
+          _$FushiDatabase,
+          $GalgameSessionsTable,
+          GalgameSessionRow
+        >,
+      ),
       GalgameSessionRow,
-      PrefetchHooks Function({bool gameId})
+      PrefetchHooks Function()
     >;
 typedef $$MangaExtensionStoresTableCreateCompanionBuilder =
     MangaExtensionStoresCompanion Function({
@@ -70748,6 +79103,7 @@ typedef $$MangaExtensionStoresTableCreateCompanionBuilder =
       Value<String?> lastModified,
       Value<int?> lastSyncAt,
       Value<String?> lastError,
+      Value<String> mediaKind,
       Value<int> rowid,
     });
 typedef $$MangaExtensionStoresTableUpdateCompanionBuilder =
@@ -70765,6 +79121,7 @@ typedef $$MangaExtensionStoresTableUpdateCompanionBuilder =
       Value<String?> lastModified,
       Value<int?> lastSyncAt,
       Value<String?> lastError,
+      Value<String> mediaKind,
       Value<int> rowid,
     });
 
@@ -70839,6 +79196,11 @@ class $$MangaExtensionStoresTableFilterComposer
 
   ColumnFilters<String> get lastError => $composableBuilder(
     column: $table.lastError,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get mediaKind => $composableBuilder(
+    column: $table.mediaKind,
     builder: (column) => ColumnFilters(column),
   );
 }
@@ -70916,6 +79278,11 @@ class $$MangaExtensionStoresTableOrderingComposer
     column: $table.lastError,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<String> get mediaKind => $composableBuilder(
+    column: $table.mediaKind,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$MangaExtensionStoresTableAnnotationComposer
@@ -70977,6 +79344,9 @@ class $$MangaExtensionStoresTableAnnotationComposer
 
   GeneratedColumn<String> get lastError =>
       $composableBuilder(column: $table.lastError, builder: (column) => column);
+
+  GeneratedColumn<String> get mediaKind =>
+      $composableBuilder(column: $table.mediaKind, builder: (column) => column);
 }
 
 class $$MangaExtensionStoresTableTableManager
@@ -71035,6 +79405,7 @@ class $$MangaExtensionStoresTableTableManager
                 Value<String?> lastModified = const Value.absent(),
                 Value<int?> lastSyncAt = const Value.absent(),
                 Value<String?> lastError = const Value.absent(),
+                Value<String> mediaKind = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => MangaExtensionStoresCompanion(
                 indexUrl: indexUrl,
@@ -71050,6 +79421,7 @@ class $$MangaExtensionStoresTableTableManager
                 lastModified: lastModified,
                 lastSyncAt: lastSyncAt,
                 lastError: lastError,
+                mediaKind: mediaKind,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -71067,6 +79439,7 @@ class $$MangaExtensionStoresTableTableManager
                 Value<String?> lastModified = const Value.absent(),
                 Value<int?> lastSyncAt = const Value.absent(),
                 Value<String?> lastError = const Value.absent(),
+                Value<String> mediaKind = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => MangaExtensionStoresCompanion.insert(
                 indexUrl: indexUrl,
@@ -71082,6 +79455,7 @@ class $$MangaExtensionStoresTableTableManager
                 lastModified: lastModified,
                 lastSyncAt: lastSyncAt,
                 lastError: lastError,
+                mediaKind: mediaKind,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
@@ -71128,6 +79502,7 @@ typedef $$MangaExtensionsTableCreateCompanionBuilder =
       required String signerSha256,
       Value<bool> enabled,
       required int installedAt,
+      Value<String> mediaKind,
       Value<int> rowid,
     });
 typedef $$MangaExtensionsTableUpdateCompanionBuilder =
@@ -71145,6 +79520,7 @@ typedef $$MangaExtensionsTableUpdateCompanionBuilder =
       Value<String> signerSha256,
       Value<bool> enabled,
       Value<int> installedAt,
+      Value<String> mediaKind,
       Value<int> rowid,
     });
 
@@ -71219,6 +79595,11 @@ class $$MangaExtensionsTableFilterComposer
 
   ColumnFilters<int> get installedAt => $composableBuilder(
     column: $table.installedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get mediaKind => $composableBuilder(
+    column: $table.mediaKind,
     builder: (column) => ColumnFilters(column),
   );
 }
@@ -71296,6 +79677,11 @@ class $$MangaExtensionsTableOrderingComposer
     column: $table.installedAt,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<String> get mediaKind => $composableBuilder(
+    column: $table.mediaKind,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$MangaExtensionsTableAnnotationComposer
@@ -71359,6 +79745,9 @@ class $$MangaExtensionsTableAnnotationComposer
     column: $table.installedAt,
     builder: (column) => column,
   );
+
+  GeneratedColumn<String> get mediaKind =>
+      $composableBuilder(column: $table.mediaKind, builder: (column) => column);
 }
 
 class $$MangaExtensionsTableTableManager
@@ -71411,6 +79800,7 @@ class $$MangaExtensionsTableTableManager
                 Value<String> signerSha256 = const Value.absent(),
                 Value<bool> enabled = const Value.absent(),
                 Value<int> installedAt = const Value.absent(),
+                Value<String> mediaKind = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => MangaExtensionsCompanion(
                 packageName: packageName,
@@ -71426,6 +79816,7 @@ class $$MangaExtensionsTableTableManager
                 signerSha256: signerSha256,
                 enabled: enabled,
                 installedAt: installedAt,
+                mediaKind: mediaKind,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -71443,6 +79834,7 @@ class $$MangaExtensionsTableTableManager
                 required String signerSha256,
                 Value<bool> enabled = const Value.absent(),
                 required int installedAt,
+                Value<String> mediaKind = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => MangaExtensionsCompanion.insert(
                 packageName: packageName,
@@ -71458,6 +79850,7 @@ class $$MangaExtensionsTableTableManager
                 signerSha256: signerSha256,
                 enabled: enabled,
                 installedAt: installedAt,
+                mediaKind: mediaKind,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
@@ -71499,6 +79892,7 @@ typedef $$MangaOnlineSourcesTableCreateCompanionBuilder =
       Value<bool> enabled,
       Value<bool> pinned,
       Value<int> sortOrder,
+      Value<String> mediaKind,
       Value<int> rowid,
     });
 typedef $$MangaOnlineSourcesTableUpdateCompanionBuilder =
@@ -71511,6 +79905,7 @@ typedef $$MangaOnlineSourcesTableUpdateCompanionBuilder =
       Value<bool> enabled,
       Value<bool> pinned,
       Value<int> sortOrder,
+      Value<String> mediaKind,
       Value<int> rowid,
     });
 
@@ -71560,6 +79955,11 @@ class $$MangaOnlineSourcesTableFilterComposer
 
   ColumnFilters<int> get sortOrder => $composableBuilder(
     column: $table.sortOrder,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get mediaKind => $composableBuilder(
+    column: $table.mediaKind,
     builder: (column) => ColumnFilters(column),
   );
 }
@@ -71612,6 +80012,11 @@ class $$MangaOnlineSourcesTableOrderingComposer
     column: $table.sortOrder,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<String> get mediaKind => $composableBuilder(
+    column: $table.mediaKind,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$MangaOnlineSourcesTableAnnotationComposer
@@ -71648,6 +80053,9 @@ class $$MangaOnlineSourcesTableAnnotationComposer
 
   GeneratedColumn<int> get sortOrder =>
       $composableBuilder(column: $table.sortOrder, builder: (column) => column);
+
+  GeneratedColumn<String> get mediaKind =>
+      $composableBuilder(column: $table.mediaKind, builder: (column) => column);
 }
 
 class $$MangaOnlineSourcesTableTableManager
@@ -71698,6 +80106,7 @@ class $$MangaOnlineSourcesTableTableManager
                 Value<bool> enabled = const Value.absent(),
                 Value<bool> pinned = const Value.absent(),
                 Value<int> sortOrder = const Value.absent(),
+                Value<String> mediaKind = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => MangaOnlineSourcesCompanion(
                 extensionPackage: extensionPackage,
@@ -71708,6 +80117,7 @@ class $$MangaOnlineSourcesTableTableManager
                 enabled: enabled,
                 pinned: pinned,
                 sortOrder: sortOrder,
+                mediaKind: mediaKind,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -71720,6 +80130,7 @@ class $$MangaOnlineSourcesTableTableManager
                 Value<bool> enabled = const Value.absent(),
                 Value<bool> pinned = const Value.absent(),
                 Value<int> sortOrder = const Value.absent(),
+                Value<String> mediaKind = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => MangaOnlineSourcesCompanion.insert(
                 extensionPackage: extensionPackage,
@@ -71730,6 +80141,7 @@ class $$MangaOnlineSourcesTableTableManager
                 enabled: enabled,
                 pinned: pinned,
                 sortOrder: sortOrder,
+                mediaKind: mediaKind,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
@@ -75622,6 +84034,9 @@ typedef $$VideoMetadataEpisodesTableCreateCompanionBuilder =
       Value<double?> rating,
       Value<int?> ratingCount,
       Value<int?> runtimeMinutes,
+      Value<int?> anidbEpisodeId,
+      Value<String?> anidbEpisodeNumber,
+      Value<String?> anidbMatchRating,
       required int updatedAt,
     });
 typedef $$VideoMetadataEpisodesTableUpdateCompanionBuilder =
@@ -75638,6 +84053,9 @@ typedef $$VideoMetadataEpisodesTableUpdateCompanionBuilder =
       Value<double?> rating,
       Value<int?> ratingCount,
       Value<int?> runtimeMinutes,
+      Value<int?> anidbEpisodeId,
+      Value<String?> anidbEpisodeNumber,
+      Value<String?> anidbMatchRating,
       Value<int> updatedAt,
     });
 
@@ -75851,6 +84269,21 @@ class $$VideoMetadataEpisodesTableFilterComposer
 
   ColumnFilters<int> get runtimeMinutes => $composableBuilder(
     column: $table.runtimeMinutes,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get anidbEpisodeId => $composableBuilder(
+    column: $table.anidbEpisodeId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get anidbEpisodeNumber => $composableBuilder(
+    column: $table.anidbEpisodeNumber,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get anidbMatchRating => $composableBuilder(
+    column: $table.anidbMatchRating,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -76070,6 +84503,21 @@ class $$VideoMetadataEpisodesTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<int> get anidbEpisodeId => $composableBuilder(
+    column: $table.anidbEpisodeId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get anidbEpisodeNumber => $composableBuilder(
+    column: $table.anidbEpisodeNumber,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get anidbMatchRating => $composableBuilder(
+    column: $table.anidbMatchRating,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<int> get updatedAt => $composableBuilder(
     column: $table.updatedAt,
     builder: (column) => ColumnOrderings(column),
@@ -76167,6 +84615,21 @@ class $$VideoMetadataEpisodesTableAnnotationComposer
 
   GeneratedColumn<int> get runtimeMinutes => $composableBuilder(
     column: $table.runtimeMinutes,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get anidbEpisodeId => $composableBuilder(
+    column: $table.anidbEpisodeId,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get anidbEpisodeNumber => $composableBuilder(
+    column: $table.anidbEpisodeNumber,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get anidbMatchRating => $composableBuilder(
+    column: $table.anidbMatchRating,
     builder: (column) => column,
   );
 
@@ -76386,6 +84849,9 @@ class $$VideoMetadataEpisodesTableTableManager
                 Value<double?> rating = const Value.absent(),
                 Value<int?> ratingCount = const Value.absent(),
                 Value<int?> runtimeMinutes = const Value.absent(),
+                Value<int?> anidbEpisodeId = const Value.absent(),
+                Value<String?> anidbEpisodeNumber = const Value.absent(),
+                Value<String?> anidbMatchRating = const Value.absent(),
                 Value<int> updatedAt = const Value.absent(),
               }) => VideoMetadataEpisodesCompanion(
                 id: id,
@@ -76400,6 +84866,9 @@ class $$VideoMetadataEpisodesTableTableManager
                 rating: rating,
                 ratingCount: ratingCount,
                 runtimeMinutes: runtimeMinutes,
+                anidbEpisodeId: anidbEpisodeId,
+                anidbEpisodeNumber: anidbEpisodeNumber,
+                anidbMatchRating: anidbMatchRating,
                 updatedAt: updatedAt,
               ),
           createCompanionCallback:
@@ -76416,6 +84885,9 @@ class $$VideoMetadataEpisodesTableTableManager
                 Value<double?> rating = const Value.absent(),
                 Value<int?> ratingCount = const Value.absent(),
                 Value<int?> runtimeMinutes = const Value.absent(),
+                Value<int?> anidbEpisodeId = const Value.absent(),
+                Value<String?> anidbEpisodeNumber = const Value.absent(),
+                Value<String?> anidbMatchRating = const Value.absent(),
                 required int updatedAt,
               }) => VideoMetadataEpisodesCompanion.insert(
                 id: id,
@@ -76430,6 +84902,9 @@ class $$VideoMetadataEpisodesTableTableManager
                 rating: rating,
                 ratingCount: ratingCount,
                 runtimeMinutes: runtimeMinutes,
+                anidbEpisodeId: anidbEpisodeId,
+                anidbEpisodeNumber: anidbEpisodeNumber,
+                anidbMatchRating: anidbMatchRating,
                 updatedAt: updatedAt,
               ),
           withReferenceMapper: (p0) => p0
@@ -89411,6 +97886,7 @@ typedef $$MangaChapterStatesTableProcessedTableManager =
     >;
 typedef $$StudySegmentTombstonesTableCreateCompanionBuilder =
     StudySegmentTombstonesCompanion Function({
+      Value<int> profileId,
       required String mediaKind,
       required String mediaKey,
       required int deletedAt,
@@ -89418,6 +97894,7 @@ typedef $$StudySegmentTombstonesTableCreateCompanionBuilder =
     });
 typedef $$StudySegmentTombstonesTableUpdateCompanionBuilder =
     StudySegmentTombstonesCompanion Function({
+      Value<int> profileId,
       Value<String> mediaKind,
       Value<String> mediaKey,
       Value<int> deletedAt,
@@ -89433,6 +97910,11 @@ class $$StudySegmentTombstonesTableFilterComposer
     super.$addJoinBuilderToRootComposer,
     super.$removeJoinBuilderFromRootComposer,
   });
+  ColumnFilters<int> get profileId => $composableBuilder(
+    column: $table.profileId,
+    builder: (column) => ColumnFilters(column),
+  );
+
   ColumnFilters<String> get mediaKind => $composableBuilder(
     column: $table.mediaKind,
     builder: (column) => ColumnFilters(column),
@@ -89458,6 +97940,11 @@ class $$StudySegmentTombstonesTableOrderingComposer
     super.$addJoinBuilderToRootComposer,
     super.$removeJoinBuilderFromRootComposer,
   });
+  ColumnOrderings<int> get profileId => $composableBuilder(
+    column: $table.profileId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<String> get mediaKind => $composableBuilder(
     column: $table.mediaKind,
     builder: (column) => ColumnOrderings(column),
@@ -89483,6 +97970,9 @@ class $$StudySegmentTombstonesTableAnnotationComposer
     super.$addJoinBuilderToRootComposer,
     super.$removeJoinBuilderFromRootComposer,
   });
+  GeneratedColumn<int> get profileId =>
+      $composableBuilder(column: $table.profileId, builder: (column) => column);
+
   GeneratedColumn<String> get mediaKind =>
       $composableBuilder(column: $table.mediaKind, builder: (column) => column);
 
@@ -89539,11 +98029,13 @@ class $$StudySegmentTombstonesTableTableManager
               ),
           updateCompanionCallback:
               ({
+                Value<int> profileId = const Value.absent(),
                 Value<String> mediaKind = const Value.absent(),
                 Value<String> mediaKey = const Value.absent(),
                 Value<int> deletedAt = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => StudySegmentTombstonesCompanion(
+                profileId: profileId,
                 mediaKind: mediaKind,
                 mediaKey: mediaKey,
                 deletedAt: deletedAt,
@@ -89551,11 +98043,13 @@ class $$StudySegmentTombstonesTableTableManager
               ),
           createCompanionCallback:
               ({
+                Value<int> profileId = const Value.absent(),
                 required String mediaKind,
                 required String mediaKey,
                 required int deletedAt,
                 Value<int> rowid = const Value.absent(),
               }) => StudySegmentTombstonesCompanion.insert(
+                profileId: profileId,
                 mediaKind: mediaKind,
                 mediaKey: mediaKey,
                 deletedAt: deletedAt,
@@ -89606,6 +98100,7 @@ typedef $$StudySegmentsTableCreateCompanionBuilder =
       Value<int> chars,
       Value<int> pages,
       required int updatedAt,
+      Value<int> profileId,
       Value<int> rowid,
     });
 typedef $$StudySegmentsTableUpdateCompanionBuilder =
@@ -89624,6 +98119,7 @@ typedef $$StudySegmentsTableUpdateCompanionBuilder =
       Value<int> chars,
       Value<int> pages,
       Value<int> updatedAt,
+      Value<int> profileId,
       Value<int> rowid,
     });
 
@@ -89703,6 +98199,11 @@ class $$StudySegmentsTableFilterComposer
 
   ColumnFilters<int> get updatedAt => $composableBuilder(
     column: $table.updatedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get profileId => $composableBuilder(
+    column: $table.profileId,
     builder: (column) => ColumnFilters(column),
   );
 }
@@ -89785,6 +98286,11 @@ class $$StudySegmentsTableOrderingComposer
     column: $table.updatedAt,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<int> get profileId => $composableBuilder(
+    column: $table.profileId,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$StudySegmentsTableAnnotationComposer
@@ -89839,6 +98345,9 @@ class $$StudySegmentsTableAnnotationComposer
 
   GeneratedColumn<int> get updatedAt =>
       $composableBuilder(column: $table.updatedAt, builder: (column) => column);
+
+  GeneratedColumn<int> get profileId =>
+      $composableBuilder(column: $table.profileId, builder: (column) => column);
 }
 
 class $$StudySegmentsTableTableManager
@@ -89892,6 +98401,7 @@ class $$StudySegmentsTableTableManager
                 Value<int> chars = const Value.absent(),
                 Value<int> pages = const Value.absent(),
                 Value<int> updatedAt = const Value.absent(),
+                Value<int> profileId = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => StudySegmentsCompanion(
                 uid: uid,
@@ -89908,6 +98418,7 @@ class $$StudySegmentsTableTableManager
                 chars: chars,
                 pages: pages,
                 updatedAt: updatedAt,
+                profileId: profileId,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -89926,6 +98437,7 @@ class $$StudySegmentsTableTableManager
                 Value<int> chars = const Value.absent(),
                 Value<int> pages = const Value.absent(),
                 required int updatedAt,
+                Value<int> profileId = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => StudySegmentsCompanion.insert(
                 uid: uid,
@@ -89942,6 +98454,7 @@ class $$StudySegmentsTableTableManager
                 chars: chars,
                 pages: pages,
                 updatedAt: updatedAt,
+                profileId: profileId,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
@@ -91550,6 +100063,3442 @@ typedef $$MangaDownloadJobsTableProcessedTableManager =
       MangaDownloadJobRow,
       PrefetchHooks Function()
     >;
+typedef $$AnidbFileIdentitiesTableCreateCompanionBuilder =
+    AnidbFileIdentitiesCompanion Function({
+      required String ed2k,
+      required int fileSize,
+      Value<int?> anidbFileId,
+      Value<int?> anidbAnimeId,
+      Value<int?> anidbEpisodeId,
+      Value<String> episodeNumber,
+      Value<String> romajiTitle,
+      Value<String> kanjiTitle,
+      Value<String> englishTitle,
+      Value<String> episodeTitle,
+      Value<String> episodeRomajiTitle,
+      Value<String> episodeKanjiTitle,
+      Value<String?> filePath,
+      Value<int?> fileModifiedAt,
+      Value<int> missAttempts,
+      Value<int?> episodeAiredAt,
+      Value<String> otherEpisodes,
+      Value<bool> isDeprecated,
+      Value<int> fileState,
+      Value<String> animeType,
+      required int resolvedAt,
+      required int updatedAt,
+      Value<int> rowid,
+    });
+typedef $$AnidbFileIdentitiesTableUpdateCompanionBuilder =
+    AnidbFileIdentitiesCompanion Function({
+      Value<String> ed2k,
+      Value<int> fileSize,
+      Value<int?> anidbFileId,
+      Value<int?> anidbAnimeId,
+      Value<int?> anidbEpisodeId,
+      Value<String> episodeNumber,
+      Value<String> romajiTitle,
+      Value<String> kanjiTitle,
+      Value<String> englishTitle,
+      Value<String> episodeTitle,
+      Value<String> episodeRomajiTitle,
+      Value<String> episodeKanjiTitle,
+      Value<String?> filePath,
+      Value<int?> fileModifiedAt,
+      Value<int> missAttempts,
+      Value<int?> episodeAiredAt,
+      Value<String> otherEpisodes,
+      Value<bool> isDeprecated,
+      Value<int> fileState,
+      Value<String> animeType,
+      Value<int> resolvedAt,
+      Value<int> updatedAt,
+      Value<int> rowid,
+    });
+
+class $$AnidbFileIdentitiesTableFilterComposer
+    extends Composer<_$FushiDatabase, $AnidbFileIdentitiesTable> {
+  $$AnidbFileIdentitiesTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get ed2k => $composableBuilder(
+    column: $table.ed2k,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get fileSize => $composableBuilder(
+    column: $table.fileSize,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get anidbFileId => $composableBuilder(
+    column: $table.anidbFileId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get anidbAnimeId => $composableBuilder(
+    column: $table.anidbAnimeId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get anidbEpisodeId => $composableBuilder(
+    column: $table.anidbEpisodeId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get episodeNumber => $composableBuilder(
+    column: $table.episodeNumber,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get romajiTitle => $composableBuilder(
+    column: $table.romajiTitle,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get kanjiTitle => $composableBuilder(
+    column: $table.kanjiTitle,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get englishTitle => $composableBuilder(
+    column: $table.englishTitle,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get episodeTitle => $composableBuilder(
+    column: $table.episodeTitle,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get episodeRomajiTitle => $composableBuilder(
+    column: $table.episodeRomajiTitle,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get episodeKanjiTitle => $composableBuilder(
+    column: $table.episodeKanjiTitle,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get filePath => $composableBuilder(
+    column: $table.filePath,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get fileModifiedAt => $composableBuilder(
+    column: $table.fileModifiedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get missAttempts => $composableBuilder(
+    column: $table.missAttempts,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get episodeAiredAt => $composableBuilder(
+    column: $table.episodeAiredAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get otherEpisodes => $composableBuilder(
+    column: $table.otherEpisodes,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get isDeprecated => $composableBuilder(
+    column: $table.isDeprecated,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get fileState => $composableBuilder(
+    column: $table.fileState,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get animeType => $composableBuilder(
+    column: $table.animeType,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get resolvedAt => $composableBuilder(
+    column: $table.resolvedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$AnidbFileIdentitiesTableOrderingComposer
+    extends Composer<_$FushiDatabase, $AnidbFileIdentitiesTable> {
+  $$AnidbFileIdentitiesTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get ed2k => $composableBuilder(
+    column: $table.ed2k,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get fileSize => $composableBuilder(
+    column: $table.fileSize,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get anidbFileId => $composableBuilder(
+    column: $table.anidbFileId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get anidbAnimeId => $composableBuilder(
+    column: $table.anidbAnimeId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get anidbEpisodeId => $composableBuilder(
+    column: $table.anidbEpisodeId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get episodeNumber => $composableBuilder(
+    column: $table.episodeNumber,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get romajiTitle => $composableBuilder(
+    column: $table.romajiTitle,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get kanjiTitle => $composableBuilder(
+    column: $table.kanjiTitle,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get englishTitle => $composableBuilder(
+    column: $table.englishTitle,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get episodeTitle => $composableBuilder(
+    column: $table.episodeTitle,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get episodeRomajiTitle => $composableBuilder(
+    column: $table.episodeRomajiTitle,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get episodeKanjiTitle => $composableBuilder(
+    column: $table.episodeKanjiTitle,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get filePath => $composableBuilder(
+    column: $table.filePath,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get fileModifiedAt => $composableBuilder(
+    column: $table.fileModifiedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get missAttempts => $composableBuilder(
+    column: $table.missAttempts,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get episodeAiredAt => $composableBuilder(
+    column: $table.episodeAiredAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get otherEpisodes => $composableBuilder(
+    column: $table.otherEpisodes,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<bool> get isDeprecated => $composableBuilder(
+    column: $table.isDeprecated,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get fileState => $composableBuilder(
+    column: $table.fileState,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get animeType => $composableBuilder(
+    column: $table.animeType,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get resolvedAt => $composableBuilder(
+    column: $table.resolvedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$AnidbFileIdentitiesTableAnnotationComposer
+    extends Composer<_$FushiDatabase, $AnidbFileIdentitiesTable> {
+  $$AnidbFileIdentitiesTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get ed2k =>
+      $composableBuilder(column: $table.ed2k, builder: (column) => column);
+
+  GeneratedColumn<int> get fileSize =>
+      $composableBuilder(column: $table.fileSize, builder: (column) => column);
+
+  GeneratedColumn<int> get anidbFileId => $composableBuilder(
+    column: $table.anidbFileId,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get anidbAnimeId => $composableBuilder(
+    column: $table.anidbAnimeId,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get anidbEpisodeId => $composableBuilder(
+    column: $table.anidbEpisodeId,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get episodeNumber => $composableBuilder(
+    column: $table.episodeNumber,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get romajiTitle => $composableBuilder(
+    column: $table.romajiTitle,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get kanjiTitle => $composableBuilder(
+    column: $table.kanjiTitle,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get englishTitle => $composableBuilder(
+    column: $table.englishTitle,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get episodeTitle => $composableBuilder(
+    column: $table.episodeTitle,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get episodeRomajiTitle => $composableBuilder(
+    column: $table.episodeRomajiTitle,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get episodeKanjiTitle => $composableBuilder(
+    column: $table.episodeKanjiTitle,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get filePath =>
+      $composableBuilder(column: $table.filePath, builder: (column) => column);
+
+  GeneratedColumn<int> get fileModifiedAt => $composableBuilder(
+    column: $table.fileModifiedAt,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get missAttempts => $composableBuilder(
+    column: $table.missAttempts,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get episodeAiredAt => $composableBuilder(
+    column: $table.episodeAiredAt,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get otherEpisodes => $composableBuilder(
+    column: $table.otherEpisodes,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<bool> get isDeprecated => $composableBuilder(
+    column: $table.isDeprecated,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get fileState =>
+      $composableBuilder(column: $table.fileState, builder: (column) => column);
+
+  GeneratedColumn<String> get animeType =>
+      $composableBuilder(column: $table.animeType, builder: (column) => column);
+
+  GeneratedColumn<int> get resolvedAt => $composableBuilder(
+    column: $table.resolvedAt,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get updatedAt =>
+      $composableBuilder(column: $table.updatedAt, builder: (column) => column);
+}
+
+class $$AnidbFileIdentitiesTableTableManager
+    extends
+        RootTableManager<
+          _$FushiDatabase,
+          $AnidbFileIdentitiesTable,
+          AnidbFileIdentityRow,
+          $$AnidbFileIdentitiesTableFilterComposer,
+          $$AnidbFileIdentitiesTableOrderingComposer,
+          $$AnidbFileIdentitiesTableAnnotationComposer,
+          $$AnidbFileIdentitiesTableCreateCompanionBuilder,
+          $$AnidbFileIdentitiesTableUpdateCompanionBuilder,
+          (
+            AnidbFileIdentityRow,
+            BaseReferences<
+              _$FushiDatabase,
+              $AnidbFileIdentitiesTable,
+              AnidbFileIdentityRow
+            >,
+          ),
+          AnidbFileIdentityRow,
+          PrefetchHooks Function()
+        > {
+  $$AnidbFileIdentitiesTableTableManager(
+    _$FushiDatabase db,
+    $AnidbFileIdentitiesTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$AnidbFileIdentitiesTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$AnidbFileIdentitiesTableOrderingComposer(
+                $db: db,
+                $table: table,
+              ),
+          createComputedFieldComposer: () =>
+              $$AnidbFileIdentitiesTableAnnotationComposer(
+                $db: db,
+                $table: table,
+              ),
+          updateCompanionCallback:
+              ({
+                Value<String> ed2k = const Value.absent(),
+                Value<int> fileSize = const Value.absent(),
+                Value<int?> anidbFileId = const Value.absent(),
+                Value<int?> anidbAnimeId = const Value.absent(),
+                Value<int?> anidbEpisodeId = const Value.absent(),
+                Value<String> episodeNumber = const Value.absent(),
+                Value<String> romajiTitle = const Value.absent(),
+                Value<String> kanjiTitle = const Value.absent(),
+                Value<String> englishTitle = const Value.absent(),
+                Value<String> episodeTitle = const Value.absent(),
+                Value<String> episodeRomajiTitle = const Value.absent(),
+                Value<String> episodeKanjiTitle = const Value.absent(),
+                Value<String?> filePath = const Value.absent(),
+                Value<int?> fileModifiedAt = const Value.absent(),
+                Value<int> missAttempts = const Value.absent(),
+                Value<int?> episodeAiredAt = const Value.absent(),
+                Value<String> otherEpisodes = const Value.absent(),
+                Value<bool> isDeprecated = const Value.absent(),
+                Value<int> fileState = const Value.absent(),
+                Value<String> animeType = const Value.absent(),
+                Value<int> resolvedAt = const Value.absent(),
+                Value<int> updatedAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => AnidbFileIdentitiesCompanion(
+                ed2k: ed2k,
+                fileSize: fileSize,
+                anidbFileId: anidbFileId,
+                anidbAnimeId: anidbAnimeId,
+                anidbEpisodeId: anidbEpisodeId,
+                episodeNumber: episodeNumber,
+                romajiTitle: romajiTitle,
+                kanjiTitle: kanjiTitle,
+                englishTitle: englishTitle,
+                episodeTitle: episodeTitle,
+                episodeRomajiTitle: episodeRomajiTitle,
+                episodeKanjiTitle: episodeKanjiTitle,
+                filePath: filePath,
+                fileModifiedAt: fileModifiedAt,
+                missAttempts: missAttempts,
+                episodeAiredAt: episodeAiredAt,
+                otherEpisodes: otherEpisodes,
+                isDeprecated: isDeprecated,
+                fileState: fileState,
+                animeType: animeType,
+                resolvedAt: resolvedAt,
+                updatedAt: updatedAt,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String ed2k,
+                required int fileSize,
+                Value<int?> anidbFileId = const Value.absent(),
+                Value<int?> anidbAnimeId = const Value.absent(),
+                Value<int?> anidbEpisodeId = const Value.absent(),
+                Value<String> episodeNumber = const Value.absent(),
+                Value<String> romajiTitle = const Value.absent(),
+                Value<String> kanjiTitle = const Value.absent(),
+                Value<String> englishTitle = const Value.absent(),
+                Value<String> episodeTitle = const Value.absent(),
+                Value<String> episodeRomajiTitle = const Value.absent(),
+                Value<String> episodeKanjiTitle = const Value.absent(),
+                Value<String?> filePath = const Value.absent(),
+                Value<int?> fileModifiedAt = const Value.absent(),
+                Value<int> missAttempts = const Value.absent(),
+                Value<int?> episodeAiredAt = const Value.absent(),
+                Value<String> otherEpisodes = const Value.absent(),
+                Value<bool> isDeprecated = const Value.absent(),
+                Value<int> fileState = const Value.absent(),
+                Value<String> animeType = const Value.absent(),
+                required int resolvedAt,
+                required int updatedAt,
+                Value<int> rowid = const Value.absent(),
+              }) => AnidbFileIdentitiesCompanion.insert(
+                ed2k: ed2k,
+                fileSize: fileSize,
+                anidbFileId: anidbFileId,
+                anidbAnimeId: anidbAnimeId,
+                anidbEpisodeId: anidbEpisodeId,
+                episodeNumber: episodeNumber,
+                romajiTitle: romajiTitle,
+                kanjiTitle: kanjiTitle,
+                englishTitle: englishTitle,
+                episodeTitle: episodeTitle,
+                episodeRomajiTitle: episodeRomajiTitle,
+                episodeKanjiTitle: episodeKanjiTitle,
+                filePath: filePath,
+                fileModifiedAt: fileModifiedAt,
+                missAttempts: missAttempts,
+                episodeAiredAt: episodeAiredAt,
+                otherEpisodes: otherEpisodes,
+                isDeprecated: isDeprecated,
+                fileState: fileState,
+                animeType: animeType,
+                resolvedAt: resolvedAt,
+                updatedAt: updatedAt,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$AnidbFileIdentitiesTableProcessedTableManager =
+    ProcessedTableManager<
+      _$FushiDatabase,
+      $AnidbFileIdentitiesTable,
+      AnidbFileIdentityRow,
+      $$AnidbFileIdentitiesTableFilterComposer,
+      $$AnidbFileIdentitiesTableOrderingComposer,
+      $$AnidbFileIdentitiesTableAnnotationComposer,
+      $$AnidbFileIdentitiesTableCreateCompanionBuilder,
+      $$AnidbFileIdentitiesTableUpdateCompanionBuilder,
+      (
+        AnidbFileIdentityRow,
+        BaseReferences<
+          _$FushiDatabase,
+          $AnidbFileIdentitiesTable,
+          AnidbFileIdentityRow
+        >,
+      ),
+      AnidbFileIdentityRow,
+      PrefetchHooks Function()
+    >;
+typedef $$VideoEpisodeBindingOverridesTableCreateCompanionBuilder =
+    VideoEpisodeBindingOverridesCompanion Function({
+      required String bookUid,
+      required int seasonNumber,
+      required int episodeNumber,
+      required int updatedAt,
+      Value<int> rowid,
+    });
+typedef $$VideoEpisodeBindingOverridesTableUpdateCompanionBuilder =
+    VideoEpisodeBindingOverridesCompanion Function({
+      Value<String> bookUid,
+      Value<int> seasonNumber,
+      Value<int> episodeNumber,
+      Value<int> updatedAt,
+      Value<int> rowid,
+    });
+
+final class $$VideoEpisodeBindingOverridesTableReferences
+    extends
+        BaseReferences<
+          _$FushiDatabase,
+          $VideoEpisodeBindingOverridesTable,
+          VideoEpisodeBindingOverrideRow
+        > {
+  $$VideoEpisodeBindingOverridesTableReferences(
+    super.$_db,
+    super.$_table,
+    super.$_typedResult,
+  );
+
+  static $VideoBooksTable _bookUidTable(_$FushiDatabase db) =>
+      db.videoBooks.createAlias(
+        'video_episode_binding_overrides__book_uid__video_books__book_uid',
+      );
+
+  $$VideoBooksTableProcessedTableManager get bookUid {
+    final $_column = $_itemColumn<String>('book_uid')!;
+
+    final manager = $$VideoBooksTableTableManager(
+      $_db,
+      $_db.videoBooks,
+    ).filter((f) => f.bookUid.sqlEquals($_column));
+    final item = $_typedResult.readTableOrNull(_bookUidTable($_db));
+    if (item == null) return manager;
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: [item]),
+    );
+  }
+}
+
+class $$VideoEpisodeBindingOverridesTableFilterComposer
+    extends Composer<_$FushiDatabase, $VideoEpisodeBindingOverridesTable> {
+  $$VideoEpisodeBindingOverridesTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<int> get seasonNumber => $composableBuilder(
+    column: $table.seasonNumber,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get episodeNumber => $composableBuilder(
+    column: $table.episodeNumber,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  $$VideoBooksTableFilterComposer get bookUid {
+    final $$VideoBooksTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.bookUid,
+      referencedTable: $db.videoBooks,
+      getReferencedColumn: (t) => t.bookUid,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$VideoBooksTableFilterComposer(
+            $db: $db,
+            $table: $db.videoBooks,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+}
+
+class $$VideoEpisodeBindingOverridesTableOrderingComposer
+    extends Composer<_$FushiDatabase, $VideoEpisodeBindingOverridesTable> {
+  $$VideoEpisodeBindingOverridesTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<int> get seasonNumber => $composableBuilder(
+    column: $table.seasonNumber,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get episodeNumber => $composableBuilder(
+    column: $table.episodeNumber,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  $$VideoBooksTableOrderingComposer get bookUid {
+    final $$VideoBooksTableOrderingComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.bookUid,
+      referencedTable: $db.videoBooks,
+      getReferencedColumn: (t) => t.bookUid,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$VideoBooksTableOrderingComposer(
+            $db: $db,
+            $table: $db.videoBooks,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+}
+
+class $$VideoEpisodeBindingOverridesTableAnnotationComposer
+    extends Composer<_$FushiDatabase, $VideoEpisodeBindingOverridesTable> {
+  $$VideoEpisodeBindingOverridesTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<int> get seasonNumber => $composableBuilder(
+    column: $table.seasonNumber,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get episodeNumber => $composableBuilder(
+    column: $table.episodeNumber,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get updatedAt =>
+      $composableBuilder(column: $table.updatedAt, builder: (column) => column);
+
+  $$VideoBooksTableAnnotationComposer get bookUid {
+    final $$VideoBooksTableAnnotationComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.bookUid,
+      referencedTable: $db.videoBooks,
+      getReferencedColumn: (t) => t.bookUid,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$VideoBooksTableAnnotationComposer(
+            $db: $db,
+            $table: $db.videoBooks,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+}
+
+class $$VideoEpisodeBindingOverridesTableTableManager
+    extends
+        RootTableManager<
+          _$FushiDatabase,
+          $VideoEpisodeBindingOverridesTable,
+          VideoEpisodeBindingOverrideRow,
+          $$VideoEpisodeBindingOverridesTableFilterComposer,
+          $$VideoEpisodeBindingOverridesTableOrderingComposer,
+          $$VideoEpisodeBindingOverridesTableAnnotationComposer,
+          $$VideoEpisodeBindingOverridesTableCreateCompanionBuilder,
+          $$VideoEpisodeBindingOverridesTableUpdateCompanionBuilder,
+          (
+            VideoEpisodeBindingOverrideRow,
+            $$VideoEpisodeBindingOverridesTableReferences,
+          ),
+          VideoEpisodeBindingOverrideRow,
+          PrefetchHooks Function({bool bookUid})
+        > {
+  $$VideoEpisodeBindingOverridesTableTableManager(
+    _$FushiDatabase db,
+    $VideoEpisodeBindingOverridesTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$VideoEpisodeBindingOverridesTableFilterComposer(
+                $db: db,
+                $table: table,
+              ),
+          createOrderingComposer: () =>
+              $$VideoEpisodeBindingOverridesTableOrderingComposer(
+                $db: db,
+                $table: table,
+              ),
+          createComputedFieldComposer: () =>
+              $$VideoEpisodeBindingOverridesTableAnnotationComposer(
+                $db: db,
+                $table: table,
+              ),
+          updateCompanionCallback:
+              ({
+                Value<String> bookUid = const Value.absent(),
+                Value<int> seasonNumber = const Value.absent(),
+                Value<int> episodeNumber = const Value.absent(),
+                Value<int> updatedAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => VideoEpisodeBindingOverridesCompanion(
+                bookUid: bookUid,
+                seasonNumber: seasonNumber,
+                episodeNumber: episodeNumber,
+                updatedAt: updatedAt,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String bookUid,
+                required int seasonNumber,
+                required int episodeNumber,
+                required int updatedAt,
+                Value<int> rowid = const Value.absent(),
+              }) => VideoEpisodeBindingOverridesCompanion.insert(
+                bookUid: bookUid,
+                seasonNumber: seasonNumber,
+                episodeNumber: episodeNumber,
+                updatedAt: updatedAt,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map(
+                (e) => (
+                  e.readTable(table),
+                  $$VideoEpisodeBindingOverridesTableReferences(db, table, e),
+                ),
+              )
+              .toList(),
+          prefetchHooksCallback: ({bookUid = false}) {
+            return PrefetchHooks(
+              db: db,
+              explicitlyWatchedTables: [],
+              addJoins:
+                  <
+                    T extends TableManagerState<
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic
+                    >
+                  >(state) {
+                    if (bookUid) {
+                      state =
+                          state.withJoin(
+                                currentTable: table,
+                                currentColumn: table.bookUid,
+                                referencedTable:
+                                    $$VideoEpisodeBindingOverridesTableReferences
+                                        ._bookUidTable(db),
+                                referencedColumn:
+                                    $$VideoEpisodeBindingOverridesTableReferences
+                                        ._bookUidTable(db)
+                                        .bookUid,
+                              )
+                              as T;
+                    }
+
+                    return state;
+                  },
+              getPrefetchedDataCallback: (items) async {
+                return [];
+              },
+            );
+          },
+        ),
+      );
+}
+
+typedef $$VideoEpisodeBindingOverridesTableProcessedTableManager =
+    ProcessedTableManager<
+      _$FushiDatabase,
+      $VideoEpisodeBindingOverridesTable,
+      VideoEpisodeBindingOverrideRow,
+      $$VideoEpisodeBindingOverridesTableFilterComposer,
+      $$VideoEpisodeBindingOverridesTableOrderingComposer,
+      $$VideoEpisodeBindingOverridesTableAnnotationComposer,
+      $$VideoEpisodeBindingOverridesTableCreateCompanionBuilder,
+      $$VideoEpisodeBindingOverridesTableUpdateCompanionBuilder,
+      (
+        VideoEpisodeBindingOverrideRow,
+        $$VideoEpisodeBindingOverridesTableReferences,
+      ),
+      VideoEpisodeBindingOverrideRow,
+      PrefetchHooks Function({bool bookUid})
+    >;
+typedef $$PendingMineQueueTableCreateCompanionBuilder =
+    PendingMineQueueCompanion Function({
+      required String id,
+      required int createdAt,
+      required String expression,
+      Value<String> reading,
+      Value<String> status,
+      Value<int> attempts,
+      Value<String?> lastError,
+      Value<int?> lastAttemptAt,
+      Value<String?> originDeviceId,
+      Value<bool> uploaded,
+      Value<int> rowid,
+    });
+typedef $$PendingMineQueueTableUpdateCompanionBuilder =
+    PendingMineQueueCompanion Function({
+      Value<String> id,
+      Value<int> createdAt,
+      Value<String> expression,
+      Value<String> reading,
+      Value<String> status,
+      Value<int> attempts,
+      Value<String?> lastError,
+      Value<int?> lastAttemptAt,
+      Value<String?> originDeviceId,
+      Value<bool> uploaded,
+      Value<int> rowid,
+    });
+
+class $$PendingMineQueueTableFilterComposer
+    extends Composer<_$FushiDatabase, $PendingMineQueueTable> {
+  $$PendingMineQueueTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get expression => $composableBuilder(
+    column: $table.expression,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get reading => $composableBuilder(
+    column: $table.reading,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get status => $composableBuilder(
+    column: $table.status,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get attempts => $composableBuilder(
+    column: $table.attempts,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get lastError => $composableBuilder(
+    column: $table.lastError,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get lastAttemptAt => $composableBuilder(
+    column: $table.lastAttemptAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get originDeviceId => $composableBuilder(
+    column: $table.originDeviceId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get uploaded => $composableBuilder(
+    column: $table.uploaded,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$PendingMineQueueTableOrderingComposer
+    extends Composer<_$FushiDatabase, $PendingMineQueueTable> {
+  $$PendingMineQueueTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get expression => $composableBuilder(
+    column: $table.expression,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get reading => $composableBuilder(
+    column: $table.reading,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get status => $composableBuilder(
+    column: $table.status,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get attempts => $composableBuilder(
+    column: $table.attempts,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get lastError => $composableBuilder(
+    column: $table.lastError,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get lastAttemptAt => $composableBuilder(
+    column: $table.lastAttemptAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get originDeviceId => $composableBuilder(
+    column: $table.originDeviceId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<bool> get uploaded => $composableBuilder(
+    column: $table.uploaded,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$PendingMineQueueTableAnnotationComposer
+    extends Composer<_$FushiDatabase, $PendingMineQueueTable> {
+  $$PendingMineQueueTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<int> get createdAt =>
+      $composableBuilder(column: $table.createdAt, builder: (column) => column);
+
+  GeneratedColumn<String> get expression => $composableBuilder(
+    column: $table.expression,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get reading =>
+      $composableBuilder(column: $table.reading, builder: (column) => column);
+
+  GeneratedColumn<String> get status =>
+      $composableBuilder(column: $table.status, builder: (column) => column);
+
+  GeneratedColumn<int> get attempts =>
+      $composableBuilder(column: $table.attempts, builder: (column) => column);
+
+  GeneratedColumn<String> get lastError =>
+      $composableBuilder(column: $table.lastError, builder: (column) => column);
+
+  GeneratedColumn<int> get lastAttemptAt => $composableBuilder(
+    column: $table.lastAttemptAt,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get originDeviceId => $composableBuilder(
+    column: $table.originDeviceId,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<bool> get uploaded =>
+      $composableBuilder(column: $table.uploaded, builder: (column) => column);
+}
+
+class $$PendingMineQueueTableTableManager
+    extends
+        RootTableManager<
+          _$FushiDatabase,
+          $PendingMineQueueTable,
+          PendingMineRow,
+          $$PendingMineQueueTableFilterComposer,
+          $$PendingMineQueueTableOrderingComposer,
+          $$PendingMineQueueTableAnnotationComposer,
+          $$PendingMineQueueTableCreateCompanionBuilder,
+          $$PendingMineQueueTableUpdateCompanionBuilder,
+          (
+            PendingMineRow,
+            BaseReferences<
+              _$FushiDatabase,
+              $PendingMineQueueTable,
+              PendingMineRow
+            >,
+          ),
+          PendingMineRow,
+          PrefetchHooks Function()
+        > {
+  $$PendingMineQueueTableTableManager(
+    _$FushiDatabase db,
+    $PendingMineQueueTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$PendingMineQueueTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$PendingMineQueueTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$PendingMineQueueTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<String> id = const Value.absent(),
+                Value<int> createdAt = const Value.absent(),
+                Value<String> expression = const Value.absent(),
+                Value<String> reading = const Value.absent(),
+                Value<String> status = const Value.absent(),
+                Value<int> attempts = const Value.absent(),
+                Value<String?> lastError = const Value.absent(),
+                Value<int?> lastAttemptAt = const Value.absent(),
+                Value<String?> originDeviceId = const Value.absent(),
+                Value<bool> uploaded = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => PendingMineQueueCompanion(
+                id: id,
+                createdAt: createdAt,
+                expression: expression,
+                reading: reading,
+                status: status,
+                attempts: attempts,
+                lastError: lastError,
+                lastAttemptAt: lastAttemptAt,
+                originDeviceId: originDeviceId,
+                uploaded: uploaded,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String id,
+                required int createdAt,
+                required String expression,
+                Value<String> reading = const Value.absent(),
+                Value<String> status = const Value.absent(),
+                Value<int> attempts = const Value.absent(),
+                Value<String?> lastError = const Value.absent(),
+                Value<int?> lastAttemptAt = const Value.absent(),
+                Value<String?> originDeviceId = const Value.absent(),
+                Value<bool> uploaded = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => PendingMineQueueCompanion.insert(
+                id: id,
+                createdAt: createdAt,
+                expression: expression,
+                reading: reading,
+                status: status,
+                attempts: attempts,
+                lastError: lastError,
+                lastAttemptAt: lastAttemptAt,
+                originDeviceId: originDeviceId,
+                uploaded: uploaded,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$PendingMineQueueTableProcessedTableManager =
+    ProcessedTableManager<
+      _$FushiDatabase,
+      $PendingMineQueueTable,
+      PendingMineRow,
+      $$PendingMineQueueTableFilterComposer,
+      $$PendingMineQueueTableOrderingComposer,
+      $$PendingMineQueueTableAnnotationComposer,
+      $$PendingMineQueueTableCreateCompanionBuilder,
+      $$PendingMineQueueTableUpdateCompanionBuilder,
+      (
+        PendingMineRow,
+        BaseReferences<_$FushiDatabase, $PendingMineQueueTable, PendingMineRow>,
+      ),
+      PendingMineRow,
+      PrefetchHooks Function()
+    >;
+typedef $$SrsEntitiesTableCreateCompanionBuilder =
+    SrsEntitiesCompanion Function({
+      required String id,
+      required String profileUid,
+      required String kind,
+      required String payloadJson,
+      Value<int> createdAt,
+      Value<int> rowid,
+    });
+typedef $$SrsEntitiesTableUpdateCompanionBuilder =
+    SrsEntitiesCompanion Function({
+      Value<String> id,
+      Value<String> profileUid,
+      Value<String> kind,
+      Value<String> payloadJson,
+      Value<int> createdAt,
+      Value<int> rowid,
+    });
+
+class $$SrsEntitiesTableFilterComposer
+    extends Composer<_$FushiDatabase, $SrsEntitiesTable> {
+  $$SrsEntitiesTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get profileUid => $composableBuilder(
+    column: $table.profileUid,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get kind => $composableBuilder(
+    column: $table.kind,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get payloadJson => $composableBuilder(
+    column: $table.payloadJson,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$SrsEntitiesTableOrderingComposer
+    extends Composer<_$FushiDatabase, $SrsEntitiesTable> {
+  $$SrsEntitiesTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get profileUid => $composableBuilder(
+    column: $table.profileUid,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get kind => $composableBuilder(
+    column: $table.kind,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get payloadJson => $composableBuilder(
+    column: $table.payloadJson,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$SrsEntitiesTableAnnotationComposer
+    extends Composer<_$FushiDatabase, $SrsEntitiesTable> {
+  $$SrsEntitiesTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get profileUid => $composableBuilder(
+    column: $table.profileUid,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get kind =>
+      $composableBuilder(column: $table.kind, builder: (column) => column);
+
+  GeneratedColumn<String> get payloadJson => $composableBuilder(
+    column: $table.payloadJson,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get createdAt =>
+      $composableBuilder(column: $table.createdAt, builder: (column) => column);
+}
+
+class $$SrsEntitiesTableTableManager
+    extends
+        RootTableManager<
+          _$FushiDatabase,
+          $SrsEntitiesTable,
+          SrsEntityRow,
+          $$SrsEntitiesTableFilterComposer,
+          $$SrsEntitiesTableOrderingComposer,
+          $$SrsEntitiesTableAnnotationComposer,
+          $$SrsEntitiesTableCreateCompanionBuilder,
+          $$SrsEntitiesTableUpdateCompanionBuilder,
+          (
+            SrsEntityRow,
+            BaseReferences<_$FushiDatabase, $SrsEntitiesTable, SrsEntityRow>,
+          ),
+          SrsEntityRow,
+          PrefetchHooks Function()
+        > {
+  $$SrsEntitiesTableTableManager(_$FushiDatabase db, $SrsEntitiesTable table)
+    : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$SrsEntitiesTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$SrsEntitiesTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$SrsEntitiesTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<String> id = const Value.absent(),
+                Value<String> profileUid = const Value.absent(),
+                Value<String> kind = const Value.absent(),
+                Value<String> payloadJson = const Value.absent(),
+                Value<int> createdAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => SrsEntitiesCompanion(
+                id: id,
+                profileUid: profileUid,
+                kind: kind,
+                payloadJson: payloadJson,
+                createdAt: createdAt,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String id,
+                required String profileUid,
+                required String kind,
+                required String payloadJson,
+                Value<int> createdAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => SrsEntitiesCompanion.insert(
+                id: id,
+                profileUid: profileUid,
+                kind: kind,
+                payloadJson: payloadJson,
+                createdAt: createdAt,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$SrsEntitiesTableProcessedTableManager =
+    ProcessedTableManager<
+      _$FushiDatabase,
+      $SrsEntitiesTable,
+      SrsEntityRow,
+      $$SrsEntitiesTableFilterComposer,
+      $$SrsEntitiesTableOrderingComposer,
+      $$SrsEntitiesTableAnnotationComposer,
+      $$SrsEntitiesTableCreateCompanionBuilder,
+      $$SrsEntitiesTableUpdateCompanionBuilder,
+      (
+        SrsEntityRow,
+        BaseReferences<_$FushiDatabase, $SrsEntitiesTable, SrsEntityRow>,
+      ),
+      SrsEntityRow,
+      PrefetchHooks Function()
+    >;
+typedef $$SrsFieldEditsTableCreateCompanionBuilder =
+    SrsFieldEditsCompanion Function({
+      required String id,
+      required String profileUid,
+      required String entityKind,
+      required String entityId,
+      required String fieldKey,
+      required String writerId,
+      required int seq,
+      required String json,
+      Value<int> rowid,
+    });
+typedef $$SrsFieldEditsTableUpdateCompanionBuilder =
+    SrsFieldEditsCompanion Function({
+      Value<String> id,
+      Value<String> profileUid,
+      Value<String> entityKind,
+      Value<String> entityId,
+      Value<String> fieldKey,
+      Value<String> writerId,
+      Value<int> seq,
+      Value<String> json,
+      Value<int> rowid,
+    });
+
+class $$SrsFieldEditsTableFilterComposer
+    extends Composer<_$FushiDatabase, $SrsFieldEditsTable> {
+  $$SrsFieldEditsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get profileUid => $composableBuilder(
+    column: $table.profileUid,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get entityKind => $composableBuilder(
+    column: $table.entityKind,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get entityId => $composableBuilder(
+    column: $table.entityId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get fieldKey => $composableBuilder(
+    column: $table.fieldKey,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get writerId => $composableBuilder(
+    column: $table.writerId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get seq => $composableBuilder(
+    column: $table.seq,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get json => $composableBuilder(
+    column: $table.json,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$SrsFieldEditsTableOrderingComposer
+    extends Composer<_$FushiDatabase, $SrsFieldEditsTable> {
+  $$SrsFieldEditsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get profileUid => $composableBuilder(
+    column: $table.profileUid,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get entityKind => $composableBuilder(
+    column: $table.entityKind,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get entityId => $composableBuilder(
+    column: $table.entityId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get fieldKey => $composableBuilder(
+    column: $table.fieldKey,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get writerId => $composableBuilder(
+    column: $table.writerId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get seq => $composableBuilder(
+    column: $table.seq,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get json => $composableBuilder(
+    column: $table.json,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$SrsFieldEditsTableAnnotationComposer
+    extends Composer<_$FushiDatabase, $SrsFieldEditsTable> {
+  $$SrsFieldEditsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get profileUid => $composableBuilder(
+    column: $table.profileUid,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get entityKind => $composableBuilder(
+    column: $table.entityKind,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get entityId =>
+      $composableBuilder(column: $table.entityId, builder: (column) => column);
+
+  GeneratedColumn<String> get fieldKey =>
+      $composableBuilder(column: $table.fieldKey, builder: (column) => column);
+
+  GeneratedColumn<String> get writerId =>
+      $composableBuilder(column: $table.writerId, builder: (column) => column);
+
+  GeneratedColumn<int> get seq =>
+      $composableBuilder(column: $table.seq, builder: (column) => column);
+
+  GeneratedColumn<String> get json =>
+      $composableBuilder(column: $table.json, builder: (column) => column);
+}
+
+class $$SrsFieldEditsTableTableManager
+    extends
+        RootTableManager<
+          _$FushiDatabase,
+          $SrsFieldEditsTable,
+          SrsFieldEditRow,
+          $$SrsFieldEditsTableFilterComposer,
+          $$SrsFieldEditsTableOrderingComposer,
+          $$SrsFieldEditsTableAnnotationComposer,
+          $$SrsFieldEditsTableCreateCompanionBuilder,
+          $$SrsFieldEditsTableUpdateCompanionBuilder,
+          (
+            SrsFieldEditRow,
+            BaseReferences<
+              _$FushiDatabase,
+              $SrsFieldEditsTable,
+              SrsFieldEditRow
+            >,
+          ),
+          SrsFieldEditRow,
+          PrefetchHooks Function()
+        > {
+  $$SrsFieldEditsTableTableManager(
+    _$FushiDatabase db,
+    $SrsFieldEditsTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$SrsFieldEditsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$SrsFieldEditsTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$SrsFieldEditsTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<String> id = const Value.absent(),
+                Value<String> profileUid = const Value.absent(),
+                Value<String> entityKind = const Value.absent(),
+                Value<String> entityId = const Value.absent(),
+                Value<String> fieldKey = const Value.absent(),
+                Value<String> writerId = const Value.absent(),
+                Value<int> seq = const Value.absent(),
+                Value<String> json = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => SrsFieldEditsCompanion(
+                id: id,
+                profileUid: profileUid,
+                entityKind: entityKind,
+                entityId: entityId,
+                fieldKey: fieldKey,
+                writerId: writerId,
+                seq: seq,
+                json: json,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String id,
+                required String profileUid,
+                required String entityKind,
+                required String entityId,
+                required String fieldKey,
+                required String writerId,
+                required int seq,
+                required String json,
+                Value<int> rowid = const Value.absent(),
+              }) => SrsFieldEditsCompanion.insert(
+                id: id,
+                profileUid: profileUid,
+                entityKind: entityKind,
+                entityId: entityId,
+                fieldKey: fieldKey,
+                writerId: writerId,
+                seq: seq,
+                json: json,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$SrsFieldEditsTableProcessedTableManager =
+    ProcessedTableManager<
+      _$FushiDatabase,
+      $SrsFieldEditsTable,
+      SrsFieldEditRow,
+      $$SrsFieldEditsTableFilterComposer,
+      $$SrsFieldEditsTableOrderingComposer,
+      $$SrsFieldEditsTableAnnotationComposer,
+      $$SrsFieldEditsTableCreateCompanionBuilder,
+      $$SrsFieldEditsTableUpdateCompanionBuilder,
+      (
+        SrsFieldEditRow,
+        BaseReferences<_$FushiDatabase, $SrsFieldEditsTable, SrsFieldEditRow>,
+      ),
+      SrsFieldEditRow,
+      PrefetchHooks Function()
+    >;
+typedef $$SrsReviewLogsTableCreateCompanionBuilder =
+    SrsReviewLogsCompanion Function({
+      required String id,
+      required String profileUid,
+      required String cardId,
+      required String kind,
+      Value<int?> rating,
+      required int occurredAt,
+      required String reviewType,
+      required String origin,
+      Value<int> durationMs,
+      required String json,
+      Value<int> rowid,
+    });
+typedef $$SrsReviewLogsTableUpdateCompanionBuilder =
+    SrsReviewLogsCompanion Function({
+      Value<String> id,
+      Value<String> profileUid,
+      Value<String> cardId,
+      Value<String> kind,
+      Value<int?> rating,
+      Value<int> occurredAt,
+      Value<String> reviewType,
+      Value<String> origin,
+      Value<int> durationMs,
+      Value<String> json,
+      Value<int> rowid,
+    });
+
+class $$SrsReviewLogsTableFilterComposer
+    extends Composer<_$FushiDatabase, $SrsReviewLogsTable> {
+  $$SrsReviewLogsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get profileUid => $composableBuilder(
+    column: $table.profileUid,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get cardId => $composableBuilder(
+    column: $table.cardId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get kind => $composableBuilder(
+    column: $table.kind,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get rating => $composableBuilder(
+    column: $table.rating,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get occurredAt => $composableBuilder(
+    column: $table.occurredAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get reviewType => $composableBuilder(
+    column: $table.reviewType,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get origin => $composableBuilder(
+    column: $table.origin,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get durationMs => $composableBuilder(
+    column: $table.durationMs,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get json => $composableBuilder(
+    column: $table.json,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$SrsReviewLogsTableOrderingComposer
+    extends Composer<_$FushiDatabase, $SrsReviewLogsTable> {
+  $$SrsReviewLogsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get profileUid => $composableBuilder(
+    column: $table.profileUid,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get cardId => $composableBuilder(
+    column: $table.cardId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get kind => $composableBuilder(
+    column: $table.kind,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get rating => $composableBuilder(
+    column: $table.rating,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get occurredAt => $composableBuilder(
+    column: $table.occurredAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get reviewType => $composableBuilder(
+    column: $table.reviewType,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get origin => $composableBuilder(
+    column: $table.origin,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get durationMs => $composableBuilder(
+    column: $table.durationMs,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get json => $composableBuilder(
+    column: $table.json,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$SrsReviewLogsTableAnnotationComposer
+    extends Composer<_$FushiDatabase, $SrsReviewLogsTable> {
+  $$SrsReviewLogsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get profileUid => $composableBuilder(
+    column: $table.profileUid,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get cardId =>
+      $composableBuilder(column: $table.cardId, builder: (column) => column);
+
+  GeneratedColumn<String> get kind =>
+      $composableBuilder(column: $table.kind, builder: (column) => column);
+
+  GeneratedColumn<int> get rating =>
+      $composableBuilder(column: $table.rating, builder: (column) => column);
+
+  GeneratedColumn<int> get occurredAt => $composableBuilder(
+    column: $table.occurredAt,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get reviewType => $composableBuilder(
+    column: $table.reviewType,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get origin =>
+      $composableBuilder(column: $table.origin, builder: (column) => column);
+
+  GeneratedColumn<int> get durationMs => $composableBuilder(
+    column: $table.durationMs,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get json =>
+      $composableBuilder(column: $table.json, builder: (column) => column);
+}
+
+class $$SrsReviewLogsTableTableManager
+    extends
+        RootTableManager<
+          _$FushiDatabase,
+          $SrsReviewLogsTable,
+          SrsReviewLogRow,
+          $$SrsReviewLogsTableFilterComposer,
+          $$SrsReviewLogsTableOrderingComposer,
+          $$SrsReviewLogsTableAnnotationComposer,
+          $$SrsReviewLogsTableCreateCompanionBuilder,
+          $$SrsReviewLogsTableUpdateCompanionBuilder,
+          (
+            SrsReviewLogRow,
+            BaseReferences<
+              _$FushiDatabase,
+              $SrsReviewLogsTable,
+              SrsReviewLogRow
+            >,
+          ),
+          SrsReviewLogRow,
+          PrefetchHooks Function()
+        > {
+  $$SrsReviewLogsTableTableManager(
+    _$FushiDatabase db,
+    $SrsReviewLogsTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$SrsReviewLogsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$SrsReviewLogsTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$SrsReviewLogsTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<String> id = const Value.absent(),
+                Value<String> profileUid = const Value.absent(),
+                Value<String> cardId = const Value.absent(),
+                Value<String> kind = const Value.absent(),
+                Value<int?> rating = const Value.absent(),
+                Value<int> occurredAt = const Value.absent(),
+                Value<String> reviewType = const Value.absent(),
+                Value<String> origin = const Value.absent(),
+                Value<int> durationMs = const Value.absent(),
+                Value<String> json = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => SrsReviewLogsCompanion(
+                id: id,
+                profileUid: profileUid,
+                cardId: cardId,
+                kind: kind,
+                rating: rating,
+                occurredAt: occurredAt,
+                reviewType: reviewType,
+                origin: origin,
+                durationMs: durationMs,
+                json: json,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String id,
+                required String profileUid,
+                required String cardId,
+                required String kind,
+                Value<int?> rating = const Value.absent(),
+                required int occurredAt,
+                required String reviewType,
+                required String origin,
+                Value<int> durationMs = const Value.absent(),
+                required String json,
+                Value<int> rowid = const Value.absent(),
+              }) => SrsReviewLogsCompanion.insert(
+                id: id,
+                profileUid: profileUid,
+                cardId: cardId,
+                kind: kind,
+                rating: rating,
+                occurredAt: occurredAt,
+                reviewType: reviewType,
+                origin: origin,
+                durationMs: durationMs,
+                json: json,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$SrsReviewLogsTableProcessedTableManager =
+    ProcessedTableManager<
+      _$FushiDatabase,
+      $SrsReviewLogsTable,
+      SrsReviewLogRow,
+      $$SrsReviewLogsTableFilterComposer,
+      $$SrsReviewLogsTableOrderingComposer,
+      $$SrsReviewLogsTableAnnotationComposer,
+      $$SrsReviewLogsTableCreateCompanionBuilder,
+      $$SrsReviewLogsTableUpdateCompanionBuilder,
+      (
+        SrsReviewLogRow,
+        BaseReferences<_$FushiDatabase, $SrsReviewLogsTable, SrsReviewLogRow>,
+      ),
+      SrsReviewLogRow,
+      PrefetchHooks Function()
+    >;
+typedef $$SrsUnknownEventsTableCreateCompanionBuilder =
+    SrsUnknownEventsCompanion Function({
+      required String id,
+      required String profileUid,
+      required String json,
+      Value<int> rowid,
+    });
+typedef $$SrsUnknownEventsTableUpdateCompanionBuilder =
+    SrsUnknownEventsCompanion Function({
+      Value<String> id,
+      Value<String> profileUid,
+      Value<String> json,
+      Value<int> rowid,
+    });
+
+class $$SrsUnknownEventsTableFilterComposer
+    extends Composer<_$FushiDatabase, $SrsUnknownEventsTable> {
+  $$SrsUnknownEventsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get profileUid => $composableBuilder(
+    column: $table.profileUid,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get json => $composableBuilder(
+    column: $table.json,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$SrsUnknownEventsTableOrderingComposer
+    extends Composer<_$FushiDatabase, $SrsUnknownEventsTable> {
+  $$SrsUnknownEventsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get profileUid => $composableBuilder(
+    column: $table.profileUid,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get json => $composableBuilder(
+    column: $table.json,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$SrsUnknownEventsTableAnnotationComposer
+    extends Composer<_$FushiDatabase, $SrsUnknownEventsTable> {
+  $$SrsUnknownEventsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get profileUid => $composableBuilder(
+    column: $table.profileUid,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get json =>
+      $composableBuilder(column: $table.json, builder: (column) => column);
+}
+
+class $$SrsUnknownEventsTableTableManager
+    extends
+        RootTableManager<
+          _$FushiDatabase,
+          $SrsUnknownEventsTable,
+          SrsUnknownEventRow,
+          $$SrsUnknownEventsTableFilterComposer,
+          $$SrsUnknownEventsTableOrderingComposer,
+          $$SrsUnknownEventsTableAnnotationComposer,
+          $$SrsUnknownEventsTableCreateCompanionBuilder,
+          $$SrsUnknownEventsTableUpdateCompanionBuilder,
+          (
+            SrsUnknownEventRow,
+            BaseReferences<
+              _$FushiDatabase,
+              $SrsUnknownEventsTable,
+              SrsUnknownEventRow
+            >,
+          ),
+          SrsUnknownEventRow,
+          PrefetchHooks Function()
+        > {
+  $$SrsUnknownEventsTableTableManager(
+    _$FushiDatabase db,
+    $SrsUnknownEventsTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$SrsUnknownEventsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$SrsUnknownEventsTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$SrsUnknownEventsTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<String> id = const Value.absent(),
+                Value<String> profileUid = const Value.absent(),
+                Value<String> json = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => SrsUnknownEventsCompanion(
+                id: id,
+                profileUid: profileUid,
+                json: json,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String id,
+                required String profileUid,
+                required String json,
+                Value<int> rowid = const Value.absent(),
+              }) => SrsUnknownEventsCompanion.insert(
+                id: id,
+                profileUid: profileUid,
+                json: json,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$SrsUnknownEventsTableProcessedTableManager =
+    ProcessedTableManager<
+      _$FushiDatabase,
+      $SrsUnknownEventsTable,
+      SrsUnknownEventRow,
+      $$SrsUnknownEventsTableFilterComposer,
+      $$SrsUnknownEventsTableOrderingComposer,
+      $$SrsUnknownEventsTableAnnotationComposer,
+      $$SrsUnknownEventsTableCreateCompanionBuilder,
+      $$SrsUnknownEventsTableUpdateCompanionBuilder,
+      (
+        SrsUnknownEventRow,
+        BaseReferences<
+          _$FushiDatabase,
+          $SrsUnknownEventsTable,
+          SrsUnknownEventRow
+        >,
+      ),
+      SrsUnknownEventRow,
+      PrefetchHooks Function()
+    >;
+typedef $$SrsEventLocalTableCreateCompanionBuilder =
+    SrsEventLocalCompanion Function({
+      required String eventId,
+      required String profileUid,
+      Value<int?> outboxSeq,
+      Value<int?> serverTime,
+      Value<int> receivedAt,
+      Value<int> rowid,
+    });
+typedef $$SrsEventLocalTableUpdateCompanionBuilder =
+    SrsEventLocalCompanion Function({
+      Value<String> eventId,
+      Value<String> profileUid,
+      Value<int?> outboxSeq,
+      Value<int?> serverTime,
+      Value<int> receivedAt,
+      Value<int> rowid,
+    });
+
+class $$SrsEventLocalTableFilterComposer
+    extends Composer<_$FushiDatabase, $SrsEventLocalTable> {
+  $$SrsEventLocalTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get eventId => $composableBuilder(
+    column: $table.eventId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get profileUid => $composableBuilder(
+    column: $table.profileUid,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get outboxSeq => $composableBuilder(
+    column: $table.outboxSeq,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get serverTime => $composableBuilder(
+    column: $table.serverTime,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get receivedAt => $composableBuilder(
+    column: $table.receivedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$SrsEventLocalTableOrderingComposer
+    extends Composer<_$FushiDatabase, $SrsEventLocalTable> {
+  $$SrsEventLocalTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get eventId => $composableBuilder(
+    column: $table.eventId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get profileUid => $composableBuilder(
+    column: $table.profileUid,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get outboxSeq => $composableBuilder(
+    column: $table.outboxSeq,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get serverTime => $composableBuilder(
+    column: $table.serverTime,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get receivedAt => $composableBuilder(
+    column: $table.receivedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$SrsEventLocalTableAnnotationComposer
+    extends Composer<_$FushiDatabase, $SrsEventLocalTable> {
+  $$SrsEventLocalTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get eventId =>
+      $composableBuilder(column: $table.eventId, builder: (column) => column);
+
+  GeneratedColumn<String> get profileUid => $composableBuilder(
+    column: $table.profileUid,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get outboxSeq =>
+      $composableBuilder(column: $table.outboxSeq, builder: (column) => column);
+
+  GeneratedColumn<int> get serverTime => $composableBuilder(
+    column: $table.serverTime,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get receivedAt => $composableBuilder(
+    column: $table.receivedAt,
+    builder: (column) => column,
+  );
+}
+
+class $$SrsEventLocalTableTableManager
+    extends
+        RootTableManager<
+          _$FushiDatabase,
+          $SrsEventLocalTable,
+          SrsEventLocalRow,
+          $$SrsEventLocalTableFilterComposer,
+          $$SrsEventLocalTableOrderingComposer,
+          $$SrsEventLocalTableAnnotationComposer,
+          $$SrsEventLocalTableCreateCompanionBuilder,
+          $$SrsEventLocalTableUpdateCompanionBuilder,
+          (
+            SrsEventLocalRow,
+            BaseReferences<
+              _$FushiDatabase,
+              $SrsEventLocalTable,
+              SrsEventLocalRow
+            >,
+          ),
+          SrsEventLocalRow,
+          PrefetchHooks Function()
+        > {
+  $$SrsEventLocalTableTableManager(
+    _$FushiDatabase db,
+    $SrsEventLocalTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$SrsEventLocalTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$SrsEventLocalTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$SrsEventLocalTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<String> eventId = const Value.absent(),
+                Value<String> profileUid = const Value.absent(),
+                Value<int?> outboxSeq = const Value.absent(),
+                Value<int?> serverTime = const Value.absent(),
+                Value<int> receivedAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => SrsEventLocalCompanion(
+                eventId: eventId,
+                profileUid: profileUid,
+                outboxSeq: outboxSeq,
+                serverTime: serverTime,
+                receivedAt: receivedAt,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String eventId,
+                required String profileUid,
+                Value<int?> outboxSeq = const Value.absent(),
+                Value<int?> serverTime = const Value.absent(),
+                Value<int> receivedAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => SrsEventLocalCompanion.insert(
+                eventId: eventId,
+                profileUid: profileUid,
+                outboxSeq: outboxSeq,
+                serverTime: serverTime,
+                receivedAt: receivedAt,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$SrsEventLocalTableProcessedTableManager =
+    ProcessedTableManager<
+      _$FushiDatabase,
+      $SrsEventLocalTable,
+      SrsEventLocalRow,
+      $$SrsEventLocalTableFilterComposer,
+      $$SrsEventLocalTableOrderingComposer,
+      $$SrsEventLocalTableAnnotationComposer,
+      $$SrsEventLocalTableCreateCompanionBuilder,
+      $$SrsEventLocalTableUpdateCompanionBuilder,
+      (
+        SrsEventLocalRow,
+        BaseReferences<_$FushiDatabase, $SrsEventLocalTable, SrsEventLocalRow>,
+      ),
+      SrsEventLocalRow,
+      PrefetchHooks Function()
+    >;
+typedef $$SrsLocalStateTableCreateCompanionBuilder =
+    SrsLocalStateCompanion Function({
+      required String profileUid,
+      required String json,
+      Value<int> rowid,
+    });
+typedef $$SrsLocalStateTableUpdateCompanionBuilder =
+    SrsLocalStateCompanion Function({
+      Value<String> profileUid,
+      Value<String> json,
+      Value<int> rowid,
+    });
+
+class $$SrsLocalStateTableFilterComposer
+    extends Composer<_$FushiDatabase, $SrsLocalStateTable> {
+  $$SrsLocalStateTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get profileUid => $composableBuilder(
+    column: $table.profileUid,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get json => $composableBuilder(
+    column: $table.json,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$SrsLocalStateTableOrderingComposer
+    extends Composer<_$FushiDatabase, $SrsLocalStateTable> {
+  $$SrsLocalStateTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get profileUid => $composableBuilder(
+    column: $table.profileUid,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get json => $composableBuilder(
+    column: $table.json,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$SrsLocalStateTableAnnotationComposer
+    extends Composer<_$FushiDatabase, $SrsLocalStateTable> {
+  $$SrsLocalStateTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get profileUid => $composableBuilder(
+    column: $table.profileUid,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get json =>
+      $composableBuilder(column: $table.json, builder: (column) => column);
+}
+
+class $$SrsLocalStateTableTableManager
+    extends
+        RootTableManager<
+          _$FushiDatabase,
+          $SrsLocalStateTable,
+          SrsLocalStateRow,
+          $$SrsLocalStateTableFilterComposer,
+          $$SrsLocalStateTableOrderingComposer,
+          $$SrsLocalStateTableAnnotationComposer,
+          $$SrsLocalStateTableCreateCompanionBuilder,
+          $$SrsLocalStateTableUpdateCompanionBuilder,
+          (
+            SrsLocalStateRow,
+            BaseReferences<
+              _$FushiDatabase,
+              $SrsLocalStateTable,
+              SrsLocalStateRow
+            >,
+          ),
+          SrsLocalStateRow,
+          PrefetchHooks Function()
+        > {
+  $$SrsLocalStateTableTableManager(
+    _$FushiDatabase db,
+    $SrsLocalStateTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$SrsLocalStateTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$SrsLocalStateTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$SrsLocalStateTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<String> profileUid = const Value.absent(),
+                Value<String> json = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => SrsLocalStateCompanion(
+                profileUid: profileUid,
+                json: json,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String profileUid,
+                required String json,
+                Value<int> rowid = const Value.absent(),
+              }) => SrsLocalStateCompanion.insert(
+                profileUid: profileUid,
+                json: json,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$SrsLocalStateTableProcessedTableManager =
+    ProcessedTableManager<
+      _$FushiDatabase,
+      $SrsLocalStateTable,
+      SrsLocalStateRow,
+      $$SrsLocalStateTableFilterComposer,
+      $$SrsLocalStateTableOrderingComposer,
+      $$SrsLocalStateTableAnnotationComposer,
+      $$SrsLocalStateTableCreateCompanionBuilder,
+      $$SrsLocalStateTableUpdateCompanionBuilder,
+      (
+        SrsLocalStateRow,
+        BaseReferences<_$FushiDatabase, $SrsLocalStateTable, SrsLocalStateRow>,
+      ),
+      SrsLocalStateRow,
+      PrefetchHooks Function()
+    >;
+typedef $$SrsNotesCacheTableCreateCompanionBuilder =
+    SrsNotesCacheCompanion Function({
+      required String id,
+      required String profileUid,
+      required String noteTypeId,
+      required String guid,
+      required int createdAt,
+      Value<String?> deckId,
+      Value<int?> deletedAt,
+      Value<String> termKey,
+      Value<String> readingKey,
+      Value<String> sortField,
+      Value<String> tagsJson,
+      Value<bool> pendingDecision,
+      Value<int> updatedAt,
+      Value<int> rowid,
+    });
+typedef $$SrsNotesCacheTableUpdateCompanionBuilder =
+    SrsNotesCacheCompanion Function({
+      Value<String> id,
+      Value<String> profileUid,
+      Value<String> noteTypeId,
+      Value<String> guid,
+      Value<int> createdAt,
+      Value<String?> deckId,
+      Value<int?> deletedAt,
+      Value<String> termKey,
+      Value<String> readingKey,
+      Value<String> sortField,
+      Value<String> tagsJson,
+      Value<bool> pendingDecision,
+      Value<int> updatedAt,
+      Value<int> rowid,
+    });
+
+class $$SrsNotesCacheTableFilterComposer
+    extends Composer<_$FushiDatabase, $SrsNotesCacheTable> {
+  $$SrsNotesCacheTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get profileUid => $composableBuilder(
+    column: $table.profileUid,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get noteTypeId => $composableBuilder(
+    column: $table.noteTypeId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get guid => $composableBuilder(
+    column: $table.guid,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get deckId => $composableBuilder(
+    column: $table.deckId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get deletedAt => $composableBuilder(
+    column: $table.deletedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get termKey => $composableBuilder(
+    column: $table.termKey,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get readingKey => $composableBuilder(
+    column: $table.readingKey,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get sortField => $composableBuilder(
+    column: $table.sortField,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get tagsJson => $composableBuilder(
+    column: $table.tagsJson,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get pendingDecision => $composableBuilder(
+    column: $table.pendingDecision,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$SrsNotesCacheTableOrderingComposer
+    extends Composer<_$FushiDatabase, $SrsNotesCacheTable> {
+  $$SrsNotesCacheTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get profileUid => $composableBuilder(
+    column: $table.profileUid,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get noteTypeId => $composableBuilder(
+    column: $table.noteTypeId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get guid => $composableBuilder(
+    column: $table.guid,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get deckId => $composableBuilder(
+    column: $table.deckId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get deletedAt => $composableBuilder(
+    column: $table.deletedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get termKey => $composableBuilder(
+    column: $table.termKey,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get readingKey => $composableBuilder(
+    column: $table.readingKey,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get sortField => $composableBuilder(
+    column: $table.sortField,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get tagsJson => $composableBuilder(
+    column: $table.tagsJson,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<bool> get pendingDecision => $composableBuilder(
+    column: $table.pendingDecision,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$SrsNotesCacheTableAnnotationComposer
+    extends Composer<_$FushiDatabase, $SrsNotesCacheTable> {
+  $$SrsNotesCacheTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get profileUid => $composableBuilder(
+    column: $table.profileUid,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get noteTypeId => $composableBuilder(
+    column: $table.noteTypeId,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get guid =>
+      $composableBuilder(column: $table.guid, builder: (column) => column);
+
+  GeneratedColumn<int> get createdAt =>
+      $composableBuilder(column: $table.createdAt, builder: (column) => column);
+
+  GeneratedColumn<String> get deckId =>
+      $composableBuilder(column: $table.deckId, builder: (column) => column);
+
+  GeneratedColumn<int> get deletedAt =>
+      $composableBuilder(column: $table.deletedAt, builder: (column) => column);
+
+  GeneratedColumn<String> get termKey =>
+      $composableBuilder(column: $table.termKey, builder: (column) => column);
+
+  GeneratedColumn<String> get readingKey => $composableBuilder(
+    column: $table.readingKey,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get sortField =>
+      $composableBuilder(column: $table.sortField, builder: (column) => column);
+
+  GeneratedColumn<String> get tagsJson =>
+      $composableBuilder(column: $table.tagsJson, builder: (column) => column);
+
+  GeneratedColumn<bool> get pendingDecision => $composableBuilder(
+    column: $table.pendingDecision,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get updatedAt =>
+      $composableBuilder(column: $table.updatedAt, builder: (column) => column);
+}
+
+class $$SrsNotesCacheTableTableManager
+    extends
+        RootTableManager<
+          _$FushiDatabase,
+          $SrsNotesCacheTable,
+          SrsNoteCacheRow,
+          $$SrsNotesCacheTableFilterComposer,
+          $$SrsNotesCacheTableOrderingComposer,
+          $$SrsNotesCacheTableAnnotationComposer,
+          $$SrsNotesCacheTableCreateCompanionBuilder,
+          $$SrsNotesCacheTableUpdateCompanionBuilder,
+          (
+            SrsNoteCacheRow,
+            BaseReferences<
+              _$FushiDatabase,
+              $SrsNotesCacheTable,
+              SrsNoteCacheRow
+            >,
+          ),
+          SrsNoteCacheRow,
+          PrefetchHooks Function()
+        > {
+  $$SrsNotesCacheTableTableManager(
+    _$FushiDatabase db,
+    $SrsNotesCacheTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$SrsNotesCacheTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$SrsNotesCacheTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$SrsNotesCacheTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<String> id = const Value.absent(),
+                Value<String> profileUid = const Value.absent(),
+                Value<String> noteTypeId = const Value.absent(),
+                Value<String> guid = const Value.absent(),
+                Value<int> createdAt = const Value.absent(),
+                Value<String?> deckId = const Value.absent(),
+                Value<int?> deletedAt = const Value.absent(),
+                Value<String> termKey = const Value.absent(),
+                Value<String> readingKey = const Value.absent(),
+                Value<String> sortField = const Value.absent(),
+                Value<String> tagsJson = const Value.absent(),
+                Value<bool> pendingDecision = const Value.absent(),
+                Value<int> updatedAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => SrsNotesCacheCompanion(
+                id: id,
+                profileUid: profileUid,
+                noteTypeId: noteTypeId,
+                guid: guid,
+                createdAt: createdAt,
+                deckId: deckId,
+                deletedAt: deletedAt,
+                termKey: termKey,
+                readingKey: readingKey,
+                sortField: sortField,
+                tagsJson: tagsJson,
+                pendingDecision: pendingDecision,
+                updatedAt: updatedAt,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String id,
+                required String profileUid,
+                required String noteTypeId,
+                required String guid,
+                required int createdAt,
+                Value<String?> deckId = const Value.absent(),
+                Value<int?> deletedAt = const Value.absent(),
+                Value<String> termKey = const Value.absent(),
+                Value<String> readingKey = const Value.absent(),
+                Value<String> sortField = const Value.absent(),
+                Value<String> tagsJson = const Value.absent(),
+                Value<bool> pendingDecision = const Value.absent(),
+                Value<int> updatedAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => SrsNotesCacheCompanion.insert(
+                id: id,
+                profileUid: profileUid,
+                noteTypeId: noteTypeId,
+                guid: guid,
+                createdAt: createdAt,
+                deckId: deckId,
+                deletedAt: deletedAt,
+                termKey: termKey,
+                readingKey: readingKey,
+                sortField: sortField,
+                tagsJson: tagsJson,
+                pendingDecision: pendingDecision,
+                updatedAt: updatedAt,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$SrsNotesCacheTableProcessedTableManager =
+    ProcessedTableManager<
+      _$FushiDatabase,
+      $SrsNotesCacheTable,
+      SrsNoteCacheRow,
+      $$SrsNotesCacheTableFilterComposer,
+      $$SrsNotesCacheTableOrderingComposer,
+      $$SrsNotesCacheTableAnnotationComposer,
+      $$SrsNotesCacheTableCreateCompanionBuilder,
+      $$SrsNotesCacheTableUpdateCompanionBuilder,
+      (
+        SrsNoteCacheRow,
+        BaseReferences<_$FushiDatabase, $SrsNotesCacheTable, SrsNoteCacheRow>,
+      ),
+      SrsNoteCacheRow,
+      PrefetchHooks Function()
+    >;
+typedef $$SrsCardsCacheTableCreateCompanionBuilder =
+    SrsCardsCacheCompanion Function({
+      required String id,
+      required String profileUid,
+      required String noteId,
+      required String templateId,
+      Value<int> clozeOrd,
+      required String deckId,
+      Value<bool> suspended,
+      Value<int?> buriedUntilDay,
+      Value<int> flag,
+      Value<bool> hidden,
+      Value<String> queue,
+      Value<int?> dueDay,
+      Value<int?> dueAt,
+      Value<int> scheduledDays,
+      Value<int> reps,
+      Value<int> lapses,
+      Value<double?> stability,
+      Value<double?> difficulty,
+      Value<int?> lastReviewedAt,
+      Value<String?> lastLogId,
+      Value<String> scheduler,
+      Value<int> noteCreatedAt,
+      Value<int> rowid,
+    });
+typedef $$SrsCardsCacheTableUpdateCompanionBuilder =
+    SrsCardsCacheCompanion Function({
+      Value<String> id,
+      Value<String> profileUid,
+      Value<String> noteId,
+      Value<String> templateId,
+      Value<int> clozeOrd,
+      Value<String> deckId,
+      Value<bool> suspended,
+      Value<int?> buriedUntilDay,
+      Value<int> flag,
+      Value<bool> hidden,
+      Value<String> queue,
+      Value<int?> dueDay,
+      Value<int?> dueAt,
+      Value<int> scheduledDays,
+      Value<int> reps,
+      Value<int> lapses,
+      Value<double?> stability,
+      Value<double?> difficulty,
+      Value<int?> lastReviewedAt,
+      Value<String?> lastLogId,
+      Value<String> scheduler,
+      Value<int> noteCreatedAt,
+      Value<int> rowid,
+    });
+
+class $$SrsCardsCacheTableFilterComposer
+    extends Composer<_$FushiDatabase, $SrsCardsCacheTable> {
+  $$SrsCardsCacheTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get profileUid => $composableBuilder(
+    column: $table.profileUid,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get noteId => $composableBuilder(
+    column: $table.noteId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get templateId => $composableBuilder(
+    column: $table.templateId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get clozeOrd => $composableBuilder(
+    column: $table.clozeOrd,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get deckId => $composableBuilder(
+    column: $table.deckId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get suspended => $composableBuilder(
+    column: $table.suspended,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get buriedUntilDay => $composableBuilder(
+    column: $table.buriedUntilDay,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get flag => $composableBuilder(
+    column: $table.flag,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get hidden => $composableBuilder(
+    column: $table.hidden,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get queue => $composableBuilder(
+    column: $table.queue,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get dueDay => $composableBuilder(
+    column: $table.dueDay,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get dueAt => $composableBuilder(
+    column: $table.dueAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get scheduledDays => $composableBuilder(
+    column: $table.scheduledDays,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get reps => $composableBuilder(
+    column: $table.reps,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get lapses => $composableBuilder(
+    column: $table.lapses,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<double> get stability => $composableBuilder(
+    column: $table.stability,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<double> get difficulty => $composableBuilder(
+    column: $table.difficulty,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get lastReviewedAt => $composableBuilder(
+    column: $table.lastReviewedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get lastLogId => $composableBuilder(
+    column: $table.lastLogId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get scheduler => $composableBuilder(
+    column: $table.scheduler,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get noteCreatedAt => $composableBuilder(
+    column: $table.noteCreatedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$SrsCardsCacheTableOrderingComposer
+    extends Composer<_$FushiDatabase, $SrsCardsCacheTable> {
+  $$SrsCardsCacheTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get profileUid => $composableBuilder(
+    column: $table.profileUid,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get noteId => $composableBuilder(
+    column: $table.noteId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get templateId => $composableBuilder(
+    column: $table.templateId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get clozeOrd => $composableBuilder(
+    column: $table.clozeOrd,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get deckId => $composableBuilder(
+    column: $table.deckId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<bool> get suspended => $composableBuilder(
+    column: $table.suspended,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get buriedUntilDay => $composableBuilder(
+    column: $table.buriedUntilDay,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get flag => $composableBuilder(
+    column: $table.flag,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<bool> get hidden => $composableBuilder(
+    column: $table.hidden,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get queue => $composableBuilder(
+    column: $table.queue,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get dueDay => $composableBuilder(
+    column: $table.dueDay,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get dueAt => $composableBuilder(
+    column: $table.dueAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get scheduledDays => $composableBuilder(
+    column: $table.scheduledDays,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get reps => $composableBuilder(
+    column: $table.reps,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get lapses => $composableBuilder(
+    column: $table.lapses,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<double> get stability => $composableBuilder(
+    column: $table.stability,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<double> get difficulty => $composableBuilder(
+    column: $table.difficulty,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get lastReviewedAt => $composableBuilder(
+    column: $table.lastReviewedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get lastLogId => $composableBuilder(
+    column: $table.lastLogId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get scheduler => $composableBuilder(
+    column: $table.scheduler,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get noteCreatedAt => $composableBuilder(
+    column: $table.noteCreatedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$SrsCardsCacheTableAnnotationComposer
+    extends Composer<_$FushiDatabase, $SrsCardsCacheTable> {
+  $$SrsCardsCacheTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get profileUid => $composableBuilder(
+    column: $table.profileUid,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get noteId =>
+      $composableBuilder(column: $table.noteId, builder: (column) => column);
+
+  GeneratedColumn<String> get templateId => $composableBuilder(
+    column: $table.templateId,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get clozeOrd =>
+      $composableBuilder(column: $table.clozeOrd, builder: (column) => column);
+
+  GeneratedColumn<String> get deckId =>
+      $composableBuilder(column: $table.deckId, builder: (column) => column);
+
+  GeneratedColumn<bool> get suspended =>
+      $composableBuilder(column: $table.suspended, builder: (column) => column);
+
+  GeneratedColumn<int> get buriedUntilDay => $composableBuilder(
+    column: $table.buriedUntilDay,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get flag =>
+      $composableBuilder(column: $table.flag, builder: (column) => column);
+
+  GeneratedColumn<bool> get hidden =>
+      $composableBuilder(column: $table.hidden, builder: (column) => column);
+
+  GeneratedColumn<String> get queue =>
+      $composableBuilder(column: $table.queue, builder: (column) => column);
+
+  GeneratedColumn<int> get dueDay =>
+      $composableBuilder(column: $table.dueDay, builder: (column) => column);
+
+  GeneratedColumn<int> get dueAt =>
+      $composableBuilder(column: $table.dueAt, builder: (column) => column);
+
+  GeneratedColumn<int> get scheduledDays => $composableBuilder(
+    column: $table.scheduledDays,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get reps =>
+      $composableBuilder(column: $table.reps, builder: (column) => column);
+
+  GeneratedColumn<int> get lapses =>
+      $composableBuilder(column: $table.lapses, builder: (column) => column);
+
+  GeneratedColumn<double> get stability =>
+      $composableBuilder(column: $table.stability, builder: (column) => column);
+
+  GeneratedColumn<double> get difficulty => $composableBuilder(
+    column: $table.difficulty,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get lastReviewedAt => $composableBuilder(
+    column: $table.lastReviewedAt,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get lastLogId =>
+      $composableBuilder(column: $table.lastLogId, builder: (column) => column);
+
+  GeneratedColumn<String> get scheduler =>
+      $composableBuilder(column: $table.scheduler, builder: (column) => column);
+
+  GeneratedColumn<int> get noteCreatedAt => $composableBuilder(
+    column: $table.noteCreatedAt,
+    builder: (column) => column,
+  );
+}
+
+class $$SrsCardsCacheTableTableManager
+    extends
+        RootTableManager<
+          _$FushiDatabase,
+          $SrsCardsCacheTable,
+          SrsCardCacheRow,
+          $$SrsCardsCacheTableFilterComposer,
+          $$SrsCardsCacheTableOrderingComposer,
+          $$SrsCardsCacheTableAnnotationComposer,
+          $$SrsCardsCacheTableCreateCompanionBuilder,
+          $$SrsCardsCacheTableUpdateCompanionBuilder,
+          (
+            SrsCardCacheRow,
+            BaseReferences<
+              _$FushiDatabase,
+              $SrsCardsCacheTable,
+              SrsCardCacheRow
+            >,
+          ),
+          SrsCardCacheRow,
+          PrefetchHooks Function()
+        > {
+  $$SrsCardsCacheTableTableManager(
+    _$FushiDatabase db,
+    $SrsCardsCacheTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$SrsCardsCacheTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$SrsCardsCacheTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$SrsCardsCacheTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<String> id = const Value.absent(),
+                Value<String> profileUid = const Value.absent(),
+                Value<String> noteId = const Value.absent(),
+                Value<String> templateId = const Value.absent(),
+                Value<int> clozeOrd = const Value.absent(),
+                Value<String> deckId = const Value.absent(),
+                Value<bool> suspended = const Value.absent(),
+                Value<int?> buriedUntilDay = const Value.absent(),
+                Value<int> flag = const Value.absent(),
+                Value<bool> hidden = const Value.absent(),
+                Value<String> queue = const Value.absent(),
+                Value<int?> dueDay = const Value.absent(),
+                Value<int?> dueAt = const Value.absent(),
+                Value<int> scheduledDays = const Value.absent(),
+                Value<int> reps = const Value.absent(),
+                Value<int> lapses = const Value.absent(),
+                Value<double?> stability = const Value.absent(),
+                Value<double?> difficulty = const Value.absent(),
+                Value<int?> lastReviewedAt = const Value.absent(),
+                Value<String?> lastLogId = const Value.absent(),
+                Value<String> scheduler = const Value.absent(),
+                Value<int> noteCreatedAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => SrsCardsCacheCompanion(
+                id: id,
+                profileUid: profileUid,
+                noteId: noteId,
+                templateId: templateId,
+                clozeOrd: clozeOrd,
+                deckId: deckId,
+                suspended: suspended,
+                buriedUntilDay: buriedUntilDay,
+                flag: flag,
+                hidden: hidden,
+                queue: queue,
+                dueDay: dueDay,
+                dueAt: dueAt,
+                scheduledDays: scheduledDays,
+                reps: reps,
+                lapses: lapses,
+                stability: stability,
+                difficulty: difficulty,
+                lastReviewedAt: lastReviewedAt,
+                lastLogId: lastLogId,
+                scheduler: scheduler,
+                noteCreatedAt: noteCreatedAt,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String id,
+                required String profileUid,
+                required String noteId,
+                required String templateId,
+                Value<int> clozeOrd = const Value.absent(),
+                required String deckId,
+                Value<bool> suspended = const Value.absent(),
+                Value<int?> buriedUntilDay = const Value.absent(),
+                Value<int> flag = const Value.absent(),
+                Value<bool> hidden = const Value.absent(),
+                Value<String> queue = const Value.absent(),
+                Value<int?> dueDay = const Value.absent(),
+                Value<int?> dueAt = const Value.absent(),
+                Value<int> scheduledDays = const Value.absent(),
+                Value<int> reps = const Value.absent(),
+                Value<int> lapses = const Value.absent(),
+                Value<double?> stability = const Value.absent(),
+                Value<double?> difficulty = const Value.absent(),
+                Value<int?> lastReviewedAt = const Value.absent(),
+                Value<String?> lastLogId = const Value.absent(),
+                Value<String> scheduler = const Value.absent(),
+                Value<int> noteCreatedAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => SrsCardsCacheCompanion.insert(
+                id: id,
+                profileUid: profileUid,
+                noteId: noteId,
+                templateId: templateId,
+                clozeOrd: clozeOrd,
+                deckId: deckId,
+                suspended: suspended,
+                buriedUntilDay: buriedUntilDay,
+                flag: flag,
+                hidden: hidden,
+                queue: queue,
+                dueDay: dueDay,
+                dueAt: dueAt,
+                scheduledDays: scheduledDays,
+                reps: reps,
+                lapses: lapses,
+                stability: stability,
+                difficulty: difficulty,
+                lastReviewedAt: lastReviewedAt,
+                lastLogId: lastLogId,
+                scheduler: scheduler,
+                noteCreatedAt: noteCreatedAt,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$SrsCardsCacheTableProcessedTableManager =
+    ProcessedTableManager<
+      _$FushiDatabase,
+      $SrsCardsCacheTable,
+      SrsCardCacheRow,
+      $$SrsCardsCacheTableFilterComposer,
+      $$SrsCardsCacheTableOrderingComposer,
+      $$SrsCardsCacheTableAnnotationComposer,
+      $$SrsCardsCacheTableCreateCompanionBuilder,
+      $$SrsCardsCacheTableUpdateCompanionBuilder,
+      (
+        SrsCardCacheRow,
+        BaseReferences<_$FushiDatabase, $SrsCardsCacheTable, SrsCardCacheRow>,
+      ),
+      SrsCardCacheRow,
+      PrefetchHooks Function()
+    >;
 
 class $FushiDatabaseManager {
   final _$FushiDatabase _db;
@@ -91644,6 +103593,8 @@ class $FushiDatabaseManager {
       );
   $$BookCustomCssTableTableManager get bookCustomCss =>
       $$BookCustomCssTableTableManager(_db, _db.bookCustomCss);
+  $$MangaReaderOverridesTableTableManager get mangaReaderOverrides =>
+      $$MangaReaderOverridesTableTableManager(_db, _db.mangaReaderOverrides);
   $$SyncDeletionTombstonesTableTableManager get syncDeletionTombstones =>
       $$SyncDeletionTombstonesTableTableManager(
         _db,
@@ -91770,4 +103721,30 @@ class $FushiDatabaseManager {
       $$UpdateFeedEntriesTableTableManager(_db, _db.updateFeedEntries);
   $$MangaDownloadJobsTableTableManager get mangaDownloadJobs =>
       $$MangaDownloadJobsTableTableManager(_db, _db.mangaDownloadJobs);
+  $$AnidbFileIdentitiesTableTableManager get anidbFileIdentities =>
+      $$AnidbFileIdentitiesTableTableManager(_db, _db.anidbFileIdentities);
+  $$VideoEpisodeBindingOverridesTableTableManager
+  get videoEpisodeBindingOverrides =>
+      $$VideoEpisodeBindingOverridesTableTableManager(
+        _db,
+        _db.videoEpisodeBindingOverrides,
+      );
+  $$PendingMineQueueTableTableManager get pendingMineQueue =>
+      $$PendingMineQueueTableTableManager(_db, _db.pendingMineQueue);
+  $$SrsEntitiesTableTableManager get srsEntities =>
+      $$SrsEntitiesTableTableManager(_db, _db.srsEntities);
+  $$SrsFieldEditsTableTableManager get srsFieldEdits =>
+      $$SrsFieldEditsTableTableManager(_db, _db.srsFieldEdits);
+  $$SrsReviewLogsTableTableManager get srsReviewLogs =>
+      $$SrsReviewLogsTableTableManager(_db, _db.srsReviewLogs);
+  $$SrsUnknownEventsTableTableManager get srsUnknownEvents =>
+      $$SrsUnknownEventsTableTableManager(_db, _db.srsUnknownEvents);
+  $$SrsEventLocalTableTableManager get srsEventLocal =>
+      $$SrsEventLocalTableTableManager(_db, _db.srsEventLocal);
+  $$SrsLocalStateTableTableManager get srsLocalState =>
+      $$SrsLocalStateTableTableManager(_db, _db.srsLocalState);
+  $$SrsNotesCacheTableTableManager get srsNotesCache =>
+      $$SrsNotesCacheTableTableManager(_db, _db.srsNotesCache);
+  $$SrsCardsCacheTableTableManager get srsCardsCache =>
+      $$SrsCardsCacheTableTableManager(_db, _db.srsCardsCache);
 }

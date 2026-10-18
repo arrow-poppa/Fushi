@@ -36,6 +36,10 @@ const int kDetClassBubble = 0;
 const int kDetClassTextBubble = 1;
 const int kDetClassTextFree = 2;
 
+/// 弱候选阈值（[TextDetector.weakScoreThreshold] 默认值）：用户真实页上字距稀疏的
+/// 两行横排标题，检测器给第二行的分只有 0.02 出头。
+const double kDetWeakScoreThreshold = 0.02;
+
 /// 模型输入边长（模型卡：Training Image Size = 640）。
 const int kDetInputSize = 640;
 
@@ -274,6 +278,8 @@ List<RawDetection> decodeProcessedRtdetrOutputs({
 int nmsGroupOf(int classId) => classId == kDetClassBubble ? 0 : 1;
 
 /// 分组贪心 NMS：按分数降序，同组内 IoU >= [iouThreshold] 的低分框剔除。
+/// 低 IoU 的内框留到识别后判重：几何包含不能保证父块读全小字号正文，
+/// 横排切行的振假名过滤也可能删掉正文，因此这里不按包含关系删除。
 List<RawDetection> applyClassAwareNms(
   List<RawDetection> detections, {
   double iouThreshold = 0.7,
@@ -284,8 +290,10 @@ List<RawDetection> applyClassAwareNms(
   for (final RawDetection candidate in sorted) {
     bool suppressed = false;
     for (final RawDetection keep in kept) {
-      if (nmsGroupOf(keep.classId) == nmsGroupOf(candidate.classId) &&
-          keep.rect.iou(candidate.rect) >= iouThreshold) {
+      if (nmsGroupOf(keep.classId) != nmsGroupOf(candidate.classId)) {
+        continue;
+      }
+      if (keep.rect.iou(candidate.rect) >= iouThreshold) {
         suppressed = true;
         break;
       }
@@ -298,7 +306,11 @@ List<RawDetection> applyClassAwareNms(
 }
 
 /// 把原始检测拆成 文字块（1/2 类，带内/外判定）+ 气泡（0 类）。
-PageDetections buildPageDetections(List<RawDetection> detections) {
+/// [weakDetections] 是没过正式阈值的弱检测，只取其中的文字类给补检当候选。
+PageDetections buildPageDetections(
+  List<RawDetection> detections, {
+  List<RawDetection> weakDetections = const <RawDetection>[],
+}) {
   final List<OcrRect> bubbles = <OcrRect>[
     for (final RawDetection d in detections)
       if (d.classId == kDetClassBubble) d.rect,
@@ -317,7 +329,21 @@ PageDetections buildPageDetections(List<RawDetection> detections) {
       insideBubble: inside,
     ));
   }
-  return PageDetections(textRegions: textRegions, bubbles: bubbles);
+  return PageDetections(
+    textRegions: textRegions,
+    bubbles: bubbles,
+    weakTextRegions: <DetectedTextRegion>[
+      for (final RawDetection d in weakDetections)
+        if (d.classId == kDetClassTextBubble || d.classId == kDetClassTextFree)
+          DetectedTextRegion(
+            rect: d.rect,
+            score: d.score,
+            classId: d.classId,
+            insideBubble: bubbles.any(
+                (OcrRect b) => b.containsPoint(d.rect.centerX, d.rect.centerY)),
+          ),
+    ],
+  );
 }
 
 /// 检测器：会话注入，模型路径/EP 策略由上层决定。
@@ -325,6 +351,7 @@ class TextDetector implements OcrDetector {
   TextDetector(
     this._session, {
     this.scoreThreshold = 0.3,
+    this.weakScoreThreshold = kDetWeakScoreThreshold,
     this.preserveAspect = false,
     this.inputName = 'pixel_values',
     this.logitsName = 'logits',
@@ -335,6 +362,11 @@ class TextDetector implements OcrDetector {
 
   /// 参考实现（comic-translate）默认置信度阈值 0.3。
   final double scoreThreshold;
+
+  /// 弱阈值：分数落在 [weakScoreThreshold, [scoreThreshold]) 的文字框进
+  /// [PageDetections.weakTextRegions]，正式结果不变。不低于 [scoreThreshold] 时
+  /// 等于关掉弱档。
+  final double weakScoreThreshold;
 
   /// false = 官方 squish 预处理（与训练一致）；true = 等比 letterbox。
   final bool preserveAspect;
@@ -368,6 +400,7 @@ class TextDetector implements OcrDetector {
     final OcrTensor? scores = outputs['scores'];
     final OcrTensor? labels = outputs['labels'];
     final OcrTensor? processedBoxes = outputs['boxes'];
+    final double decodeThreshold = math.min(scoreThreshold, weakScoreThreshold);
     final List<RawDetection> raw;
     if (logits != null && rawBoxes != null) {
       final int numQueries = logits.shape[1];
@@ -378,7 +411,7 @@ class TextDetector implements OcrDetector {
         transform: transform,
         numQueries: numQueries,
         numClasses: numClasses,
-        scoreThreshold: scoreThreshold,
+        scoreThreshold: decodeThreshold,
       );
     } else if (scores != null && labels != null && processedBoxes != null) {
       raw = decodeProcessedRtdetrOutputs(
@@ -386,14 +419,23 @@ class TextDetector implements OcrDetector {
         labels: _labelValues(labels),
         boxes: processedBoxes.floatData!,
         transform: transform,
-        scoreThreshold: scoreThreshold,
+        scoreThreshold: decodeThreshold,
       );
     } else {
       throw StateError(
           'detector outputs missing: got ${outputs.keys.toList()}, '
           'expected [$logitsName, $boxesName] or [scores, labels, boxes]');
     }
-    return buildPageDetections(applyClassAwareNms(raw));
+    return buildPageDetections(
+      applyClassAwareNms(<RawDetection>[
+        for (final RawDetection d in raw)
+          if (d.score >= scoreThreshold) d,
+      ]),
+      weakDetections: <RawDetection>[
+        for (final RawDetection d in raw)
+          if (d.score < scoreThreshold) d,
+      ],
+    );
   }
 
   Future<void> close() => _session.close();

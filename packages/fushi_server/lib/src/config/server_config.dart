@@ -7,6 +7,7 @@ library;
 
 import 'dart:io';
 
+import 'package:fushi_server/src/config/server_ai_config.dart';
 import 'package:path/path.dart' as p;
 import 'package:yaml/yaml.dart';
 
@@ -74,6 +75,14 @@ class ServerConfig {
     required this.torrentEngine,
     required this.torrentLibraryPath,
     required this.torrentListen,
+    this.publicUrls = const <String>[],
+    this.p2p = false,
+    this.p2pRelays = const <String>[],
+    this.scanPrune = true,
+    this.scanScrape = true,
+    this.profileTransfer = false,
+    this.tmdbApiKey,
+    this.ai,
   });
 
   static const int defaultPort = 38765;
@@ -162,6 +171,40 @@ class ServerConfig {
   final String? torrentLibraryPath;
   final String torrentListen;
 
+  /// 公网 / 反代 / DDNS 地址，经 `/api/host/addresses` 公布给已配对设备自动学习
+  /// （docs/specs/2026-09-28-interconnect-remote-reach.md §1）。
+  final List<String> publicUrls;
+
+  /// 扫描后是否对账回收「文件已消失」的视频条目（默认开）。
+  ///
+  /// 库行不记源文件路径的书 / 漫画根不受影响；关闭只停清理，导入行为不变。
+  final bool scanPrune;
+
+  /// 扫描后是否对「从未识别过」的视频作品自动补刮（默认开；与 app「视频 → 媒体库
+  /// → 自动补刮」同一个 `VideoLibraryScrapeSweep`）。关掉只停自动刮削，客户端经互联
+  /// 发起的重刮 / 手动指定照常可用。
+  final bool scanScrape;
+
+  /// 允许已配对设备经互联「配置文件」端点把配置方案（Profile）推给本机寄存、或从本机
+  /// 拉走（`/api/interconnect/profile`，只在 TLS 下可达）。默认关：与 app 的
+  /// 「允许已配对设备读写本机配置」同一条安全默认——没开关的入站写就是隐形写入通道
+  /// （BUG-988）。运行期现读，WebUI 改完即生效。
+  final bool profileTransfer;
+
+  /// TMDB API key（刮削用）。服务端没有 app 的内置 key，不配就只有 AniDB / NFO
+  /// 可用；偏好表里的 `video_scraper_tmdb_api_key` 是次级来源。改了重启生效。
+  final String? tmdbApiKey;
+
+  /// 允许经 P2P 隧道远程连接（iroh；默认关：会连 iroh 公共中继与发现服务）。
+  final bool p2p;
+
+  /// 自建 iroh-relay 地址；空 = iroh 公共中继。
+  final List<String> p2pRelays;
+
+  /// AI 提供商（`ai:` 段，见 server_ai_config.dart）；null = 没指派，「AI 下视频」
+  /// 助手能力位报 `no_provider`、不发任何 AI 请求。保存即生效。
+  final ServerAiConfig? ai;
+
   ServerConfig copyWith({
     int? port,
     String? bind,
@@ -184,6 +227,15 @@ class ServerConfig {
     String? torrentEngine,
     String? torrentLibraryPath,
     String? torrentListen,
+    List<String>? publicUrls,
+    bool? p2p,
+    List<String>? p2pRelays,
+    bool? scanPrune,
+    bool? scanScrape,
+    bool? profileTransfer,
+    String? tmdbApiKey,
+    ServerAiConfig? ai,
+    bool clearAi = false,
   }) =>
       ServerConfig(
         dataDir: dataDir,
@@ -208,6 +260,14 @@ class ServerConfig {
         torrentEngine: torrentEngine ?? this.torrentEngine,
         torrentLibraryPath: torrentLibraryPath ?? this.torrentLibraryPath,
         torrentListen: torrentListen ?? this.torrentListen,
+        publicUrls: publicUrls ?? this.publicUrls,
+        p2p: p2p ?? this.p2p,
+        p2pRelays: p2pRelays ?? this.p2pRelays,
+        scanPrune: scanPrune ?? this.scanPrune,
+        scanScrape: scanScrape ?? this.scanScrape,
+        profileTransfer: profileTransfer ?? this.profileTransfer,
+        tmdbApiKey: tmdbApiKey ?? this.tmdbApiKey,
+        ai: clearAi ? null : ai ?? this.ai,
       );
 
   /// 从 YAML 文本解析；缺项取默认。[dataDir] 相对路径按配置文件所在目录解析。
@@ -260,8 +320,36 @@ class ServerConfig {
       torrentEngine: engine,
       torrentLibraryPath: torrentMap['library']?.toString(),
       torrentListen: torrentMap['listen']?.toString() ?? base.torrentListen,
+      publicUrls: _strings(map['public_urls']),
+      p2p: _bool(map['p2p']) ?? base.p2p,
+      p2pRelays: _strings(map['p2p_relays']),
+      scanPrune: _bool(map['scan_prune']) ?? base.scanPrune,
+      scanScrape: _bool(map['scan_scrape']) ?? base.scanScrape,
+      profileTransfer: _bool(map['profile_transfer']) ?? base.profileTransfer,
+      tmdbApiKey: map['tmdb_api_key']?.toString(),
+      ai: ServerAiConfig.fromYaml(map['ai']),
     );
   }
+
+  /// `public_urls` / `p2p_relays` 单条 URL 的校验：必须 http / https 且带主机名
+  /// （iroh `RelayUrl` 就是一条普通 URL，scheme + host 是它能用的最低要求）。
+  /// 合法 → null，否则返回原因。只在 WebUI / admin API 写入口用；yaml 解析保持
+  /// 宽松，不因手写的一条旧值拒绝启动。
+  static String? remoteUrlProblem(String url) {
+    final Uri? uri = Uri.tryParse(url);
+    if (uri == null) return '不是合法 URL';
+    if (uri.scheme != 'http' && uri.scheme != 'https') {
+      return '只支持 http:// 或 https://';
+    }
+    if (uri.host.isEmpty) return '缺少主机名';
+    return null;
+  }
+
+  static List<String> _strings(Object? v) => <String>[
+        if (v is List)
+          for (final Object? e in v)
+            if (e != null && '$e'.trim().isNotEmpty) '$e'.trim(),
+      ];
 
   static Future<ServerConfig> load(File file) async {
     final String text = await file.readAsString();
@@ -282,13 +370,27 @@ class ServerConfig {
     b.writeln('admin_bind: ${_q(adminBind)}');
     b.writeln('subtitle_language: ${_q(subtitleLanguage)}');
     b.writeln('metadata_locale: ${_q(metadataLocale)}');
+    b.writeln('scan_prune: $scanPrune');
+    b.writeln('scan_scrape: $scanScrape');
+    b.writeln('profile_transfer: $profileTransfer');
+    if ((tmdbApiKey ?? '').isNotEmpty) b.writeln('tmdb_api_key: ${_q(tmdbApiKey!)}');
     if (ffmpegPath != null) b.writeln('ffmpeg: ${_q(ffmpegPath!)}');
     if (ffprobePath != null) b.writeln('ffprobe: ${_q(ffprobePath!)}');
     if (ortLibraryPath != null) {
       b.writeln('onnxruntime_library: ${_q(ortLibraryPath!)}');
     }
     b.writeln('upload_quota_bytes: $uploadQuotaBytes');
+    b.writeln('public_urls:${publicUrls.isEmpty ? ' []' : ''}');
+    for (final String u in publicUrls) {
+      b.writeln('  - ${_q(u)}');
+    }
+    b.writeln('p2p: $p2p');
+    b.writeln('p2p_relays:${p2pRelays.isEmpty ? ' []' : ''}');
+    for (final String u in p2pRelays) {
+      b.writeln('  - ${_q(u)}');
+    }
     if (adminToken != null) b.writeln('admin_token: ${_q(adminToken!)}');
+    ai?.writeYaml(b, _q);
     b.writeln('torrent:');
     b.writeln('  engine: ${_q(torrentEngine)}');
     if (torrentLibraryPath != null) b.writeln('  library: ${_q(torrentLibraryPath!)}');

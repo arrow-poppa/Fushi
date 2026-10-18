@@ -10,6 +10,7 @@ DroppedFiles _files({
   List<String> playlists = const [],
   List<String> dictionaries = const [],
   List<String> urls = const [],
+  List<String> torrents = const [],
 }) =>
     DroppedFiles(
         books: books,
@@ -19,6 +20,7 @@ DroppedFiles _files({
         playlists: playlists,
         dictionaries: dictionaries,
         urls: urls,
+        torrents: torrents,
         unknown: const []);
 
 void main() {
@@ -177,12 +179,92 @@ void main() {
         DropIntent.needCardTarget,
       );
     });
-    test('audio-only on video surface -> unsupportedSurface', () {
+    // 纯音频 = 无画面的视频：视频页上拖专辑曲目即新建视频条目（此前回「不支持」）。
+    test('audio-only on video surface -> importNewVideo (on or off a card)', () {
+      for (final bool cardHit in <bool>[true, false]) {
+        expect(
+          decideDropIntent(
+              surface: DropSurface.video,
+              files: _files(audios: ['/a.flac']),
+              cardHit: cardHit),
+          DropIntent.importNewVideo,
+          reason: 'cardHit=$cardHit',
+        );
+      }
+    });
+    test('audio + subtitle on video surface -> importNewVideo', () {
       expect(
         decideDropIntent(
             surface: DropSurface.video,
-            files: _files(audios: ['/a.mp3']),
+            files: _files(audios: ['/a.mp3'], subtitles: ['/a.srt']),
             cardHit: true),
+        DropIntent.importNewVideo,
+      );
+    });
+    test('audio-only on books surface still means audiobook material', () {
+      expect(
+        decideDropIntent(
+            surface: DropSurface.books,
+            files: _files(audios: ['/a.flac']),
+            cardHit: false),
+        DropIntent.needCardTarget,
+      );
+    });
+    test('videoLibraryMedia = videos + non-video audio, mp4 counted once', () {
+      final DroppedFiles files = classifyDroppedFiles(
+          <String>['/x/ep.mp4', '/x/01.flac', '/x/a.srt', '/x/02.MP3']);
+      expect(files.videoLibraryMedia,
+          <String>['/x/ep.mp4', '/x/01.flac', '/x/02.MP3']);
+    });
+    test('Blu-ray disc fragment (index.bdmv) -> addFolderAsSource', () {
+      // 回归：拖 `.bdmv` 进视频页此前落 unknown → 静默无反应。
+      const DroppedFiles files = DroppedFiles(
+          books: <String>[],
+          videos: <String>[],
+          subtitles: <String>[],
+          audios: <String>[],
+          playlists: <String>[],
+          dictionaries: <String>[],
+          urls: <String>[],
+          unknown: <String>[],
+          blurayDiscs: <String>['/disc']);
+      expect(
+        decideDropIntent(
+            surface: DropSurface.video, files: files, cardHit: false),
+        DropIntent.addFolderAsSource,
+      );
+    });
+    test('disc m2ts wins over importing it as a lone video', () {
+      const DroppedFiles files = DroppedFiles(
+          books: <String>[],
+          videos: <String>['/disc/BDMV/STREAM/00001.m2ts'],
+          subtitles: <String>[],
+          audios: <String>[],
+          playlists: <String>[],
+          dictionaries: <String>[],
+          urls: <String>[],
+          unknown: <String>[],
+          blurayDiscs: <String>['/disc']);
+      expect(
+        decideDropIntent(
+            surface: DropSurface.video, files: files, cardHit: false),
+        DropIntent.addFolderAsSource,
+      );
+    });
+    test('disc on the books surface is not silently eaten', () {
+      const DroppedFiles files = DroppedFiles(
+          books: <String>[],
+          videos: <String>[],
+          subtitles: <String>[],
+          audios: <String>[],
+          playlists: <String>[],
+          dictionaries: <String>[],
+          urls: <String>[],
+          unknown: <String>[],
+          blurayDiscs: <String>['/disc']);
+      expect(
+        decideDropIntent(
+            surface: DropSurface.books, files: files, cardHit: false),
         DropIntent.unsupportedSurface,
       );
     });
@@ -225,6 +307,62 @@ void main() {
             files: _files(videos: ['/a.mkv'], playlists: ['/a.m3u8']),
             cardHit: false),
         DropIntent.importNewPlaylist,
+      );
+    });
+  });
+
+  // BT 种子：三个表面都路由到下载中心「添加任务」对话框——种子不属于任何库页，
+  // 落点只决定预填的内容类型。此前落 unknown → ignore，用户拖进去毫无反应。
+  group('decideDropIntent — torrent', () {
+    for (final DropSurface surface in DropSurface.values) {
+      test('.torrent on $surface -> importTorrent', () {
+        expect(
+          decideDropIntent(
+              surface: surface,
+              files: _files(torrents: ['/a.torrent']),
+              cardHit: false),
+          DropIntent.importTorrent,
+        );
+      });
+    }
+    // 种子是用户拖的实体文件，同批夹带的 URL 字符串让位。
+    test('torrent wins over url on video surface', () {
+      expect(
+        decideDropIntent(
+            surface: DropSurface.video,
+            files: _files(torrents: ['/a.torrent'], urls: ['https://x.test/a']),
+            cardHit: false),
+        DropIntent.importTorrent,
+      );
+    });
+    // 文件夹仍优先：拖一整个目录进视频页要的是登记扫描根，不是里面的种子。
+    test('folder wins over torrent on video surface', () {
+      expect(
+        decideDropIntent(
+            surface: DropSurface.video,
+            files: const DroppedFiles(
+                books: [],
+                videos: [],
+                subtitles: [],
+                audios: [],
+                playlists: [],
+                dictionaries: [],
+                urls: [],
+                directories: ['/season'],
+                torrents: ['/a.torrent'],
+                unknown: []),
+            cardHit: false),
+        DropIntent.addFolderAsSource,
+      );
+    });
+    // 书架：书文件优先（那是本页主业），种子只在没有书时接管。
+    test('book wins over torrent on books surface', () {
+      expect(
+        decideDropIntent(
+            surface: DropSurface.books,
+            files: _files(books: ['/a.epub'], torrents: ['/a.torrent']),
+            cardHit: false),
+        DropIntent.importNewBook,
       );
     });
   });

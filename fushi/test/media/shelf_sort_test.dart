@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_engine/media/collections/shelf_sort.dart';
 
@@ -47,6 +49,44 @@ void main() {
       expect(naturalCompare('abc', 'abcd'), lessThan(0));
       expect(naturalCompare('第2卷·特典', '第2卷'), greaterThan(0));
     });
+
+    test('BUG-3347：全角数字与半角数字同一把数值尺（用户漫画库实际书名）', () {
+      // 「志乃と恋 ２」「志乃と恋 ４」是全角数字，「志乃と恋 3」是半角——旧实现按
+      // 码元比，'3'(0x33) < '２'(0xFF12)，排成 3 < ２ < ４。
+      final List<String> titles = <String>[
+        '志乃と恋 ４',
+        '志乃と恋 3',
+        '志乃と恋',
+        '志乃と恋 ２',
+        '志乃と恋　10',
+      ]..sort(naturalCompare);
+      expect(titles, <String>[
+        '志乃と恋',
+        '志乃と恋 ２',
+        '志乃と恋 3',
+        '志乃と恋 ４',
+        '志乃と恋　10',
+      ]);
+      expect(naturalCompare('第２卷', '第10卷'), lessThan(0));
+      expect(naturalCompare('ＡＢＣ', 'abd'), lessThan(0), reason: '全角字母同样折半角');
+    });
+  });
+
+  test('BUG-3347：书架排序键的名称取卡片显示名（改名覆盖层），不读 DB 原始列', () {
+    // 用户改名「志乃と恋 [3574f94a]」→「志乃と恋」后，按原名排序会把它排到
+    // 「志乃と恋 3」之后（'3' < '['），卡片上看就是乱序。
+    final String source = File(
+      'lib/src/pages/implementations/reader_fushi_history_page.dart',
+    ).readAsStringSync();
+    final int start = source.indexOf('ShelfSortKey _shelfGroupSortKey(');
+    expect(start, isNonNegative);
+    final String titleOf = source.substring(
+      source.indexOf('String titleOf(', start),
+      source.indexOf('int recentOf(', start),
+    );
+    expect(titleOf, contains('displayTitleForBook('));
+    expect(titleOf, isNot(contains('s.epub?.title')));
+    expect(titleOf, isNot(contains('s.srt?.title')));
   });
 
   group('compareShelfSortKeys', () {
@@ -236,6 +276,80 @@ void main() {
       );
       expect(tally.finished, 1);
       expect(tally.reading, 1);
+    });
+  });
+
+  group('classifyShelfReadStatus（书架 / 漫画库阅读状态筛选判据）', () {
+    ShelfReadStatus classify({
+      bool completed = false,
+      required int position,
+      required int duration,
+    }) => classifyShelfReadStatus(
+      completed: completed,
+      position: position,
+      duration: duration,
+    );
+
+    test('显式读完标记不受进度约束（停在 99% 的手动标记书）', () {
+      expect(
+        classify(completed: true, position: 99, duration: 100),
+        ShelfReadStatus.finished,
+      );
+      expect(
+        classify(completed: true, position: 0, duration: 0),
+        ShelfReadStatus.finished,
+      );
+    });
+
+    test('进度到底 = 读完；中途 = 在读；没翻开 = 未读', () {
+      expect(classify(position: 100, duration: 100), ShelfReadStatus.finished);
+      expect(classify(position: 30, duration: 100), ShelfReadStatus.reading);
+      expect(classify(position: 0, duration: 100), ShelfReadStatus.unread);
+    });
+
+    test('没有进度维度（纯字幕书 / 无配对 EPUB 的有声书）归未读', () {
+      expect(classify(position: 0, duration: 0), ShelfReadStatus.unread);
+      expect(classify(position: 5, duration: 0), ShelfReadStatus.unread);
+    });
+
+    test('与概览统计同一口径：tally 的在读 / 读完计数等于逐条分类计数', () {
+      final List<({bool done, int pos, int dur})> books =
+          <({bool done, int pos, int dur})>[
+            (done: false, pos: 0, dur: 100),
+            (done: false, pos: 40, dur: 100),
+            (done: false, pos: 100, dur: 100),
+            (done: true, pos: 10, dur: 100),
+            (done: false, pos: 0, dur: 0),
+          ];
+      final ShelfProgressTally<({bool done, int pos, int dur})> tally =
+          tallyShelfProgress<({bool done, int pos, int dur})>(
+            books,
+            (b) => b.pos,
+            (b) => b.dur,
+            isCompleted: (b) => b.done,
+          );
+      int countOf(ShelfReadStatus status) => books
+          .where(
+            (b) =>
+                classify(completed: b.done, position: b.pos, duration: b.dur) ==
+                status,
+          )
+          .length;
+      expect(tally.reading, countOf(ShelfReadStatus.reading));
+      expect(tally.finished, countOf(ShelfReadStatus.finished));
+      expect(tally.reading, 1);
+      expect(tally.finished, 2);
+    });
+
+    test('书架「继续阅读」hero 的统计传了读完判据（已读完筛选下不再顶出读完的书）', () {
+      final String source = File(
+        'lib/src/pages/implementations/reader_fushi_history_page.dart',
+      ).readAsStringSync();
+      final int call = source.indexOf('tallyShelfProgress<MediaItem>(');
+      expect(call, isNonNegative);
+      final String args = source.substring(call, source.indexOf(');', call));
+      expect(args, contains('isCompleted:'));
+      expect(args, contains('_completedBookKeys.contains('));
     });
   });
 }

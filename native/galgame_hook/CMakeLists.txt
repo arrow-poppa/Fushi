@@ -3,7 +3,7 @@ project(fushi_voice_hook LANGUAGES C CXX)
 
 # galgame 一键制卡 C 阶段 —— 引擎级 voice hook 的隔离 helper 组件。
 #
-# 部署边界（docs/specs/galgame-mining）：injector + hook DLL 不链接进 hibiki.exe，保持独立
+# 部署边界（docs/specs/galgame-mining）：injector + hook DLL 不链接进 fushi.exe，保持独立
 # 子进程/DLL。`tools/build_distribution.ps1` 单独 configure/build；校验 zip 随 Windows 主包
 # 交付以支持离线首装，并同步发布到固定 release 供旧包/后台更新。
 #
@@ -47,17 +47,25 @@ add_library(fushi_voice_hook SHARED
   "hook/geometry_provider_registry.h"
   "hook/lookup_v19_runtime.h"
   "hook/generic_input_shield.inc"
+  "hook/overlay_cursor_guard.h"
+  "hook/overlay_cursor_guard.inc"
+  "hook/generic_direct_input_wheel.inc"
+  "include/lookup_wheel_source.h"
   "hook/xaudio_resource_dispatch.h"
   "hook/bgi_arc.h"
+  "hook/yuris_ypf.h"
+  "hook/fvp_format.h"
   "hook/artemis_pfs.h"
   "hook/catsystem2_int.h"
-  "hook/malie_cfi.h"
-  "hook/malie_lib.h"
   "hook/qlie_pack.h"
   "hook/visual_arts_ovk.h"
   "hook/voice_resource_writer.inc"
+  "hook/selected_lane_candidates.inc"
   "hook/adapter_registry.inc"
   "hook/adapters/unity_adapter.inc"
+  "hook/adapters/unity_mono_text.h"
+  "hook/adapters/unity_mono_lookup.inc"
+  "hook/adapters/unity_mono_lookup_core.h"
   "hook/adapters/windows_audio_adapter.inc"
   "hook/adapters/siglus_adapter.inc"
   "hook/adapters/exact_lookup_signature.h"
@@ -84,11 +92,49 @@ add_library(fushi_voice_hook SHARED
   "hook/adapters/siglus_voice_export.inc"
   "hook/adapters/bgi_ethornell_adapter.inc"
   "hook/adapters/bgi_ethornell_profile.h"
+  "hook/adapters/bgi_lookup.inc"
+  "hook/adapters/bgi_lookup_core.h"
+  "hook/luca_pak.h"
+  "hook/adapters/luca_adapter.inc"
+  "hook/adapters/luca_lookup.inc"
+  "hook/adapters/luca_lookup_core.h"
+  "hook/adapters/luca_profile.h"
+  "hook/adapters/luca_text_core.h"
+  "hook/adapters/luca_x64_text_core.h"
+  "hook/adapters/luca_x64_lookup_core.h"
+  "hook/adapters/luca_x64_lookup.inc"
+  "hook/adapters/yuris_adapter.inc"
+  "hook/adapters/yuris_lookup.inc"
+  "hook/adapters/yuris_lookup_core.h"
+  "hook/adapters/yuris_profile.h"
+  "hook/adapters/yuris_voice.inc"
+  "hook/adapters/yuris_voice_core.h"
+  "hook/adapters/kogado_hy_adapter.inc"
+  "hook/adapters/kogado_hy_core.h"
+  "hook/adapters/kogado_hy_lookup.inc"
+  "hook/adapters/kogado_hy_profile.h"
+  "hook/adapters/kogado_hy_text.inc"
+  "hook/adapters/fvp_adapter.inc"
+  "hook/adapters/fvp_profile.h"
+  "hook/adapters/fvp_lookup.inc"
+  "hook/adapters/fvp_lookup_core.h"
   "hook/adapters/artemis_adapter.inc"
   "hook/adapters/artemis_profile.h"
+  "hook/adapters/artemis_lookup.inc"
+  "hook/adapters/artemis_lookup_core.h"
+  "hook/adapters/reallive_lookup.inc"
+  "hook/adapters/reallive_lookup_core.h"
+  "hook/adapters/catsystem2_lookup.inc"
+  "hook/adapters/catsystem2_lookup_core.h"
+  "hook/adapters/catsystem2_voice_core.h"
   "hook/adapters/catsystem2_adapter.inc"
   "hook/adapters/catsystem2_profile.h"
+  "hook/adapters/cmvs_voice.inc"
+  "hook/adapters/cmvs_voice_core.h"
   "hook/adapters/malie_adapter.inc"
+  "hook/adapters/malie_engine_io_core.h"
+  "hook/adapters/malie_lookup.inc"
+  "hook/adapters/malie_lookup_core.h"
   "hook/adapters/malie_profile.h"
   "hook/adapters/qlie_adapter.inc"
   "hook/adapters/qlie_profile.h"
@@ -101,6 +147,7 @@ add_library(fushi_voice_hook SHARED
   "hook/adapters/sgre_lookup.h"
   "hook/adapters/sgre_lookup.inc"
   "hook/adapters/sgre_profile.h"
+  "include/sgre_family.h"
   "hook/adapters/sgre_voice_archive.h"
   "hook/adapters/leaf_aquaplus_profile.h"
   "hook/adapters/leaf_aquaplus_lookup.h"
@@ -460,6 +507,27 @@ target_include_directories(fushi_kirikiri_voice_storage_name_test PRIVATE "hook"
 add_test(NAME fushi_kirikiri_voice_storage_name_test
   COMMAND fushi_kirikiri_voice_storage_name_test)
 
+# KiriKiri2 TCWF（.tcw，wutcwf 解码）→ WAV。纯函数头，双架构同跑。
+add_executable(fushi_kirikiri_tcwf_test
+  "tests/kirikiri_tcwf_test.cpp"
+)
+target_include_directories(fushi_kirikiri_tcwf_test PRIVATE "include")
+add_test(NAME fushi_kirikiri_tcwf_test COMMAND fushi_kirikiri_tcwf_test)
+
+# x86 指令长度解码 + 函数体内首个 call 定位（KiriKiri 内部 TVPCreateStream，BUG-2887）。双架构同跑。
+add_executable(fushi_x86_insn_len_test
+  "tests/x86_insn_len_test.cpp"
+)
+target_include_directories(fushi_x86_insn_len_test PRIVATE "hook")
+add_test(NAME fushi_x86_insn_len_test COMMAND fushi_x86_insn_len_test)
+
+# RIFF/WAVE PCM 静音判据（掐断语音用的静音文件不得配给旁白，BUG-2888）。双架构同跑。
+add_executable(fushi_pcm_wav_silence_test
+  "tests/pcm_wav_silence_test.cpp"
+)
+target_include_directories(fushi_pcm_wav_silence_test PRIVATE "include")
+add_test(NAME fushi_pcm_wav_silence_test COMMAND fushi_pcm_wav_silence_test)
+
 # 查词整句 ↔ 文本道行的同句判据（点击载荷 text_generation 反查，BUG-2130 家族）。
 add_executable(fushi_lookup_line_text_match_test
   "tests/lookup_line_text_match_test.cpp"
@@ -599,6 +667,14 @@ target_include_directories(fushi_game_main_window_test PRIVATE "hook")
 add_test(NAME fushi_game_main_window_test
   COMMAND fushi_game_main_window_test)
 
+# 游戏光标不盖过 Fushi 浮层（真 Win32 窗口跨线程判定，BUG-2864）。
+add_executable(fushi_overlay_cursor_guard_test
+  "tests/overlay_cursor_guard_test.cpp"
+)
+target_include_directories(fushi_overlay_cursor_guard_test PRIVATE "hook")
+add_test(NAME fushi_overlay_cursor_guard_test
+  COMMAND fushi_overlay_cursor_guard_test)
+
 # 第三条 exporter 路径的判据（形状门用真内存 + VirtualQuery 验；BUG-2145）。
 add_executable(fushi_kirikiri_exporter_scan_test
   "tests/kirikiri_exporter_scan_test.cpp"
@@ -622,6 +698,15 @@ add_executable(fushi_kirikiri_launch_profile_test
 target_include_directories(fushi_kirikiri_launch_profile_test PRIVATE "include")
 add_test(NAME fushi_kirikiri_launch_profile_test
   COMMAND fushi_kirikiri_launch_profile_test)
+
+# 加载器初始化门：KiriKiri launch profile（XP3 归档签名）+ exe 带 TLS 回调时，由主线程自己跑
+# 进程初始化再注入；含跨引擎负向（带 TLS 回调的非 KiriKiri 不过门）。
+add_executable(fushi_loader_init_gate_test
+  "tests/loader_init_gate_test.cpp"
+)
+target_include_directories(fushi_loader_init_gate_test PRIVATE "include")
+add_test(NAME fushi_loader_init_gate_test
+  COMMAND fushi_loader_init_gate_test)
 
 add_executable(fushi_luna_hook_config_test tests/luna_hook_config_test.cpp)
 target_include_directories(fushi_luna_hook_config_test PRIVATE include)
@@ -672,6 +757,15 @@ target_compile_definitions(fushi_lookup_ipc_contract_test
 add_test(NAME fushi_lookup_ipc_contract_test
   COMMAND fushi_lookup_ipc_contract_test)
 
+add_executable(fushi_game_stream_input_ipc_concurrency_test
+  tests/game_stream_input_ipc_concurrency_test.cpp)
+target_include_directories(fushi_game_stream_input_ipc_concurrency_test
+  PRIVATE include)
+target_compile_definitions(fushi_game_stream_input_ipc_concurrency_test
+  PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+add_test(NAME fushi_game_stream_input_ipc_concurrency_test
+  COMMAND fushi_game_stream_input_ipc_concurrency_test)
+
 add_executable(fushi_geometry_provider_registry_test
   tests/geometry_provider_registry_test.cpp)
 target_include_directories(fushi_geometry_provider_registry_test PRIVATE
@@ -703,6 +797,10 @@ target_compile_definitions(fushi_generic_input_shield_test PRIVATE
   "FUSHI_NATIVE_SOURCE_DIR=\"${CMAKE_CURRENT_SOURCE_DIR}\"")
 add_test(NAME fushi_generic_input_shield_test
   COMMAND fushi_generic_input_shield_test)
+
+add_executable(fushi_direct_input_wheel_test tests/direct_input_wheel_test.cpp)
+target_include_directories(fushi_direct_input_wheel_test PRIVATE include)
+add_test(NAME fushi_direct_input_wheel_test COMMAND fushi_direct_input_wheel_test)
 
 add_executable(fushi_unity_text_mesh_reassembler_test
   tests/unity_text_mesh_reassembler_test.cpp)
@@ -740,7 +838,7 @@ target_include_directories(fushi_directsound_format_registry_test PRIVATE hook)
 add_test(NAME fushi_directsound_format_registry_test
   COMMAND fushi_directsound_format_registry_test)
 
-# 注入器（Hibiki 主进程把它当子进程拉起）。attach（--pid）+ launch（--launch；通常
+# 注入器（Fushi 主进程把它当子进程拉起）。attach（--pid）+ launch（--launch；通常
 # CREATE_SUSPENDED 早注入，Siglus/Enigma 自动延迟附着）两种模式，各 arch 一份。
 add_executable(fushi_voice_injector
   "injector/injector_main.cpp"
@@ -850,6 +948,10 @@ add_dependencies(fushi_luna_symcheck fushi_voice_injector)
 add_executable(fushi_reallive_adapter_test "tests/reallive_adapter_test.cpp")
 target_include_directories(fushi_reallive_adapter_test PRIVATE "hook")
 add_test(NAME fushi_reallive_adapter_test COMMAND fushi_reallive_adapter_test)
+# RealLive NWK/NWA：纯解析 + 解码（合成字节，不含游戏数据）。
+add_executable(fushi_reallive_nwk_test "tests/reallive_nwk_test.cpp")
+target_include_directories(fushi_reallive_nwk_test PRIVATE "include")
+add_test(NAME fushi_reallive_nwk_test COMMAND fushi_reallive_nwk_test)
 add_executable(fushi_elf_ai6_adapter_test "tests/elf_ai6_adapter_test.cpp")
 target_include_directories(fushi_elf_ai6_adapter_test PRIVATE "hook")
 add_test(NAME fushi_elf_ai6_adapter_test COMMAND fushi_elf_ai6_adapter_test)
@@ -880,12 +982,32 @@ add_test(NAME fushi_aos_sfa_adapter_test COMMAND fushi_aos_sfa_adapter_test)
 add_executable(fushi_unity_mono_adapter_test "tests/unity_mono_adapter_test.cpp")
 target_include_directories(fushi_unity_mono_adapter_test PRIVATE "hook")
 add_test(NAME fushi_unity_mono_adapter_test COMMAND fushi_unity_mono_adapter_test)
+add_executable(fushi_unity_mono_text_test "tests/unity_mono_text_test.cpp")
+target_include_directories(fushi_unity_mono_text_test PRIVATE "hook")
+add_test(NAME fushi_unity_mono_text_test COMMAND fushi_unity_mono_text_test)
+# Unity Mono in-game lookup core: exact internal-call / field / List`1 layout
+# resolution on a fake runtime (every fail-closed branch), glyph visibility,
+# text <-> rendered-structure mapping, projection, hit testing (touching and
+# overlapping cells), the message-level click claim and the text lane role
+# key.
+add_executable(fushi_unity_mono_lookup_test
+  "tests/unity_mono_lookup_test.cpp")
+target_include_directories(fushi_unity_mono_lookup_test PRIVATE "hook")
+target_compile_definitions(fushi_unity_mono_lookup_test PRIVATE
+  UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+add_test(NAME fushi_unity_mono_lookup_test
+  COMMAND fushi_unity_mono_lookup_test)
 
 add_executable(fushi_engine_identity_layout_test
   "tests/engine_identity_layout_test.cpp")
-target_include_directories(fushi_engine_identity_layout_test PRIVATE "hook")
+target_include_directories(fushi_engine_identity_layout_test PRIVATE
+  "hook" "include" "injector")
 add_test(NAME fushi_engine_identity_layout_test
   COMMAND fushi_engine_identity_layout_test)
+
+add_executable(fushi_bgi_arc_test "tests/bgi_arc_test.cpp")
+target_include_directories(fushi_bgi_arc_test PRIVATE "hook")
+add_test(NAME fushi_bgi_arc_test COMMAND fushi_bgi_arc_test)
 
 add_executable(fushi_lookup_selected_text_test "tests/lookup_selected_text_test.cpp")
 target_include_directories(fushi_lookup_selected_text_test PRIVATE "include")
@@ -905,11 +1027,155 @@ target_include_directories(fushi_smash_fzmedia_lookup_test PRIVATE
 add_test(NAME fushi_smash_fzmedia_lookup_test
   COMMAND fushi_smash_fzmedia_lookup_test)
 
-add_executable(fushi_siglus_text_owner_test "tests/siglus_text_owner_test.cpp")
-target_include_directories(fushi_siglus_text_owner_test PRIVATE "include")
-target_compile_definitions(fushi_siglus_text_owner_test PRIVATE
+# Artemis in-game lookup core: structural site resolution on a synthetic PE
+# (factory -> constructor -> glyph vtable -> draw slot, Input::Update, cursor
+# mapping) with every fail-closed branch, factory character decoding, the
+# glyph code table, cell/letterbox/DPI projection, selected-line suffix
+# mapping and the left-button claim reducer.
+add_executable(fushi_artemis_lookup_test
+  "tests/artemis_lookup_test.cpp"
+)
+target_include_directories(fushi_artemis_lookup_test PRIVATE
+  "hook/adapters")
+target_compile_definitions(fushi_artemis_lookup_test PRIVATE
   UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
-add_test(NAME fushi_siglus_text_owner_test COMMAND fushi_siglus_text_owner_test)
+add_test(NAME fushi_artemis_lookup_test
+  COMMAND fushi_artemis_lookup_test)
+
+# RealLive in-game lookup core: structural site resolution on a synthetic x86
+# image (text-render path -> glyph join -> frame epilogue -> GetGlyphOutlineA
+# rasteriser, key-poll join -> Focused() window global, compositor call ->
+# blitter) with every fail-closed branch, Shift_JIS glyph codes, the
+# glyph/composite visibility tracker, suffix mapping, projection, the
+# presented-pixel proof and the left-button claim reducer.
+add_executable(fushi_reallive_lookup_test
+  "tests/reallive_lookup_test.cpp"
+)
+target_include_directories(fushi_reallive_lookup_test PRIVATE
+  "hook/adapters")
+target_compile_definitions(fushi_reallive_lookup_test PRIVATE
+  UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+add_test(NAME fushi_reallive_lookup_test
+  COMMAND fushi_reallive_lookup_test)
+
+# CatSystem2 in-game lookup core: structural site resolution on a synthetic
+# x86 image (ClearPage+RenderChar pair -> record layout -> GetCharImage ->
+# GetGlyphOutlineA rasteriser, Window::Update -> reveal/sync, layer query ->
+# scene list layout, Input::Handle -> capture imports) with every
+# fail-closed branch, Shift_JIS codes, the page tracker, layer placement and
+# covers, suffix mapping, projection, client->design mapping and the
+# message-level click claim.
+# BGI/Ethornell message text lane + in-game lookup core: structural site
+# resolution on synthetic x86 images of both generations (1.5 __thiscall and
+# 1.6 __stdcall SetTextImpl, Ex vtable cross-proof through the anchored layout,
+# screen mode tables) with every fail-closed branch, owner ABI decoding from
+# drawable / display functions, CP932 line parsing, page glyph mapping,
+# projection, hit testing and the message-level click claim.
+add_executable(fushi_bgi_lookup_test
+  "tests/bgi_lookup_test.cpp"
+)
+target_include_directories(fushi_bgi_lookup_test PRIVATE
+  "hook/adapters")
+target_compile_definitions(fushi_bgi_lookup_test PRIVATE
+  UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+add_test(NAME fushi_bgi_lookup_test
+  COMMAND fushi_bgi_lookup_test)
+
+# FVP (Favorite View Point) HCB trailer identity and the mono-Ogg Vorbis
+# voice check on synthetic bytes.
+add_executable(fushi_fvp_format_test "tests/fvp_format_test.cpp")
+target_include_directories(fushi_fvp_format_test PRIVATE "hook")
+add_test(NAME fushi_fvp_format_test COMMAND fushi_fvp_format_test)
+
+# FVP text lane + in-game lookup core: structural site resolution on a
+# synthetic x86 image (syscall registration, TextPrint handler, Print /
+# PutGlyph, PrimSetText field, render text case, DrawSprite transform proofs)
+# with fail-closed branches, CP932 ruby parsing, glyph pairing, draw-origin
+# admission, projection, hit testing and the message-level click claim.
+add_executable(fushi_fvp_lookup_test
+  "tests/fvp_lookup_test.cpp"
+)
+target_include_directories(fushi_fvp_lookup_test PRIVATE
+  "hook/adapters")
+target_compile_definitions(fushi_fvp_lookup_test PRIVATE
+  UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+add_test(NAME fushi_fvp_lookup_test
+  COMMAND fushi_fvp_lookup_test)
+
+add_executable(fushi_catsystem2_lookup_test
+  "tests/catsystem2_lookup_test.cpp"
+)
+target_include_directories(fushi_catsystem2_lookup_test PRIVATE
+  "hook/adapters")
+target_compile_definitions(fushi_catsystem2_lookup_test PRIVATE
+  UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+add_test(NAME fushi_catsystem2_lookup_test
+  COMMAND fushi_catsystem2_lookup_test)
+
+# CatSystem2 per-line voice core: structural ReadEntry resolution on a
+# synthetic x86 image (kcBigFile::Read forwarder -> ReadEntry prologue ->
+# plain-path block with the SetFilePointer / ReadFile import slots) with every
+# fail-closed branch, entry plausibility, member range assembly, Ogg page CRC
+# scanning, the complete / partial / reject verdicts and the published name.
+add_executable(fushi_catsystem2_voice_test
+  "tests/catsystem2_voice_test.cpp"
+)
+target_include_directories(fushi_catsystem2_voice_test PRIVATE
+  "hook/adapters")
+target_compile_definitions(fushi_catsystem2_voice_test PRIVATE
+  UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+add_test(NAME fushi_catsystem2_voice_test
+  COMMAND fushi_catsystem2_voice_test)
+
+# CMVS per-line voice: group-loader site proof from the x64 exception
+# directory (both toolchain shapes, chained fragments, overflow) and the
+# voice-group / member-name classification.
+add_executable(fushi_cmvs_voice_test
+  "tests/cmvs_voice_test.cpp"
+)
+target_include_directories(fushi_cmvs_voice_test PRIVATE
+  "hook/adapters")
+target_compile_definitions(fushi_cmvs_voice_test PRIVATE
+  UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+add_test(NAME fushi_cmvs_voice_test
+  COMMAND fushi_cmvs_voice_test)
+
+# Malie engine structure: the "CFI" I/O scheme table that is the engine
+# identity (name literal -> unique copy -> table hand-off -> six frame-function
+# slots, tell shape, getc->read, shared registrar) and the Ogg decoder input
+# (libogg ogg_sync_wrote / ogg_sync_buffer, the refill call sites and their
+# decoder stream field, the decoder path field) on a synthetic x86 image with
+# every fail-closed branch, plus the voice-path classification and naming.
+add_executable(fushi_malie_engine_io_test
+  "tests/malie_engine_io_test.cpp"
+)
+target_include_directories(fushi_malie_engine_io_test PRIVATE
+  "hook/adapters")
+target_compile_definitions(fushi_malie_engine_io_test PRIVATE
+  UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+add_test(NAME fushi_malie_engine_io_test
+  COMMAND fushi_malie_engine_io_test)
+
+# Malie message lane + in-game lookup core: RICHTEXT3D draw-method decoding
+# from the class table (glyph records, count, stride, reveal, translation),
+# the segment parser / reveal setter pair, segment cleaning (voice tag, ruby,
+# codes), line-to-glyph mapping, world/design/client projection, hit testing
+# and the click claim, with every fail-closed branch.
+add_executable(fushi_malie_lookup_test
+  "tests/malie_lookup_test.cpp"
+)
+target_include_directories(fushi_malie_lookup_test PRIVATE
+  "hook/adapters")
+target_compile_definitions(fushi_malie_lookup_test PRIVATE
+  UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+add_test(NAME fushi_malie_lookup_test
+  COMMAND fushi_malie_lookup_test)
+
+add_executable(fushi_native_text_owner_test "tests/native_text_owner_test.cpp")
+target_include_directories(fushi_native_text_owner_test PRIVATE "include")
+target_compile_definitions(fushi_native_text_owner_test PRIVATE
+  UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+add_test(NAME fushi_native_text_owner_test COMMAND fushi_native_text_owner_test)
 
 # Locale Emulator is an x86-only runtime. Keep its actual loader-list ABI
 # regression in the standard Windows test gate, without implying x64 support.
@@ -941,3 +1207,21 @@ add_test(NAME fushi_locale_emulator_version_hooks_test
 
 include(tests/generic_input_shield_install_test.cmake)
 include(tests/siglus_legacy_owner_publication_test.cmake)
+add_executable(fushi_yuris_adapter_test "tests/yuris_adapter_test.cpp")
+target_include_directories(fushi_yuris_adapter_test PRIVATE "hook")
+add_test(NAME fushi_yuris_adapter_test COMMAND fushi_yuris_adapter_test)
+add_executable(fushi_kogado_hy_adapter_test "tests/kogado_hy_adapter_test.cpp")
+target_include_directories(fushi_kogado_hy_adapter_test PRIVATE "hook")
+add_test(NAME fushi_kogado_hy_adapter_test COMMAND fushi_kogado_hy_adapter_test)
+add_executable(fushi_luca_adapter_test "tests/luca_adapter_test.cpp")
+target_include_directories(fushi_luca_adapter_test PRIVATE "hook" "hook/adapters")
+target_compile_definitions(fushi_luca_adapter_test PRIVATE UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+add_test(NAME fushi_luca_adapter_test COMMAND fushi_luca_adapter_test)
+add_executable(fushi_luca_x64_text_test "tests/luca_x64_text_test.cpp")
+target_include_directories(fushi_luca_x64_text_test PRIVATE "hook" "hook/adapters")
+target_compile_definitions(fushi_luca_x64_text_test PRIVATE UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+add_test(NAME fushi_luca_x64_text_test COMMAND fushi_luca_x64_text_test)
+add_executable(fushi_luca_x64_lookup_test "tests/luca_x64_lookup_test.cpp")
+target_include_directories(fushi_luca_x64_lookup_test PRIVATE "hook" "hook/adapters")
+target_compile_definitions(fushi_luca_x64_lookup_test PRIVATE UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+add_test(NAME fushi_luca_x64_lookup_test COMMAND fushi_luca_x64_lookup_test)

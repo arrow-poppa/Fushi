@@ -24,7 +24,7 @@ part of '../reader_fushi_page.dart';
 /// `_paginate`) move here as extension statics and are referenced by bare name
 /// (no qualification needed). The `@override` host member
 /// `buildPopupAudioControls` (and the related `_readerChromeHeight` getter /
-/// `_readerChromeBaseHeight` / `_readerPopupHeaderBaseHeight` constants) cannot
+/// `_readerChromeBaseHeight` constant) cannot
 /// live on an extension and stay in the shell, reachable via the shared private
 /// class scope.
 extension _ReaderChrome on _ReaderFushiPageState {
@@ -184,66 +184,20 @@ extension _ReaderChrome on _ReaderFushiPageState {
     await _showReaderImageContextMenuAtGlobalPosition(imgUrl, global);
   }
 
+  /// 菜单本体（锚点经 Overlay 映射、尺寸写常量，BUG-381 / BUG-1438）在
+  /// illustration_zoom_viewer.dart 的 [showImageCopyContextMenu]，与书架端插图册
+  /// 共用；这里只解析文件、决定 Windows 才弹。
   Future<void> _showReaderImageContextMenuAtGlobalPosition(
     String imgUrl,
     Offset globalPosition, {
     BuildContext? menuContext,
   }) async {
     if (!mounted || !isWindowsPlatform) return;
-    final BuildContext effectiveContext = menuContext ?? context;
-    final RenderBox overlay =
-        Overlay.of(effectiveContext).context.findRenderObject()! as RenderBox;
-    // BUG-381: [globalPosition] 是真实屏幕坐标（右键路径来自阅读器 State 的 RenderBox
-    // localToGlobal，放大图路径来自 details.globalPosition；两者都在「净缩放=1 的真实
-    // 视口空间」——阅读器被 FushiAppUiScaleNeutralizer 中和回 1.0）。但 showMenu 的
-    // RelativeRect 落在它路由 Overlay 的坐标系，而该 Overlay 在全局 FushiAppUiScale 的
-    // FittedBox 之内（缩放后的画布空间）。直接把真实屏幕坐标当画布坐标喂给 showMenu，
-    // 界面大小≠100% 时菜单会偏离图片 factor≈scale（BUG-261 同型，视频右键已修）。
-    //
-    // 修法与 BUG-129/261 同范式：不读 scale 数值逆算（自动模式下生效 scale ≠
-    // appModel.appUiScale），而用 Overlay 的 RenderBox 把锚点从真实屏幕坐标沿真实渲染
-    // 变换链映射到 Overlay 本地坐标系——其间的 FittedBox 缩放被 render transform 自动
-    // 吸收，对任意 scale（含自动模式）自洽无残差；scale=1 时变换为单位阵，逐像素等价
-    // （向后兼容）。
-    //
-    // BUG-1438：菜单内容**不能**再乘界面缩放。菜单渲染在根 Overlay，也就是全局
-    // FushiAppUiScale 的缩放画布内，画布→屏幕这一跳已经把它按 scale 放大了一次；
-    // 阅读器 chrome 之所以要手动 ×_readerChromeScale，是因为 chrome 在
-    // FushiAppUiScaleNeutralizer **之内**（净缩放=1，不跟随），而菜单在**之外**。
-    // 旧代码把 chrome 的规则错套到菜单上 → 视觉尺寸是 scale²：实测同样写
-    // `fontSize: 14 * menuScale`，chrome 渲染成 40 而菜单 80（scale=2）。所以这里
-    // 写常量，让菜单与 app 其它右键菜单（视频 / 合集 / 标签管理）口径一致。
-    final Offset anchor = overlay.globalToLocal(globalPosition);
-    final String? action = await showMenu<String>(
-      context: effectiveContext,
-      position: RelativeRect.fromRect(
-        Rect.fromLTWH(anchor.dx, anchor.dy, 1, 1),
-        Offset.zero & overlay.size,
-      ),
-      constraints: const BoxConstraints(minWidth: 112.0, maxWidth: 280.0),
-      menuPadding: const EdgeInsets.symmetric(vertical: 8.0),
-      items: <PopupMenuEntry<String>>[
-        PopupMenuItem<String>(
-          value: 'copy',
-          height: kMinInteractiveDimension,
-          padding: const EdgeInsets.symmetric(horizontal: 16.0),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              const Icon(Icons.copy_outlined, size: 18.0),
-              const SizedBox(width: 12.0),
-              Text(
-                t.reader_copy_image,
-                style: const TextStyle(fontSize: 14.0),
-              ),
-            ],
-          ),
-        ),
-      ],
+    await showImageCopyContextMenu(
+      menuContext ?? context,
+      globalPosition,
+      onCopy: () => _copyReaderImageToClipboard(imgUrl),
     );
-    if (action == 'copy') {
-      await _copyReaderImageToClipboard(imgUrl);
-    }
   }
 
   // TODO-954：阅读器文字选区右键菜单（Windows）。完全复用图片右键的「锚点经 Overlay
@@ -266,7 +220,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
       // 同款：eval 必须 try/catch 吞掉。BUG-927。
       Object? rawText;
       try {
-        rawText = await _controller?.evaluateJavascript(
+        rawText = await _surfaceController?.evaluateJavascript(
           source: ReaderSelectionScripts.nativeSelectionTextInvocation(),
         );
       } catch (e, stack) {
@@ -311,7 +265,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
-              Icon(Icons.search_outlined, size: 18.0),
+              FushiIcon(FushiIcons.search, size: 18.0),
               const SizedBox(width: 12.0),
               Text(t.search, style: TextStyle(fontSize: 14.0)),
             ],
@@ -324,7 +278,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
-              Icon(Icons.copy_outlined, size: 18.0),
+              FushiIcon(FushiIcons.copy, size: 18.0),
               const SizedBox(width: 12.0),
               Text(t.copy, style: TextStyle(fontSize: 14.0)),
             ],
@@ -340,7 +294,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
-              Icon(Icons.star_border, size: 18.0),
+              FushiIcon(FushiIcons.star, size: 18.0),
               const SizedBox(width: 12.0),
               Text(t.action_favorite, style: TextStyle(fontSize: 14.0)),
             ],
@@ -354,7 +308,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: <Widget>[
-                Icon(Icons.movie_creation_outlined, size: 18.0),
+                FushiIcon(FushiIcons.video, size: 18.0),
                 const SizedBox(width: 12.0),
                 Text(t.audiobook_export_clip, style: TextStyle(fontSize: 14.0)),
               ],
@@ -362,7 +316,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
           ),
       ];
 
-      final String? action = await showMenu<String>(
+      final String? action = await showFushiMenu<String>(
         context: context,
         position: RelativeRect.fromRect(
           Rect.fromLTWH(anchor.dx, anchor.dy, 1, 1),
@@ -450,6 +404,13 @@ extension _ReaderChrome on _ReaderFushiPageState {
   // 复制完都清掉 app 选区高亮；查词路径由 [_handleTextSelected] 自行收敛到词典匹配长度。
   Future<void> _handleSelectionMenu(ReaderSelectionData data) async {
     if (!mounted) return;
+    final ModalRoute<Object?>? owner = ModalRoute.of(context);
+    if (_sideSheetOpen || _appearanceSheetOpen ||
+        _studyClockModalDepth > 0 || (owner != null && !owner.isCurrent)) {
+      // A delayed WebView message must not recreate controls over another route.
+      await _clearReaderAppSelection();
+      return;
+    }
     if (data.text.isEmpty) {
       await _clearReaderAppSelection();
       return;
@@ -495,98 +456,125 @@ extension _ReaderChrome on _ReaderFushiPageState {
     // BUG-1438：本操作条是插进**根 Overlay** 的 OverlayEntry，落在全局
     // FushiAppUiScale 的缩放画布内，已天然跟随界面大小；不得再乘
     // _readerImageMenuScale（那是给中和层内 chrome 用的），否则视觉尺寸是 scale²。
-    const double barHeight = kMinInteractiveDimension;
-    const double gap = 8;
-    const double handleReserve = 32 + gap;
-
     final RenderBox? webBox =
-        _webViewKey.currentContext?.findRenderObject() as RenderBox?;
-    final Map<String, double>? r = data.rect;
-    double selectionTop;
-    double selectionBottom;
-    if (r != null && webBox != null) {
-      // BUG-1438：选区矩形的**两个角**都要过 localToGlobal→globalToLocal，不能只映射
-      // 顶边再加上未换算的 height。`r` 来自 WebView（中和层内的真实像素），而
-      // selectionTop 已在 Overlay 画布空间——两者相加是混量纲，界面大小≠100% 时
-      // 「上方放不下→翻到选区下方」这一分支会偏 (1−1/scale)×选区高。
+        _surfaceWebViewKey.currentContext?.findRenderObject() as RenderBox?;
+    // 本操作条要同时避开两样东西，所以两个矩形分开传：
+    //   data.rect        —— 选区**正文**（首字 rect），面板的锚点（与原实现同源）；
+    //   data.handlesRect —— 两端 32px 手柄触控盒的并集，只是**要避开的障碍**。
+    // 合并成一个矩形传（此前 `handlesRect ?? rect`）会把锚点也换成手柄并集：横排两球挂在
+    // 字下方、并集 top 落在正文里；竖排起球在字上方、页顶放不下时会翻到并集底端 —— 面板
+    // 于是从选区头部掉到选区尾部下方。
+    // 两个矩形的角都过同一条变换链（WebView local -> global -> Overlay local），吸收界面缩放。
+    Rect? mapToOverlay(Map<String, double>? r) {
+      if (r == null || webBox == null) return null;
       final double rx = r['x'] ?? 0;
       final double ry = r['y'] ?? 0;
       final Offset topGlobal = webBox.localToGlobal(Offset(rx, ry));
       final Offset bottomGlobal = webBox.localToGlobal(
-        Offset(rx, ry + (r['height'] ?? 0)),
+        Offset(rx + (r['width'] ?? 0), ry + (r['height'] ?? 0)),
       );
-      selectionTop = overlayBox.globalToLocal(topGlobal).dy;
-      selectionBottom = overlayBox.globalToLocal(bottomGlobal).dy;
-    } else {
-      selectionTop = overlaySize.height / 2;
-      selectionBottom = selectionTop;
+      return Rect.fromPoints(
+        overlayBox.globalToLocal(topGlobal),
+        overlayBox.globalToLocal(bottomGlobal),
+      );
     }
 
-    double top = selectionTop - gap - barHeight;
-    if (top < gap) {
-      top = selectionBottom + handleReserve;
+    final Rect? gripsRect = mapToOverlay(data.handlesRect);
+    // 按**单个球**避让（data.handlesBoxes）；只有并集时退回并集，两者都没有就不避让。
+    final List<Rect> gripBoxes = <Rect>[];
+    final List<Map<String, double>>? rawGripBoxes = data.handlesBoxes;
+    if (rawGripBoxes != null) {
+      for (final Map<String, double> box in rawGripBoxes) {
+        final Rect? mapped = mapToOverlay(box);
+        if (mapped != null) gripBoxes.add(mapped);
+      }
+    } else if (gripsRect != null) {
+      gripBoxes.add(gripsRect);
     }
-    top = top.clamp(
-      gap,
-      (overlaySize.height - barHeight - gap).clamp(gap, double.infinity),
-    );
+    final Rect selectionRect = mapToOverlay(data.rect) ??
+        gripsRect ??
+        Rect.fromLTWH(0, overlaySize.height / 2, 0, 0);
 
     final bool hasAudio = _audiobookController != null &&
         _audiobookController!.chapterCueCount > 0;
     final ThemeData theme = Theme.of(overlayContext);
+    final bool glass = isGlassDesign(overlayContext);
+    // 工具条高度：MD3 条与 Apple 玻璃胶囊同高。定位由
+    // [ReaderSelectionToolbarLayout] 负责，这个常量只服务 glass 分支的形状
+    // （`const LiquidRoundedSuperellipse(borderRadius: barHeight / 2)` 要求它是 const）。
+    const double barHeight = kMinInteractiveDimension;
 
-    Widget button(IconData icon, String label, String action) {
-      return InkWell(
-        onTap: () => _runSelectionAction(action),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(
-            horizontal: 12.0,
-            vertical: 10.0,
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              Icon(icon, size: 18.0),
-              const SizedBox(width: 8.0),
-              Text(label, style: TextStyle(fontSize: 14.0)),
-            ],
-          ),
-        ),
-      );
-    }
+    ReaderSelectionActionItem item(
+      IconData icon,
+      String label,
+      String action,
+    ) =>
+        ReaderSelectionActionItem(
+          icon: icon,
+          label: label,
+          onPressed: () => unawaited(_runSelectionAction(action)),
+        );
 
-    return Positioned(
-      left: gap,
-      right: gap,
-      top: top,
-      child: Align(
-        alignment: Alignment.center,
-        child: FittedBox(
-          fit: BoxFit.scaleDown,
-          child: Material(
-            elevation: 6,
-            color: theme.popupMenuTheme.color ??
-                theme.colorScheme.surfaceContainerHigh,
-            borderRadius: BorderRadius.circular(8.0),
-            clipBehavior: Clip.antiAlias,
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: <Widget>[
-                button(Icons.search_outlined, t.search, 'search'),
-                button(Icons.copy_outlined, t.copy, 'copy'),
-                if (isAndroidPlatform)
-                  button(Icons.share_outlined, t.share, 'share'),
-                if (isAndroidPlatform)
-                  button(Icons.travel_explore, t.selection_web_search,
-                      'webSearch'),
-                button(Icons.star_border, t.action_favorite, 'favorite'),
-                if (hasAudio)
-                  button(Icons.movie_creation_outlined, t.audiobook_export_clip,
-                      'export'),
-              ],
-            ),
-          ),
+    final List<ReaderSelectionActionItem> actionItems =
+        <ReaderSelectionActionItem>[
+      item(FushiIcons.search, t.search, 'search'),
+      item(FushiIcons.copy, t.copy, 'copy'),
+      if (isAndroidPlatform) item(FushiIcons.share, t.share, 'share'),
+      if (isAndroidPlatform)
+        item(
+          FushiIcons.travelExplore,
+          t.selection_web_search,
+          'webSearch',
         ),
+      item(FushiIcons.star, t.action_favorite, 'favorite'),
+      if (hasAudio) item(FushiIcons.video, t.audiobook_export_clip, 'export'),
+    ];
+
+    // 2026-10 体验优化：原本整条 Row 套 FittedBox(scaleDown)，按钮一多就被等比
+    // 缩到 0.5 倍（字和触控目标都太小）。改由 [ReaderSelectionActionBar] 按可用
+    // 宽度降级：带文字 → 只图标 + Tooltip → 前 3 颗常驻 + ⋮ 溢出菜单。
+    return Positioned.fill(
+      child: CustomSingleChildLayout(
+        delegate: ReaderSelectionToolbarLayout(
+          selectionRect: selectionRect,
+          gripBoxes: gripBoxes,
+          safeInsets: MediaQuery.paddingOf(overlayContext),
+        ),
+        child: glass
+            // Apple：iOS 26 文本编辑菜单——浮在正文上的液态玻璃胶囊（控件层），
+            // 高度同 MD3 条（[barHeight]），定位算法不变。iOS / macOS 正文是
+            // 原生 WebView 平台视图，着色器采不到它，走 BackdropFilter 回退。
+            ? LayoutBuilder(
+                builder: (BuildContext context, BoxConstraints constraints) {
+                  return Align(
+                    alignment: Alignment.center,
+                    child: GlassContainer(
+                      useOwnLayer: true,
+                      quality: fushiGlassQuality(overlayContext, prominent: true),
+                      settings:
+                          fushiGlassSettingsOverPlatformView(overlayContext),
+                      shape: const LiquidRoundedSuperellipse(
+                        borderRadius: barHeight / 2,
+                      ),
+                      platformViewBackdrop:
+                          fushiGlassOverPlatformView(overlayContext),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 4.0),
+                        child: ReaderGlassSelectionActionRow(
+                          items: actionItems,
+                          maxWidth: constraints.maxWidth - 8.0,
+                          barHeight: barHeight,
+                        ),
+                      ),
+                    ),
+                  );
+                },
+              )
+            : ReaderSelectionActionBar(
+                color: theme.popupMenuTheme.color ??
+                    theme.colorScheme.surfaceContainerHigh,
+                items: actionItems,
+              ),
       ),
     );
   }
@@ -667,7 +655,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
   Future<void> _clearReaderAppSelection() async {
     _removeSelectionActionBar();
     try {
-      await _controller?.evaluateJavascript(
+      await _surfaceController?.evaluateJavascript(
         source: ReaderSelectionScripts.clearInvocation(),
       );
     } catch (e, stack) {
@@ -690,7 +678,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
   Future<ReaderSelectionData?> _fillLookupStateFromNativeSelection() async {
     Object? raw;
     try {
-      raw = await _controller?.evaluateJavascript(
+      raw = await _surfaceController?.evaluateJavascript(
         source: ReaderSelectionScripts.nativeSelectionSentenceRangeInvocation(),
       );
     } catch (e, stack) {
@@ -814,7 +802,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
   Future<void> _hideReaderSelectionHandles() async {
     _removeSelectionActionBar();
     try {
-      await _controller?.evaluateJavascript(
+      await _surfaceController?.evaluateJavascript(
         source: 'window.fushiSelection.hideSelectionHandles()',
       );
     } catch (e, stack) {
@@ -830,7 +818,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
   /// 解码 → 跳过并记日志（光栅封面 <svg><image> 的内层位图已由 JS 侧解析为真实位图 URL）。
   Future<List<({int normOffset, Uint8List bytes})>>
       _extractSelectionClipImages() async {
-    final InAppWebViewController? controller = _controller;
+    final InAppWebViewController? controller = _surfaceController;
     if (controller == null) {
       return const <({int normOffset, Uint8List bytes})>[];
     }
@@ -899,6 +887,9 @@ extension _ReaderChrome on _ReaderFushiPageState {
     _exportAudiobookClip();
   }
 
+  /// 分享 / 复制的动作本体在 illustration_zoom_viewer.dart（[shareImageFile] /
+  /// [copyImageFileToClipboard]），与书架端插图册共用；这里只把 fushi.local URL
+  /// 解析成本书解压目录里的文件。
   Future<void> _shareReaderImage(String imgUrl) async {
     final File? file = _readerImageFileForUrl(imgUrl);
     if (file == null) {
@@ -906,16 +897,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
           msg: t.reader_image_file_unavailable, severity: ToastSeverity.error);
       return;
     }
-    try {
-      await FushiShare.shareFiles(
-        <XFile>[XFile(file.path, mimeType: fallbackMimeType(file.path))],
-        subject: p.basename(file.path),
-      );
-    } catch (e) {
-      FushiToast.show(
-          msg: t.reader_image_share_failed(error: e),
-          severity: ToastSeverity.error);
-    }
+    await shareImageFile(file);
   }
 
   Future<void> _copyReaderImageToClipboard(String imgUrl) async {
@@ -925,39 +907,25 @@ extension _ReaderChrome on _ReaderFushiPageState {
           msg: t.reader_image_file_unavailable, severity: ToastSeverity.error);
       return;
     }
-    try {
-      await FushiChannels.clipboardImage.invokeMethod<void>(
-        'copyImageFile',
-        <String, String>{'path': file.path},
-      );
-      FushiToast.show(
-          msg: t.copied_to_clipboard, severity: ToastSeverity.success);
-    } catch (e) {
-      FushiToast.show(
-          msg: t.reader_image_copy_failed(error: e),
-          severity: ToastSeverity.error);
-    }
+    await copyImageFileToClipboard(file);
   }
 
   /// [resolvedFile] 非空 = 兄弟卷插图（BUG-2521）：文件由卷上下文解析、不经本书
   /// 解压目录，右键分享菜单也不挂（它按 [imgUrl] 在本书目录里找文件，找不到）。
-  void _openImageViewer(String imgUrl, {File? resolvedFile}) {
+  Future<void> _openImageViewer(String imgUrl, {File? resolvedFile}) async {
     final File? file = resolvedFile ?? _readerImageFileForUrl(imgUrl);
     if (file == null) return;
+    await _clearReaderAppSelection();
+    if (!mounted) return;
     final bool contextMenu = resolvedFile == null;
     // BUG-2208：全屏看图期间停表（路由 pop 后按判据续表）。
     unawaited(
       _withStudyClockPaused(
         () => Navigator.push(
           context,
-          PageRouteBuilder<void>(
-            opaque: false,
-            barrierColor: Theme.of(
-              context,
-            ).colorScheme.scrim.withValues(alpha: 0.87),
-            barrierDismissible: true,
-            pageBuilder: (BuildContext routeContext, __, ___) =>
-                ContextMenuTrigger(
+          illustrationZoomRoute(
+            context,
+            (BuildContext routeContext) => ContextMenuTrigger(
               // 右键菜单改由绑定表决定唤出键（默认仍是右键）；右键被别的动作占用时自动让位。
               onInvoke: isWindowsPlatform && contextMenu
                   ? (Offset position) => unawaited(
@@ -969,27 +937,10 @@ extension _ReaderChrome on _ReaderFushiPageState {
                       )
                   : null,
               ladder: kReaderMouseLadder,
-              child: GestureDetector(
-                onTap: () => Navigator.pop(context),
-                child: InteractiveViewer(
-                  minScale: 0.5,
-                  maxScale: 10,
-                  child: Center(
-                    child: Image.file(
-                      file,
-                      fit: BoxFit.contain,
-                      // BUG-2496：坏图解码失败退回占位图标，不当致命 FlutterError。
-                      errorBuilder: (_, Object error, __) {
-                        ErrorLogService.instance.logDiagnostic(
-                          'ReaderFushiPage.imageViewer.coverDecode',
-                          '${file.path}: $error',
-                        );
-                        return const Icon(Icons.broken_image_outlined,
-                            size: 64);
-                      },
-                    ),
-                  ),
-                ),
+              // 缩放查看本体与书架端插图册同一份（illustration_zoom_viewer.dart）。
+              child: IllustrationZoomViewer(
+                file: file,
+                diagnosticTag: 'ReaderFushiPage.imageViewer',
               ),
             ),
           ),
@@ -1005,11 +956,22 @@ extension _ReaderChrome on _ReaderFushiPageState {
   // reuses [_navigateToChapter] (no second navigation path). Reads
   // [_currentChapter] only -- never writes reader/WebView state.
 
-  void _openGallery() {
+  Future<void> _openGallery() async {
     final EpubBook? book = _book;
     if (book == null) return;
-    final List<EpubImageRef> images = book.images;
+    await _clearReaderAppSelection();
+    if (!mounted) return;
+    final List<EpubImageRef> images =
+        await _loadBookImagesOffUiIsolate(book, _extractDir);
+    if (!mounted || !identical(_book, book)) return;
     final int currentChapter = _currentChapter;
+    final List<TtuTocEntry> toc = _buildTtuToc();
+    // 章内位置也要带过去：插图册与书架端插图库用同一把尺判「读到没读到」
+    // （BUG-2559）。缓存的分数属于别的章时（刚跳章、还没回报进度）退到章首 0，
+    // 与落库时的同款判据一致。
+    final int currentNormCharOffset = _lastProgressSection == currentChapter
+        ? (_lastProgressValue.clamp(0.0, 1.0) * 10000).round()
+        : 0;
     // BUG-2208：插图画廊是从阅读器 push 出去的全页路由，压住期间停表。
     unawaited(
       _withStudyClockPaused(
@@ -1019,8 +981,19 @@ extension _ReaderChrome on _ReaderFushiPageState {
             builder: (BuildContext routeContext) => ReaderGalleryPage(
               // 节头用真实章名（TOC 命中）；命不中时页面自己退到「第 N 章」。
               chapterLabelFor: _currentChapterLabelFor,
+              // 按目录分节：一个 xhtml 装好几话的书，插图按章内位置归到各话；
+              // 连续几页插图同属一话时合成一节。与顶栏章名同一份目录与判据。
+              toc: ReaderGalleryToc(
+                entries: toc,
+                currentEntry: resolveCurrentTocEntry(
+                  toc,
+                  currentChapter,
+                  _tocCharOffsetFor(currentChapter),
+                ),
+              ),
               images: images,
               currentChapter: currentChapter,
+              currentNormCharOffset: currentNormCharOffset,
               blurImages: _settings?.blurImages ?? false,
               revealedImageKeys: _revealedImageKeys,
               onRevealImage: (String key) {
@@ -1046,13 +1019,35 @@ extension _ReaderChrome on _ReaderFushiPageState {
                   })();
                 '''));
               },
+              onUnrevealImage: (String key) {
+                if (!_revealedImageKeys.remove(key)) return;
+                final String? bookUid = _bookUid;
+                if (bookUid != null) {
+                  unawaited(
+                      appModel.database.unmarkImageRevealed(bookUid, key));
+                }
+                unawaited(_controller?.evaluateJavascript(source: '''
+                  (function() {
+                    var key = ${jsonEncode(key)};
+                    if (window.__fushiUnmarkImageRevealed) {
+                      window.__fushiUnmarkImageRevealed(key);
+                    }
+                    if (!window.__fushiImageRevealKey) return;
+                    document.querySelectorAll('img.block-img, svg.block-img').forEach(function(el) {
+                      if (window.__fushiImageRevealKey(el) === key) el.classList.add('blurred');
+                    });
+                  })();
+                '''));
+              },
               fileForRef: (EpubImageRef ref) =>
                   _readerImageFileForUrl(ReaderFushiSource.epubUrl(ref.src)),
               onOpenImage: (EpubImageRef ref) =>
                   _openImageViewer(ReaderFushiSource.epubUrl(ref.src)),
               onJumpTo: (EpubImageRef ref) {
                 Navigator.pop(routeContext);
-                unawaited(_navigateToChapter(ref.chapterIndex, manual: true));
+                unawaited(
+                  _navigateToChapter(ref.jumpChapterIndex, manual: true),
+                );
               },
               volumeSwitch: _galleryVolumeSwitch(routeContext),
             ),
@@ -1088,6 +1083,8 @@ extension _ReaderChrome on _ReaderFushiPageState {
   /// 底栏仍是挤压模式时（悬浮开关关闭）没有临时可见态，保留 [_toggleChrome] 旧
   /// 语义；只开顶部进度悬浮、底栏挤压的混合形态同样走挤压分支，与指针路径一致。
   void _toggleChromeFromShortcut() {
+    // 顶栏和底栏被关掉：它们不存在，快捷键也唤不出来（开回来走悬浮球或设置）。
+    if (_toolbarsHidden) return;
     if (_bottomBarFloating) {
       // _bottomBarFloating ⇒ _anyChromeFloating，所以这里恒被消费；断言锁住这个
       // 蕴含关系，防止将来有人把 _anyChromeFloating 的定义改窄后此路静默变 no-op。
@@ -1100,6 +1097,8 @@ extension _ReaderChrome on _ReaderFushiPageState {
   }
 
   void _toggleChrome() {
+    // 顶栏和底栏被关掉：栏唤不出来也收不起来（本就不在）。
+    if (_toolbarsHidden) return;
     _rebuild(() {
       _showChrome = !_showChrome;
     });
@@ -1125,8 +1124,53 @@ extension _ReaderChrome on _ReaderFushiPageState {
     _focusOwnership.reclaim(FocusReclaimCause.chromeToggled);
   }
 
+  // ── 关掉顶栏和底栏（悬浮球接管）────────────────────────────────────
+  // 偏好 `hide_toolbars`（设置 → 阅读界面，或顶栏 / 底栏 / 悬浮球上的同一颗键）
+  // 在应用内悬浮球开着时生效（[readerToolbarsHidden]）：顶栏 / 底栏（含悬浮态临时
+  // 唤出）一律不画，任何唤出 / 切换入口（点空白、点顶部进度、M / 手柄 Y、VN 空白
+  // 点、歌词 / 双页空白点）都打不开它们。状态镜像在
+  // [ReaderChromeController.toolbarsHidden]，布局判据经 [_chromeBarsExpanded]，
+  // 点词门控经 [_tapGateChrome]。
+  //
+  // 出口全在悬浮球上：阅读器场景把返回 / 设置 / 开回栏固定在球上
+  // （[kReaderToolbarsTakeoverItems]），球不给「关闭」键
+  // （[_buildReaderFloatingBallScene]）；返回键（Esc / 系统返回 / 手柄 B）照常退书。
+
+  /// 按偏好与应用内悬浮球开关同步 [_toolbarsHidden]；没变就什么都不做（偏好仓库
+  /// 任一键变化都会调进来）。变了就重下 chrome 预留并重锚（挤压态的栏占位随之
+  /// 变化；悬浮态预留恒 0，这里是 no-op），并同步点词门控。[reanchor] 为 false
+  /// 时由调用方自己重下预留（设置页的重锚通道）。
+  void _syncToolbarsHidden({bool reanchor = true}) {
+    if (!mounted) return;
+    final bool hidden = readerToolbarsHidden(
+      hideToolbarsPreference: ReaderFushiSource.instance.hideToolbars,
+      inAppFloatingBallEnabled: appModelNoUpdate.prefsRepo.floatingBallInApp,
+    );
+    if (_toolbarsHidden == hidden) return;
+    _rebuild(() {
+      _chrome.toolbarsHidden = hidden;
+    });
+    if (reanchor) {
+      unawaited(
+        _applyChromeInsetsAndReanchor().catchError((Object e, StackTrace s) {
+          ErrorLogService.instance.log('ReaderFushi.syncToolbarsHidden', e, s);
+        }),
+      );
+    }
+    // 点词门控镜像读 [_tapGateChrome]（含栏关掉位），翻转即同步。
+    _syncTapGateJs();
+  }
+
+  /// 顶栏 / 底栏 / 悬浮球上那颗开关键的执行体。
+  Future<void> _setHideToolbars(bool hide) async {
+    await setHideReaderToolbars(appModelNoUpdate, hide);
+    if (!mounted) return;
+    _syncToolbarsHidden();
+    _focusOwnership.reclaim(FocusReclaimCause.chromeToggled);
+  }
+
   Future<void> _applyChromeInsets() async {
-    if (_controller == null || !_readerContentReady || _lyricsMode) return;
+    if (_controller == null || !_readerContentReady) return;
     // TODO-975：底栏预留经单一真相源 _readerBottomReserve（悬浮态恒 0、挤压态含底栏高
     // + 系统 inset），取代散落的 `_showChrome ? height+inset : inset` 三元式。
     final double top = _readerTopOffset;
@@ -1189,16 +1233,20 @@ extension _ReaderChrome on _ReaderFushiPageState {
   /// 分页模式 JS 侧整体 no-op，连续模式才真重锚（与现有重锚路径门控一致）。
   Future<void> _applyChromeInsetsAndReanchor() async {
     await _applyChromeInsets();
-    if (!mounted || _controller == null || _settings == null || _lyricsMode) {
+    if (!mounted || _controller == null || _settings == null) {
       return;
     }
     await _reanchorForStyleChange(_currentStyleJson());
   }
 
-  // ── Floating chrome reveal / auto-hide (TODO-975) ─────────────────────
-  // 悬浮模式（顶部进度 / 底栏）：点击唤出 → 临时可见 + 武装定时器 → 计时到自动收起；
-  // 唤出期间再点一下立即收起（决策#4：不续命）。改 _chromeTransientVisible 不改预留高
-  // （悬浮恒 0），故纯显隐不重锚。挤压模式不调用这套（无 timer）。
+  // ── Floating chrome reveal (TODO-975) ────────────────────────────────
+  // 悬浮模式（顶部进度 / 底栏）：**点击是唯一的开关**——点一下唤出、再点一下收起，
+  // 中间不计时、不自动消失（用户 2026-09-14 拍板：悬浮控制栏只认点击，鼠标移动不
+  // 得唤出，移动端单击同为开 / 关）。改 _chromeTransientVisible 不改预留高（悬浮恒
+  // 0），故纯显隐不重锚。挤压模式不调用这套。
+  //
+  // 自动收起计时器只剩 VN 推进一条路还在用（[_revealFloatingChromeForVnAdvance]）：
+  // 那里「点空白」已被翻页占死，收起没有第二条手势通道，理由见该方法。
 
   void _cancelChromeAutoHide() => _chrome.cancelAutoHide();
 
@@ -1209,11 +1257,14 @@ extension _ReaderChrome on _ReaderFushiPageState {
   }
 
   /// VN 空白点推进时用的「保证悬浮 chrome 可见并重新计时」——与
-  /// [_handleFloatingChromeReveal] 的**区别是不 toggle**：那个在已可见时会立即收起
-  /// （决策#4，给的是「点一下开、再点一下关」的开关语义），而 VN 空白点是「翻页」，
-  /// 顺手把底栏顶上来只是副作用，绝不能因为连点两下就把菜单关掉。
+  /// [_handleFloatingChromeReveal] 的**区别是不 toggle**：那个是纯开关（点一下开、
+  /// 再点一下关），而 VN 空白点是「翻页」，顺手把底栏顶上来只是副作用，绝不能因为
+  /// 连点两下就把菜单关掉。
   ///
-  /// 每次推进都重新 [_armChromeAutoHide]：停手 3 秒后收起，连续翻页期间常驻。
+  /// **全页唯一还武装自动收起的地方**（其余路径按用户 2026-09-14 的裁决改成纯点击
+  /// 开关）。VN 例外不是遗留：它把「点空白」整个绑成了翻页，栏被顶出来之后就没有
+  /// 第二条手势通道能把它收回去（触屏连快捷键都没有），计时是唯一的出口。
+  /// 每次推进都重新 [_armChromeAutoHide]：停手后按设置的时长收起，连续翻页期间常驻。
   void _revealFloatingChromeForVnAdvance() {
     if (!_anyChromeFloating) return;
     if (!_chromeTransientVisible) {
@@ -1224,72 +1275,21 @@ extension _ReaderChrome on _ReaderFushiPageState {
     _armChromeAutoHide();
   }
 
-  /// 点击空白 / 顶部进度时调用（仅当存在任一悬浮 chrome）。可见时立即收起（决策#4），
-  /// 隐藏时唤出 + 武装自动收起。返回 true 表示本次点击被悬浮唤出/收起逻辑消费。
+  /// 点击空白 / 顶部进度 / 快捷键时调用（仅当存在任一悬浮 chrome）：**纯开关**——
+  /// 可见即收起，收起即唤出，且唤出后不武装任何计时器（用户 2026-09-14：栏一旦
+  /// 被点出来就留着，只有下一次点击能关掉它）。返回 true 表示本次点击被消费。
+  ///
+  /// 仍调 [_cancelChromeAutoHide]：VN 推进路径可能刚武装过一次计时，收起时必须把
+  /// 它一起停掉，否则计时到点会对着已收起的栏再通知一次。
   bool _handleFloatingChromeReveal() {
     if (!_anyChromeFloating) return false;
-    if (_chromeTransientVisible) {
-      _cancelChromeAutoHide();
-      _rebuild(() {
-        _chromeTransientVisible = false;
-      });
-      return true;
-    }
+    // 栏被关掉：本次点击照样算被消费（不落到别的分支），但栏不出来。
+    if (_toolbarsHidden) return true;
+    _cancelChromeAutoHide();
     _rebuild(() {
-      _chromeTransientVisible = true;
+      _chromeTransientVisible = !_chromeTransientVisible;
     });
-    _armChromeAutoHide();
     return true;
-  }
-
-  /// 鼠标在正文上移动 → 唤出 / 续命悬浮 chrome（与视频页同一手感）。
-  ///
-  /// 两条腿、同一门 [hostOwnsWebViewPointerInput] ∪ [hostOwnsWebViewHoverLookup]
-  /// （前者与 [_handleReaderPointerDown] 逐字相同的互斥判据）：Windows 上 WebView 是
-  /// 纹理、Flutter 拿指针，页面根 [Listener.onPointerHover] 直接进这里；macOS 上
-  /// 原生 WebView 的 DOM 收不到 mousemove / pointermove（BUG-2508 已把 Shift 悬停
-  /// 查词整条搬到宿主腿），唤出 chrome 也只能走宿主腿；其余平台原生 WebView 吃掉
-  /// 指针，由页内 JS `pointermove` 节流回传 `onPointerHoverReveal`
-  /// （[_handleJsHoverReveal]）。
-  ///
-  /// 决策在纯函数 [readerHoverRevealAction]：非悬浮 / 非鼠标 → 不动；已收起 →
-  /// 唤出 + 武装；已可见 → 只重新武装（移动中常驻，停手后按计时收起）。
-  /// 替代了此前只占顶部 6px 的悬停热区——那条带子从正文中间横向移动碰不到，
-  /// 用户的感受就是「控制栏没有自动恢复」。
-  void _handleReaderPointerHover(PointerHoverEvent event) {
-    if (!hostOwnsWebViewPointerInput && !hostOwnsWebViewHoverLookup) return;
-    _applyHoverReveal(isMouse: event.kind == PointerDeviceKind.mouse);
-  }
-
-  /// JS 腿（非 Windows / 非 macOS）：页内 pointermove 已按 pointerType 过滤成真实
-  /// 鼠标，这里视作鼠标。
-  void _handleJsHoverReveal() {
-    if (hostOwnsWebViewPointerInput || hostOwnsWebViewHoverLookup) return;
-    _applyHoverReveal(isMouse: true);
-  }
-
-  void _applyHoverReveal({required bool isMouse}) {
-    if (!_hasEverLoaded || _sideSheetOpen || _appearanceSheetOpen) return;
-    // 停在栏上：栏自己的 MouseRegion 已取消计时，这里不再 re-arm。栏被卸载
-    // （快捷键收起 / 重锚置 false）时 MouseRegion 不发 onExit，旗会卡在 true——
-    // 栏不在场就当没停在上面。
-    if (_chromeHovered && _bottomBarShouldPaint) return;
-    if (!_bottomBarShouldPaint) _chromeHovered = false;
-    switch (readerHoverRevealAction(
-      floating: _anyChromeFloating,
-      transientVisible: _chromeTransientVisible,
-      isMouse: isMouse,
-    )) {
-      case ReaderHoverRevealAction.none:
-        return;
-      case ReaderHoverRevealAction.reveal:
-        _rebuild(() {
-          _chromeTransientVisible = true;
-        });
-        _armChromeAutoHide();
-      case ReaderHoverRevealAction.rearm:
-        _armChromeAutoHide();
-    }
   }
 
   /// BUG-1195：VN（视觉小说）模式下一次「空白点击」的唯一落点。
@@ -1321,11 +1321,13 @@ extension _ReaderChrome on _ReaderFushiPageState {
     // 本次 pointer 手势把 OS 焦点交给了 WebView，不夺回 Flutter _focusNode 就收不到
     // ESC（BUG-136）。翻页与唤栏两条分支都要。
     _focusOwnership.reclaim(FocusReclaimCause.gesture);
+    // 栏被关掉由决策表裁决（只推进），这里不另开分支。
     dispatchReaderVnBlankTapAction(
       readerVnBlankTapAction(
         chromeExpanded: _showChrome,
         bottomBarFloating: _bottomBarFloating,
         transientVisible: _chromeTransientVisible,
+        toolbarsHidden: _toolbarsHidden,
       ),
       expandChrome: _toggleChrome,
       revealChrome: _revealFloatingChromeForVnAdvance,
@@ -1366,7 +1368,8 @@ extension _ReaderChrome on _ReaderFushiPageState {
       gateAllowed: readerUiScaleReanchorAllowed(
         controllerAvailable: _controller != null,
         readerContentReady: _readerContentReady,
-        lyricsMode: _lyricsMode,
+        // 覆盖层架构：歌词不再替换正文文档，正文重锚不看歌词态。
+        lyricsMode: false,
         restoreInFlight: _restoreInFlight,
         continuousMode: _settings?.isContinuousMode == true,
       ),
@@ -1421,12 +1424,14 @@ extension _ReaderChrome on _ReaderFushiPageState {
       gateAllowed: readerRestoreReanchorAllowed(
         controllerAvailable: _controller != null,
         readerContentReady: _readerContentReady,
-        lyricsMode: _lyricsMode,
+        lyricsMode: false,
         continuousMode: _settings?.isContinuousMode == true,
       ),
-      // 阶段 1：在归零前同步采样恢复落定的锚 + 置旗（要求①③：采锚必须在 reflow 归零前）。
+      // 阶段 1：取恢复自己的精确字符锚 + 置旗。BUG-2652：不能现场采样——iOS 上同一个
+      // WKWebView 原地换章后视口头几帧会瞬时读成 0，采到的就是章首（见 JS
+      // beginRestoreReanchor）。无精确锚（progress / fragment 恢复）时 JS 退回采样。
       evalBegin: () => _controller!.evaluateJavascript(
-        source: ReaderPaginationScripts.beginUiScaleReanchorInvocation(),
+        source: ReaderPaginationScripts.beginRestoreReanchorInvocation(),
       ),
       // 阶段 2：等过渡帧 settle 后提交滚动并清旗，并打 _reanchorClearedAt 武装 B-3 窗。
       evalCommit: () async {
@@ -1468,6 +1473,11 @@ extension _ReaderChrome on _ReaderFushiPageState {
       // 位置（等价于「同章已 settle 时直接 scrollToSearchMatch」那条本就正常的路径）。
       onAfterCommit: () async {
         await _applyPendingPreciseLocate();
+        // BUG-2961：恢复重锚的锚是「恢复开始那一刻」的位置（音频跨章时即进章那一句）。
+        // 提交与它相隔的帧数没有上界——App 在后台时帧被冻结，提交积压到回前台才执行，
+        // 此时音频早已走远，提交把跟随音频的视口拽回旧句。重锚落定后视口归属交还给
+        // 跟随音频：正在跟随播放时重新投影到当前 cue（暂停 / 手动翻页 / 未跟随时不动）。
+        _audiobookController?.resyncReaderToAudio();
         await _refreshProgress();
       },
     );
@@ -1493,7 +1503,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
       gateAllowed: readerStyleReanchorAllowed(
         controllerAvailable: _controller != null,
         readerContentReady: _readerContentReady,
-        lyricsMode: _lyricsMode,
+        lyricsMode: false,
       ),
       // 阶段 1：同步换 CSS + 采精确锚 + 置旗（必须先于 reflow 落地，挡住归零 scroll 污染落库）。
       evalBegin: () => _controller!.evaluateJavascript(
@@ -1545,18 +1555,17 @@ extension _ReaderChrome on _ReaderFushiPageState {
       right: MediaQuery.viewPaddingOf(context).right,
       // 桌面端底栏（有声书播放条）唤出时盖住状态行，但把状态行的文字并进播放条右端
       // （[_buildBarStatusText]）——底部只有一条，而不是播放条 + 状态行叠两条。
-      // 窄屏读数独立成行时底栏坐在状态行的底部带之上（带已含系统底 inset）。
-      bottom: _separatePlaybackStatus ? _statusFooterPaintedBand : 0,
+      // 竖屏读数独立成行时它并进这块遮罩的最底部（[_statusFooterInBottomBar]），
+      // 底栏整体仍贴屏底；只有读数行画在别处时底栏才坐在它的底部带之上。
+      bottom: _separatePlaybackStatus && !_statusFooterInBottomBar
+          ? _statusFooterPaintedBand
+          : 0,
       // BUG-1692：底栏排在 WebView **之后**绘制。不自带 RepaintBoundary 就会并进
       // 页面级 RepaintBoundary 那张 cull rect = 整窗的 PictureLayer，macOS engine
       // 把整窗写进 FlutterMutatorView 的 _hitTestIgnoreRegion，整块 WebView 收不到
       // 任何鼠标事件。包一层让底栏自成一张只覆盖自身高度的图层。
       child: RepaintBoundary(
-        // 与顶栏同款：停在底栏上不自动收起，离开后重新武装。
-        child: MouseRegion(
-          onEnter: (_) => _onChromeHoverChanged(true),
-          onExit: (_) => _onChromeHoverChanged(false),
-          child: ExcludeFocus(
+        child: ExcludeFocus(
           child: FocusScope(
             node: _chromeFocusScope,
             child: Column(
@@ -1567,30 +1576,25 @@ extension _ReaderChrome on _ReaderFushiPageState {
                   baseHeight: _ReaderFushiPageState._readerChromeBaseHeight,
                   child: bar,
                 ),
-                ColoredBox(
-                  color: _chromeSurfaceColor(),
-                  child: SizedBox(
-                    height: _separatePlaybackStatus ? 0 : _stableBottomInset,
-                    width: double.infinity,
+                // 竖屏读数行并进这块遮罩的最底部（居中），底栏的背景因此一路盖到
+                // 屏底——它自带背景与系统底 inset 带，故与下面那条 inset 垫片
+                // 二选一，不会叠两层。
+                if (_statusFooterInBottomBar)
+                  _buildStatusFooterRow(centered: true)
+                else
+                  ColoredBox(
+                    color: _chromeSurfaceColor(),
+                    child: SizedBox(
+                      height: _separatePlaybackStatus ? 0 : _stableBottomInset,
+                      width: double.infinity,
+                    ),
                   ),
-                ),
               ],
             ),
           ),
         ),
-        ),
       ),
     );
-  }
-
-  /// 顶栏 / 底栏 MouseRegion 进出：进 → 停表，出 → 悬浮可见态下重新武装。
-  void _onChromeHoverChanged(bool hovered) {
-    _chromeHovered = hovered;
-    if (hovered) {
-      _chrome.cancelAutoHide();
-    } else if (_anyChromeFloating && _chromeTransientVisible) {
-      _armChromeAutoHide();
-    }
   }
 
   Widget _buildBottomChrome() {
@@ -1601,7 +1605,11 @@ extension _ReaderChrome on _ReaderFushiPageState {
     // 渲染前 _hasEverLoaded 仍为 false，底栏照旧不显示，行为不变。
     // TODO-975：悬浮模式额外受 _chromeTransientVisible 门控（_bottomBarShouldPaint）；
     // 挤压模式恒随 _hasEverLoaded && _showChrome（旧行为）。
-    if (!_bottomBarShouldPaint) {
+    // 歌词覆盖层在场：底栏排在查词弹层之后（要盖住弹层），却必须在歌词覆盖层之下——
+    // 覆盖层自带全套播放控件，⋯ 菜单里是底栏 / 顶栏的全部操作。这里只停画，
+    // 预留高不受影响（正文版面不随进出歌词变化）。
+    if (_floatingToolbars) return _buildFloatingBottomChrome();
+    if (_lyricsMode || !_bottomBarShouldPaint) {
       return const SizedBox.shrink();
     }
     if (_audiobookController != null) {
@@ -1618,13 +1626,124 @@ extension _ReaderChrome on _ReaderFushiPageState {
 
   // ── 按钮布局（ReaderControlLayout，与视频页同一套泛型模型）──────────────
 
-  ReaderControlLayout get _controlLayout => appModel.readerControlLayout;
+  /// 窄窗（手机竖屏，< [kReaderControlCompactWidth]）用手机那份按钮布局。
+  bool get _readerCompactWidth =>
+      MediaQuery.sizeOf(context).width < kReaderControlCompactWidth;
+
+  ReaderControlLayout get _controlLayout =>
+      appModel.readerControlLayoutFor(compact: _readerCompactWidth);
+
+  /// 工具栏样式：悬浮（默认，M3E floating toolbar）/ 贴边（整宽实体条）。
+  bool get _floatingToolbars =>
+      readerToolbarsFloating(appModel.readerToolbarStyle);
+
+  /// 底部 chrome 的内容高（不含系统底 inset / 状态行带），挤压态据此预留。
+  ///
+  /// 贴边样式：有声书播放条或底栏槽位有按钮时一条 [_readerChromeHeight]。悬浮
+  /// 样式：迷你播放条（64）与底部悬浮工具栏（64）按需叠放，中间 8，再加离状态行
+  /// 的外边距 [kReaderFloatingBarMargin]。
+  double get _bottomChromeExtent {
+    final bool audio = _audiobookController != null;
+    final bool dock = _bottomSlotsHaveButtons;
+    if (!audio && !dock) return 0;
+    if (!_floatingToolbars) return _readerChromeHeight;
+    double extent = kReaderFloatingBarMargin;
+    // 迷你播放条：M3E 72（胶囊 + 底边波浪进度），Apple 64。
+    if (audio) {
+      extent += isGlassDesign(context) ? kFushiFloatingToolbarExtent : 72;
+    }
+    if (dock) extent += kFushiFloatingToolbarExtent;
+    if (audio && dock) extent += kFushiFloatingToolbarFabGap;
+    return extent;
+  }
+
+  /// 歌词模式下「歌词 ⇄ 阅读」键被布局放进了「更多」：它是歌词页回正文最直接的
+  /// 入口，顶栏强制把它提到常驻位（与旧版窄窗不许折进 ⋮ 同一口径）。
+  bool get _modeTogglePromoted =>
+      _lyricsMode &&
+      _controlLayout
+          .itemsIn(ReaderControlSlot.overflow)
+          .contains(ReaderControlItem.modeToggle);
+
+  /// 「更多」溢出菜单里的动作（布局的 overflow 槽，减去被提到常驻位的模式键）。
+  List<ReaderHeaderAction> _overflowControlActions() => <ReaderHeaderAction>[
+        for (final ReaderControlItem item
+            in _renderableControlsIn(ReaderControlSlot.overflow))
+          if (item != ReaderControlItem.title &&
+              !(item == ReaderControlItem.modeToggle && _modeTogglePromoted))
+            _readerControlAction(item),
+      ];
+
+  /// 按钮的功能分组（M3E button group 的组间留白）：0 导航类 / 1 阅读与工具类 /
+  /// 2 有声书类。布局里相邻且同组的按钮并成一组。
+  int _readerControlGroup(ReaderControlItem item) => switch (item) {
+        ReaderControlItem.navigation ||
+        ReaderControlItem.gallery ||
+        ReaderControlItem.statistics =>
+          0,
+        ReaderControlItem.audiobook => 2,
+        _ when item.isAudiobookTransport => 2,
+        _ => 1,
+      };
+
+  FushiToolbarItem _toolbarItem(ReaderHeaderAction a) => FushiToolbarItem(
+        icon: a.icon,
+        label: a.label,
+        tooltip: a.tooltipText,
+        onPressed: a.onPressed,
+        key: a.key,
+        semanticsId: a.semanticsId,
+      );
+
+  /// 把一串按钮按 [_readerControlGroup] 切成相邻同组的若干组。
+  List<List<FushiToolbarItem>> _groupedToolbarItems(
+    Iterable<ReaderControlItem> items,
+  ) {
+    final List<List<FushiToolbarItem>> groups = <List<FushiToolbarItem>>[];
+    int? last;
+    for (final ReaderControlItem item in items) {
+      if (item == ReaderControlItem.title) continue;
+      final int g = _readerControlGroup(item);
+      if (last != g || groups.isEmpty) {
+        groups.add(<FushiToolbarItem>[]);
+        last = g;
+      }
+      groups.last.add(_toolbarItem(_readerControlAction(item)));
+    }
+    return groups;
+  }
+
+  /// 悬浮胶囊的配色：跟随阅读纸色调和（纸色上叠一层正文色），让胶囊落在米色 /
+  /// 夜间纸上不突兀；选中态取主题（secondaryContainer / Apple 强调色）。
+  ///
+  /// 「跟随主题」时（非玻璃设计）改用 M3E 阅读配色的 [FushiReaderPalette.chromeContainer]
+  /// （neutral 92 / 17，surfaceContainerHigh 一族）：与纸色同色相、层级分明，
+  /// 不再是正文色叠灰。
+  FushiFloatingToolbarColors _floatingToolbarColors() {
+    final Color bg = _themeBackgroundColor();
+    final Color fg = _themeTextColor();
+    final FushiReaderPalette? palette = _followThemePalette;
+    if (palette != null && !isGlassDesign(context)) {
+      return FushiFloatingToolbarColors(
+        container: palette.chromeContainer,
+        foreground: fg,
+      );
+    }
+    return FushiFloatingToolbarColors(
+      container: Color.alphaBlend(
+        fg.withValues(alpha: isGlassDesign(context) ? 0.05 : 0.08),
+        bg,
+      ),
+      foreground: fg,
+    );
+  }
 
   /// 按钮在当前运行态下是否渲染（与布局正交：布局说「放哪」，这里说「此刻有没有」）。
   bool _shouldRenderReaderControl(ReaderControlItem item) {
     switch (item) {
       case ReaderControlItem.back:
       case ReaderControlItem.statistics:
+      case ReaderControlItem.studyTimer:
       case ReaderControlItem.title:
       case ReaderControlItem.settings:
         return true;
@@ -1632,7 +1751,11 @@ extension _ReaderChrome on _ReaderFushiPageState {
       // 控制器就没有可切的歌词，这颗键整个不出现。
       case ReaderControlItem.modeToggle:
         return _audiobookController != null;
+      // 章节导航在歌词模式也要在：歌词文档是全书 cue 的连续列表，「跳章」在这里
+      // 是把音频定位到该章首句（[_jumpToChapterAnchor] 的歌词分支），不是换文档。
+      // 用户反馈「歌词模式没有跳章节按钮」（BUG-2596）——旧码把它和图集一起藏掉。
       case ReaderControlItem.navigation:
+        return true;
       case ReaderControlItem.gallery:
         return !_lyricsMode;
       // 「听书」模块关掉时整颗不渲染（不是画一个点了没反应的按钮）。
@@ -1641,6 +1764,16 @@ extension _ReaderChrome on _ReaderFushiPageState {
       // 桌面才有窗口可全屏，移动端不渲染这颗按钮。
       case ReaderControlItem.fullscreen:
         return desktopWindowFullscreenSupported;
+      case ReaderControlItem.toolbars:
+        return true;
+      // 有声书传输键：没挂控制器就没有可控的音频，整颗不出现（不论拖在哪个槽）。
+      case ReaderControlItem.audiobookPrev:
+      case ReaderControlItem.audiobookPlayPause:
+      case ReaderControlItem.audiobookNext:
+      case ReaderControlItem.audiobookSeekBack:
+      case ReaderControlItem.audiobookSeekForward:
+      case ReaderControlItem.audiobookFollow:
+        return _audiobookController != null;
     }
   }
 
@@ -1661,10 +1794,10 @@ extension _ReaderChrome on _ReaderFushiPageState {
     switch (item) {
       case ReaderControlItem.back:
         return ReaderHeaderAction(
-          icon: Icons.arrow_back,
+          icon: FushiIcons.back,
           label: t.back,
           pinned: true,
-          semanticsId: 'hibiki.reader.header.back',
+          semanticsId: 'fushi.reader.header.back',
           // 与面板「退出」同一条路：maybePop 触发 PopScope → onWillPop
           // （落位置 flush / closeMedia / 关书同步，BUG-782）。
           onPressed: () => unawaited(Navigator.of(context).maybePop()),
@@ -1672,29 +1805,32 @@ extension _ReaderChrome on _ReaderFushiPageState {
       case ReaderControlItem.modeToggle:
         return ReaderHeaderAction(
           key: const ValueKey<String>('fushi_reader_lyrics_mode_button'),
-          icon: lyrics ? Icons.auto_stories_outlined : Icons.lyrics_outlined,
+          icon: lyrics ? FushiIcons.readingMode : FushiIcons.lyrics,
           label: lyrics ? t.book_mode : t.lyrics_mode,
           pinned: lyrics,
-          semanticsId: 'hibiki.reader.header.lyrics_mode',
+          semanticsId: 'fushi.reader.header.lyrics_mode',
           onPressed: () => unawaited(_toggleLyricsMode()),
         );
       case ReaderControlItem.navigation:
         return ReaderHeaderAction(
-          icon: Icons.format_list_bulleted,
-          label: _labelWithShortcut(
+          key: const ValueKey<String>('fushi_reader_navigation_button'),
+          icon: FushiIcons.bulletList,
+          label: t.section_navigation,
+          tooltip: _shortcutTooltip(
             t.section_navigation,
             ShortcutAction.readerOpenNavigation,
           ),
           pinned: true,
-          semanticsId: 'hibiki.reader.header.navigation',
+          semanticsId: 'fushi.reader.header.navigation',
           onPressed: () => unawaited(
             _showAppearanceSheet(initialSubPage: 'location'),
           ),
         );
       case ReaderControlItem.gallery:
         return ReaderHeaderAction(
-          icon: Icons.collections_outlined,
-          label: _labelWithShortcut(
+          icon: FushiIcons.collections,
+          label: t.reader_gallery_tooltip,
+          tooltip: _shortcutTooltip(
             t.reader_gallery_tooltip,
             ShortcutAction.readerOpenGallery,
           ),
@@ -1702,59 +1838,189 @@ extension _ReaderChrome on _ReaderFushiPageState {
         );
       case ReaderControlItem.statistics:
         return ReaderHeaderAction(
-          icon: Icons.insights_outlined,
-          label: _labelWithShortcut(
+          icon: FushiIcons.statistics,
+          label: t.reading_statistics,
+          tooltip: _shortcutTooltip(
             t.reading_statistics,
             ShortcutAction.readerOpenStatistics,
           ),
-          semanticsId: 'hibiki.reader.header.statistics',
+          semanticsId: 'fushi.reader.header.statistics',
           onPressed: _openReadingStatistics,
+        );
+      case ReaderControlItem.studyTimer:
+        // 与状态行计时键 [ReaderStudyClockButton]、快捷键同一入口；图标按手动暂停
+        // 旗换（[_toggleStudyClockManualPause] 经 _rebuild 翻旗，顶栏 / 悬浮球
+        // 随之重建），文案是「按下去会怎样」。
+        final bool paused = _studyClockManualPause;
+        return ReaderHeaderAction(
+          key: const ValueKey<String>('fushi_reader_study_timer_button'),
+          icon: paused ? FushiIcons.timerOff : FushiIcons.timer,
+          label: paused ? t.reader_stats_clock_resume : t.reader_stats_clock_pause,
+          tooltip: _shortcutTooltip(
+            paused ? t.reader_stats_clock_resume : t.reader_stats_clock_pause,
+            ShortcutAction.readerToggleStudyClock,
+          ),
+          semanticsId: 'fushi.reader.control.study_timer',
+          onPressed: _toggleStudyClockManualPause,
         );
       case ReaderControlItem.title:
         // 书名不是按钮：顶栏由 showsTitle 决定画不画，底栏槽位不接受它。
         return ReaderHeaderAction(
-          icon: Icons.title,
+          icon: FushiIcons.title,
           label: _book?.title ?? '',
           onPressed: null,
         );
       case ReaderControlItem.audiobook:
         return ReaderHeaderAction(
-          icon: Icons.headphones_outlined,
-          label: _labelWithShortcut(
+          icon: FushiIcons.audiobook,
+          label: t.section_audiobook,
+          tooltip: _shortcutTooltip(
             t.section_audiobook,
             ShortcutAction.readerOpenAudiobook,
           ),
-          semanticsId: 'hibiki.reader.header.audiobook',
-          // 已挂有声书 → 侧栏面板；没有 → 直接进导入。
+          semanticsId: 'fushi.reader.header.audiobook',
+          // 已挂有声书（含 TTS 朗读）→ 侧栏面板；没有 → 听书入口（朗读 / 导入）。
           onPressed: _audiobookController != null
               ? () => unawaited(
                     _showAppearanceSheet(initialSubPage: 'audiobook'),
                   )
-              : _openAudioImportDialog,
+              : _openListenEntry,
         );
       case ReaderControlItem.fullscreen:
         return ReaderHeaderAction(
           key: const ValueKey<String>('fushi_reader_fullscreen_button'),
           icon: _isWindowFullscreen
-              ? Icons.fullscreen_exit_rounded
-              : Icons.fullscreen_rounded,
+              ? FushiIcons.fullscreenExit
+              : FushiIcons.fullscreen,
           label: t.shortcut_action_global_toggle_fullscreen,
-          semanticsId: 'hibiki.reader.bottom.fullscreen',
+          semanticsId: 'fushi.reader.bottom.fullscreen',
           onPressed: () => unawaited(_changeReaderWindowFullscreen()),
+        );
+      case ReaderControlItem.toolbars:
+        // 栏里的这颗只会在「栏还在」时被看见；栏关掉后它被固定在悬浮球上
+        // （[kReaderToolbarsTakeoverItems]），那时就是开回栏的入口。图标 / 文案按
+        // 运行态给出「按下去会怎样」。
+        final bool hidden = _toolbarsHidden;
+        return ReaderHeaderAction(
+          key: const ValueKey<String>('fushi_reader_toolbars_button'),
+          icon: hidden
+              ? FushiIcons.webAsset
+              : FushiIcons.webAssetOff,
+          label: hidden ? t.reader_toolbars_show : t.reader_toolbars_hide,
+          semanticsId: 'fushi.reader.control.toolbars',
+          onPressed: () => unawaited(_setHideToolbars(!hidden)),
         );
       case ReaderControlItem.settings:
         return ReaderHeaderAction(
           key: const ValueKey<String>('fushi_reader_settings_button'),
-          icon: Icons.tune_outlined,
-          label: _labelWithShortcut(
+          icon: FushiIcons.settings,
+          label: t.reader_settings_section,
+          tooltip: _shortcutTooltip(
             t.reader_settings_section,
             ShortcutAction.readerOpenMenu,
           ),
           pinned: true,
-          semanticsId: 'hibiki.reader.bottom.settings',
+          semanticsId: 'fushi.reader.bottom.settings',
           onPressed: () => unawaited(_showAppearanceSheet()),
         );
+      // ── 有声书传输键：语义与底栏播放条 [AudiobookPlayBar] 逐颗对齐——上一句 /
+      // 下一句跟随「跳转方式」偏好（0 = 按句，N = 按 N 秒），播放键按运行态换图标
+      // （页面经 [_syncChromePlaybackListener] 在播放态翻转时重建）。渲染门保证
+      // 这里的控制器非空。
+      case ReaderControlItem.audiobookPrev:
+        final int skip = ReaderFushiSource.instance.skipActionSeconds;
+        return ReaderHeaderAction(
+          icon: skip == 0
+              ? FushiIcons.skipPrevious
+              : FushiIcons.fastRewind,
+          label: skip == 0 ? t.prev_sentence : '-${skip}s',
+          semanticsId: 'fushi.reader.control.audiobook_prev',
+          onPressed: () => unawaited(
+            skip == 0
+                ? _audiobookController!.skipToPrevCue()
+                : _audiobookController!.seekRelative(-skip),
+          ),
+        );
+      case ReaderControlItem.audiobookNext:
+        final int skip = ReaderFushiSource.instance.skipActionSeconds;
+        return ReaderHeaderAction(
+          icon: skip == 0
+              ? FushiIcons.skipNext
+              : FushiIcons.fastForward,
+          label: skip == 0 ? t.next_sentence : '+${skip}s',
+          semanticsId: 'fushi.reader.control.audiobook_next',
+          onPressed: () => unawaited(
+            skip == 0
+                ? _audiobookController!.skipToNextCue()
+                : _audiobookController!.seekRelative(skip),
+          ),
+        );
+      case ReaderControlItem.audiobookPlayPause:
+        final bool playing = _audiobookController!.isPlaying;
+        return ReaderHeaderAction(
+          icon: playing ? FushiIcons.pause : FushiIcons.play,
+          label: playing ? t.pause : t.play,
+          semanticsId: 'fushi.reader.control.audiobook_play_pause',
+          onPressed: () => unawaited(_audiobookController!.togglePlayPause()),
+        );
+      case ReaderControlItem.audiobookSeekBack:
+        return ReaderHeaderAction(
+          icon: FushiIcons.replay10,
+          label: '-10s',
+          semanticsId: 'fushi.reader.control.audiobook_seek_back',
+          onPressed: () => unawaited(_audiobookController!.seekRelative(-10)),
+        );
+      case ReaderControlItem.audiobookSeekForward:
+        return ReaderHeaderAction(
+          icon: FushiIcons.forward10,
+          label: '+10s',
+          semanticsId: 'fushi.reader.control.audiobook_seek_forward',
+          onPressed: () => unawaited(_audiobookController!.seekRelative(10)),
+        );
+      case ReaderControlItem.audiobookFollow:
+        final bool on = _audiobookController!.followAudio.value;
+        return ReaderHeaderAction(
+          icon: on ? FushiIcons.link : FushiIcons.linkOff,
+          label: on ? t.follow_audio_on_tooltip : t.follow_audio_off_tooltip,
+          semanticsId: 'fushi.reader.control.audiobook_follow',
+          onPressed: () => _audiobookController!.setFollowAudio(!on),
+        );
     }
+  }
+
+  // ── 播放态 → chrome 重建 ───────────────────────────────────────────────
+  //
+  // 播放 / 暂停、跟随两颗键的图标取自控制器运行态，而顶栏 / 悬浮球拿到的是构建
+  // 时算好的 [ReaderHeaderAction]；控制器只 notify 自己的监听者，页面不重建图标
+  // 就会撒谎。这里挂一个只在「播放态 / 跟随态翻转」时才 setState 的监听（位置
+  // tick 不触发），控制器换绑 / 解绑时跟着换。
+  // 三个状态字段在 [_ReaderFushiPageState] 本体（part 是 extension，放不了字段）。
+  void _syncChromePlaybackListener() {
+    final AudiobookPlayerController? ctrl = _audiobookController;
+    if (identical(ctrl, _chromePlaybackListened)) return;
+    final AudiobookPlayerController? old = _chromePlaybackListened;
+    if (old != null) {
+      old.removeListener(_onChromePlaybackChanged);
+      old.followAudio.removeListener(_onChromePlaybackChanged);
+    }
+    _chromePlaybackListened = ctrl;
+    if (ctrl != null) {
+      ctrl.addListener(_onChromePlaybackChanged);
+      ctrl.followAudio.addListener(_onChromePlaybackChanged);
+      _chromeLastPlaying = ctrl.isPlaying;
+      _chromeLastFollow = ctrl.followAudio.value;
+    }
+  }
+
+  void _onChromePlaybackChanged() {
+    final AudiobookPlayerController? ctrl = _chromePlaybackListened;
+    if (ctrl == null || !mounted) return;
+    final bool playing = ctrl.isPlaying;
+    final bool follow = ctrl.followAudio.value;
+    if (playing == _chromeLastPlaying && follow == _chromeLastFollow) return;
+    _chromeLastPlaying = playing;
+    _chromeLastFollow = follow;
+    _rebuild(() {});
   }
 
   List<ReaderHeaderAction> _readerControlActionsIn(ReaderControlSlot slot) =>
@@ -1767,7 +2033,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
   Widget _readerControlButton(ReaderHeaderAction a) => ReaderDesktopHeaderButton(
         key: a.key,
         icon: a.icon,
-        tooltip: a.label,
+        tooltip: a.tooltipText,
         color: _themeTextColor(),
         semanticsId: a.semanticsId,
         onPressed: a.onPressed,
@@ -1809,13 +2075,10 @@ extension _ReaderChrome on _ReaderFushiPageState {
             // TODO-830: per-reader 功能反转（getter 内部走 readerSettings?
             // 分层，否则退化全局）；与 reversed 的位置镜像维度正交。
             invertSkip: ReaderFushiSource.instance.invertAudiobookSkipDirection,
-            // 桌面端：播放条唤出时覆盖状态行，阅读追踪 / 进度并进条右端；传输键与
-            // 有声书面板同一套（-10s / 上一句 / 播放 / 下一句 / +10s）。
+            // 桌面端：播放条唤出时覆盖状态行，阅读追踪 / 进度并进条右端。
             // 底栏槽位里的按钮并进播放条右端（播放条在场时底栏只有这一条），
             // 状态读数仍在最右。
             trailing: _buildAudiobookBarTrailing(),
-            showSeekButtons:
-                _desktopChromeEnabled && _readerControlsWidth >= 308,
             showSettingsButton: !_desktopChromeEnabled,
           ),
         );
@@ -1824,11 +2087,28 @@ extension _ReaderChrome on _ReaderFushiPageState {
   }
 
   Widget? _buildAudiobookBarTrailing() {
+    // 2026-10 体验优化：播放条自带 上一句 / 播放暂停 / 下一句 / 跟随 四颗键，
+    // 底栏槽位里同语义的传输键再并进来就是同一行两份（窄屏还会挤爆）。这里滤掉
+    // 与播放条重复的那几颗；±10s 播放条没有，用户拖进底栏就照常保留。
     final List<Widget> buttons = <Widget>[
       for (final ReaderControlSlot slot in ReaderControlSlot.values)
         if (slot.isBottom)
-          for (final ReaderHeaderAction a in _readerControlActionsIn(slot))
-            _readerControlButton(a),
+          for (final ReaderControlItem item in _renderableControlsIn(slot))
+            if (item != ReaderControlItem.title &&
+                !_isDuplicatedByAudiobookPlayBar(item))
+              _readerControlButton(_readerControlAction(item)),
+      // TTS 朗读：播放条上直接换声音（不必进面板 / 设置页）。
+      if (_ttsReadAlong != null)
+        _readerControlButton(
+          ReaderHeaderAction(
+            key: const ValueKey<String>('fushi_play_bar_tts_voice_switch'),
+            icon: FushiIcons.voice,
+            label: t.audiobook_tts_voices_section,
+            tooltip: '${t.audiobook_tts_voices_section}: '
+                '${ttsVoiceDisplayName(_ttsReadAlong!.preset)}',
+            onPressed: () => unawaited(_openTtsVoiceQuickSwitch()),
+          ),
+        ),
     ];
     final Widget? status = _playbackStatusInline ? _buildBarStatusText() : null;
     if (buttons.isEmpty) return status;
@@ -1838,6 +2118,43 @@ extension _ReaderChrome on _ReaderFushiPageState {
         ...buttons,
         if (status != null) ...<Widget>[const SizedBox(width: 8), status],
       ],
+    );
+  }
+
+  /// 2026-10 体验优化：[AudiobookPlayBar] 自带的传输键（上一句 / 播放暂停 /
+  /// 下一句 / 跟随）。语义与 [_readerControlAction] 的同名分支逐颗对齐，所以
+  /// 播放条在场时底栏槽位里的这几颗是纯重复。
+  bool _isDuplicatedByAudiobookPlayBar(ReaderControlItem item) =>
+      item.isAudiobookTransport &&
+      item != ReaderControlItem.audiobookSeekBack &&
+      item != ReaderControlItem.audiobookSeekForward;
+
+  /// 悬浮球的阅读器场景按钮（docs/specs/2026-09-28-floating-ball.md）：按钮布局
+  /// 里的每颗按钮（书名除外）都能放进球，放哪几颗由 设置 → 悬浮球 → 阅读器 决定
+  /// （出厂是有声书的上一句 / 播放暂停 / 下一句），执行体与顶栏 / 底栏同一个
+  /// [_readerControlAction]。首章加载前不给按钮；此刻渲染不了的按钮（例如书没挂
+  /// 有声书时的传输键）不登记，宿主就跳过它。球本身画在根上的应用内悬浮球宿主里。
+  ///
+  /// 顶栏和底栏被关掉时球接管它们：[kReaderToolbarsTakeoverItems]（返回 / 设置 /
+  /// 开回栏）不看勾选固定在球上，歌词模式再加模式切换键（顶栏在歌词模式也强制
+  /// 保留它：那是回正文最直接的入口）；宿主据此不给「关闭悬浮球」。
+  Widget _buildReaderFloatingBallScene() {
+    return FloatingBallScene(
+      scope: FloatingBallScope.reader,
+      pinnedIds: <String>[
+        if (_hasEverLoaded && _toolbarsHidden) ...<String>[
+          for (final ReaderControlItem item in kReaderToolbarsTakeoverItems)
+            item.storageValue,
+          if (_lyricsMode) ReaderControlItem.modeToggle.storageValue,
+        ],
+      ],
+      actions: <String, ReaderHeaderAction>{
+        if (_hasEverLoaded)
+          for (final ReaderControlItem item in ReaderControlItem.values)
+            if (item != ReaderControlItem.title &&
+                _shouldRenderReaderControl(item))
+              item.storageValue: _readerControlAction(item),
+      },
     );
   }
 
@@ -1892,6 +2209,28 @@ extension _ReaderChrome on _ReaderFushiPageState {
     await navigator.maybePop();
   }
 
+  /// 程序化「退出书籍」：面板「退出」按钮、重导入后正文作废等**明确要离开本书**
+  /// 的路径一律走这里，而不是裸 `maybePop()`。
+  ///
+  /// 仍然走 `maybePop()`（不绕过 PopScope → onWillPop 的 flush / closeMedia /
+  /// 关书同步，BUG-782），只是在途期间挂上 [_exitBookRequested]，让 PopScope 里
+  /// 「歌词层在场 → 先掀开歌词层」那一级只拦用户的系统返回手势、不把显式退书截
+  /// 成「关歌词层」。旗标在 `maybePop()` 完成后立即撤下：PopScope 回调是在
+  /// `maybePop()` 内部同一调用链里被调用的；若顶上压着别的路由（`maybePop` 弹的是
+  /// 它），旗标也不会残留去影响之后的系统返回。
+  ///
+  /// 退出时**不**先关歌词层：那会把持久化的 lyrics_mode 写成 false，重开书就不再
+  /// 恢复歌词模式（BUG-785）。覆盖层期间的强制跟随由 dispose 撤销。
+  Future<void> _exitReaderBook() async {
+    final NavigatorState navigator = Navigator.of(context);
+    _exitBookRequested = true;
+    try {
+      await navigator.maybePop();
+    } finally {
+      _exitBookRequested = false;
+    }
+  }
+
   /// 进页时把底栏全屏按钮的图标镜像对到 native 真值一次。
   ///
   /// 没有这一次读取，「在别处（漫画页 / 视频页 / 上一本书）进的全屏里打开本书」会让图标
@@ -1941,53 +2280,89 @@ extension _ReaderChrome on _ReaderFushiPageState {
     return _book!.chapterIndexForHref(href);
   }
 
-  Future<void> _showAppearanceSheet({String? initialSubPage}) async {
+  Future<void> _showAppearanceSheet({
+    String? initialSubPage,
+    String? initialSettingsTab,
+  }) async {
+    // 2026-10 整合：导航 / 有声书 / 阅读设置 / 统计四类侧板同一时刻只开一个，
+    // 统一走 [_openReaderPanel]（面板开着时只原地换内容，见 [ReaderPanelSwitcher]）。
+    final String kind = switch (initialSubPage) {
+      'location' => _kReaderPanelNavigation,
+      'audiobook' when _audiobookController != null => _kReaderPanelAudiobook,
+      _ => _kReaderPanelSettings,
+    };
+    await _openReaderPanel(kind, initialSettingsTab: initialSettingsTab);
+  }
+
+  /// 打开（或原地切换到）[kind] 面板。
+  ///
+  /// 面板已开着 → 只改 [_panelKind]，路由不动、内容交叉淡入（约定「从一个切到
+  /// 另一个不关再开」）。否则开一条侧板路由（宽窗贴边 / 窄窗底部 sheet，各平台
+  /// 共用；停靠边是用户在设置页头换过的那一侧，默认右）。
+  ///
+  /// 停表：导航 / 有声书 / 设置压着正文期间停表（BUG-2208），统计侧板不停表
+  /// （它自己画实时秒表）——按当前种类实时增减 [_studyClockModalDepth] 的一层
+  /// （[_syncPanelClockHold]），切换种类时跟着变。
+  Future<void> _openReaderPanel(String kind, {String? initialSettingsTab}) async {
     if (_settings == null || _controller == null || _book == null) return;
+    final ValueNotifier<String>? live = _panelKind;
+    if (live != null) {
+      live.value = kind;
+      return;
+    }
     // 重入守卫：快速连点时按钮按下到 show 之间的 DB 读 await 期间会二次进入、弹出
     // 两个面板。标志置位必须在第一个 await 之前，复位放 finally（异常也复位）。
     if (_appearanceSheetOpen) return;
     // BUG-969：_rebuild 让顶部进度 pill 在抽屉打开期间摘掉 BackdropFilter blur
     // （见 _buildTopProgressBar / topProgressPillShowsBlur），关闭后再挂回。
     _rebuild(() => _appearanceSheetOpen = true);
+    final ValueNotifier<String> notifier = ValueNotifier<String>(kind);
+    void onKindChanged() => _syncPanelClockHold(notifier.value);
     try {
       // _settings 就是 ReaderFushiSource.readerSettings 本体（见 initState 绑定），
       // 面板控件经 ReaderFushiSource.instance.ttu* 实时读写同一对象，开面板前后都
-      // 无需设置同步——旧 TTU 双存储时代的 _syncSettings*Hive 已是写回自身的死桥，
-      // 且 _syncSettingsToHive 会触发 17× onSettingsChangedLive 的 DB/WebView 风暴。
+      // 无需设置同步。
       final FavoriteSentenceRepository favRepo =
           FavoriteSentenceRepository(appModel.database);
-
       final List<FavoriteSentence> favorites =
           await _favoriteSentencesForBook();
-
       if (!mounted) return;
-
-      // 所有平台共用左侧导航与右侧设置；有声书面板桌面/宽窗同走右侧侧栏，
-      // 手机保留全高 bottom sheet。
-      final bool useAudiobookSideSheet = readerAudiobookUsesSideSheet(
-        desktop: isDesktopPlatform,
-        window: MediaQuery.sizeOf(context),
-      );
-      final bool audiobookPanel =
-          initialSubPage == 'audiobook' && _audiobookController != null;
-      final ReaderQuickSettingsPresentation presentation = audiobookPanel
-          ? ReaderQuickSettingsPresentation.audiobookPanel
-          : initialSubPage == 'location'
-              ? ReaderQuickSettingsPresentation.sideSheetNavigation
-              : ReaderQuickSettingsPresentation.sideSheetAppearance;
-      final Widget sheetContent = _buildQuickSettingsSheet(
-        favorites: favorites,
-        favRepo: favRepo,
-        presentation: presentation,
-        initialSubPage: initialSubPage,
-      );
-
-      // BUG-2208：外观 / 导航 / 搜索 / 收藏 / 有声书面板压着正文期间停表。
-      await _withStudyClockPaused(
-        () => _presentQuickSettings(
-          sheetContent: sheetContent,
-          presentation: presentation,
-          useAudiobookSideSheet: useAudiobookSideSheet,
+      _panelKind = notifier;
+      _syncPanelClockHold(kind);
+      notifier.addListener(onKindChanged);
+      await _presentSideSheet(
+        side: ReaderSideSheetSide.right,
+        movableSettings: true,
+        switcher: _readerPanelSwitcher(notifier),
+        builder: (_) => ValueListenableBuilder<String>(
+          valueListenable: notifier,
+          builder: (BuildContext ctx, String current, Widget? _) {
+            return AnimatedSwitcher(
+              duration: fushiMotionDuration(ctx, FushiMotion.medium),
+              switchInCurve: FushiMotion.enter,
+              switchOutCurve: FushiMotion.exit,
+              transitionBuilder: (Widget child, Animation<double> a) =>
+                  FadeTransition(
+                opacity: a,
+                child: SlideTransition(
+                  position: Tween<Offset>(
+                    begin: const Offset(0.04, 0),
+                    end: Offset.zero,
+                  ).animate(a),
+                  child: child,
+                ),
+              ),
+              child: KeyedSubtree(
+                key: ValueKey<String>('fushi_reader_panel_$current'),
+                child: _buildReaderPanelContent(
+                  current,
+                  favorites: favorites,
+                  favRepo: favRepo,
+                  initialSettingsTab: initialSettingsTab,
+                ),
+              ),
+            );
+          },
         ),
       );
 
@@ -1995,64 +2370,137 @@ extension _ReaderChrome on _ReaderFushiPageState {
       // BUG-2213：面板里可能改了空闲门分钟数，关掉即生效（不必等下次 _ensureStudyClock）。
       _studyClock?.idleTimeout = appModel.readingIdleTimeout;
     } finally {
+      notifier.removeListener(onKindChanged);
+      if (identical(_panelKind, notifier)) _panelKind = null;
+      _syncPanelClockHold(null);
+      // notifier 不 dispose：路由 Future 在反向转场之前完成，内容（及其
+      // ValueListenableBuilder 监听）在转场期间仍挂着，提前 dispose 会断言。
       _appearanceSheetOpen = false;
       // 复位后重建把 blur 挂回 pill（dispose 后不能 setState，纯赋值已够）。
       if (mounted) _rebuild(() {});
     }
   }
 
-  /// [_showAppearanceSheet] 的呈现分派（移动端有声书 sheet / 其余一律左右侧栏），
-  /// 返回的 Future 在面板关闭后完成。
-  Future<void> _presentQuickSettings({
-    required Widget sheetContent,
-    required ReaderQuickSettingsPresentation presentation,
-    required bool useAudiobookSideSheet,
-  }) async {
-    if (presentation == ReaderQuickSettingsPresentation.audiobookPanel &&
-        !useAudiobookSideSheet) {
-      // 手机：全高 bottom sheet 承载面板（面板内部 Flexible 需要有界高度）。
-      await adaptiveModalSheet<void>(
-        context: context,
-        builder: (BuildContext ctx) => SizedBox(
-          height: MediaQuery.sizeOf(ctx).height * 0.9,
-          child: sheetContent,
+  /// 面板会话按当前种类持有 / 释放一层停表（统计侧板不停表）。[kind] 为 null
+  /// = 会话结束。
+  void _syncPanelClockHold(String? kind) {
+    final bool want = kind != null && kind != _kReaderPanelStatistics;
+    if (want == _panelHoldsClock) return;
+    _panelHoldsClock = want;
+    _studyClockModalDepth += want ? 1 : -1;
+    if (mounted) _syncStudyClockRunState();
+  }
+
+  /// 侧板旁的面板切换工具栏（宽 / 平板档）：导航 /（有声书）/ 阅读设置 / 统计。
+  ReaderPanelSwitcher _readerPanelSwitcher(ValueNotifier<String> notifier) {
+    final bool audiobook = _audiobookController != null &&
+        _moduleVisibility.isEnabled(ModuleId.listening);
+    return ReaderPanelSwitcher(
+      current: notifier,
+      onSelect: (String id) => notifier.value = id,
+      items: <({String id, IconData icon, String label})>[
+        (
+          id: _kReaderPanelNavigation,
+          icon: FushiIcons.bulletList,
+          label: t.section_navigation,
         ),
-      );
-      return;
-    }
-    // 有声书面板曾是 680px 居中对话框（FushiDialogFrame）；用户 2026-09-13 拍板
-    // 「和设置一样」——与导航 / 设置共用同一条右侧侧栏路由。
-    await _presentSideSheet(
-      // ッツ 形态：导航 / 章节贴左，外观设置 / 有声书贴右。
-      side: presentation == ReaderQuickSettingsPresentation.sideSheetNavigation
-          ? ReaderSideSheetSide.left
-          : ReaderSideSheetSide.right,
-      builder: (_) => sheetContent,
+        if (audiobook)
+          (
+            id: _kReaderPanelAudiobook,
+            icon: FushiIcons.audiobook,
+            label: t.section_audiobook,
+          ),
+        (
+          id: _kReaderPanelSettings,
+          icon: FushiIcons.settings,
+          label: t.reader_settings_section,
+        ),
+        (
+          id: _kReaderPanelStatistics,
+          icon: FushiIcons.statistics,
+          label: t.reading_statistics,
+        ),
+      ],
     );
   }
 
-  /// 侧栏路由的唯一入口（导航 / 设置 / 有声书 / 统计共用）：开着期间控制栏不
-  /// 自动收起（否则用户改设置时工具栏在背后消失，关抽屉后又要再唤一次）；关掉后
-  /// 若仍是悬浮可见态，重新武装计时。
+  /// 某一类面板的内容（外壳 / 页头由各自的 [ReaderSideSheet] 画）。
+  Widget _buildReaderPanelContent(
+    String kind, {
+    required List<FavoriteSentence> favorites,
+    required FavoriteSentenceRepository favRepo,
+    String? initialSettingsTab,
+  }) {
+    switch (kind) {
+      case _kReaderPanelStatistics:
+        return _buildStatisticsSheet();
+      case _kReaderPanelNavigation:
+        return _buildQuickSettingsSheet(
+          favorites: favorites,
+          favRepo: favRepo,
+          presentation: ReaderQuickSettingsPresentation.sideSheetNavigation,
+          initialSubPage: 'location',
+        );
+      case _kReaderPanelAudiobook when _audiobookController != null:
+        return _buildQuickSettingsSheet(
+          favorites: favorites,
+          favRepo: favRepo,
+          presentation: ReaderQuickSettingsPresentation.audiobookPanel,
+          initialSubPage: 'audiobook',
+        );
+      default:
+        return _buildQuickSettingsSheet(
+          favorites: favorites,
+          favRepo: favRepo,
+          presentation: ReaderQuickSettingsPresentation.sideSheetAppearance,
+          initialSettingsTab: initialSettingsTab,
+        );
+    }
+  }
+
+  /// 侧栏路由的唯一入口（导航 / 设置 / 有声书 / 统计共用）。
+  ///
+  /// 进来先停自动收起：VN 翻页刚武装过的计时不该在抽屉开着时把背后的工具栏收走。
+  /// 关掉抽屉**不再**重新武装——控制栏现在只由点击开关，关个抽屉就让它几秒后自己
+  /// 消失正是用户要去掉的那种「非点击的关」。
   Future<void> _presentSideSheet({
     required ReaderSideSheetSide side,
     required WidgetBuilder builder,
+    bool movableSettings = false,
+    ReaderPanelSwitcher? switcher,
   }) async {
     _cancelChromeAutoHide();
     // BUG-2276：透明遮罩形态开始 / 结束的唯一两点。旗只在这里翻，
     // [_closeSideSheetForWebViewPointer] 只读，不存在第二个所有者。
+    // 面板关闭（任何退出路径）后把键盘焦点还给正文 / WebView 键盘桥
+    // （focus-ownership.md：覆盖层一律经 guardOverlay 归还）。窄窗（手机竖屏）
+    // 面板从底部升起，宽窗贴边（readerPanelPresentationFor）。
     _sideSheetOpen = true;
     try {
-      await showReaderSideSheet<void>(
-        context: context,
-        side: side,
-        builder: builder,
-      );
+      // BUG-3059: DOM grips and the host action bar share this route boundary.
+      await _clearReaderAppSelection();
+      if (!mounted) return;
+      await _focusOwnership.guardOverlay<void>(() async {
+        if (movableSettings) {
+          await showReaderSettingsSideDialog<void>(
+            context: context,
+            preferences: appModel.prefsRepo,
+            bottomSheetWhenCompact: true,
+            switcher: switcher,
+            builder: builder,
+          );
+          return;
+        }
+        await showReaderSideSheet<void>(
+          context: context,
+          side: side,
+          bottomSheetWhenCompact: true,
+          switcher: switcher,
+          builder: builder,
+        );
+      });
     } finally {
       _sideSheetOpen = false;
-    }
-    if (mounted && _anyChromeFloating && _chromeTransientVisible) {
-      _armChromeAutoHide();
     }
   }
 
@@ -2084,6 +2532,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
     required FavoriteSentenceRepository favRepo,
     required ReaderQuickSettingsPresentation presentation,
     String? initialSubPage,
+    String? initialSettingsTab,
   }) {
     final List<TtuTocEntry> toc = _buildTtuToc();
     final String? extractDir = _extractDir;
@@ -2102,6 +2551,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
               coverPath: _book?.coverHref,
             ),
       readerProgress: (_currentChapter, _book!.chapters.length),
+      readerCharOffset: _tocCharOffsetFor(_currentChapter),
       onJumpSection: (int index, String? fragment) async {
         await _jumpToChapterAnchor(index, fragment);
       },
@@ -2113,9 +2563,10 @@ extension _ReaderChrome on _ReaderFushiPageState {
       // triggerAutoSyncAfterClose 关书自动同步都不会触发。maybePop() 触发
       // PopScope 回调 → onWillPop() → nav.pop()，与「退出书籍」快捷键分支
       // （caret.part.dart 的 readerExitBook，schema v6 从 readerDismissDict
-      // 拆出）走的是同一条退出路径。
+      // 拆出）走的是同一条退出路径。经 [_exitReaderBook]：歌词层在场时 PopScope
+      // 不得把这次显式退书截成「关歌词层」。
       onExitReader: () {
-        unawaited(Navigator.of(context).maybePop());
+        unawaited(_exitReaderBook());
       },
       webViewController: _controller!,
       appModel: appModel,
@@ -2134,19 +2585,33 @@ extension _ReaderChrome on _ReaderFushiPageState {
           : null,
       // 有声书面板「资源」页：对齐文件 / 转录只对 EPUB 有声书开放（standalone
       // SRT 书走 _openSrtBookReimport 一条路）。
+      onStopTts: _ttsReadAlong != null
+          ? () => unawaited(_stopTtsReading())
+          : null,
+      onOpenTtsVoices: _ttsReadAlong != null
+          ? () => unawaited(_openTtsVoiceSettings())
+          : null,
+      onSwitchTtsVoice: _ttsReadAlong != null
+          ? () => unawaited(_openTtsVoiceQuickSwitch())
+          : null,
       onPickAlignment:
           listeningEnabled &&
               _srtBookUid == null &&
+              _ttsReadAlong == null &&
               _audiobookController != null
           ? () => unawaited(_openAlignmentImportDialog())
           : null,
       onTranscribe:
           listeningEnabled &&
               _srtBookUid == null &&
+              _ttsReadAlong == null &&
               _audiobookController != null &&
               isAsrSupported
           ? () => unawaited(_transcribeFromAudiobookPanel())
           : null,
+      // 带锚点的子章节按锚点定位音频（HBK040）：与开书 / 跨章恢复同一条换算。
+      cueStudyOffset: (SubtitleRematchFragment f) =>
+          _studyRangeForAudioFragment(f)?.offset,
       lyricsMode: _lyricsMode,
       onToggleLyricsMode: _toggleLyricsMode,
       showFloatingLyric: appModel.showFloatingLyric,
@@ -2154,16 +2619,9 @@ extension _ReaderChrome on _ReaderFushiPageState {
       floatingLyricFontSize: appModel.floatingLyricFontSize,
       onFloatingLyricFontSizeChanged: (v) async {
         await appModel.setFloatingLyricFontSize(v);
-        final FloatingLyricStyle style = _readerFloatingLyricStyle(fontSize: v);
-        await FloatingLyricChannel.updateStyle(
-          fontSize: style.fontSize,
-          textColor: style.textColor,
-          bgColor: style.bgColor,
-          buttonTextColor: style.buttonTextColor,
-          buttonBgColor: style.buttonBgColor,
-          highlightColor: style.highlightColor,
-          activeColor: style.activeColor,
-        );
+        // 整份样式重推（与设置页同一条链路）：只推几项会把圆角 / 窗宽 / 字体等
+        // 未传字段打回原生默认值（快捷设置改一次字号圆角就没了）。
+        await appModel.audiobookSession.applyFloatingLyricStyle();
       },
       floatingLyricClickLookup: appModel.floatingLyricClickLookup,
       onFloatingLyricClickLookupChanged: (bool value) async {
@@ -2175,55 +2633,17 @@ extension _ReaderChrome on _ReaderFushiPageState {
       charProgress: _progressCurrentChars != null && _progressTotalChars != null
           ? (_progressCurrentChars!, _progressTotalChars!)
           : null,
-      onJumpToCharOffset: (globalOffset) async {
-        _jumpToGlobalCharOffset(globalOffset);
-      },
+      // BUG-2596：导航抽屉在歌词模式也开放（跳章走音频定位）。字数跳转 / 书内搜索
+      // 是正文文档上的定位，歌词页里没有目标——传 null 让面板按既有契约不渲染这两
+      // 段，而不是留一个会把歌词页换成正文章的入口。
+      onJumpToCharOffset: _lyricsMode
+          ? null
+          : (globalOffset) async {
+              _jumpToGlobalCharOffset(globalOffset);
+            },
       epubBook: _book,
       chapterLabel: _currentChapterLabel(),
-      onSearchJump: (BookSearchResult result, String query) async {
-        if (!mounted || _book == null || _controller == null) return;
-        // 搜索跳转是跳转不是阅读：字数账本（ReadUnitLedger）不需要播种——跳走前那页
-        // 在落点的首个 arrive 时结算，命中处之前跳过的正文从未成为当前单元、不计。
-        final String preciseLocateJs =
-            ReaderPaginationScripts.scrollToSearchMatchInvocation(
-          query,
-          result.charOffset,
-        );
-        final ReaderSearchJumpAction action = decideReaderSearchJump(
-          targetChapter: result.sectionIndex,
-          currentChapter: _currentChapter,
-          restoreInFlight: _restoreInFlight,
-          readerContentReady: _readerContentReady,
-        );
-        switch (action) {
-          case ReaderSearchJumpAction.navigate:
-            // TODO-1309：跨章搜索跳转把「章内定位」排进导航的原子恢复链（settle 之后应用），
-            // 不再在 restore 完成微任务里抢发被 settle-reflow / 连续重锚采样冲回章首（双跳，
-            // 首跳只到章节）。去掉旧的首跳失败早退分支——旧代码首跳超时/代际 stale 时会停在
-            // 章首、要点第二次才走「同章直接 restore」才生效；现在定位随恢复落定 settle
-            // 之后由 _applyPendingPreciseLocate 确定性应用。文本命中无法用分数烘进 shell，故走
-            // preciseLocateJs 队列（书签/收藏用 progress 烘进导航）。
-            await _navigateToChapterAndWait(
-              result.sectionIndex,
-              manual: true,
-              preciseLocateJs: preciseLocateJs,
-            );
-            return;
-          case ReaderSearchJumpAction.replacePending:
-            // _currentChapter 在 loadUrl 前就切到逻辑目标章。DOM 尚未 ready 时再次选择
-            // 同章结果，必须更新本导航代际的 pending；直接 evaluate 会命中旧 DOM，
-            // 且首条 pending 会在 restore settle 后反过来覆盖用户最后一次选择。
-            _preciseLocateQueue.replace(
-              generation: _navigateGeneration,
-              js: preciseLocateJs,
-            );
-            return;
-          case ReaderSearchJumpAction.evaluateNow:
-            // 同章且 DOM 已 settle：直接定位（既有正常路径）。
-            await _controller!.evaluateJavascript(source: preciseLocateJs);
-            return;
-        }
-      },
+      onSearchJump: _lyricsMode ? null : _jumpToSearchResult,
       favoriteSentences: favorites,
       favoritePositionLabel: _favoritePositionLabel,
       onDeleteFavorite: (fav) async {
@@ -2237,23 +2657,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
       onPlayFavorite: _audiobookController == null
           ? null
           : (fav) async {
-              if (fav.normCharOffset == null || fav.sectionIndex == null) {
-                return;
-              }
-              final int section = fav.sectionIndex!;
-              final List<AudioCue> cues =
-                  _audiobookController!.sentenceAudioCuesForSection(section);
-              AudioCue? target;
-              for (final AudioCue cue in cues) {
-                final SubtitleRematchFragment? frag =
-                    SubtitleRematchCodec.tryDecode(cue.textFragmentId);
-                if (frag == null) continue;
-                if (frag.normCharStart <= fav.normCharOffset! &&
-                    frag.normCharEnd > fav.normCharOffset!) {
-                  target = cue;
-                  break;
-                }
-              }
+              final AudioCue? target = _favoriteAudioCue(fav);
               if (target != null) {
                 await _audiobookController!.playRange(
                   AudioPlaybackRange(
@@ -2274,9 +2678,12 @@ extension _ReaderChrome on _ReaderFushiPageState {
         desktop: isDesktopPlatform,
       ),
       initialSideSheetTab: _chrome.lastSettingsTab,
+      requestedSideSheetTab: initialSettingsTab,
       onSideSheetTabChanged: (String id) => _chrome.lastSettingsTab = id,
       expandedTocParents: _chrome.expandedTocParents,
       volumeSwitch: _tocVolumeSwitch(),
+      readerPaperColors: () =>
+          (bg: _themeBackgroundColor(), fg: _themeTextColor()),
     );
   }
 
@@ -2343,7 +2750,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
       },
       onJumpTo: (int volume, EpubImageRef ref) {
         Navigator.pop(routeContext);
-        unawaited(_switchToVolume(volume, chapterIndex: ref.chapterIndex));
+        unawaited(_switchToVolume(volume, chapterIndex: ref.jumpChapterIndex));
       },
       onOpenImage: (int volume, EpubImageRef ref, File file) =>
           _openImageViewer(
@@ -2418,21 +2825,65 @@ extension _ReaderChrome on _ReaderFushiPageState {
   }
 
   String _currentChapterLabel() {
-    return _currentChapterLabelFor(_currentChapter);
+    return _currentChapterLabelFor(
+      _currentChapter,
+      charOffset: _tocCharOffsetFor(_currentChapter),
+    );
   }
 
-  String _currentChapterLabelFor(int chapterIndex) {
+  /// 章 [chapterIndex]（章内位置 [charOffset]，`countStudyChars` 口径，null / 负数
+  /// 视作章首）落在哪条目录项上的章名。同一 xhtml 装多话、目录靠锚点分节的书，
+  /// 只给章号会落到该章的**第一话**，要分清第几话必须带章内位置——旧实现从目录
+  /// 末尾往前找第一个 `index <= 章号` 的条目，同章多条时永远命中最后一话。
+  String _currentChapterLabelFor(int chapterIndex, {int? charOffset}) {
     if (_book == null) return '';
     final List<TtuTocEntry> toc = _buildTtuToc();
-    for (int i = toc.length - 1; i >= 0; i--) {
-      if (toc[i].index <= chapterIndex) {
-        return toc[i].label;
-      }
-    }
+    final int? entry = resolveCurrentTocEntry(toc, chapterIndex, charOffset);
+    if (entry != null) return toc[entry].label;
     return t.auto_chapter(n: chapterIndex + 1);
   }
 
+  /// 判「读到哪条目录项」用的章 [chapter] 内位置：优先取阅读器最近回报的精确
+  /// 字符偏移；还没回报时（刚开书 / 刚跳章）依次退到本次导航的目标锚点、按章内
+  /// 分数折算的估计值；都没有返回 null（按章首处理）。位置缓存属于别的章时同样
+  /// 返回 null。
+  int? _tocCharOffsetFor(int chapter) {
+    if (_lastProgressSection != chapter) return null;
+    if (_lastProgressCharOffset >= 0) return _lastProgressCharOffset;
+    final String? fragment = _initialFragment;
+    if (fragment != null) {
+      final int? anchor = _tocAnchorCharOffsetFor(chapter, fragment);
+      if (anchor != null) return anchor;
+    }
+    if (chapter >= 0 &&
+        chapter < _chapterCharCounts.length &&
+        _chapterCharCounts[chapter] > 0) {
+      return (_lastProgressValue.clamp(0.0, 1.0) * _chapterCharCounts[chapter])
+          .round();
+    }
+    return null;
+  }
+
+  /// 目录锚点 `fragment` 在章 [chapter] 内的字符偏移（后台算好的
+  /// [_tocAnchorCharOffsets]）；没算好 / 不是这本书 / 锚点找不到时 null。
+  int? _tocAnchorCharOffsetFor(int chapter, String fragment) {
+    if (!identical(_tocAnchorOffsetsBook, _book)) return null;
+    return _tocAnchorCharOffsets?[tocAnchorKey(chapter, fragment)];
+  }
+
+  /// 压平后的目录。顶栏章名每帧都要查它（[_currentChapterLabelFor]），而压平要走
+  /// 整棵 TOC 树并逐条解析 href → 章号，故按书缓存：它只依赖 [_book]（`toc` 与
+  /// `chapterIndexForHref` 都是书自身的只读数据），换书才失效，重排版/换样式不影响。
   List<TtuTocEntry> _buildTtuToc() {
+    final List<TtuTocEntry>? cached = _ttuTocCache;
+    if (cached != null && identical(_ttuTocCacheBook, _book)) return cached;
+    final List<TtuTocEntry> built = _flattenTtuToc();
+    _ttuTocCache = built;
+    _ttuTocCacheBook = _book;
+    return built;
+  }
+
+  List<TtuTocEntry> _flattenTtuToc() {
     final List<EpubTocItem> toc = _book!.toc;
     if (toc.isEmpty) {
       return List<TtuTocEntry>.generate(
@@ -2443,7 +2894,11 @@ extension _ReaderChrome on _ReaderFushiPageState {
     // TODO-1333: 压平交给纯函数 flattenTtuTocEntries，它保留所有解析到的章、不再因
     // 「图片合并」把被吸收的单图片章从目录里删掉（那会在整本书目录都指向被吸收图片章
     // 时清空章节列表）。被吸收章的目录跳转由导航层 _resolveNavChapter 重定向到宿主章。
-    return flattenTtuTocEntries(toc, _tocHrefToChapterIndex);
+    return flattenTtuTocEntries(
+      toc,
+      _tocHrefToChapterIndex,
+      anchorCharOffset: _tocAnchorCharOffsetFor,
+    );
   }
 
   Future<void> _reloadWithCurrentSettings() async {
@@ -2465,10 +2920,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
       _lastProgressValue = 0.0;
       _lastProgressCharOffset = -1;
     }
-    if (_lyricsMode) {
-      await _loadLyricsPage();
-      return;
-    }
+    if (_lyricsMode) unawaited(_loadLyricsPage());
     final InAppWebViewController controller = _controller!;
     final int generation = _navigateGeneration;
     final int chapter = _currentChapter;
@@ -2490,8 +2942,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
     if (!mounted ||
         generation != _navigateGeneration ||
         chapter != _currentChapter ||
-        !identical(controller, _controller) ||
-        _lyricsMode) {
+        !identical(controller, _controller)) {
       return;
     }
     final ReaderStableProgressDetails? snapshot =
@@ -2558,15 +3009,18 @@ extension _ReaderChrome on _ReaderFushiPageState {
   ///
   /// 纯指针面：包 ExcludeFocus，不进焦点遍历池（与 [_wrapBottomChromeBar] 同一规则，
   /// TODO-700 不变式）。BUG-1692：排在 WebView 之后绘制，必须自带 RepaintBoundary。
-  /// 动作文案后缀绑定键（`插图画廊 · G`），让快捷键在工具栏 tooltip 里可见。
-  String _labelWithShortcut(String label, ShortcutAction action) {
-    final List<InputBinding> keys =
-        appModel.shortcutRegistry.bindingsFor(action).keyboardBindings;
-    if (keys.isEmpty) return label;
-    return '$label · ${keys.first.displayLabel}';
+  /// 快捷键只进 tooltip（`插图画廊 (G)`），可见标签只放功能名——窄窗底栏把
+  /// `导航 · Ctrl+F` 截成乱码（10-06 反馈）；触屏平台不挂（BUG-3040）。
+  String _shortcutTooltip(String label, ShortcutAction action) {
+    return tooltipWithShortcutHint(
+      label,
+      appModel.shortcutRegistry.bindingsFor(action).keyboardBindings,
+      keyboardHints: isDesktopPlatform,
+    );
   }
 
   Widget _buildDesktopHeader() {
+    if (_floatingToolbars) return _buildFloatingHeader();
     if (!_desktopChromeEnabled || !_bottomBarShouldPaint) {
       return const SizedBox.shrink();
     }
@@ -2579,19 +3033,188 @@ extension _ReaderChrome on _ReaderFushiPageState {
       // 焦点排除在 ReaderDesktopHeader 内部（纯指针面，TODO-700 不变式）；底栏的
       // ExcludeFocus 外壳仍唯一在 _wrapBottomChromeBar（守卫 reader_focus_chrome_excluded）。
       child: RepaintBoundary(
-        // 悬停在工具栏上不自动收起（取消计时），离开后重新武装。
-        child: MouseRegion(
-          onEnter: (_) => _onChromeHoverChanged(true),
-          onExit: (_) => _onChromeHoverChanged(false),
-          child: ReaderDesktopHeader(
-            key: const ValueKey<String>('fushi_desktop_header'),
+        child: ReaderDesktopHeader(
+          key: const ValueKey<String>('fushi_desktop_header'),
+          title: layout.showsTitle ? (_book?.title ?? '') : '',
+          // 章名跟着书名这颗槽位开关一起开合（同一个标题槽），歌词模式下没有「当前
+          // 章」可言（文档换成了歌词）——那时只留书名。
+          chapter: layout.showsTitle && !_lyricsMode
+              ? _currentChapterLabel()
+              : '',
+          textColor: fg,
+          backgroundColor: _chromeSurfaceColor(),
+          // 左 / 右两组按钮来自布局的 topLeft / topRight 槽（用户可在设置里拖动）；
+          // pinned = 窄窗紧凑形态仍保留的按钮，其余收进 ⋮ 溢出菜单。
+          leading: <ReaderHeaderAction>[
+            ..._readerControlActionsIn(ReaderControlSlot.topLeft),
+            if (_modeTogglePromoted)
+              _readerControlAction(ReaderControlItem.modeToggle),
+          ],
+          trailing: _readerControlActionsIn(ReaderControlSlot.topRight),
+          // 布局的「更多」槽（2026-10 精简：中频按钮）恒在 ⋮ 菜单。
+          overflowActions: _overflowControlActions(),
+        ),
+      ),
+    );
+  }
+
+  /// 悬浮工具栏样式的顶部（M3 Expressive floating toolbar，默认）：浮在正文上的
+  /// 三块胶囊——`[← 返回] [书名 · 章名（点它开导航）] …… [主操作按钮组 | ⋯]`，
+  /// 不占满宽、不画整条底色。显隐与底栏同一台状态机（[_bottomBarShouldPaint]：
+  /// 点中间唤出 / 再点收起），出现 / 消失走 M3E 弹簧（[FushiChromeReveal]）。
+  ///
+  /// 纯指针面：整块 ExcludeFocus，不进焦点遍历池（TODO-700 不变式，快捷键 /
+  /// 手柄照旧经注册表直达各动作）。BUG-1692：排在 WebView 之后绘制，自带
+  /// RepaintBoundary。
+  Widget _buildFloatingHeader() {
+    if (!_desktopChromeEnabled || !_hasEverLoaded) {
+      return const SizedBox.shrink();
+    }
+    final EdgeInsets viewPadding = MediaQuery.viewPaddingOf(context);
+    final ReaderControlLayout layout = _controlLayout;
+    final List<FushiToolbarItem> leading = <FushiToolbarItem>[
+      for (final ReaderHeaderAction a
+          in _readerControlActionsIn(ReaderControlSlot.topLeft))
+        _toolbarItem(a),
+      if (_modeTogglePromoted)
+        _toolbarItem(_readerControlAction(ReaderControlItem.modeToggle)),
+    ];
+    return Positioned(
+      key: const ValueKey<String>('fushi_floating_header'),
+      top: _stableTopInset + kReaderFloatingBarMargin,
+      left: viewPadding.left + kReaderFloatingBarMargin,
+      right: viewPadding.right + kReaderFloatingBarMargin,
+      child: RepaintBoundary(
+        child: FushiChromeReveal(
+          visible: _bottomBarShouldPaint,
+          from: AxisDirection.up,
+          child: FushiFloatingTopBar(
+            excludeFocus: true,
+            leading: leading,
             title: layout.showsTitle ? (_book?.title ?? '') : '',
-            textColor: fg,
-            backgroundColor: _chromeSurfaceColor(),
-            // 左 / 右两组按钮来自布局的 topLeft / topRight 槽（用户可在设置里拖动）；
-            // pinned = 窄窗紧凑形态仍保留的按钮，其余收进 ⋮ 溢出菜单。
-            leading: _readerControlActionsIn(ReaderControlSlot.topLeft),
-            trailing: _readerControlActionsIn(ReaderControlSlot.topRight),
+            // 章名跟着书名这颗槽位开关一起开合；歌词模式下没有「当前章」可言。
+            subtitle: layout.showsTitle && !_lyricsMode
+                ? _currentChapterLabel()
+                : '',
+            titleTooltip: t.section_navigation,
+            onTitleTap: () => unawaited(
+              _showAppearanceSheet(initialSubPage: 'location'),
+            ),
+            actions: _groupedToolbarItems(
+              _renderableControlsIn(ReaderControlSlot.topRight),
+            ),
+            overflow: <FushiToolbarItem>[
+              for (final ReaderHeaderAction a in _overflowControlActions())
+                _toolbarItem(a),
+            ],
+            colors: _floatingToolbarColors(),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 悬浮工具栏样式的底部：有声书在场时一条 M3E 悬浮迷你播放条（当前句 + 波浪
+  /// 进度，点它展开有声书侧板）+ 旁边的形状变形播放 FAB；布局底栏槽位有按钮时
+  /// （手机出厂：导航 / 有声书 / 设置 / 统计）一条居中的悬浮工具栏（纯图标，名称
+  /// 进 tooltip / 语义；用户 2026-10-06「小说的底部栏文字也砍掉」）。两者都在时
+  /// 迷你条在上、工具栏 + FAB 在下（FAB 与工具栏配对，M3E 规范）；只有迷你条时 FAB 跟在迷你条右侧。
+  ///
+  /// 坐在状态行带之上（状态行照常贴屏底，不并进胶囊），左右与底部留
+  /// [kReaderFloatingBarMargin]。歌词覆盖层在场时不画（它自带全套播放控件）。
+  /// 纯指针面（ExcludeFocus，TODO-700 不变式）；BUG-1692 自带 RepaintBoundary。
+  Widget _buildFloatingBottomChrome() {
+    if (!_hasEverLoaded) return const SizedBox.shrink();
+    final AudiobookPlayerController? ctrl = _audiobookController;
+    final List<List<FushiToolbarItem>> dock = <List<FushiToolbarItem>>[
+      for (final ReaderControlSlot slot in <ReaderControlSlot>[
+        ReaderControlSlot.bottomLeft,
+        ReaderControlSlot.bottomCenter,
+        ReaderControlSlot.bottomRight,
+      ])
+        ..._groupedToolbarItems(
+          _renderableControlsIn(slot).where(
+            (ReaderControlItem item) =>
+                ctrl == null || !_isDuplicatedByAudiobookPlayBar(item),
+          ),
+        ),
+    ];
+    final bool hasDock = dock.any((List<FushiToolbarItem> g) => g.isNotEmpty);
+    if (ctrl == null && !hasDock) return const SizedBox.shrink();
+    final FushiFloatingToolbarColors colors = _floatingToolbarColors();
+    // 播放键住在迷你条里（M3E 连接式按钮组的中间那颗形状变形 FAB），底部只有
+    // 这一颗播放键；Apple 形态同样放进条内。
+    final Widget? mini = ctrl == null
+        ? null
+        : AudiobookMiniPlayer(
+            key: const ValueKey<String>('fushi_play_bar'),
+            controller: ctrl,
+            showPlayButton: true,
+            coverPath: _extractDir == null
+                ? null
+                : ReaderFushiSource.resolveCoverFilePath(
+                    extractDir: _extractDir!,
+                    coverPath: _book?.coverHref,
+                  ),
+            chapterLabel: _lyricsMode ? null : _currentChapterLabel(),
+            skipActionSeconds: ReaderFushiSource.instance.skipActionSeconds,
+            invertSkip:
+                ReaderFushiSource.instance.invertAudiobookSkipDirection,
+            colors: colors,
+            onOpenPanel: () =>
+                unawaited(_showAppearanceSheet(initialSubPage: 'audiobook')),
+          );
+    final Widget? toolbar = hasDock
+        ? FushiFloatingToolbar(
+            key: const ValueKey<String>('fushi_reader_floating_dock'),
+            // 纯图标的 M3E 悬浮工具栏：按钮等距排开，不画组间竖分隔线（几颗
+            // 各自成组的单按钮之间插分隔只会把一条短胶囊切碎）。
+            groups: <List<FushiToolbarItem>>[
+              <FushiToolbarItem>[
+                for (final List<FushiToolbarItem> g in dock) ...g,
+              ],
+            ],
+            colors: colors,
+          )
+        : null;
+    final Widget body;
+    if (mini != null && toolbar != null) {
+      body = Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          mini,
+          const SizedBox(height: kFushiFloatingToolbarFabGap),
+          Center(child: toolbar),
+        ],
+      );
+    } else if (mini != null) {
+      body = mini;
+    } else {
+      body = Center(child: toolbar);
+    }
+    final EdgeInsets viewPadding = MediaQuery.viewPaddingOf(context);
+    return Positioned(
+      key: const ValueKey<String>('fushi_floating_bottom_chrome'),
+      left: viewPadding.left + kReaderFloatingBarMargin,
+      right: viewPadding.right + kReaderFloatingBarMargin,
+      bottom: _statusFooterPaintedBand + kReaderFloatingBarMargin,
+      child: RepaintBoundary(
+        child: ExcludeFocus(
+          child: FocusScope(
+            node: _chromeFocusScope,
+            child: FushiChromeReveal(
+              visible: !_lyricsMode && _bottomBarShouldPaint,
+              from: AxisDirection.down,
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(
+                    maxWidth: kReaderFloatingBottomMaxWidth,
+                  ),
+                  child: body,
+                ),
+              ),
+            ),
           ),
         ),
       ),
@@ -2607,33 +3230,34 @@ extension _ReaderChrome on _ReaderFushiPageState {
   /// 实时走的秒表加一颗暂停键（[_toggleStudyClockManualPause]，与状态行计时块
   /// 同一入口）。
   void _openReadingStatistics() {
-    if (_sideSheetOpen) return;
-    unawaited(
-      _presentSideSheet(
-        side: ReaderSideSheetSide.right,
-        builder: (_) => ReaderStatisticsSheet(
-          bookTitle: _book?.title ?? '',
-          sessionTotals: _readingSessionTotals,
-          loadBookTotals: _loadReaderBookStatTotals,
-          progress: () => (
-            chapterCurrent: _footerChapterCurrentChars,
-            chapterTotal: _footerChapterTotalChars,
-            bookCurrent: _progressCurrentChars,
-            bookTotal: _progressTotalChars,
-          ),
-          onTogglePause: _toggleStudyClockManualPause,
-          onOpenFullRecords: () {
-            Navigator.of(context).maybePop();
-            unawaited(_openStatisticsCenter());
-          },
-        ),
+    unawaited(_openReaderPanel(_kReaderPanelStatistics));
+  }
+
+  /// 统计侧板内容（[_openReaderPanel] 的 statistics 种类）。
+  Widget _buildStatisticsSheet() {
+    return ReaderStatisticsSheet(
+      bookTitle: _book?.title ?? '',
+      sessionTotals: _readingSessionTotals,
+      loadBookTotals: _loadReaderBookStatTotals,
+      progress: () => (
+        chapterCurrent: _footerChapterCurrentChars,
+        chapterTotal: _footerChapterTotalChars,
+        bookCurrent: _progressCurrentChars,
+        bookTotal: _progressTotalChars,
       ),
+      onTogglePause: _toggleStudyClockManualPause,
+      onOpenFullRecords: () {
+        Navigator.of(context).maybePop();
+        unawaited(_openStatisticsCenter());
+      },
     );
   }
 
   /// 统计侧栏「打开完整记录」→ 统计中心（阅读 tab）。侧栏本身不停表，但这是
   /// 压住正文的全页路由（BUG-2208），与画廊同款经 [_withStudyClockPaused]。
   Future<void> _openStatisticsCenter() async {
+    if (!mounted) return;
+    await _clearReaderAppSelection();
     if (!mounted) return;
     await _withStudyClockPaused(
       () => Navigator.of(context).push(
@@ -2648,13 +3272,15 @@ extension _ReaderChrome on _ReaderFushiPageState {
   /// 手动计时开关：暂停 → `stop()` 结算并封段；继续 → `start()` 重锚 tick 起点开
   /// 新段。旗标同时门住 [_ensureStudyClock] 与生命周期 resumed 的自动起表。
   ///
-  /// 入口只有底部状态行左侧的计时器（[ReaderStatusFooter.onTapTracker]）——在正文
-  /// 里点，停 / 续当场生效。统计浮层里曾另有一个同功能按钮，但开浮层本身就经
-  /// [_withStudyClockPaused] 停表（BUG-2208），层内那个按钮改不动当下的运行态。
+  /// 入口是**正文里那颗计时开关键**（[ReaderStudyClockButton]）：状态行形态在
+  /// [ReaderStatusFooter.onTapTracker]（连同整块读数的命中区），播放条唤出、状态行
+  /// 让位（BUG-2467）后在 [ReaderStatusInline.onToggleTimer]——两种底部形态下那颗键
+  /// 都在场且都真的可点，停 / 续当场生效。统计侧栏里还有一颗同源的暂停键
+  /// （`_SessionClock`，侧栏不遮正文故不停表）。
   void _toggleStudyClockManualPause() {
     _ensureStudyClock();
-    final bool pause = !_studyClockManualPause;
-    _rebuild(() => _studyClockManualPause = pause);
+    // 开始方式门持有暂停旗：手动停 / 续同时结束「翻页后开始」的等待（用户已亲手决定）。
+    _rebuild(() => _studyClockStartGate.toggleManualPause());
     // 统一判据（BUG-2209）：切后台期间点「继续」只是清旗、回前台再起表。
     _syncStudyClockRunState();
   }
@@ -2670,6 +3296,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
       () => showAppDialog<void>(
         context: context,
         builder: (ctx) => AudiobookImportDialog(
+          prefs: appModel.prefsRepo,
           bookKey: widget.bookKey,
           repo: repo,
           extractDir: _extractDir,
@@ -2751,34 +3378,47 @@ extension _ReaderChrome on _ReaderFushiPageState {
   /// 点状态行 = 点顶部进度 pill 的同义动作（悬浮态唤出 / 收起，挤压态切底栏）。
   /// 纯指针面，不进焦点遍历池（TODO-700 不变式）。
   Widget _buildStatusFooter() {
-    if (!_statusFooterShouldPaint) return const SizedBox.shrink();
+    // 读数并进底栏那块遮罩时由 [_wrapBottomChromeBar] 画（底部只有一块面、一行
+    // 居中读数），这里不再单独铺一层，否则同一串读数上下两份。
+    if (!_statusFooterShouldPaint || _statusFooterInBottomBar) {
+      return const SizedBox.shrink();
+    }
     return Positioned(
       left: MediaQuery.viewPaddingOf(context).left,
       right: MediaQuery.viewPaddingOf(context).right,
       bottom: 0,
       // BUG-1692：状态行排在 WebView **之后**绘制，必须自带 RepaintBoundary，否则并进
       // 页面级 PictureLayer 的整窗 cull rect，macOS 上整块 WebView 收不到鼠标事件。
-      child: RepaintBoundary(
-        child: ReaderStatusFooter(
-          key: const ValueKey<String>('fushi_status_footer'),
-          bottomInset: _stableBottomInset,
-          sessionTotals: _readingSessionTotals,
-          currentChars: _progressCurrentChars,
-          totalChars: _progressTotalChars,
-          showTimer: ReaderFushiSource.instance.showReadingTimer,
-          showProgress: ReaderFushiSource.instance.showTopProgressBar,
-          textColor: _themeTextColor(),
-          backgroundColor: _chromeSurfaceColor(),
-          onTap: _anyChromeFloating
-              ? () => _handleFloatingChromeReveal()
-              : _toggleChrome,
-          // 左侧计时器 = 手动暂停 / 继续；右侧进度数字 = 打开统计浮层。
-          onTapTracker: _toggleStudyClockManualPause,
-          onTapProgress: _openReadingStatistics,
-        ),
-      ),
+      child: RepaintBoundary(child: _buildStatusFooterRow(centered: false)),
     );
   }
+
+  /// 读数行本体。屏底独立成行（[_buildStatusFooter]）与并进底栏遮罩最底部
+  /// （[_wrapBottomChromeBar]，[_statusFooterInBottomBar]）两处共用同一份，
+  /// 差别只有贴右 / 居中。
+  Widget _buildStatusFooterRow({required bool centered}) => ReaderStatusFooter(
+        key: const ValueKey<String>('fushi_status_footer'),
+        bottomInset: _stableBottomInset,
+        centered: centered,
+        sessionTotals: _readingSessionTotals,
+        currentChars: _progressCurrentChars,
+        totalChars: _progressTotalChars,
+        showTimer: ReaderFushiSource.instance.showReadingTimer,
+        showProgress: ReaderFushiSource.instance.showTopProgressBar,
+        textColor: _themeTextColor(),
+        // 悬浮工具栏样式：读数是一枚浮在正文上的小胶囊（与悬浮工具栏同色），整条
+        // 带透明，竖排 / 横排都没有实体底栏。
+        backgroundColor: _floatingToolbars
+            ? _floatingToolbarColors().container!
+            : _chromeSurfaceColor(),
+        floating: _floatingToolbars,
+        onTap: _anyChromeFloating
+            ? () => _handleFloatingChromeReveal()
+            : _toggleChrome,
+        // 左侧计时器 = 手动暂停 / 继续；右侧进度数字 = 打开统计浮层。
+        onTapTracker: _toggleStudyClockManualPause,
+        onTapProgress: _openReadingStatistics,
+      );
 
   /// 悬浮态状态行收起后留在屏底的细进度线（[ReaderProgressEdgeLine]）：
   /// 贴 `bottom: 0`，不占预留、不吃指针；状态行唤出时它让位（同一真相源
@@ -2789,6 +3429,34 @@ extension _ReaderChrome on _ReaderFushiPageState {
       current: _progressCurrentChars,
       total: _progressTotalChars,
     )!;
+    if (_floatingToolbars) {
+      // 悬浮样式：不画整宽贴底线，改成屏底居中的一小段圆头进度（胶囊形）。
+      return Positioned(
+        left: 0,
+        right: 0,
+        bottom: _stableBottomInset > 6 ? _stableBottomInset : 6,
+        child: IgnorePointer(
+          child: RepaintBoundary(
+            child: Center(
+              child: SizedBox(
+                width: 96,
+                child: ClipRRect(
+                  borderRadius: const BorderRadius.all(Radius.circular(2)),
+                  child: ColoredBox(
+                    color: _themeTextColor().withValues(alpha: 0.14),
+                    child: ReaderProgressEdgeLine(
+                      key: const ValueKey<String>('fushi_progress_edge_line'),
+                      ratio: ratio,
+                      color: _themeTextColor(),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
     return Positioned(
       left: MediaQuery.viewPaddingOf(context).left,
       right: MediaQuery.viewPaddingOf(context).right,
@@ -2825,6 +3493,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
         showTimer: ReaderFushiSource.instance.showReadingTimer,
         showProgress: ReaderFushiSource.instance.showTopProgressBar,
         textColor: _themeTextColor(),
+        onToggleTimer: _toggleStudyClockManualPause,
       );
 
   /// 状态行左侧的会话累计读口：账只在 [StudyClock] 一本（v92 纪律），时钟未建
@@ -3010,8 +3679,25 @@ extension _ReaderChrome on _ReaderFushiPageState {
   /// preset 命中用手调底色，未命中（light/system/自定义/未来 key）跟随真实
   /// ColorScheme，自定义主题再盖上用户显式指定的角色。
   ReaderThemeColors get _readerThemeColors {
+    // 墨水屏：正文 CSS 无视主题 key 一律纯黑白（[ReaderContentStyles.css] 的
+    // einkMode 分支，黑白方向跟 app 明暗）。Dart 侧若仍按预设纸色（ecru 等）
+    // 画 Scaffold / 桌面顶栏 / 工具栏，正文四周与顶上就切出一条异色带——两边
+    // 必须同源。高亮色角色照旧走主题（CSS 侧墨水屏另行线式化）。
+    if (appModel.einkMode) {
+      final bool dark = appModel.isDarkMode;
+      final ReaderThemeColors themed = resolveReaderThemeColors(
+        themeKey: appModel.readerThemeKey,
+        presetMap: _themeMap,
+        scheme: appModel.buildColorScheme(
+          dark ? Brightness.dark : Brightness.light,
+        ),
+        customOverrides: _customReaderThemeOverrides,
+        audioHighlightOverride: appModel.audioHighlightColor,
+      );
+      return einkReaderThemeColors(themed, dark: dark);
+    }
     return resolveReaderThemeColors(
-      themeKey: appModel.appThemeKey,
+      themeKey: appModel.readerThemeKey,
       presetMap: _themeMap,
       scheme: appModel.buildColorScheme(
         appModel.isDarkMode ? Brightness.dark : Brightness.light,
@@ -3020,6 +3706,57 @@ extension _ReaderChrome on _ReaderFushiPageState {
       // TODO-977：全局音频高亮色覆盖（与主题解耦），对所有主题生效。
       audioHighlightOverride: appModel.audioHighlightColor,
     );
+  }
+
+  /// 「跟随主题」时的 M3E 阅读配色（[readerFollowThemePalette]）：注音色、原生
+  /// 选区、工具栏底色这些五角色之外的槽位从这里取。预设纸色 / 自定义钉了纸色 /
+  /// 墨水屏时为 null，各调用点保持旧行为。
+  FushiReaderPalette? get _followThemePalette {
+    if (appModel.einkMode) return null;
+    return readerFollowThemePalette(
+      themeKey: appModel.readerThemeKey,
+      presetMap: _themeMap,
+      scheme: appModel.buildColorScheme(
+        appModel.isDarkMode ? Brightness.dark : Brightness.light,
+      ),
+      customOverrides: _customReaderThemeOverrides,
+    );
+  }
+
+  /// 当前主题 key 的手调纸色预设此刻是否生效（明暗与 app 一致，见
+  /// [readerPresetFor]）；墨水屏下 CSS 另走纯黑白，这里只管非墨水屏。
+  bool get _readerPresetApplies =>
+      readerPresetFor(
+        themeKey: appModel.readerThemeKey,
+        presetMap: _themeMap,
+        scheme: appModel.buildColorScheme(
+          appModel.isDarkMode ? Brightness.dark : Brightness.light,
+        ),
+      ) !=
+      null;
+
+  /// 正文 CSS 依赖的全部配色输入的指纹（五角色 + 跟随主题的额外槽位 + 预设是否生效
+  /// + 墨水屏明暗）。
+  Object _readerThemeSignature() {
+    final FushiReaderPalette? palette = _followThemePalette;
+    return (
+      _readerThemeColors,
+      palette?.rubyText,
+      palette?.nativeSelection,
+      _readerPresetApplies,
+      appModel.einkMode,
+      appModel.isDarkMode,
+    );
+  }
+
+  /// app 主题 / 明暗在阅读器外变了：配色指纹变化才重注入正文 CSS（分页 / 滚动 /
+  /// VN 共用同一份 CSS），并同步词典弹窗 / 歌词 / chrome。
+  void _onAppThemeMaybeChanged() {
+    if (!mounted || _settings == null) return;
+    if (_readerThemeSignature() == _cssThemeSignature) return;
+    _invalidateStyleCache();
+    unawaited(_onThemeChanged());
+    unawaited(_applyStylesLive());
   }
 
   Color _themeBackgroundColor() => _readerThemeColors.bg;
@@ -3045,7 +3782,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
     // HBK-AUDIT-117: persist the reader theme here, in the theme-change flow,
     // instead of as a hidden side effect of _applyChapterHighlights (which only
     // ran when the chapter had favorites).
-    await _settings?.setTheme(appModel.appThemeKey);
+    await _settings?.setTheme(appModel.readerThemeKey);
     _syncDictionaryTheme();
     if (appModel.showFloatingLyric) {
       // reader 主题变了：让 session 用新的 reader 样式重刷悬浮窗
@@ -3068,18 +3805,33 @@ extension _ReaderChrome on _ReaderFushiPageState {
   /// [deriveSurfaceRolesFrom]，所见即所得。
   void _syncDictionaryTheme() {
     // 决策全在 [resolveDictionaryPopupTheme]（纯函数、可直接断言）：它保证覆盖
-    // 主题带上 FushiEinkTheme 扩展，并在墨水屏下跳过纸色派生。这里只负责把
+    // 主题带上 FushiEinkTheme 扩展、配色取 app ColorScheme。这里只负责把
     // AppModel / 阅读器主题的当前取值喂进去。
     final DictionaryPopupTheme resolved = resolveDictionaryPopupTheme(
       eink: appModel.einkMode,
       einkDark: appModel.isDarkMode,
-      readerBackground: _themeBackgroundColor(),
-      readerForeground: _themeTextColor(),
       readerDark: _isReaderThemeDark,
       buildColorScheme: appModel.buildColorScheme,
+      textTheme: appModel.textTheme,
+      designSystem: appModel.themeNotifier.designSystemTheme,
+      glassDesign: appModel.themeNotifier.designSystem == 'glass',
+      glass: appModel.themeNotifier.glassMaterial,
+      monochromeAccent: appModel.themeNotifier.appThemeKey == 'system-theme',
+      // 歌词模式：弹窗跟歌词页同一份封面取色 scheme（MD3）；退出后这里回到 null，
+      // 弹窗恢复 app ColorScheme。
+      lyricsCoverScheme: _lyricsMode ? _lyricsThemeHost?.coverScheme : null,
+      // Apple：歌词页恒深色档，弹窗同一配方（见 resolveDictionaryPopupTheme）。
+      lyricsMode: _lyricsMode,
     );
     appModel.setOverrideDictionaryColor(resolved.fillColor);
     appModel.setOverrideDictionaryTheme(resolved.theme);
+  }
+
+  /// 歌词主题宿主发布了新主题（封面取色到达 / 歌词覆盖层挂上或撤下 / 根主题变）：
+  /// 弹窗覆盖主题跟着重算。
+  void _onLyricsThemeHostChanged() {
+    if (!mounted) return;
+    _syncDictionaryTheme();
   }
 
   // ── JS result helpers (evaluateJavascript returns dynamic) ────────
@@ -3104,12 +3856,10 @@ extension _ReaderChrome on _ReaderFushiPageState {
 
   // ── Popup Audio Controls ───────────────────────────────────────────
 
-  Future<void> _refreshSectionHighlights(int section) async {
+  /// [freshId]：刚收藏的那条，笔触样式下给它放一次落笔动画（只有收藏动作传）。
+  Future<void> _refreshSectionHighlights(int section, {String? freshId}) async {
     if (_controller == null) return;
-    if (_lyricsMode) {
-      await _applyLyricsFavorites();
-      return;
-    }
+    if (_lyricsMode) await _applyLyricsFavorites();
     final List<FavoriteSentence> chapterFavs =
         await _favoriteSentencesForSection(section);
     if (!mounted || _controller == null || section != _lookupSectionIndex) {
@@ -3119,6 +3869,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
       _controller!,
       chapterFavs,
       backgroundHex: _readerBackgroundHex,
+      freshIds: freshId == null ? const <String>[] : <String>[freshId],
     );
     await _controller!.evaluateJavascript(
       source:
@@ -3185,10 +3936,17 @@ extension _ReaderChrome on _ReaderFushiPageState {
       return;
     }
 
+    // 从查词弹窗顶栏 ★ 收藏（无划选）时记下当时查的那个词，收藏夹在句子旁显示、
+    // 批量制卡以它为词条；划选 / 右键菜单收藏没有查词对象，不记。
+    final ({String expression, String reading})? headword =
+        selection == null ? leadingHeadwordOf(rootLookupResult) : null;
     final FavoriteSentence fav = FavoriteSentence(
       text: sentence,
       bookTitle: _book!.title,
-      chapterLabel: _currentChapterLabelFor(section),
+      chapterLabel: _currentChapterLabelFor(
+        section,
+        charOffset: sentenceRange?.offset,
+      ),
       createdAt: DateTime.now(),
       bookKey: widget.bookKey,
       sectionIndex: section,
@@ -3197,20 +3955,99 @@ extension _ReaderChrome on _ReaderFushiPageState {
       // BUG-893：补 dateKey，否则阅读统计「收藏语句」计数恒为 0（视频收藏路径早已带
       // dateKey，唯独书内收藏漏了）。source 用默认（书籍），与统计分桶口径一致。
       dateKey: statTodayKey(),
+      expression: headword?.expression,
+      reading: headword?.reading,
     );
     await repo.add(fav);
     _invalidateFavoriteSentenceCache();
     _rebuild(() => _currentSentenceIsFavorited = true);
     if (mounted) {
-      await _refreshSectionHighlights(section);
+      await _refreshSectionHighlights(section, freshId: fav.id);
     }
     FushiToast.show(msg: t.favorite_added, severity: ToastSeverity.success);
+  }
+
+  /// 收藏句对应的音频 cue：按章取句级 cue，命中 `normCharOffset` 所在区间的那句。
+  /// 「播放收藏」与歌词模式「跳到收藏」共用。没挂有声书 / 收藏缺偏移 → null。
+  AudioCue? _favoriteAudioCue(FavoriteSentence fav) {
+    final AudiobookPlayerController? ctrl = _audiobookController;
+    final int? offset = fav.normCharOffset;
+    final int? section = fav.sectionIndex;
+    if (ctrl == null || offset == null || section == null) return null;
+    for (final AudioCue cue in ctrl.sentenceAudioCuesForSection(section)) {
+      final SubtitleRematchFragment? frag = SubtitleRematchCodec.tryDecode(
+        cue.textFragmentId,
+      );
+      if (frag == null) continue;
+      if (frag.normCharStart <= offset && frag.normCharEnd > offset) {
+        return cue;
+      }
+    }
+    return null;
+  }
+
+  /// 导航抽屉「书内搜索」命中后的跳转（从 [_buildQuickSettingsSheet] 的内联闭包抽出；
+  /// 歌词模式下不接线——歌词页里没有正文命中的落点，见 BUG-2596）。
+  Future<void> _jumpToSearchResult(
+    BookSearchResult result,
+    String query,
+  ) async {
+    if (!mounted || _book == null || _controller == null) return;
+    // 搜索跳转是跳转不是阅读：字数账本（ReadUnitLedger）不需要播种——跳走前那页
+    // 在落点的首个 arrive 时结算，命中处之前跳过的正文从未成为当前单元、不计。
+    final String preciseLocateJs =
+        ReaderPaginationScripts.scrollToSearchMatchInvocation(
+      query,
+      result.charOffset,
+    );
+    final ReaderSearchJumpAction action = decideReaderSearchJump(
+      targetChapter: result.sectionIndex,
+      currentChapter: _currentChapter,
+      restoreInFlight: _restoreInFlight,
+      readerContentReady: _readerContentReady,
+    );
+    switch (action) {
+      case ReaderSearchJumpAction.navigate:
+        // TODO-1309：跨章搜索跳转把「章内定位」排进导航的原子恢复链（settle 之后应用），
+        // 不再在 restore 完成微任务里抢发被 settle-reflow / 连续重锚采样冲回章首（双跳，
+        // 首跳只到章节）。去掉旧的首跳失败早退分支——旧代码首跳超时/代际 stale 时会停在
+        // 章首、要点第二次才走「同章直接 restore」才生效；现在定位随恢复落定 settle
+        // 之后由 _applyPendingPreciseLocate 确定性应用。文本命中无法用分数烘进 shell，故走
+        // preciseLocateJs 队列（书签/收藏用 progress 烘进导航）。
+        await _navigateToChapterAndWait(
+          result.sectionIndex,
+          manual: true,
+          preciseLocateJs: preciseLocateJs,
+        );
+        return;
+      case ReaderSearchJumpAction.replacePending:
+        // _currentChapter 在 loadUrl 前就切到逻辑目标章。DOM 尚未 ready 时再次选择
+        // 同章结果，必须更新本导航代际的 pending；直接 evaluate 会命中旧 DOM，
+        // 且首条 pending 会在 restore settle 后反过来覆盖用户最后一次选择。
+        _preciseLocateQueue.replace(
+          generation: _navigateGeneration,
+          js: preciseLocateJs,
+        );
+        return;
+      case ReaderSearchJumpAction.evaluateNow:
+        // 同章且 DOM 已 settle：直接定位（既有正常路径）。
+        await _controller!.evaluateJavascript(source: preciseLocateJs);
+        return;
+    }
   }
 
   /// TODO-1308 问题②（BUG-696 根因①）：书内收藏面板跳转的唯一真实路径——quick
   /// settings sheet 的 onJumpToFavorite 与 debugJumpToFavorite 测试钩子都走这里。
   Future<void> _jumpToFavoriteSentence(FavoriteSentence fav) async {
     if (fav.sectionIndex == null) return;
+    // BUG-2596：歌词模式下「跳到收藏」= 把音频定位到那句 cue（歌词页随 cue 推进
+    // 高亮/滚过去），与跳章同一条路；正文导航会把歌词文档换成 EPUB 章。找不到
+    // 对应 cue（收藏落在对齐没覆盖的正文）就什么都不做——歌词里没有它。
+    if (_lyricsMode) {
+      final AudioCue? target = _favoriteAudioCue(fav);
+      if (target != null) await _audiobookController?.skipToCue(target);
+      return;
+    }
     final int? normCharOffset = fav.normCharOffset;
     // TODO-1308 问题②（BUG-696 根因①）：fav.normCharOffset 是写入端
     // （lookup.part / mining.part 的 sentenceNormalizedOffset，即 JS
@@ -3283,3 +4120,315 @@ extension _ReaderChrome on _ReaderFushiPageState {
     return '${(fraction * 100).toStringAsFixed(1)}%';
   }
 }
+
+/// 移动端选区操作条的一项（2026-10 体验优化）。
+class ReaderSelectionActionItem {
+  const ReaderSelectionActionItem({
+    required this.icon,
+    required this.label,
+    required this.onPressed,
+  });
+
+  final IconData icon;
+  final String label;
+  final VoidCallback onPressed;
+}
+
+/// 移动端选区操作条（2026-10 体验优化）。
+///
+/// 不再用 FittedBox 等比缩小，而是按可用宽度三级降级，每颗按钮的命中区都不小于
+/// [kMinInteractiveDimension]（48×48）：
+/// 1. 放得下「图标 + 文字」就整排带文字；
+/// 2. 放不下则只显示图标，文字进 Tooltip；
+/// 3. 只图标也放不下时前 [pinnedCount] 颗常驻，其余折进 ⋮ 弹出菜单。
+class ReaderSelectionActionBar extends StatelessWidget {
+  const ReaderSelectionActionBar({
+    required this.items,
+    this.color,
+    super.key,
+  });
+
+  final List<ReaderSelectionActionItem> items;
+  final Color? color;
+
+  /// 溢出时常驻的按钮数。
+  static const int pinnedCount = 3;
+
+  static const double _labelFontSize = 14;
+  static const double _labelHorizontalPadding = 12;
+  static const double _iconSize = 18;
+  static const double _iconLabelGap = 8;
+
+  double _labeledWidth(BuildContext context) {
+    final TextScaler scaler = MediaQuery.textScalerOf(context);
+    double total = 0;
+    for (final ReaderSelectionActionItem item in items) {
+      final TextPainter painter = TextPainter(
+        text: TextSpan(
+          text: item.label,
+          style: const TextStyle(fontSize: _labelFontSize),
+        ),
+        textDirection: Directionality.of(context),
+        textScaler: scaler,
+        maxLines: 1,
+      )..layout();
+      final double w = painter.width +
+          _iconSize +
+          _iconLabelGap +
+          _labelHorizontalPadding * 2;
+      painter.dispose();
+      total += w < kMinInteractiveDimension ? kMinInteractiveDimension : w;
+    }
+    return total;
+  }
+
+  Widget _labeledButton(ReaderSelectionActionItem item) {
+    return InkWell(
+      onTap: item.onPressed,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(
+          minWidth: kMinInteractiveDimension,
+          minHeight: kMinInteractiveDimension,
+        ),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(
+            horizontal: _labelHorizontalPadding,
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              Icon(item.icon, size: _iconSize),
+              const SizedBox(width: _iconLabelGap),
+              Text(
+                item.label,
+                maxLines: 1,
+                style: const TextStyle(fontSize: _labelFontSize),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _iconButton(ReaderSelectionActionItem item) {
+    return IconButton(
+      icon: Icon(item.icon, size: 20),
+      tooltip: item.label,
+      constraints: const BoxConstraints(
+        minWidth: kMinInteractiveDimension,
+        minHeight: kMinInteractiveDimension,
+      ),
+      onPressed: item.onPressed,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        final double maxWidth = constraints.maxWidth;
+        final List<Widget> children;
+        if (_labeledWidth(context) <= maxWidth) {
+          children = <Widget>[
+            for (final ReaderSelectionActionItem i in items) _labeledButton(i),
+          ];
+        } else if (items.length * kMinInteractiveDimension <= maxWidth ||
+            items.length <= pinnedCount) {
+          children = <Widget>[
+            for (final ReaderSelectionActionItem i in items) _iconButton(i),
+          ];
+        } else {
+          final List<ReaderSelectionActionItem> overflow =
+              items.sublist(pinnedCount);
+          children = <Widget>[
+            for (final ReaderSelectionActionItem i
+                in items.take(pinnedCount))
+              _iconButton(i),
+            PopupMenuButton<int>(
+              key: const ValueKey<String>('reader_selection_action_more'),
+              icon: const Icon(FushiIcons.more),
+              tooltip: MaterialLocalizations.of(context).showMenuTooltip,
+              onSelected: (int index) => overflow[index].onPressed(),
+              itemBuilder: (BuildContext context) => <PopupMenuEntry<int>>[
+                for (int index = 0; index < overflow.length; index++)
+                  PopupMenuItem<int>(
+                    value: index,
+                    child: Row(
+                      children: <Widget>[
+                        Icon(overflow[index].icon, size: 20),
+                        const SizedBox(width: 12),
+                        Flexible(child: Text(overflow[index].label)),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
+          ];
+        }
+        return Align(
+          alignment: Alignment.center,
+          child: Material(
+            elevation: 6,
+            color: color ??
+                theme.popupMenuTheme.color ??
+                theme.colorScheme.surfaceContainerHigh,
+            borderRadius: BorderRadius.circular(8.0),
+            clipBehavior: Clip.antiAlias,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: children,
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// Apple（iOS 26 编辑菜单）选区操作行：与 [ReaderSelectionActionBar] 同一套三级
+/// 降级（带文字 → 只图标 + Tooltip → 前 [ReaderSelectionActionBar.pinnedCount]
+/// 颗常驻 + 「⋯」溢出菜单），每颗命中区不小于 [barHeight]（48dp），不再把整排
+/// 按钮用 FittedBox 等比缩小。
+class ReaderGlassSelectionActionRow extends StatelessWidget {
+  const ReaderGlassSelectionActionRow({
+    required this.items,
+    required this.maxWidth,
+    required this.barHeight,
+    super.key,
+  });
+
+  final List<ReaderSelectionActionItem> items;
+
+  /// 行可用的最大宽度（已扣掉容器内边距）。
+  final double maxWidth;
+  final double barHeight;
+
+  static const double _labelHorizontalPadding = 12;
+  static const double _iconSize = 18;
+  static const double _iconLabelGap = 6;
+  static const double _fontSize = 14;
+
+  double _labeledWidth(BuildContext context) {
+    final TextScaler scaler = MediaQuery.textScalerOf(context);
+    double total = 0;
+    for (final ReaderSelectionActionItem item in items) {
+      final TextPainter painter = TextPainter(
+        text: TextSpan(
+          text: item.label,
+          style: const TextStyle(
+            fontSize: _fontSize,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+        textDirection: Directionality.of(context),
+        textScaler: scaler,
+        maxLines: 1,
+      )..layout();
+      final double w = painter.width +
+          _iconSize +
+          _iconLabelGap +
+          _labelHorizontalPadding * 2;
+      painter.dispose();
+      total += w < barHeight ? barHeight : w;
+    }
+    return total;
+  }
+
+  Widget _button(
+    BuildContext context,
+    ReaderSelectionActionItem item, {
+    required bool labeled,
+  }) {
+    // iOS 26 编辑菜单里的一格：无底、按下变淡；字形与文字同为 label 色。
+    final Color fg = appleColorsOf(context).label;
+    final Widget button = FushiPlainButton(
+      onPressed: item.onPressed,
+      semanticLabel: item.label,
+      borderRadius: BorderRadius.circular(barHeight / 2),
+      child: ConstrainedBox(
+        constraints: BoxConstraints(minWidth: barHeight, minHeight: barHeight),
+        child: Padding(
+          padding: EdgeInsets.symmetric(
+            horizontal: labeled ? _labelHorizontalPadding : 0,
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: <Widget>[
+              FushiIcon(item.icon, size: _iconSize, color: fg),
+              if (labeled) ...<Widget>[
+                const SizedBox(width: _iconLabelGap),
+                Text(
+                  item.label,
+                  maxLines: 1,
+                  style: TextStyle(
+                    fontSize: _fontSize,
+                    fontWeight: FontWeight.w500,
+                    color: fg,
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+    return labeled ? button : FushiTooltip(message: item.label, child: button);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    const int pinned = ReaderSelectionActionBar.pinnedCount;
+    final List<Widget> children;
+    if (_labeledWidth(context) <= maxWidth) {
+      children = <Widget>[
+        for (final ReaderSelectionActionItem i in items)
+          _button(context, i, labeled: true),
+      ];
+    } else if (items.length * barHeight <= maxWidth || items.length <= pinned) {
+      children = <Widget>[
+        for (final ReaderSelectionActionItem i in items)
+          _button(context, i, labeled: false),
+      ];
+    } else {
+      final List<ReaderSelectionActionItem> overflow = items.sublist(pinned);
+      children = <Widget>[
+        for (final ReaderSelectionActionItem i in items.take(pinned))
+          _button(context, i, labeled: false),
+        FushiPopupMenuButton<int>(
+          key: const ValueKey<String>('reader_selection_action_more'),
+          icon: FushiIcon(
+            FushiIcons.more,
+            size: 20,
+            color: appleColorsOf(context).label,
+          ),
+          tooltip: MaterialLocalizations.of(context).showMenuTooltip,
+          constraints: BoxConstraints(minWidth: barHeight),
+          onSelected: (int index) => overflow[index].onPressed(),
+          itemBuilder: (BuildContext context) => <PopupMenuEntry<int>>[
+            for (int index = 0; index < overflow.length; index++)
+              PopupMenuItem<int>(
+                value: index,
+                child: Row(
+                  children: <Widget>[
+                    Icon(overflow[index].icon, size: 20),
+                    const SizedBox(width: 12),
+                    Flexible(child: Text(overflow[index].label)),
+                  ],
+                ),
+              ),
+          ],
+        ),
+      ];
+    }
+    return Row(mainAxisSize: MainAxisSize.min, children: children);
+  }
+}
+
+// 阅读器侧板的四类内容（[_openReaderPanel] / [ReaderPanelSwitcher] 的 id）。
+const String _kReaderPanelNavigation = 'navigation';
+const String _kReaderPanelAudiobook = 'audiobook';
+const String _kReaderPanelSettings = 'settings';
+const String _kReaderPanelStatistics = 'statistics';

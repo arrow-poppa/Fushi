@@ -83,7 +83,6 @@ const List<_ScanRoot> _scriptRoots = <_ScanRoot>[
   _ScanRoot('../ci', extensions: <String>{'.sh'}),
   _ScanRoot('../tool', extensions: <String>{'.sh', '.ps1', '.py'}),
   _ScanRoot('../tools', extensions: <String>{'.sh', '.ps1'}),
-  _ScanRoot('../scripts', extensions: <String>{'.py'}),
   _ScanRoot('../.codex-test/tools', extensions: <String>{'.ps1'}),
   _ScanRoot('tool', extensions: <String>{'.ps1', '.sh'}),
   // workspace 根 pubspec：melos 段带仓库身份（A/B 要扫），overrides 的 vendor
@@ -128,6 +127,20 @@ final List<_Exemption> _appIdExemptions = <_Exemption>[
 /// B：owner 相同但仓库不是当前仓库的 slug。
 final List<_Exemption> _repoSlugExemptions = <_Exemption>[
   _Exemption(
+    pathSuffix: 'tool/bluray/platforms/build_android.sh',
+    context: RegExp(
+      r'git .*clone https://github\.com/hajisensai/libmpv-android-video-build\.git ',
+    ),
+    reason: '蓝光 Android 原生依赖在独立构建仓编译，此行克隆真实依赖源码，不是本仓旧名。',
+  ),
+  _Exemption(
+    pathSuffix: 'tool/bluray/platforms/build_darwin.sh',
+    context: RegExp(
+      r'git clone --bare https://github\.com/hajisensai/libmpv-darwin-build ',
+    ),
+    reason: '蓝光 Apple 原生依赖在独立构建仓编译，此行克隆真实依赖源码，不是本仓旧名。',
+  ),
+  _Exemption(
     pathSuffix: 'tools/build_magpie_slim.ps1',
     context: null,
     reason:
@@ -144,6 +157,15 @@ final List<_Exemption> _repoSlugExemptions = <_Exemption>[
         'fushi_asr_subtitles 的 pubspec 写的是 `^0.1.0`（上游靠 workspace 解析），'
         '单包从 git 引进来时 pub 会当 hosted 去 pub.dev 找而解析失败。'
         '行级 context 只放行这一行，同文件里新长出来的其它失效 slug 照样报。',
+  ),
+  _Exemption(
+    pathSuffix: 'tool/check_release_policy.ps1',
+    context: RegExp('fushi-server'),
+    reason:
+        'hajisensai/fushi-server 是无头服务端的**独立发布仓**真名（2026-09-14 起：'
+        '那边的 release.yml 以 workflow_call 回调本仓 release-server.yml，Release '
+        '落那边）。守卫脚本里提到它是为了说明「本仓自己禁发服务端包」的规则来源。'
+        '行级 context 只放行含 fushi-server 的行，其它失效 slug 照样报。',
   ),
 ];
 

@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:drift/native.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -20,6 +20,7 @@ import 'package:fushi/src/pages/implementations/stat_shared.dart'
 import 'package:fushi/utils.dart';
 
 import '../helpers/test_platform_services.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 
 /// galgame 详情页守卫（契约 §4.2）：三个 tab 渲染 + 统计 KPI 由会话事实表现算。
 void main() {
@@ -35,7 +36,7 @@ void main() {
     final PreferencesRepository prefsRepo = PreferencesRepository(db);
     await prefsRepo.loadFromDb();
     final Directory tmpDir =
-        Directory.systemTemp.createTempSync('hibiki_game_detail_');
+        Directory.systemTemp.createTempSync('fushi_game_detail_');
     addTearDown(() {
       try {
         tmpDir.deleteSync(recursive: true);
@@ -148,7 +149,7 @@ void main() {
     );
     await tester.drag(find.byType(ListView), const Offset(0, -400));
     await tester.pumpAndSettle();
-    expect(find.byIcon(Icons.delete_outline), findsNWidgets(2));
+    expect(find.byIcon(FushiIcons.delete), findsNWidgets(2));
   });
 
   testWidgets('无会话时给空态而不是崩', (WidgetTester tester) async {
@@ -164,6 +165,38 @@ void main() {
     expect(find.text('这是简介。'), findsOneWidget);
     expect(find.text(t.game_summary_aliases), findsOneWidget);
     expect(find.text('アルファ'), findsOneWidget);
+    // 简介与资料值可选择复制（反馈 2DmrXg-wtD）。
+    expect(
+      find.byWidgetPredicate(
+        (Widget w) => w is SelectableText && w.data == '这是简介。',
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.byWidgetPredicate(
+        (Widget w) => w is SelectableText && w.data == 'アルファ',
+      ),
+      findsOneWidget,
+    );
+    // Hero 标题 / 开发商与资料网格文本值同样可选择复制（反馈 2DmrXg-wtD 补漏）。
+    final SelectableText heroTitle = tester.widget<SelectableText>(
+      find.byKey(const ValueKey<String>('galgame-hero-title')),
+    );
+    expect(heroTitle.data, isNotEmpty);
+    expect(
+      tester
+          .widget<SelectableText>(
+            find.byKey(const ValueKey<String>('galgame-hero-developer')),
+          )
+          .data,
+      'Studio A',
+    );
+    expect(
+      find.byWidgetPredicate(
+        (Widget w) => w is SelectableText && w.data == '2026-01-01',
+      ),
+      findsOneWidget,
+    );
     // 发行日标签现在同时出现在常驻头部的元信息网格与简介 tab（富头部改造后），
     // 故断言放宽为 findsWidgets（原为 findsOneWidget）。
     expect(find.text(t.game_summary_release_date), findsWidgets);
@@ -189,6 +222,8 @@ void main() {
       find.byType(ListView),
       const Offset(0, 120),
     );
+    // ensureVisible 的跳转要下一帧才落到布局上，先 settle 再点。
+    await tester.pumpAndSettle();
     await tester.tap(find.text(t.game_edit_save));
     await tester.pumpAndSettle();
 
@@ -221,6 +256,8 @@ void main() {
       find.byType(ListView),
       const Offset(0, 120),
     );
+    // ensureVisible 的跳转要下一帧才落到布局上，先 settle 再点。
+    await tester.pumpAndSettle();
     await tester.tap(find.text(t.game_edit_save));
     await tester.pumpAndSettle();
 
@@ -251,12 +288,42 @@ void main() {
       find.byType(ListView),
       const Offset(0, 120),
     );
+    // ensureVisible 的跳转要下一帧才落到布局上，先 settle 再点。
+    await tester.pumpAndSettle();
     await tester.tap(find.text(t.game_edit_save));
     await tester.pumpAndSettle();
 
     final GalgameEntry saved = appModel.galgameRepo.byId('g1')!;
     expect(saved.launchArgs, '');
     expect(saved.launchArgumentTokens, <String>[]);
+    await tester.pump(const Duration(seconds: 4)); // 放掉桌面 toast 计时器
+  });
+
+  // 终审疑点：编辑 tab 保存用页面打开时的 playStatus 整行覆写，会不会把「玩过」的
+  // completedAt 改写成保存时刻？真实路径上不会：保存携带的状态与库内一致（玩过 → 玩过），
+  // DB 层唯一判据 resolveGalgameCompletedAt 保持原值。这条钉住真实调用路径。
+  testWidgets('编辑 tab 保存「玩过」的游戏不改写完成时刻', (WidgetTester tester) async {
+    final AppModel appModel = await buildModel();
+    final int doneAt = DateTime(2026, 7, 3, 21).millisecondsSinceEpoch;
+    await appModel.database.setGalgamePlayStatus('g1', 2, now: doneAt);
+    await appModel.galgameRepo.load();
+    await pumpPage(tester, appModel, initialTab: 2);
+
+    await tester.enterText(editField('name'), '改个名');
+    await tester.dragUntilVisible(
+      find.text(t.game_edit_save),
+      find.byType(ListView),
+      const Offset(0, 120),
+    );
+    // ensureVisible 的跳转要下一帧才落到布局上，先 settle 再点。
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(t.game_edit_save));
+    await tester.pumpAndSettle();
+
+    final GalgameRow row = (await appModel.database.getGalgame('g1'))!;
+    expect(row.playStatus, 2);
+    expect(row.completedAt, doneAt);
+    expect(appModel.galgameRepo.byId('g1')!.displayName, '改个名');
     await tester.pump(const Duration(seconds: 4)); // 放掉桌面 toast 计时器
   });
 
@@ -275,6 +342,8 @@ void main() {
       find.byType(ListView),
       const Offset(0, 120),
     );
+    // ensureVisible 的跳转要下一帧才落到布局上，先 settle 再点。
+    await tester.pumpAndSettle();
     await tester.tap(find.text(t.game_edit_save));
     await tester.pumpAndSettle();
 

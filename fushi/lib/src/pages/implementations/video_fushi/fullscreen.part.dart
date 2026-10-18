@@ -56,12 +56,20 @@ extension _VideoFullscreen on _VideoFushiPageState {
         systemPadding: MediaQuery.of(context).padding,
       );
 
-  Future<void> _toggleVideoFullscreen(BuildContext context) {
+  Future<void> _toggleVideoFullscreen(BuildContext context) async {
     // BUG-221: 移动端永不进 media_kit 全屏路由（横屏沉浸态即唯一形态）。统一在此单一收口
     // no-op，杜绝任何入口（双击 / 全屏按钮 / 快捷键 / 右键菜单）把移动端推进全屏路由——
     // 全屏路由会带来「退全屏弹回竖屏」与「全屏 PopScope 吞第一次返回的两段式退出」。桌面
     // 不受影响（窗口全屏走 native window，返回行为本就合理）。
-    if (isMobilePlatform) return Future<void>.value();
+    if (isMobilePlatform) return;
+    // 全屏与小窗互斥，两个方向都要收口：`DesktopMiniWindowMode.enter` 做了「进小窗先退
+    // 全屏」，这里做另一个方向——小窗里按 F11 / 双击画面，先退小窗再进全屏。否则 runner
+    // 全屏（巨窗 + TOPMOST）叠在小窗态之上，密度判据对小窗表面恒回 mini：整屏只有居中
+    // 三键、无进度条无顶栏、顶部一条 32px 拖动带。
+    if (_miniWindowSurface == VideoMiniSurface.desktopMiniWindow) {
+      await _exitVideoMiniWindow();
+      if (!mounted || !context.mounted) return;
+    }
     return isFullscreen(context)
         ? _exitVideoFullscreen(context)
         : _pushNeutralizedVideoFullscreen(context);
@@ -165,7 +173,11 @@ extension _VideoFullscreen on _VideoFushiPageState {
       // 全屏侧 controls 挂载，保证共享 [_videoFocusNode] 任意时刻只被一个 Focus
       // 持有（见 _videoFullscreenActive 的文档）。
       if (mounted) _rebuild(() => _videoFullscreenActive = true);
-      final PageRouteBuilder<void> fullscreenRoute = PageRouteBuilder<void>(
+      // 路由本身也登记为宿主（[WindowFullscreenHostPageRoute]，BUG-3223）：子树里的
+      // [WindowFullscreenHost] 要等首次 build 才登记，晚于 push 一帧；换集接管时
+      // 旧集页的离场判定恰好落在这一帧里，只靠 widget 登记仍会误退全屏。
+      final PageRouteBuilder<void> fullscreenRoute =
+          WindowFullscreenHostPageRoute<void>(
         // BUG-697（TODO-1378）：全屏路由内容必须包进与窗口模式同一个
         // [_wrapVideoGamepadControls]（Actions<GamepadButtonIntent> + 旁观 Focus）。
         // 全屏是推到根 navigator 的独立路由，窗口侧 build() 外层的手柄输入层不是
@@ -179,8 +191,32 @@ extension _VideoFullscreen on _VideoFushiPageState {
         // B=globalBack「返回上一级」逐级退出……），不在 gamepad_service 里加全屏特判。
         // HDR 直通：全屏路由的 Material 底色在宿主窗激活时透明（同窗口侧 Scaffold），
         // 否则视频洞被路由底色填死、后方宿主窗透不出来。
-        pageBuilder: (_, __, ___) => _wrapVideoGamepadControls(
-          ValueListenableBuilder<bool>(
+        //
+        // 悬浮球场景也要在全屏路由里重新登记：窗口侧那份所在的本页路由此刻被压在
+        // 下面、不是当前路由，宿主只认当前路由上的场景，不重挂就退回「其它页面」
+        // 的按钮。
+        //
+        // 全屏路由同样是**窗口全屏的合法宿主**（[WindowFullscreenHost]）：它压在本页
+        // 路由之上，本页那份登记此刻不是 current。全屏路由自己不登记，注册表里就
+        // 没有一个可见宿主——这期间任何一个宿主卸载（典型：剧集列表换集时被
+        // removeRoute 摘掉的旧集页，它要等新页入场过渡结束才真正 dispose，而新页
+        // 往往已经压上了自己的全屏路由）都会在帧末判「无宿主」并
+        // [exitWindowFullscreenIfActive]，把用户正在看的全屏退掉（BUG-2913）。
+        // 这份 widget 登记负责「离场时归还」；「push 即可见」由路由级登记保证。
+        //
+        // BUG-3449：「返回上一级」经 `Navigator.maybePop` 到达时（焦点不在本页子树里的
+        // Esc、手柄 B / 鼠标侧键兜底、media_kit 自带的退全屏），栈顶是本路由、视频页
+        // 的 [PopScope] 轮不到——必须在这里接上同一份逐级退出层级表，否则全屏下先退
+        // 全屏、剧集轨 / 字幕列表 / 侧栏原样留着。接管层是下面的
+        // [VideoFullscreenBackScope]（PopScope 在路由里的位置不影响拦截）。
+        pageBuilder: (_, __, ___) => WindowFullscreenHost(
+            child: _wrapVideoGamepadControls(
+          _buildVideoFloatingBallScene(
+          playerController,
+          child: VideoFullscreenBackScope(
+          dismissTopLayer: _dismissTopForegroundLayer,
+          exitFullscreen: _exitVideoFullscreenOnBack,
+          child: ValueListenableBuilder<bool>(
             valueListenable:
                 playerController?.hdrHostActive ?? _kHdrHostInactive,
             builder: (BuildContext _, bool hdrHost, Widget? child) =>
@@ -231,6 +267,16 @@ extension _VideoFullscreen on _VideoFushiPageState {
                             filterQuality: params.filterQuality,
                             controls: params.controls,
                             wakelock: false,
+                            // BUG-2544：与窗口侧同一策略——生命周期暂停/续播由本页
+                            // 接管，media_kit 自带的那套整个关掉（理由与「为什么不是
+                            // 只把 resume 打开」见 [_buildVideoBody] 里同名参数处的
+                            // 长注释）。这里**必须显式写**：本路由是自建的、逐字段从
+                            // `params` 转发，而 [VideoViewParameters] 压根不带这两个
+                            // 字段（media_kit 自己的全屏走
+                            // `controls/methods/fullscreen.dart` 从 widget 上直取），
+                            // 不写就会退回「后台暂停、回来不续」的构造器默认值，
+                            // 全屏态下重新长出同一个 bug。
+                            pauseUponEnteringBackgroundMode: false,
                             // 全屏路由也显式禁用内置 SubtitleView（TODO-080/092，
                             // BUG-190）。虽然与窗口侧共享同一
                             // videoViewParametersNotifier（窗口侧已设 visible:false 会
@@ -283,7 +329,8 @@ extension _VideoFullscreen on _VideoFushiPageState {
               ),
             ),
           ),
-        )),
+        )))),
+        ),
         transitionDuration: Duration.zero,
         reverseTransitionDuration: Duration.zero,
       );
@@ -329,7 +376,16 @@ extension _VideoFullscreen on _VideoFushiPageState {
     final VideoState parent = FullscreenInheritedWidget.of(context).parent;
     _videoFullscreenTransitioning = true;
     try {
-      await navigator.maybePop();
+      // BUG-3449：显式退全屏（F 键 / 全屏按钮 / 外部导航收尾 / 逐级退出的最后一级）
+      // 直接 pop 全屏路由。全屏路由里的 [VideoFullscreenBackScope] 恒 `canPop: false`
+      // 拦下 `maybePop` 去走层级表——那是「返回上一级」的语义；这里若仍 maybePop，
+      // F 键在剧集轨开着时会被吃成「关剧集轨」。全屏路由不是栈顶（上面压着对话框）
+      // 时保持原 maybePop 行为，由栈顶路由自己决定。
+      if (_videoFullscreenRoute?.isCurrent ?? false) {
+        navigator.pop();
+      } else {
+        await navigator.maybePop();
+      }
       // BUG-1945: pop 后 controls element 可能仍 mounted、却已 deactivated；这里只能
       // 使用 pop 前捕获的稳定引用，不能再从旧 context 查祖先。
       if (parent.mounted) {
@@ -343,6 +399,23 @@ extension _VideoFullscreen on _VideoFushiPageState {
     }
   }
 
+  /// 全屏路由收到「返回上一级」且已没有前台层可关时退出全屏（BUG-3449）。
+  ///
+  /// 优先走 [_exitVideoFullscreen]（过渡互斥 + refreshView，与键盘通道最后一级同一
+  /// 执行体）；全屏 controls 尚未挂上 / 已卸载拿不到 context 时，直接 pop 本路由——
+  /// 真 pop 会照常触发 media_kit 的退原生全屏与 [_onVideoFullscreenRouteClosed]。
+  void _exitVideoFullscreenOnBack() {
+    final BuildContext? controlsContext = _videoControlsContext;
+    if (controlsContext != null &&
+        controlsContext.mounted &&
+        isFullscreen(controlsContext)) {
+      unawaited(_exitVideoFullscreen(controlsContext));
+      return;
+    }
+    final PageRoute<void>? route = _videoFullscreenRoute;
+    if (route != null && route.isCurrent) route.navigator?.pop();
+  }
+
   Widget _buildFullscreenButton({required bool desktop}) {
     // BUG-221: 移动端不提供全屏按钮。移动端视频全程横屏沉浸（[_lockLandscapeForVideo] +
     // [_applyVideoImmersiveMode]），画面已占满，「全屏」无额外语义；进 media_kit 全屏路由
@@ -351,23 +424,13 @@ extension _VideoFullscreen on _VideoFushiPageState {
     if (isMobilePlatform) return const SizedBox.shrink();
     return Builder(
       builder: (BuildContext buttonContext) {
-        final Widget icon = Icon(
-          isFullscreen(buttonContext)
+        return _chromeIconButton(
+          icon: isFullscreen(buttonContext)
               ? Icons.fullscreen_exit
               : Icons.fullscreen,
-          size: _videoControlIconSize,
+          desktop: desktop,
+          onPressed: () => unawaited(_toggleVideoFullscreen(buttonContext)),
         );
-        return desktop
-            ? MaterialDesktopCustomButton(
-                icon: icon,
-                onPressed: () =>
-                    unawaited(_toggleVideoFullscreen(buttonContext)),
-              )
-            : MaterialCustomButton(
-                icon: icon,
-                onPressed: () =>
-                    unawaited(_toggleVideoFullscreen(buttonContext)),
-              );
       },
     );
   }
@@ -406,10 +469,9 @@ extension _VideoFullscreen on _VideoFushiPageState {
       await defaultEnterNativeFullscreen();
       return;
     }
-    await SystemChrome.setEnabledSystemUIMode(
-      SystemUiMode.immersiveSticky,
-      overlays: <SystemUiOverlay>[],
-    );
+    if (!VideoDisplayClaim.owns(this)) return;
+    await _applyVideoImmersiveMode();
+    if (!VideoDisplayClaim.owns(this)) return;
     await SystemChrome.setPreferredOrientations(<DeviceOrientation>[
       DeviceOrientation.landscapeLeft,
       DeviceOrientation.landscapeRight,
@@ -445,13 +507,12 @@ extension _VideoFullscreen on _VideoFushiPageState {
       // `standardWindowButton.isHidden` 复位 → 交通灯在窗口化播放态重新遮住左上角控件。
       // 退全屏后重新断言隐藏（与 initState 的隐藏一致）。仅 macOS 有交通灯；
       // Windows / Linux 桌面 no-op。
-      await setMacOSTrafficLightsHidden(true);
+      FushiDesktopTitleBar.reassertMacTrafficLights();
       return;
     }
-    await SystemChrome.setEnabledSystemUIMode(
-      SystemUiMode.immersiveSticky,
-      overlays: <SystemUiOverlay>[],
-    );
+    if (!VideoDisplayClaim.owns(this)) return;
+    await _applyVideoImmersiveMode();
+    if (!VideoDisplayClaim.owns(this)) return;
     await SystemChrome.setPreferredOrientations(<DeviceOrientation>[
       DeviceOrientation.landscapeLeft,
       DeviceOrientation.landscapeRight,

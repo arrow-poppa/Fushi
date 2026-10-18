@@ -1,9 +1,17 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 
 import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
-import 'package:fushi/utils.dart' show t, FushiToast, ToastSeverity;
+import 'package:fushi/utils.dart'
+    show t, FushiLoadingView, FushiToast, ToastSeverity;
+import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart'
+    show FushiDialogHeroIcon, FushiHeroTone;
+import 'package:fushi/src/utils/components/fushi_typography.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart' show FushiListItem;
 
 /// BUG-1040：把「一段期间内让查词弹窗让位」的执行权交回宿主页面的钩子。
 ///
@@ -53,7 +61,7 @@ class AnkiMinedCardActionResult {
 /// BUG-1040：从底部 sheet 改为**居中对话框**。这是个「必须当场做决定」的模态选择
 /// （覆写哪张 / 新增重复卡 / 去 Anki 看），不是可下拉浏览的内容面板；底部 sheet 贴在
 /// 屏幕下沿、在视频页还会被播放器控件与窗口边缘裁掉半截（用户附图里进度条已被切）。
-/// 与同族的 [showAnkiNoteViewer] / [SentenceContextDialog] 统一走 [showAppDialog]。
+/// 与同族的 [showAnkiNoteViewer] / `showAdvancedMiningDialog` 统一走 [showAppDialog]。
 Future<AnkiMinedCardActionResult> showAnkiMinedCardActionSheet({
   required BuildContext context,
   required List<MinedNoteRef> matches,
@@ -174,7 +182,11 @@ class _MinedCardActionDialogState extends State<_MinedCardActionDialog> {
     final double width = MediaQuery.sizeOf(context).width * 0.9 < 420
         ? MediaQuery.sizeOf(context).width * 0.9
         : 420;
-    return AlertDialog(
+    return FushiAlertDialog(
+      icon: const FushiDialogHeroIcon(
+        icon: FushiIcons.ankiCard,
+        tone: FushiHeroTone.primary,
+      ),
       title: Text(t.anki_mined_card_title),
       content: SizedBox(
         width: width,
@@ -200,33 +212,43 @@ class _MinedCardActionDialogState extends State<_MinedCardActionDialog> {
                   final preview = note.preview.isEmpty
                       ? '#${note.noteId}'
                       : note.preview;
-                  return ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    title: Text(
-                      preview,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
+                  // M3E 分段卡片：一张已有卡一段（首尾大圆角、行间 2px），
+                  // 行首 Anki 卡方形色块。
+                  return FushiGroupedListItem(
+                    index: i,
+                    count: matches.length,
+                    child: FushiListItem(
+                      leading: const FushiListLeadingIcon(
+                        FushiIcons.ankiCard,
+                        shape: FushiLeadingShape.square,
+                      ),
+                      title: Text(
+                        preview,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      titleMaxLines: 2,
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          FushiIconButtonControl.filledTonal(
+                            tooltip: t.anki_mined_action_overwrite,
+                            icon: const FushiIcon(FushiIcons.edit),
+                            onPressed: _busy
+                                ? null
+                                : () => _runOverwrite(note.noteId),
+                          ),
+                          FushiIconButtonControl(
+                            tooltip: t.anki_mined_action_view,
+                            icon: const FushiIcon(FushiIcons.openInNew),
+                            onPressed: _busy
+                                ? null
+                                : () => _viewNote(note.noteId),
+                          ),
+                        ],
+                      ),
+                      onTap: _busy ? null : () => _viewNote(note.noteId),
                     ),
-                    trailing: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        IconButton(
-                          tooltip: t.anki_mined_action_overwrite,
-                          icon: const Icon(Icons.edit_outlined),
-                          onPressed: _busy
-                              ? null
-                              : () => _runOverwrite(note.noteId),
-                        ),
-                        IconButton(
-                          tooltip: t.anki_mined_action_view,
-                          icon: const Icon(Icons.open_in_new),
-                          onPressed: _busy
-                              ? null
-                              : () => _viewNote(note.noteId),
-                        ),
-                      ],
-                    ),
-                    onTap: _busy ? null : () => _viewNote(note.noteId),
                   );
                 },
               ),
@@ -234,13 +256,13 @@ class _MinedCardActionDialogState extends State<_MinedCardActionDialog> {
             if (_busy)
               const Padding(
                 padding: EdgeInsets.only(top: 12),
-                child: LinearProgressIndicator(),
+                child: FushiLinearProgressIndicator(),
               ),
           ],
         ),
       ),
       actions: [
-        TextButton(
+        FushiTextButton(
           // 制卡请求期间也保持可点：本框是 `barrierDismissible: false`，iOS 上既没有
           // 系统返回键、对话框路由也没有侧滑返回，而远端制卡 POST 的超时是 60 秒
           // ——禁用这颗按钮就是「点了制卡，整屏冻住一分钟」。关闭只解绑 UI，请求
@@ -248,9 +270,9 @@ class _MinedCardActionDialogState extends State<_MinedCardActionDialog> {
           onPressed: () => Navigator.of(context).pop(),
           child: Text(_busy ? t.dialog_background_close : t.dialog_cancel),
         ),
-        FilledButton.tonalIcon(
+        FushiFilledButton.tonalIcon(
           onPressed: _busy ? null : _runMineNew,
-          icon: const Icon(Icons.add),
+          icon: const FushiIcon(FushiIcons.add),
           label: Text(t.anki_mined_action_add_duplicate),
         ),
       ],
@@ -366,35 +388,38 @@ class _AnkiNoteViewerDialogState extends State<_AnkiNoteViewerDialog> {
     final List<MapEntry<String, String>> nonEmpty = fields == null
         ? const []
         : fields.entries.where((e) => e.value.trim().isNotEmpty).toList();
-    return AlertDialog(
+    return FushiAlertDialog(
       title: Row(
         children: <Widget>[
           if (widget.onBack != null)
-            IconButton(
+            FushiIconButtonControl.filledTonal(
               onPressed: _busy ? null : widget.onBack,
               tooltip: MaterialLocalizations.of(context).backButtonTooltip,
-              icon: const Icon(Icons.arrow_back),
+              icon: const FushiIcon(FushiIcons.back),
             ),
+          if (widget.onBack != null) const SizedBox(width: 8),
           Expanded(child: Text(t.anki_note_viewer_title)),
         ],
       ),
       content: SizedBox(
         width: 420,
         child: _loading
-            ? const SizedBox(
+            ? SizedBox(
                 height: 80,
-                child: Center(child: CircularProgressIndicator()),
+                child: Center(child: FushiLoadingView(compact: true)),
               )
             : nonEmpty.isEmpty
             ? Text(t.anki_note_viewer_empty)
+            // 字段逐段铺成分段卡片：字段名 primary 小标题 + 可选中正文。
             : SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                child: FushiGroupedList(
                   children: [
                     for (final e in nonEmpty)
                       Padding(
-                        padding: const EdgeInsets.only(bottom: 12),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 12,
+                        ),
                         child: _AnkiNoteField(label: e.key, value: e.value),
                       ),
                   ],
@@ -405,15 +430,15 @@ class _AnkiNoteViewerDialogState extends State<_AnkiNoteViewerDialog> {
         // 本框先前只有「在 Anki 中打开」「覆写」两颗按钮，没有任何关闭入口，全靠
         // barrier 可点兜底；iOS 上没有系统返回键、对话框路由也没有侧滑返回，用户
         // 看不到出口就会当成卡死（尤其字段还在转圈时）。
-        TextButton(
+        FushiTextButton(
           onPressed: () => Navigator.of(context).pop(),
           child: Text(t.dialog_close),
         ),
-        TextButton(
+        FushiTextButton(
           onPressed: _busy ? null : _openInAnki,
           child: Text(t.anki_note_viewer_open_in_anki),
         ),
-        FilledButton(
+        FushiFilledButton(
           onPressed: _busy ? null : _overwrite,
           child: Text(t.anki_mined_action_overwrite),
         ),
@@ -447,7 +472,7 @@ class _AnkiNoteField extends StatelessWidget {
       children: <Widget>[
         Text(
           label,
-          style: theme.textTheme.labelMedium?.copyWith(
+          style: context.fushiType.labelMediumEmphasized.copyWith(
             color: theme.colorScheme.primary,
           ),
         ),
@@ -498,7 +523,11 @@ class _AnkiSourceNoteChangesDialogState
               widget.original[key] != widget.candidate[key],
         )
         .toList();
-    return AlertDialog(
+    return FushiAlertDialog(
+      icon: const FushiDialogHeroIcon(
+        icon: FushiIcons.swap,
+        tone: FushiHeroTone.tertiary,
+      ),
       title: Text(t.card_source_review_changes),
       content: SizedBox(
         width: 640,
@@ -510,10 +539,10 @@ class _AnkiSourceNoteChangesDialogState
               const SizedBox(height: 12),
               if (changed.isEmpty) Text(t.card_source_review_no_changes),
               for (final String field in changed)
-                ExpansionTile(
+                FushiExpansionTile(
                   key: ValueKey<String>('anki-source-expand-$field'),
                   title: Text(field),
-                  leading: Checkbox(
+                  leading: FushiCheckbox(
                     key: ValueKey<String>('anki-source-change-$field'),
                     value: _selected.contains(field),
                     onChanged: (bool? value) => setState(() {
@@ -544,11 +573,11 @@ class _AnkiSourceNoteChangesDialogState
         ),
       ),
       actions: <Widget>[
-        TextButton(
+        FushiTextButton(
           onPressed: () => Navigator.of(context).pop(),
           child: Text(t.dialog_cancel),
         ),
-        FilledButton(
+        FushiFilledButton(
           onPressed: _selected.isEmpty
               ? null
               : () => Navigator.of(context).pop(<String, String>{
@@ -562,12 +591,182 @@ class _AnkiSourceNoteChangesDialogState
   }
 }
 
+/// 回读不了 Anki 的后端（AnkiMobile）上点 ✓ 时的裁决框。
+///
+/// 为什么单独一个框而不是复用 [showAnkiMinedCardActionSheet]：那个框的每一项都锚在一张
+/// **真实的 note id** 上（覆写这张 / 查看这张），而这里一个 id 都拿不到——AnkiMobile 的
+/// URL scheme 既不回传 note id，也没有按 id 打开的入口（见
+/// [BaseAnkiRepository.canVerifyExistingCards]）。能给的只有两个诚实的出口：
+///   · 再加一张卡（卡确实还在、或就是想要第二张）→ [mineNew]；
+///   · 「我已经在 Anki 里删了」→ [BaseAnkiRepository.forgetMinedCard]，✓ 立刻变回 +。
+/// 「在 Anki 里查看」不在这里重复：词头旁边的 ↗ 按钮本来就是干这个的（按词搜索）。
+Future<AnkiMinedCardActionResult> showAnkiUnverifiedMinedCardDialog({
+  required BuildContext context,
+  required BaseAnkiRepository repo,
+  required String expression,
+  required Future<AnkiCardMutationResult> Function() mineNew,
+}) async {
+  final AnkiMinedCardActionResult? result =
+      await showAppDialog<AnkiMinedCardActionResult>(
+        context: context,
+        // 与同族操作单同口径：有副作用的选择，误触 barrier 不该丢掉整次操作。
+        barrierDismissible: false,
+        builder: (dialogContext) => _UnverifiedMinedCardDialog(
+          repo: repo,
+          expression: expression,
+          mineNew: mineNew,
+        ),
+      );
+  // 取消 = 什么都没发生，制卡态保持原样（账本仍记着这个词）。
+  return result ?? const AnkiMinedCardActionResult.unchanged();
+}
+
+class _UnverifiedMinedCardDialog extends StatefulWidget {
+  const _UnverifiedMinedCardDialog({
+    required this.repo,
+    required this.expression,
+    required this.mineNew,
+  });
+
+  final BaseAnkiRepository repo;
+  final String expression;
+  final Future<AnkiCardMutationResult> Function() mineNew;
+
+  @override
+  State<_UnverifiedMinedCardDialog> createState() =>
+      _UnverifiedMinedCardDialogState();
+}
+
+class _UnverifiedMinedCardDialogState
+    extends State<_UnverifiedMinedCardDialog> {
+  bool _busy = false;
+
+  Future<void> _runMineNew() async {
+    if (_busy) return;
+    setState(() => _busy = true);
+    // 宿主回调会打平台通道（AnkiMobile 是 openUrl），抛错时必须复位 _busy，
+    // 否则进度条不消、两个出口全灰（与 [_MinedCardActionDialogState] 同口径）。
+    final AnkiCardMutationResult r;
+    try {
+      r = await widget.mineNew();
+    } catch (e, stack) {
+      ErrorLogService.instance.log('AnkiUnverifiedMinedCard.mineNew', e, stack);
+      if (!mounted) return;
+      setState(() => _busy = false);
+      FushiToast.show(
+        msg: t.anki_card_action_failed,
+        severity: ToastSeverity.error,
+      );
+      return;
+    }
+    if (!mounted) return;
+    Navigator.of(context).pop(
+      AnkiMinedCardActionResult(
+        mined: true,
+        ankiConnect: r.ankiConnect,
+        noteId: r.noteId,
+      ),
+    );
+  }
+
+  Future<void> _runForget() async {
+    if (_busy) return;
+    setState(() => _busy = true);
+    try {
+      // 返回值刻意不分流：账本里本来就没有这个词（别处清过 / 溢出淘汰了）与刚划掉
+      // 是同一个终态——「Anki 里没有这张卡」，提示与回传都一样。
+      await widget.repo.forgetMinedCard(widget.expression);
+    } catch (e, stack) {
+      ErrorLogService.instance.log('AnkiUnverifiedMinedCard.forget', e, stack);
+      if (!mounted) return;
+      setState(() => _busy = false);
+      FushiToast.show(
+        msg: t.anki_card_action_failed,
+        severity: ToastSeverity.error,
+      );
+      return;
+    }
+    if (!mounted) return;
+    FushiToast.show(msg: t.anki_mined_forget_done);
+    Navigator.of(context).pop(const AnkiMinedCardActionResult(mined: false));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    // 窄屏（手机）时不硬撑 420，与同族对话框同一口径。
+    final double available = MediaQuery.sizeOf(context).width * 0.9;
+    final double width = available < 420 ? available : 420;
+    return FushiAlertDialog(
+      icon: const FushiDialogHeroIcon(
+        icon: FushiIcons.help,
+        tone: FushiHeroTone.tertiary,
+      ),
+      title: Text(t.anki_mined_unverified_title),
+      content: SizedBox(
+        width: width,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            Text(
+              t.anki_mined_unverified_subtitle,
+              style: theme.textTheme.bodySmall,
+            ),
+            const SizedBox(height: 12),
+            // 两个出口做成一组分段卡片行：再加一张 = primary 色块，划掉 = error 色块。
+            FushiGroupedList(
+              children: <Widget>[
+                FushiListItem(
+                  key: const ValueKey<String>('anki-mined-unverified-add'),
+                  leading: const FushiListLeadingIcon(
+                    FushiIcons.add,
+                    tone: FushiCardTone.primary,
+                  ),
+                  title: Text(t.anki_mined_action_add_duplicate),
+                  onTap: _busy ? null : _runMineNew,
+                ),
+                FushiListItem(
+                  key: const ValueKey<String>('anki-mined-unverified-forget'),
+                  leading: const FushiListLeadingIcon(
+                    FushiIcons.delete,
+                    tone: FushiCardTone.error,
+                  ),
+                  title: Text(t.anki_mined_action_forget),
+                  onTap: _busy ? null : _runForget,
+                ),
+              ],
+            ),
+            if (_busy)
+              const Padding(
+                padding: EdgeInsets.only(top: 12),
+                child: FushiLinearProgressIndicator(),
+              ),
+          ],
+        ),
+      ),
+      actions: <Widget>[
+        FushiTextButton(
+          // 与同族操作单一致：制卡请求期间也保持可点（关闭只解绑 UI，请求跑完）。
+          onPressed: () => Navigator.of(context).pop(),
+          child: Text(_busy ? t.dialog_background_close : t.dialog_cancel),
+        ),
+      ],
+    );
+  }
+}
+
 /// TODO-1007/1008：点 ✓ 的宿主侧编排收口（mixin / base_source_page 两条车道共用，
 /// 杜绝两份漂移）。据 [expression]/[reading] 反查 Anki 全部命中卡：
 ///   - 无命中（探测后被删 / 已不在）→ 直接按新卡制（[mineNew]），相当于「+」。
 ///   - 有命中 → 弹 [showAnkiMinedCardActionSheet] 让用户选（覆写哪张 / 新增重复卡 /
 ///     查看·在 Anki 中打开）。
 /// 返回值映射成 popup.js 用的 (ankiConnect, noteId) 元组，由调用方包成 MinePopupResult。
+///
+/// BUG-2605：[mineNew] 的三条触发路径（「新增为重复卡」/ AnkiMobile「再加一张」/
+/// 反查为空后重制）都发生在用户已被告知「这张卡已有」并选择继续之后，所以调用方
+/// 构造它时必须给请求拍上 [AnkiMiningPayload.withAllowDuplicate]——否则三个后端的
+/// `addNote` 仍按全局「允许重复」偏好（默认关）把这一次判成重复拒掉，按钮等于没有。
 ///
 /// BUG-1040：[runHidden] 由宿主页面传入，用来在**对话框可见期间**把查词弹窗停靠屏外
 /// （原生平台视图 airspace 会盖住对话框，见 [LookupPopupHiddenRunner]）。刻意只包住
@@ -587,7 +786,26 @@ Future<AnkiCardMutationResult> runAnkiMinedCardAction({
   if (matches.isEmpty) {
     // 探测时显示已制卡，但现在 Anki 里查不到（被删/dupes）——直接按新卡制，
     // 等价旧的「点 ✓ 重验后已不在 → 重制」路径，但有反馈不再静默。
-    return mineNew();
+    //
+    // 前提是这个后端**能回读 Anki**。AnkiMobile 回读不了（见
+    // [BaseAnkiRepository.canVerifyExistingCards]）：那里的空结果什么都不证明，既不能
+    // 当「卡还在」（用户可能早就在 Anki 里删了，那 ✓ 是谎），也不能当「卡没了」直接
+    // 重制（卡还在时就默默多出第二张）。这个判断只有用户知道答案，交还给他。
+    if (repo.canVerifyExistingCards) return mineNew();
+    if (!context.mounted) {
+      return const (ankiConnect: false, noteId: null);
+    }
+    final LookupPopupHiddenRunner hideUnverified = runHidden ?? _runDirect;
+    final AnkiMinedCardActionResult unverified =
+        await hideUnverified<AnkiMinedCardActionResult>(
+          () => showAnkiUnverifiedMinedCardDialog(
+            context: context,
+            repo: repo,
+            expression: expression,
+            mineNew: mineNew,
+          ),
+        );
+    return (ankiConnect: unverified.ankiConnect, noteId: unverified.noteId);
   }
   if (!context.mounted) {
     return const (ankiConnect: false, noteId: null);

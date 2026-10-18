@@ -1,7 +1,11 @@
 package mextensionserver.util
 
+import com.googlecode.d2j.DexConstants
+import com.googlecode.d2j.Method
+import com.googlecode.d2j.node.DexClassNode
 import com.googlecode.d2j.node.DexCodeNode
 import com.googlecode.d2j.node.DexFileNode
+import com.googlecode.d2j.node.DexMethodNode
 import com.googlecode.d2j.node.insn.AbstractMethodStmtNode
 import com.googlecode.d2j.node.insn.BaseSwitchStmtNode
 import com.googlecode.d2j.node.insn.ConstStmtNode
@@ -18,8 +22,10 @@ import com.googlecode.d2j.node.insn.Stmt2R1NNode
 import com.googlecode.d2j.node.insn.Stmt2RNode
 import com.googlecode.d2j.node.insn.Stmt3RNode
 import com.googlecode.d2j.node.insn.TypeStmtNode
+import com.googlecode.d2j.reader.BaseDexFileReader
 import com.googlecode.d2j.reader.MultiDexFileReader
 import com.googlecode.d2j.reader.Op
+import com.googlecode.d2j.visitors.DexFileVisitor
 import io.github.oshai.kotlinlogging.KotlinLogging
 import org.objectweb.asm.ClassReader
 import org.objectweb.asm.ClassWriter
@@ -45,9 +51,15 @@ import kotlin.streams.asSequence
  * loop, then invokes Group.<init>(String,List) directly. This is not a missing
  * host API and must not be repaired by making the abstract API concrete.
  *
+ * BUG-3364: R8 can erase several constructor layers at once. SpeedBinb's
+ * descramblers `a0 extends t0` / `y extends t0` allocate the subclass and invoke
+ * `Object.<init>()` directly; the forwarding chain is rebuilt layer by layer
+ * (see [forwardedConstructor]) before dex2jar, because afterwards both sites are
+ * an indistinguishable `NEW Object`.
+ *
  * Exact allocation counts identify a unique missing subclass. Existing matching
  * constructors are reused. A missing forwarding constructor is emitted only
- * when original DEX proves the allocation register invokes the accessible direct
+ * when original DEX proves the allocation register invokes the accessible
  * superclass constructor with that descriptor. Ambiguity remains untouched.
  * Concrete superclass substitutions additionally require receiver evidence for
  * every allocation, even when the subclass already has a matching constructor.
@@ -83,6 +95,223 @@ object DexAllocationRepair {
         if (allocations.isEmpty()) return
         runCatching { rewriteJar(jarFile, allocations) }
             .onFailure { logger.warn(it) { "Unable to repair generalized allocations in $jarFile" } }
+    }
+
+    /**
+     * Feed dex2jar the allocation types the DEX actually has.
+     *
+     * dex2jar folds `new-instance X` + `invoke-direct P.<init>` into one `NEW P`:
+     * the type comes from the constructor owner, so every R8-inlined constructor
+     * loses its subclass before any jar pass runs. Constructor-less subclasses
+     * (every suspend function's continuation) then all match the generalized
+     * allocation and the jar-side heuristics can only guess — BUG-2826 swapped
+     * mokuro's continuations that way (`w1 cannot be cast to y1`).
+     *
+     * Where the DEX proves the allocation register goes straight into a
+     * superclass constructor, point that invoke at the allocated class and give
+     * every layer in between the forwarding constructor R8 erased (BUG-3364:
+     * possibly more than one). Every other site is passed through unchanged.
+     */
+    fun exactAllocationReader(delegate: BaseDexFileReader): BaseDexFileReader =
+        object : BaseDexFileReader by delegate {
+            override fun accept(visitor: DexFileVisitor) = accept(visitor, 0)
+
+            override fun accept(
+                visitor: DexFileVisitor,
+                config: Int,
+            ) {
+                val fileNode = DexFileNode()
+                delegate.accept(fileNode, config)
+                restoreConstructorOwners(fileNode)
+                fileNode.accept(visitor)
+            }
+        }
+
+    internal fun restoreConstructorOwners(fileNode: DexFileNode) {
+        val classes = fileNode.clzs.associateBy { internalName(it.className) }
+        val forwarding = mutableSetOf<Pair<DexClassNode, Method>>()
+        fileNode.clzs.forEach { classNode ->
+            val caller = internalName(classNode.className)
+            classNode.methods?.forEach methods@{ methodNode ->
+                val code = methodNode.codeNode ?: return@methods
+                constructorSites(code).forEach { site ->
+                    val plan = forwardedConstructor(site.evidence, caller, classes) ?: return@forEach
+                    val invoke = code.stmts[site.constructorIndex] as MethodStmtNode
+                    code.stmts[site.constructorIndex] = MethodStmtNode(invoke.op, invoke.args, plan.constructor)
+                    forwarding += plan.synthesized
+                }
+            }
+        }
+        forwarding.forEach { (classNode, constructor) -> addForwardingConstructor(classNode, constructor) }
+        if (forwarding.isNotEmpty()) {
+            logger.info { "Restored ${forwarding.size} R8-erased constructor(s) before dex2jar" }
+        }
+    }
+
+    /**
+     * [constructor] replaces the site's `P.<init>(desc)`; [synthesized] are the
+     * forwarding constructors that must exist for that call to verify.
+     */
+    private data class ForwardingPlan(
+        val constructor: Method,
+        val synthesized: List<Pair<DexClassNode, Method>>,
+    )
+
+    /**
+     * How to invoke `X.<init>(desc)` instead of the proven `P.<init>(desc)`, or null
+     * to leave the site alone.
+     *
+     * R8 may inline more than one constructor layer: SpeedBinb's descrambler
+     * `a0 extends t0` allocates `a0` and invokes `Object.<init>()` directly, both
+     * `a0.<init>()` and `t0.<init>()` being erased into the call site. The JVM only
+     * lets a constructor delegate to its direct superclass, so every class from X
+     * up to (excluding) P needs `<init>(desc)`: an existing one is reused only when
+     * its body is exactly `super.<init>(same arguments); return` — anything more is
+     * work the inlined site already did, and running it again would duplicate it —
+     * otherwise the missing layer gets a forwarding constructor to its direct
+     * superclass. Every layer must be a DEX class that is not an interface.
+     */
+    private fun forwardedConstructor(
+        evidence: ConstructorEvidence,
+        caller: String,
+        classes: Map<String, DexClassNode>,
+    ): ForwardingPlan? {
+        if (evidence.type == evidence.owner) return null
+        val allocated = classes[evidence.type] ?: return null
+        if (allocated.access and (DexConstants.ACC_ABSTRACT or DexConstants.ACC_INTERFACE) != 0) return null
+        val chain = superclassChain(allocated, evidence.owner, classes) ?: return null
+        val parameters = Type.getArgumentTypes(evidence.descriptor).map(Type::getDescriptor).toTypedArray()
+        val synthesized = mutableListOf<Pair<DexClassNode, Method>>()
+        // Top-down, so each layer knows whether its parent's constructor is synthesized.
+        var parentSynthesized = false
+        for (classNode in chain.asReversed()) {
+            val name = internalName(classNode.className)
+            val parent = internalName(classNode.superClass)
+            val existing = declaredConstructor(classNode, evidence.descriptor)
+            if (existing != null) {
+                if (!isTrivialForwarder(existing, parent, evidence.descriptor)) return null
+            } else {
+                // A synthesized parent constructor is public; otherwise check the real one.
+                if (!parentSynthesized && !isConstructorAccessible(parent, evidence.descriptor, name, classes)) return null
+                synthesized += classNode to Method(classNode.className, "<init>", parameters, "V")
+            }
+            parentSynthesized = existing == null
+        }
+        // The call site itself must be able to reach a reused constructor.
+        val reused = declaredConstructor(allocated, evidence.descriptor)
+        if (reused != null && !isAccessibleFrom(reused.access, evidence.type, caller)) return null
+        return ForwardingPlan(Method(allocated.className, "<init>", parameters, "V"), synthesized)
+    }
+
+    /** [allocated] and its superclasses up to, excluding, [owner]; null if a layer is outside the DEX or an interface. */
+    private fun superclassChain(
+        allocated: DexClassNode,
+        owner: String,
+        classes: Map<String, DexClassNode>,
+    ): List<DexClassNode>? {
+        val chain = mutableListOf(allocated)
+        var current = allocated
+        while (true) {
+            val parent = current.superClass?.let(::internalName) ?: return null
+            if (parent == owner) return chain
+            current = classes[parent] ?: return null
+            if (current.access and DexConstants.ACC_INTERFACE != 0 || current in chain) return null
+            chain += current
+        }
+    }
+
+    private fun declaredConstructor(
+        classNode: DexClassNode,
+        descriptor: String,
+    ): DexMethodNode? = classNode.methods.orEmpty().firstOrNull { it.method.name == "<init>" && it.method.desc == descriptor }
+
+    /** `invoke-direct {this, args...}, Parent.<init>(desc)` + `return-void`, with the method's own incoming registers. */
+    private fun isTrivialForwarder(
+        constructor: DexMethodNode,
+        parent: String,
+        descriptor: String,
+    ): Boolean {
+        val code = constructor.codeNode ?: return false
+        if (!code.tryStmts.isNullOrEmpty()) return false
+        val body = code.stmts.filterNot { it is DexLabelStmtNode }
+        if (body.size != 2 || body[1].op != Op.RETURN_VOID) return false
+        val invoke = body[0] as? MethodStmtNode ?: return false
+        if (invoke.op !in setOf(Op.INVOKE_DIRECT, Op.INVOKE_DIRECT_RANGE) ||
+            internalName(invoke.method.owner) != parent ||
+            invoke.method.name != "<init>" ||
+            invoke.method.desc != descriptor
+        ) {
+            return false
+        }
+        val words = 1 + Type.getArgumentTypes(descriptor).sumOf { it.size }
+        val first = code.totalRegister - words
+        return first >= 0 && invoke.args.contentEquals(IntArray(words) { first + it })
+    }
+
+    private fun isAccessibleFrom(
+        access: Int,
+        owner: String,
+        caller: String,
+    ): Boolean =
+        access and DexConstants.ACC_PUBLIC != 0 ||
+            (access and DexConstants.ACC_PRIVATE == 0 && owner.substringBeforeLast('/', "") == caller.substringBeforeLast('/', "")) ||
+            (access and DexConstants.ACC_PRIVATE != 0 && owner == caller)
+
+    private fun isConstructorAccessible(
+        parent: String,
+        descriptor: String,
+        child: String,
+        classes: Map<String, DexClassNode>,
+    ): Boolean {
+        val inDex = classes[parent]
+        if (inDex != null) {
+            val access =
+                inDex.methods
+                    .orEmpty()
+                    .firstOrNull { it.method.name == "<init>" && it.method.desc == descriptor }
+                    ?.access ?: return false
+            if (access and DexConstants.ACC_PRIVATE != 0) return false
+            return access and (DexConstants.ACC_PUBLIC or DexConstants.ACC_PROTECTED) != 0 ||
+                parent.substringBeforeLast('/', "") == child.substringBeforeLast('/', "")
+        }
+        // Base classes the extension compiles against (kotlin stdlib, source-api)
+        // resolve to the sidecar's own copies at runtime.
+        return runCatching {
+            Class
+                .forName(parent.replace('/', '.'), false, DexAllocationRepair::class.java.classLoader)
+                .declaredConstructors
+                .any {
+                    Type.getConstructorDescriptor(it) == descriptor &&
+                        (
+                            java.lang.reflect.Modifier
+                                .isPublic(it.modifiers) ||
+                                java.lang.reflect.Modifier
+                                    .isProtected(it.modifiers)
+                        )
+                }
+        }.getOrDefault(false)
+    }
+
+    /** `X.<init>(args) { super.<init>(args) }`, registers laid out as DEX passes them: `this`, then the arguments. */
+    private fun addForwardingConstructor(
+        classNode: DexClassNode,
+        constructor: Method,
+    ) {
+        val words = 1 + constructor.parameterTypes.sumOf { Type.getType(it).size }
+        val parent = Method(classNode.superClass, "<init>", constructor.parameterTypes, "V")
+        classNode
+            .visitMethod(
+                DexConstants.ACC_PUBLIC or DexConstants.ACC_SYNTHETIC or DexConstants.ACC_CONSTRUCTOR,
+                constructor,
+            ).apply {
+                visitCode().apply {
+                    visitRegister(words)
+                    visitMethodStmt(Op.INVOKE_DIRECT_RANGE, IntArray(words) { it }, parent)
+                    visitStmt0R(Op.RETURN_VOID)
+                    visitEnd()
+                }
+                visitEnd()
+            }
     }
 
     /** `owner#name#desc` → 该方法里 `new-instance` 的 internal name 列表（可重复）。 */
@@ -130,7 +359,15 @@ object DexAllocationRepair {
      * interval. Internal loops (for example building constructor arguments) are
      * permitted. Debug labels are not control-flow entries.
      */
-    internal fun readConstructorEvidence(code: DexCodeNode): List<ConstructorEvidence> {
+    internal fun readConstructorEvidence(code: DexCodeNode): List<ConstructorEvidence> = constructorSites(code).map { it.evidence }
+
+    /** A proven `new-instance` → `invoke-direct <init>` pair and the statement index of that invoke. */
+    private data class ConstructorSite(
+        val evidence: ConstructorEvidence,
+        val constructorIndex: Int,
+    )
+
+    private fun constructorSites(code: DexCodeNode): List<ConstructorSite> {
         val statements = code.stmts
         val labels =
             statements
@@ -172,10 +409,13 @@ object DexAllocationRepair {
                     ) {
                         break
                     }
-                    return@mapNotNull ConstructorEvidence(
-                        internalName(allocation.type),
-                        internalName(current.method.owner),
-                        current.method.desc,
+                    return@mapNotNull ConstructorSite(
+                        ConstructorEvidence(
+                            internalName(allocation.type),
+                            internalName(current.method.owner),
+                            current.method.desc,
+                        ),
+                        end,
                     )
                 }
                 if (touchesRegister(current, register)) break

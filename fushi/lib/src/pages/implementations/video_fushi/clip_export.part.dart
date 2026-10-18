@@ -8,13 +8,22 @@ part of '../video_fushi_page.dart';
 /// directly).
 extension _VideoClipExport on _VideoFushiPageState {
   Future<void> _toggleClipExport() async {
+    if (_controller != null && !_discExtractionAllowed(_controller!)) return;
     if (_clipExporting) {
       _showOsd(t.video_clip_exporting, severity: ToastSeverity.info);
       return;
     }
 
     final VideoPlayerController? controller = _controller;
-    if (controller == null) return;
+    if (controller == null) {
+      // 从前是裸 return：无 OSD、无日志、无 debugPrint，点了就是完全没反应
+      // （BUG-2542）。控制器缺失就是「源视频不可用」，与导出层同一条文案。
+      _showOsd(
+        t.video_clip_export_input_missing,
+        severity: ToastSeverity.error,
+      );
+      return;
+    }
     if (_isRemote || _currentVideoPath == null) {
       _showOsd(
         t.video_clip_export_remote_download_required,
@@ -103,31 +112,32 @@ extension _VideoClipExport on _VideoFushiPageState {
     _rebuild(() => _clipExporting = true);
     _showOsd(t.video_clip_exporting, severity: ToastSeverity.info);
 
-    final VideoClipExportResult result = await exportVideoClipViaFfmpeg(
+    final VideoClipExportResult result = await _exportClipFile(
+      controller: controller,
       inputPath: startPath,
       startMs: startMs,
       endMs: endMs,
       outputPath: outputPath,
       audioStreamIndex: audioStreamIndex,
       audioStreamCount: audioStreamCount,
-      subtitleContents: _clipExportSubtitleContents(
-        controller: controller,
-        startMs: startMs,
-        endMs: endMs,
-      ),
-      // 硬字幕烧录（BUG-2202）：cue 带时间轴，导出层探出画面尺寸后回调渲染。
-      // 内封软字幕轨已经不用了——mp4 里的 tx3g 会让整个片段在 QQ 这类 IM 里判为
-      // 不可播（见 resolveClipSubtitleCodec）。
-      subtitleCues: _clipExportSubtitleCues(
-        controller: controller,
-        startMs: startMs,
-        endMs: endMs,
-      ),
-      subtitleRenderer: _clipExportSubtitleRenderer(),
     );
 
     if (!mounted) {
-      await _deleteClipOutput(result.outputPath ?? outputPath);
+      // 页面在导出期间被卸载（退视频页 / 换集 / 进退全屏重建）。旧实现在这里把
+      // 产物一律删掉：导出**已经成功**时，用户等了十几分钟，既没看到成功也没看到
+      // 失败，文件也不存在，错误日志页还是空的——三重静默（BUG-2542）。成功的产物
+      // 是有效的，保留并记下落点，至少可追可取；失败的残片仍旧删。
+      // 下面的换源分支才是真该删成品的情形：那个产物对应的是**旧源**。
+      if (result.isSuccess) {
+        ErrorLogService.instance.log(
+          'VideoClipExport',
+          'page was unmounted before the result could be shown; keeping the '
+              'exported clip at ${result.outputPath ?? outputPath}',
+          StackTrace.current,
+        );
+      } else {
+        await _deleteClipOutput(result.outputPath ?? outputPath);
+      }
       return;
     }
     if (generation != _clipExportGeneration || _currentVideoPath != startPath) {
@@ -145,19 +155,31 @@ extension _VideoClipExport on _VideoFushiPageState {
     _rebuild(_clearClipExportState);
     final String? exported = result.outputPath;
     if (result.isSuccess && exported != null) {
-      // 区分带没带字幕：字幕封装可能被静默降级（容器封不下、旧的桌面精简 ffmpeg 没有
-      // movtext 编码器），不告诉用户的话，他只会看到一个「导出成功却没字幕」的片段，
-      // 无从判断是自己没选字幕还是导出丢了。
-      _showOsd(
-        result.subtitleTrackCount > 0
-            ? t.video_clip_exported_with_subtitles(path: exported)
-            : t.video_clip_exported(path: exported),
-        severity: ToastSeverity.success,
-      );
-      if (!(Platform.isWindows || Platform.isMacOS || Platform.isLinux)) {
-        await FushiShare.shareFiles(<XFile>[
-          XFile(exported),
-        ], subject: p.basename(exported));
+      // 移动端：产物落 app 私有目录（不进相册、不注册 MediaStore），这次系统分享
+      // 面板是用户取回它的**唯一**通道，所以先分享、再按面板到底有没有呈现报结果
+      // （BUG-2542）。旧实现先无条件报「已导出」再 fire-and-forget 分享，面板被
+      // FushiShare 的防重入门丢弃时，用户看到的是绿色成功提示 + 一个进不去的路径，
+      // 相册里没有、分享面板也没弹——体感就是「导出没反应」。
+      final bool shared =
+          isDesktop ||
+          await FushiShare.shareFiles(<XFile>[
+            XFile(exported),
+          ], subject: p.basename(exported));
+      if (!shared) {
+        _showOsd(
+          t.video_clip_export_share_unavailable(path: exported),
+          severity: ToastSeverity.warning,
+        );
+      } else {
+        // 区分带没带字幕：字幕封装可能被静默降级（容器封不下、旧的桌面精简 ffmpeg 没有
+        // movtext 编码器），不告诉用户的话，他只会看到一个「导出成功却没字幕」的片段，
+        // 无从判断是自己没选字幕还是导出丢了。
+        _showOsd(
+          result.subtitleTrackCount > 0
+              ? t.video_clip_exported_with_subtitles(path: exported)
+              : t.video_clip_exported(path: exported),
+          severity: ToastSeverity.success,
+        );
       }
     } else {
       // TODO-910：合成**单条** OSD（旧实现两条 _showOsd 互相覆盖，第二条把第一条
@@ -180,7 +202,7 @@ extension _VideoClipExport on _VideoFushiPageState {
 
   /// 收集片段区间内「用户正在看的字幕」，裁成 SRT 文本（主字幕一条、副字幕一条）。
   ///
-  /// 真相源是播放器内存里的 cue 列表，不是源文件的 `0:s:N`：Hibiki 的字幕全部由
+  /// 真相源是播放器内存里的 cue 列表，不是源文件的 `0:s:N`：Fushi 的字幕全部由
   /// Flutter overlay 渲染（libmpv 侧被 `setSubtitleTrack(no())` 关掉），外挂字幕在源
   /// 文件里压根没有对应流，内嵌轨也丢掉了用户调过的 [VideoPlayerController.delayMs]
   /// 偏移。从 cue 生成，导出的字幕恰好等于屏幕上看到的那条。
@@ -254,14 +276,12 @@ extension _VideoClipExport on _VideoFushiPageState {
     // 尺寸都在这里一次性取好。
     final VideoSubtitleStyle style = _subtitleStyle;
     final Size? area = context.size;
+    final bool respectAssStyle = appModel.videoRespectAssStyle;
 
     return (ClipSubtitleCue cue, ClipFrameSize frame) {
       final double viewportHeight = (area == null || frame.width <= 0)
           ? 0 // 拿不到就交给渲染器的回退基准，绝不让 scale 变成 0 或无穷
-          : math.min(
-              area.height,
-              area.width * frame.height / frame.width,
-            );
+          : math.min(area.height, area.width * frame.height / frame.width);
       // 锚定复用屏幕上那套解析（TODO-2838）：主层只有选了顶部才算显式，副层任何
       // 非 null 都算显式，都没有时副层自动取主层的对侧。ownNonBottom 恒 false——
       // 导出渲染的是纯文本，没有 ASS 自带定位。
@@ -270,8 +290,8 @@ extension _VideoClipExport on _VideoFushiPageState {
         userAnchor: cue.isSecondary
             ? style.secondaryAnchor
             : (style.mainAnchor == SubtitleLayerVAnchor.top
-                ? SubtitleLayerVAnchor.top
-                : null),
+                  ? SubtitleLayerVAnchor.top
+                  : null),
         mainUserAnchor: style.mainAnchor,
         ownNonBottom: false,
       );
@@ -283,9 +303,48 @@ extension _VideoClipExport on _VideoFushiPageState {
         anchorTop: anchor == SubtitleLayerVAnchor.top,
         // 副层有自己的位置基线；null = 跟随主层（历史行为）。
         overridePadding: cue.isSecondary ? style.secondaryBottomPadding : null,
+        // BUG-3291：与屏幕同一个开关——「尊重字幕自带样式」开着时导出也带上原字幕
+        // 的颜色 / 粗体 / 斜体；关着（纯字幕模式）屏幕上一律用户外观，导出同样不带。
+        markup: respectAssStyle ? clipCueStyledMarkup(cue) : null,
       );
     };
   }
+
+  /// 片段导出的 ffmpeg 一步（快捷键两段式导出与桌面 CLI `video clip` 共用）：
+  /// 当前看到的主 / 副字幕裁成 SRT、按 cue 烧录硬字幕、用户设的视频码率。
+  Future<VideoClipExportResult> _exportClipFile({
+    required VideoPlayerController controller,
+    required String inputPath,
+    required int startMs,
+    required int endMs,
+    required String outputPath,
+    required int? audioStreamIndex,
+    required int? audioStreamCount,
+  }) => exportVideoClipViaFfmpeg(
+    inputPath: inputPath,
+    startMs: startMs,
+    endMs: endMs,
+    outputPath: outputPath,
+    audioStreamIndex: audioStreamIndex,
+    audioStreamCount: audioStreamCount,
+    subtitleContents: _clipExportSubtitleContents(
+      controller: controller,
+      startMs: startMs,
+      endMs: endMs,
+    ),
+    // 硬字幕烧录（BUG-2202）：cue 带时间轴，导出层探出画面尺寸后回调渲染。
+    // 内封软字幕轨已经不用了——mp4 里的 tx3g 会让整个片段在 QQ 这类 IM 里判为
+    // 不可播（见 resolveClipSubtitleCodec）。
+    subtitleCues: _clipExportSubtitleCues(
+      controller: controller,
+      startMs: startMs,
+      endMs: endMs,
+    ),
+    subtitleRenderer: _clipExportSubtitleRenderer(),
+    // 用户设的视频码率（0 = 跟随源，导出层归一成 null）。在这里取值而不是在
+    // 标起点时取：用户常在标完起点、按导出前才去快捷面板改码率。
+    videoBitrateKbps: appModel.videoClipExportVideoBitrateKbps,
+  );
 
   void _clearClipExportState() {
     _clipExportGeneration++;
@@ -378,39 +437,205 @@ extension _VideoClipExport on _VideoFushiPageState {
     } catch (_) {}
   }
 
-  /// 截当前帧存为图片：桌面弹保存对话框，移动端走系统分享（参照 log_exporter
-  /// 的平台分流）。复用 [VideoPlayerController.screenshot]（制卡同源，JPEG）。
-  Future<void> _saveScreenshot() async {
+  /// 截当前帧存为图片。
+  ///
+  /// 两个独立快捷键共用这一个执行体，只差 [withSubtitles]：字幕由 Flutter overlay
+  /// 渲染、**不在解码帧里**（libmpv 侧 `sub-visibility=no`），所以「带字幕」那条要
+  /// 在 Dart 侧把屏幕上正在显示的那条字幕合成回画面（见
+  /// `video_screenshot_compose.dart`），用的是片段导出同一套渲染器，外观与屏幕一致。
+  ///
+  /// 去向由 [VideoScreenshotDestination] 决定：弹对话框（历史行为）/ 进剪贴板 /
+  /// 静默写进指定目录。复用 [VideoPlayerController.screenshot]（制卡同源，JPEG）。
+  Future<void> _saveScreenshot({bool withSubtitles = false}) async {
     final VideoPlayerController? controller = _controller;
-    final Uint8List? bytes = await controller?.screenshot();
-    if (bytes == null) {
+    final Uint8List? raw = await controller?.screenshot();
+    if (raw == null) {
       _showScreenshotFailure('no frame available');
       return;
     }
+
+    Uint8List bytes = raw;
+    String extension = 'jpg';
+    if (withSubtitles && controller != null) {
+      final Uint8List? composed = await _composeScreenshotWithSubtitles(
+        controller,
+        raw,
+      );
+      // 合成不出来（此刻屏幕上本就没字幕 / 渲染失败）就落回裸帧：少一层字幕远好过
+      // 整张截图失败。
+      if (composed != null) {
+        bytes = composed;
+        extension = 'png';
+      }
+    }
+    if (!mounted) return;
+
+    final String screenshotName = videoScreenshotBaseName(
+      sourcePathOrTitle: _screenshotSourcePathOrTitle(),
+      positionMs: controller?.positionMs ?? 0,
+      extension: extension,
+    );
+    switch (appModel.videoScreenshotDestination) {
+      case VideoScreenshotDestination.clipboard:
+        await _copyScreenshotToClipboard(bytes: bytes, extension: extension);
+      case VideoScreenshotDestination.directory:
+        final String directory = appModel.videoScreenshotDirectory.trim();
+        if (directory.isEmpty) {
+          // 没设过目录就退回对话框而不是静默丢文件：宁可多一次对话框，也不要把图
+          // 写到用户不知道的地方。
+          _showOsd(
+            t.video_screenshot_directory_unset,
+            severity: ToastSeverity.error,
+          );
+          await _saveScreenshotViaDialog(
+            bytes: bytes,
+            screenshotName: screenshotName,
+            extension: extension,
+          );
+        } else {
+          await _writeScreenshotToDirectory(
+            bytes: bytes,
+            directory: directory,
+            screenshotName: screenshotName,
+          );
+        }
+      case VideoScreenshotDestination.ask:
+        await _saveScreenshotViaDialog(
+          bytes: bytes,
+          screenshotName: screenshotName,
+          extension: extension,
+        );
+    }
+  }
+
+  /// 把此刻屏幕上显示的字幕合成回 [frameBytes] 这一帧，返回 PNG；没字幕或渲染失败
+  /// 返回 null（调用方据此落回裸帧）。
+  ///
+  /// cue 的选取与片段导出**同源同轴**（[_clipExportSubtitleCues] → `buildClipSubtitleCues`，
+  /// 含主副轨各自的 delay 与文本清洗），窗口取当前播放位置起 1ms——该函数要求
+  /// `endMs > startMs`，而「与区间有交集」的判据配 1ms 窗口恰好选中屏幕上那条。
+  /// 排版换算（字号/底距/描边按 画面高 ÷ 视频显示区高 缩放）走
+  /// [_clipExportSubtitleRenderer]，于是截图里的字幕与屏幕上、与导出的片段逐像素同源。
+  Future<Uint8List?> _composeScreenshotWithSubtitles(
+    VideoPlayerController controller,
+    Uint8List frameBytes,
+  ) async {
+    final ({int width, int height})? size = await screenshotFrameSize(
+      frameBytes,
+    );
+    if (size == null || size.width <= 0 || size.height <= 0) return null;
+    // 位置未知时按 0 处理：取不到当前时刻就选不出 cue，下面 cues 为空、落回裸帧。
+    final int positionMs = controller.positionMs ?? 0;
+    final List<ClipSubtitleCue> cues = _clipExportSubtitleCues(
+      controller: controller,
+      startMs: positionMs,
+      endMs: positionMs + 1,
+    );
+    if (cues.isEmpty) return null;
+
+    final ClipFrameSize frame = ClipFrameSize(size.width, size.height);
+    final ClipSubtitleFrameRenderer renderer = _clipExportSubtitleRenderer();
+    final List<Uint8List> layers = <Uint8List>[];
+    // 与烧录同一套叠画顺序：后合成的在上，按 ASS Layer 升序（同层原序）。
+    for (final ClipSubtitleCue cue in orderClipCuesForBurn(cues)) {
+      final Uint8List? png = await renderer(cue, frame);
+      if (png != null) layers.add(png);
+    }
+    if (layers.isEmpty) return null;
+    return composeScreenshotWithOverlays(
+      frameBytes: frameBytes,
+      overlayPngs: layers,
+    );
+  }
+
+  /// 去向 = 剪贴板。各端剪贴板收的都是 PNG，裸帧是 JPEG，所以先转一道。
+  Future<void> _copyScreenshotToClipboard({
+    required Uint8List bytes,
+    required String extension,
+  }) async {
+    try {
+      final Uint8List? png = extension == 'png'
+          ? bytes
+          : await composeScreenshotWithOverlays(
+              frameBytes: bytes,
+              overlayPngs: const <Uint8List>[],
+            );
+      if (png == null) {
+        _showScreenshotFailure('png encode failed');
+        return;
+      }
+      final bool copied = await copyImageToClipboard(png);
+      if (!mounted) return;
+      if (copied) {
+        _showOsd(t.video_screenshot_copied, severity: ToastSeverity.success);
+      } else {
+        _showScreenshotFailure(t.video_screenshot_clipboard_unsupported);
+      }
+    } catch (e, stack) {
+      debugPrint('[VideoFushiPage] screenshot clipboard failed: $e\n$stack');
+      if (mounted) _showScreenshotFailure(e);
+    }
+  }
+
+  /// 去向 = 指定目录：不弹任何对话框，直接落盘。重名走与保存对话框同一套 ` (n)`
+  /// 计数后缀（[uniqueVideoScreenshotPath]），连按截图不会互相覆盖。
+  Future<void> _writeScreenshotToDirectory({
+    required Uint8List bytes,
+    required String directory,
+    required String screenshotName,
+  }) async {
+    try {
+      final Directory dir = Directory(directory);
+      if (!await dir.exists()) await dir.create(recursive: true);
+      final String finalPath = uniqueVideoScreenshotPath(
+        p.join(directory, screenshotName),
+        exists: (String path) => File(path).existsSync(),
+      );
+      await File(finalPath).writeAsBytes(bytes);
+      if (!mounted) return;
+      _showOsd(
+        t.video_screenshot_saved_to(path: finalPath),
+        severity: ToastSeverity.success,
+      );
+    } catch (e, stack) {
+      debugPrint(
+        '[VideoFushiPage] screenshot directory write failed: $e\n$stack',
+      );
+      if (mounted) _showScreenshotFailure(e);
+    }
+  }
+
+  /// 去向 = 询问（历史行为）：桌面弹保存对话框，移动端走系统分享（参照 log_exporter
+  /// 的平台分流）。两条都要先落一个临时文件——对话框拿到路径后 copy，分享面板要一个
+  /// 真实文件路径。
+  Future<void> _saveScreenshotViaDialog({
+    required Uint8List bytes,
+    required String screenshotName,
+    required String extension,
+  }) async {
     File? tmp;
     final bool isDesktop =
         Platform.isWindows || Platform.isMacOS || Platform.isLinux;
     try {
-      final String defaultScreenshotName = videoScreenshotBaseName(
-        sourcePathOrTitle: _screenshotSourcePathOrTitle(),
-        positionMs: controller?.positionMs ?? 0,
-      );
       final Directory tmpDir = await getTemporaryDirectory();
-      final String screenshotName = uniqueVideoScreenshotBaseName(
-        defaultScreenshotName,
+      final String uniqueName = uniqueVideoScreenshotBaseName(
+        screenshotName,
         exists: (String name) => File(p.join(tmpDir.path, name)).existsSync(),
       );
-      tmp = File(p.join(tmpDir.path, screenshotName));
+      tmp = File(p.join(tmpDir.path, uniqueName));
       await tmp.writeAsBytes(bytes);
       if (isDesktop) {
         final String? savePath = await FilePicker.platform.saveFile(
           dialogTitle: t.video_screenshot,
-          fileName: screenshotName,
+          fileName: uniqueName,
           type: FileType.custom,
-          allowedExtensions: <String>['jpg'],
+          allowedExtensions: <String>[extension],
         );
         if (savePath != null) {
-          final String finalPath = _uniqueScreenshotSavePath(savePath);
+          final String finalPath = _uniqueScreenshotSavePath(
+            savePath,
+            extension: extension,
+          );
           await tmp.copy(finalPath);
           _showOsd(
             t.video_screenshot_saved_to(path: finalPath),
@@ -419,10 +644,13 @@ extension _VideoClipExport on _VideoFushiPageState {
         }
       } else {
         await FushiShare.shareFiles(<XFile>[
-          XFile(tmp.path, mimeType: 'image/jpeg'),
-        ], subject: screenshotName);
+          XFile(
+            tmp.path,
+            mimeType: extension == 'png' ? 'image/png' : 'image/jpeg',
+          ),
+        ], subject: uniqueName);
         _showOsd(
-          t.video_screenshot_ready(file: screenshotName),
+          t.video_screenshot_ready(file: uniqueName),
           severity: ToastSeverity.success,
         );
       }
@@ -436,6 +664,8 @@ extension _VideoClipExport on _VideoFushiPageState {
           await tmp.delete();
         } catch (_) {}
       }
+      // 只有这条路径真弹过系统对话框 / 分享面板，焦点才需要收回；剪贴板与直写目录
+      // 全程无 overlay，无条件 reclaim 会平白夺一次焦点。
       _focusOwnership.reclaim(FocusReclaimCause.overlayClosed);
     }
   }
@@ -450,9 +680,13 @@ extension _VideoClipExport on _VideoFushiPageState {
     return 'video';
   }
 
-  String _uniqueScreenshotSavePath(String savePath) {
-    final String desiredPath =
-        p.extension(savePath).isEmpty ? '$savePath.jpg' : savePath;
+  String _uniqueScreenshotSavePath(
+    String savePath, {
+    String extension = 'jpg',
+  }) {
+    final String desiredPath = p.extension(savePath).isEmpty
+        ? '$savePath.$extension'
+        : savePath;
     return uniqueVideoScreenshotPath(
       desiredPath,
       exists: (String path) => File(path).existsSync(),

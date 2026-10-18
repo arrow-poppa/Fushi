@@ -71,48 +71,21 @@ void main() {
               'the plugin init contract needs one unregisterAll() on start');
     });
 
-    test(
-        'the init unregisterAll() is NOT nested in the restartMarkerArg branch',
-        () {
-      // Extract the restartMarkerArg `if` block and assert the init call lives
-      // AFTER it (unconditional desktop path), not inside it. If it were inside,
-      // a normal cold start would skip the plugin init and register() could fail
-      // silently.
-      final int ifAt = main.indexOf(
-          'if (args.contains(DesktopLifecycleService.restartMarkerArg))');
-      expect(ifAt, greaterThan(-1),
-          reason: 'the restart-marker branch must exist');
-      // Walk braces from the first `{` after the if to find the branch end.
-      final int openBrace = main.indexOf('{', ifAt);
-      expect(openBrace, greaterThan(-1));
-      int depth = 0;
-      int closeBrace = -1;
-      for (int i = openBrace; i < main.length; i++) {
-        final String ch = main[i];
-        if (ch == '{') depth++;
-        if (ch == '}') {
-          depth--;
-          if (depth == 0) {
-            closeBrace = i;
-            break;
-          }
-        }
-      }
-      expect(closeBrace, greaterThan(openBrace),
-          reason: 'restart-marker branch must be brace-balanced');
-      final String branchBody = main.substring(openBrace, closeBrace + 1);
-      expect(branchBody.contains('hotKeyManager.unregisterAll('), isFalse,
-          reason: 'the hotkey_manager init unregisterAll() must NOT be nested '
-              'inside the restartMarkerArg branch — a normal cold start would '
-              'then skip plugin init and the overlay hotkey register could fail');
-
-      // And it must appear somewhere AFTER the branch closes (unconditional
-      // desktop path), still on desktop.
-      final int initAt =
-          main.indexOf('hotKeyManager.unregisterAll(', closeBrace);
-      expect(initAt, greaterThan(closeBrace),
-          reason: 'the init unregisterAll() must run on the unconditional '
-              'desktop path after the restart-marker branch');
+    test('startup has no restart-marker branch to hide the init call in', () {
+      // The restart contract (TODO-959) now rides the common hidden-window +
+      // first-frame reveal path, so main() must not grow a restart-only branch
+      // again. If one comes back, the init unregisterAll() must not move into
+      // it: a normal cold start would skip plugin init and register() could
+      // fail silently.
+      expect(main.contains('DesktopLifecycleService.restartMarkerArg'), isFalse,
+          reason: 'restarted processes reveal through _revealStartupWindow, '
+              'not a restart-only startup branch');
+      final int initAt = main.indexOf('hotKeyManager.unregisterAll(');
+      final int preventCloseAt = main.indexOf('setPreventClose(true)');
+      expect(preventCloseAt, greaterThan(-1));
+      expect(initAt, greaterThan(preventCloseAt),
+          reason: 'the init unregisterAll() runs on the unconditional desktop '
+              'path after window setup');
     });
   });
 
@@ -163,8 +136,22 @@ void main() {
       final String call = galOverlaySrc.substring(callAt, callEnd + 2);
       expect(call.contains('showSentenceBanner'), isFalse,
           reason: '横幅开关已删，调用点不得再传 showSentenceBanner');
-      expect(call.contains('sentence: entry.text'), isTrue,
+      // 句子经 _cardSentenceForGame 过滤：只有旧校准档案仍开着「只用「」内
+      // 台词」时才剥掉括号外文字，其余情况原样返回 entry.text。
+      expect(
+          call.contains('sentence: _cardSentenceForGame(entry, entry.text)'),
+          isTrue,
           reason: '制卡需要的完整句子上下文必须继续传入');
+      final int filterAt =
+          galOverlaySrc.indexOf('String _cardSentenceForGame(');
+      expect(filterAt, greaterThan(-1), reason: '制卡句子过滤入口必须存在');
+      final int filterEnd = galOverlaySrc.indexOf(').text;', filterAt);
+      expect(filterEnd, greaterThan(filterAt));
+      final String filter = galOverlaySrc.substring(filterAt, filterEnd);
+      expect(filter.contains('galLookupVisibleHookLineText('), isTrue,
+          reason: '只能走共享的可见台词过滤，不得另起截句逻辑');
+      expect(filter.contains('source: source'), isTrue,
+          reason: '过滤的输入必须是完整台词');
     });
   });
 }

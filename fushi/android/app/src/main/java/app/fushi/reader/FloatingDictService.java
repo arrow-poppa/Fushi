@@ -133,7 +133,7 @@ public class FloatingDictService extends BaseFloatingService {
         }
 
         return builder
-                .setContentTitle("Hibiki Dictionary")
+                .setContentTitle("Fushi Dictionary")
                 .setContentText(contentText)
                 .setSmallIcon(R.drawable.ic_stat_fushi)
                 .setOngoing(true)
@@ -221,6 +221,8 @@ public class FloatingDictService extends BaseFloatingService {
         searchInput.setBackgroundColor(FloatingColors.DICT_SEARCH_INPUT_BG);
         searchInput.setPadding(dp8, dp4, dp8, dp4);
         searchInput.setImeOptions(EditorInfo.IME_ACTION_SEARCH);
+        // 用户在设置里选了查词输入法语言时，告诉键盘该切哪种语言（API 24+）。
+        LookupImeHint.applyTo(this, searchInput);
         searchInput.setOnFocusChangeListener((v, hasFocus) -> {
             setFocusable(hasFocus);
         });
@@ -361,7 +363,7 @@ public class FloatingDictService extends BaseFloatingService {
                     + "Use the search bar to look up words manually.");
                 // resultView.setText(
                 //     "Android 13+ restricts clipboard access.\n\n"
-                //     + "Enable Hibiki accessibility service in "
+                //     + "Enable Fushi accessibility service in "
                 //     + "Settings → Accessibility for automatic text detection,"
                 //     + " or use the search bar to look up words manually.");
             }

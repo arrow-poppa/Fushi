@@ -1,7 +1,10 @@
+import 'dart:async';
 import 'dart:io';
 
-import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show defaultTargetPlatform;
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:path/path.dart' as p;
 
 import 'package:fushi_core/fushi_core.dart';
@@ -35,6 +38,7 @@ class MangaImportDialog extends StatefulWidget {
   const MangaImportDialog({
     required this.db,
     this.initialPath,
+    this.initialPaths = const <String>[],
     this.mangaOcrRemoteRunner,
     this.ocrEntryDesktopOverride,
     super.key,
@@ -44,6 +48,10 @@ class MangaImportDialog extends StatefulWidget {
 
   /// 拖放/书籍框转交时预填的漫画路径（目录 / `.cbz` / `.zip` 页图包 / `.mokuro`）。
   final String? initialPath;
+
+  /// 拖放多选时预填的一组漫画路径。≥2 个可导的卷时进「逐卷批量」模式（每卷各成
+  /// 一本、书名取各自名字），只有一个时与 [initialPath] 等价。
+  final List<String> initialPaths;
 
   /// 测试缝：注入远程 OCR runner（探测已配对 host 能力 + 代跑）。null = 生产路径，
   /// 由 [MangaOcrWizardEngines.resolve] 按 [db] 构造 [InterconnectMangaOcrClient]。
@@ -64,6 +72,11 @@ class _MangaImportDialogState extends State<MangaImportDialog>
   String? _pathName;
   ImportCarrier? _carrier;
 
+  /// 用户一次选中 / 拖入的多卷（≥2）。非空时本框是「逐卷批量」模式：[_path] /
+  /// [_carrier] 为 null，导入走 [MangaModule.importBatchPaths]。与 [_path] 互斥——
+  /// 收下单个路径时清空它，收下一批时清空单路径。
+  List<String> _batchPaths = const <String>[];
+
   /// [ImportCarrier.mangaBatchFolder] 时这批有几卷。选中那一刻数一次并记住——
   /// 目录枚举是 IO，不能长在 `build` 里。
   int _batchVolumeCount = 0;
@@ -77,6 +90,13 @@ class _MangaImportDialogState extends State<MangaImportDialog>
 
   bool _pickerActive = false;
 
+  /// 当前选中的目录若是 iOS 整卷拷进来的暂存副本（BUG-2786），在这里记着，关框时删。
+  ///
+  /// 为什么不在每次导入结束就删：导入失败时对话框不关、路径还在，用户会原样重试——
+  /// 那时副本已经没了，重试只会换来一句莫名其妙的「找不到文件」。成功时对话框随即
+  /// 关闭，[dispose] 照样删掉，两种结局都不留残留。
+  PickedImportDirectory? _staging;
+
   /// 走 [ImportCarrierResolver] 而不是每次裸调 `classifyImportCarrier`（与书籍框
   /// 同款，守卫 `manga_import_carrier_memo_guard_test.dart`）：`.zip` / `.epub`
   /// 的定性要真开包，而同一路径在一次导入里会被问到不止一次——预填 / 拖入循环 /
@@ -86,24 +106,35 @@ class _MangaImportDialogState extends State<MangaImportDialog>
     isImageArchive: MangaModule.isImageArchive,
     directoryHasPageImages: MangaModule.directoryHasPageImages,
     directoryCarrierFileCount: MangaModule.directoryCarrierFileCount,
+    directoryMokuroFileCount: MangaModule.directoryMokuroFileCount,
   );
 
   @override
   void initState() {
     super.initState();
-    final String? initial = widget.initialPath;
+    final List<String> initialAll = <String>[
+      if (widget.initialPath != null) widget.initialPath!,
+      ...widget.initialPaths,
+    ];
+    final List<String> batch = _batchCandidates(initialAll);
+    if (batch.length >= 2) {
+      _setBatch(batch);
+      return;
+    }
+    final String? initial = initialAll.isEmpty ? null : initialAll.first;
     if (initial != null) {
       // 预填路径来自已判定为漫画的上游（拖放决策层 / 书籍框转交），这里仍重跑一次
       // 分类以拿到细分载体；万一上游给了非漫画路径，宁可留空也不静默导错东西。
       final ImportCarrier carrier = _classify(initial);
       if (carrier.isMangaCapable) {
-        _path = initial;
-        _pathName = p.basename(initial);
+        final String path = _importPathFor(initial, carrier);
+        _path = path;
+        _pathName = p.basename(path);
         _carrier = carrier;
         _batchVolumeCount = carrier == ImportCarrier.mangaBatchFolder
-            ? MangaModule.directoryCarrierFileCount(initial)
+            ? MangaModule.directoryCarrierFileCount(path)
             : 0;
-        _titleCtrl.text = _deriveTitle(initial);
+        _titleCtrl.text = _deriveTitle(path);
       }
     }
   }
@@ -111,10 +142,45 @@ class _MangaImportDialogState extends State<MangaImportDialog>
   @override
   void dispose() {
     _titleCtrl.dispose();
+    unawaited(_discardStaging());
     super.dispose();
   }
 
   ImportCarrier _classify(String path) => _carrierResolver.resolve(path);
+
+  /// 多选里**可能是一卷**的路径：目录或漫画载体扩展名。只看扩展名、不开包——
+  /// N 个包在 UI 线程逐个开会卡死；真定性推迟到逐卷导入（那时反正要解压），
+  /// 不是漫画的卷（文字 EPUB / 词典 zip）在汇总里如实计为跳过。
+  static List<String> _batchCandidates(List<String> paths) => <String>[
+        for (final String path in paths)
+          if (Directory(path).existsSync() ||
+              kMangaCarrierFileExtensions
+                  .contains(p.extension(path).toLowerCase()))
+            path,
+      ];
+
+  /// 进入逐卷批量模式（不含 setState，调用方决定是否包一层）。
+  void _setBatch(List<String> paths) {
+    _batchPaths = List<String>.unmodifiable(paths);
+    _path = null;
+    _carrier = null;
+    _batchVolumeCount = 0;
+    _pathName = paths.map(p.basename).join('、');
+  }
+
+  /// 载体判成 `.mokuro` 的**目录**（直接子层恰好一个 `.mokuro`，BUG-2785）换成那个
+  /// 文件——`importMokuro` 吃的是文件。其余原样返回。
+  String _importPathFor(String path, ImportCarrier carrier) {
+    if (carrier != ImportCarrier.mangaMokuro) return path;
+    if (!Directory(path).existsSync()) return path;
+    return MangaModule.directorySingleMokuroPath(path) ?? path;
+  }
+
+  Future<void> _discardStaging() async {
+    final PickedImportDirectory? staging = _staging;
+    _staging = null;
+    await staging?.discardStaging();
+  }
 
   /// 目录取目录名，文件取去扩展名的文件名。
   String _deriveTitle(String path) {
@@ -124,27 +190,28 @@ class _MangaImportDialogState extends State<MangaImportDialog>
 
   @override
   Widget build(BuildContext context) {
-    return FushiFileDropTarget(
-      enabled: !importing,
-      debugLabel: 'manga-import-dialog',
-      onDrop: _handleDialogDrop,
-      child: ImportDialogFrame(
-        leadingIcon: Icons.auto_stories_outlined,
-        title: t.manga_import_action,
-        body: _buildForm(),
-        actions: <Widget>[
-          adaptiveDialogAction(
-            context: context,
-            onPressed: importing ? null : _openOcrWizard,
-            child: Text(t.manga_ocr_wizard_title),
-          ),
-          adaptiveDialogAction(
-            context: context,
-            onPressed: () => Navigator.pop(context),
-            child: Text(t.dialog_cancel),
-          ),
-          buildImportAction(context, onImport: _doImport),
-        ],
+    // 导入进行中禁止返回键 / 点遮罩 / Esc 关闭（HBK-AUDIT-037，见 buildImportPopGuard）。
+    return buildImportPopGuard(
+      child: FushiFileDropTarget(
+        enabled: !importing,
+        debugLabel: 'manga-import-dialog',
+        onDrop: _handleDialogDrop,
+        child: ImportDialogFrame(
+          leadingIcon: FushiIcons.books,
+          title: t.manga_import_action,
+          body: _buildForm(),
+          actions: <Widget>[
+            FushiDialogAction(
+              label: t.manga_ocr_wizard_title,
+              onPressed: importing ? null : _openOcrWizard,
+            ),
+            FushiDialogAction(
+              label: t.dialog_cancel,
+              onPressed: importing ? null : () => Navigator.pop(context),
+            ),
+            buildImportAction(context, onImport: _doImport),
+          ],
+        ),
       ),
     );
   }
@@ -161,7 +228,12 @@ class _MangaImportDialogState extends State<MangaImportDialog>
         SizedBox(height: tokens.spacing.rowVertical),
         // 批量目录没有「一个标题」可填——每卷用自己的文件名。与其留一个填了也
         // 不生效的输入框，不如换成说明这批要导几卷。
-        if (_carrier == ImportCarrier.mangaBatchFolder)
+        if (_batchPaths.isNotEmpty)
+          Text(
+            t.manga_import_selection_batch_hint(n: _batchPaths.length),
+            style: tokens.type.metadata,
+          )
+        else if (_carrier == ImportCarrier.mangaBatchFolder)
           Text(
             t.manga_import_batch_hint(n: _batchVolumeCount),
             style: tokens.type.metadata,
@@ -181,19 +253,19 @@ class _MangaImportDialogState extends State<MangaImportDialog>
     return FushiFilePickerRow(
       title: t.manga_import_pick_file,
       subtitle: _pathName,
-      icon: Icons.auto_stories_outlined,
+      icon: FushiIcons.books,
       onTap: _pickFile,
       actions: <Widget>[
         // 漫画载体可以是**文件**（.cbz/.zip/.mokuro）也可以是**目录**（一卷页图），
         // 两种选择器在系统层是两个不同的对话框，故并列两个入口而非合成一个。
         FushiIconButton(
-          icon: Icons.folder_open_outlined,
+          icon: FushiIcons.folderOpen,
           tooltip: t.manga_import_pick_folder,
           isWideTapArea: true,
           onTap: _pickFolder,
         ),
         FushiIconButton(
-          icon: Icons.insert_drive_file_outlined,
+          icon: FushiIcons.file,
           tooltip: t.manga_import_pick_file,
           isWideTapArea: true,
           onTap: _pickFile,
@@ -226,11 +298,27 @@ class _MangaImportDialogState extends State<MangaImportDialog>
         allowedExtensions: _mangaFileExtensions,
       );
       if (path == null || !mounted) return;
-      _adoptPath(path);
+      if (_isOrphanedIosMokuro(path)) {
+        FushiToast.show(
+          msg: t.manga_import_ios_mokuro_needs_folder,
+          severity: ToastSeverity.error,
+        );
+        return;
+      }
+      if (_adoptPath(path)) unawaited(_discardStaging());
     } finally {
       _pickerActive = false;
     }
   }
+
+  /// iOS 单选的 `.mokuro` 是被 file_picker 挪进 `NSTemporaryDirectory()` 的**孤零零
+  /// 一个文件**，同级页图不会跟过来（BUG-2786）。收下它只会在点「导入」时才炸一句
+  /// 缺图——在选中这一刻就说清楚该怎么选。判据与导入门同一个
+  /// （[MangaModule.canImportPath]），同级真有页图时照常放行。
+  bool _isOrphanedIosMokuro(String path) =>
+      defaultTargetPlatform == TargetPlatform.iOS &&
+      p.extension(path).toLowerCase() == '.mokuro' &&
+      !MangaModule.canImportPath(path);
 
   Future<void> _pickFolder() async {
     if (_pickerActive) return;
@@ -238,29 +326,73 @@ class _MangaImportDialogState extends State<MangaImportDialog>
     try {
       final AppModel appModel =
           ProviderScope.containerOf(context, listen: false).read(appProvider);
-      final String? path = await pickRealDirectoryPath(
-        context: context,
-        appModel: appModel,
-      );
-      if (path == null || !mounted) return;
-      _adoptPath(path);
+      // 走 pickImportDirectory 而不是 pickRealDirectoryPath：iOS 上后者交回的沙盒外
+      // 路径 dart:io 读不了（BUG-2786），前者在访问窗口内把整卷拷进 app 容器。
+      final PickedImportDirectory? picked;
+      try {
+        picked = await pickImportDirectory(
+          context: context,
+          appModel: appModel,
+          stagingName: 'manga',
+        );
+      } on DirectoryImportCopyException catch (e) {
+        // 拷贝失败不是取消：必须让用户看见，否则「点了没反应」。
+        debugPrint('[fushi-import] manga folder copy failed: $e');
+        FushiToast.show(
+          msg: t.import_folder_copy_failed(error: e.message),
+          severity: ToastSeverity.error,
+        );
+        return;
+      }
+      if (picked == null) return;
+      if (!mounted) {
+        await picked.discardStaging();
+        return;
+      }
+      final PickedImportDirectory? previous = _staging;
+      if (previous != null &&
+          previous.stagingRoot?.path == picked.stagingRoot?.path) {
+        // 同一个 stagingName 下原生先删后建：旧副本已被新副本覆盖（删旧的就是删新的，
+        // 不能删），指向旧副本的那次选择随之作废。_staging 非 null ⇔ _path 在它里面。
+        _staging = null;
+        _clearSelection();
+      } else {
+        await _discardStaging();
+      }
+      if (picked.stagingRoot != null) _staging = picked;
+      if (!_adoptPath(picked.path)) await _discardStaging();
     } finally {
       _pickerActive = false;
     }
   }
 
+  void _clearSelection() {
+    setState(() {
+      _batchPaths = const <String>[];
+      _path = null;
+      _pathName = null;
+      _carrier = null;
+      _batchVolumeCount = 0;
+    });
+  }
+
   /// 收下一个候选路径：先定性，非漫画直接挡回并说明，绝不静默吞掉。
-  void _adoptPath(String path) {
-    final ImportCarrier carrier = _classify(path);
+  /// 返回是否收下。
+  bool _adoptPath(String candidate) {
+    final ImportCarrier carrier = _classify(candidate);
     if (!carrier.isMangaCapable) {
-      final String ext = p.extension(path).toLowerCase();
+      final String ext = p.extension(candidate).toLowerCase();
       FushiToast.show(
-        msg: t.import_unsupported_file_format(ext: ext.isEmpty ? path : ext),
+        msg: t.import_unsupported_file_format(
+          ext: ext.isEmpty ? candidate : ext,
+        ),
         severity: ToastSeverity.error,
       );
-      return;
+      return false;
     }
+    final String path = _importPathFor(candidate, carrier);
     setState(() {
+      _batchPaths = const <String>[];
       _path = path;
       _pathName = p.basename(path);
       _carrier = carrier;
@@ -271,14 +403,23 @@ class _MangaImportDialogState extends State<MangaImportDialog>
         _titleCtrl.text = _deriveTitle(path);
       }
     });
+    return true;
   }
 
   void _handleDialogDrop(List<String> paths, Offset _) {
     if (importing) return;
-    // 拖进本框的东西只有一种可能有意义：漫画。取第一个能定性成漫画的路径。
+    // 拖进本框的东西只有一种可能有意义：漫画。多选（≥2 个像卷的路径）→ 逐卷批量，
+    // 不再只收第一个、其余静默丢掉。
+    final List<String> batch = _batchCandidates(paths);
+    if (batch.length >= 2) {
+      setState(() => _setBatch(batch));
+      unawaited(_discardStaging());
+      return;
+    }
+    // 单个：取第一个能定性成漫画的路径。
     for (final String path in paths) {
       if (_classify(path).isMangaCapable) {
-        _adoptPath(path);
+        if (_adoptPath(path)) unawaited(_discardStaging());
         return;
       }
     }
@@ -316,36 +457,53 @@ class _MangaImportDialogState extends State<MangaImportDialog>
     String proposedTitle,
   ) async {
     if (!mounted) return DuplicateChoice.cancel;
-    final bool? keep = await showAppDialog<bool>(
+    final bool keep = await showFushiConfirmDialog(
       context: context,
-      builder: (BuildContext ctx) => AlertDialog(
-        title: Text(t.book_import_duplicate_title),
-        content: Text(t.book_import_duplicate_message(name: proposedTitle)),
-        actions: <Widget>[
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: Text(t.book_import_duplicate_cancel),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: Text(t.book_import_duplicate_keep),
-          ),
-        ],
-      ),
+      title: t.book_import_duplicate_title,
+      message: t.book_import_duplicate_message(name: proposedTitle),
+      cancelLabel: t.book_import_duplicate_cancel,
+      confirmLabel: t.book_import_duplicate_keep,
     );
-    return keep == true ? DuplicateChoice.suffix : DuplicateChoice.cancel;
+    return keep ? DuplicateChoice.suffix : DuplicateChoice.cancel;
   }
 
   /// 逐卷导入一个整卷文件目录，返回给用户看的汇总文案。
   ///
   /// 一卷都没进来时**抛异常**而不是返回「成功 0 卷」：那种情况下这次导入就是失败，
   /// 必须走 [runImport] 的错误路径（红 toast + 不关框），否则用户会以为导好了。
-  Future<String> _importBatchFolder(String path) async {
-    final MangaBatchImportReport report = await MangaModule.importBatchFolder(
-      db: widget.db,
-      path: path,
-      onVolumeProgress: _reportVolumeProgress,
+  Future<String> _importBatchFolder(String path) async =>
+      _summarizeBatch(await MangaModule.importBatchFolder(
+        db: widget.db,
+        path: path,
+        onVolumeProgress: _reportVolumeProgress,
+      ));
+
+  /// 多选 / 拖入的一组卷：逐卷导入后报汇总并关框；一卷都没进来走失败路径。
+  /// 重复固定跳过（批量不逐卷弹询问框），故不需要 [_askOnDuplicate]。
+  Future<void> _doImportSelectionBatch(List<String> paths) async {
+    await runImport(
+      logTag: 'MangaImportDialog.importBatch',
+      debugMessage: (Object e) => 'MangaImportDialog batch error: $e',
+      action: () async {
+        reportProgress(0, '');
+        debugPrint('[fushi-import] manga selection batch: ${paths.length}');
+        final String summary =
+            _summarizeBatch(await MangaModule.importBatchPaths(
+          db: widget.db,
+          paths: paths,
+          onVolumeProgress: _reportVolumeProgress,
+        ));
+        reportProgress(1, t.import_step_done);
+        if (mounted) {
+          FushiToast.show(msg: summary, severity: ToastSeverity.success);
+          Navigator.pop(context, true);
+        }
+      },
     );
+  }
+
+  /// 报告 → 给用户看的汇总文案；一卷都没进来时抛 [MangaImportException]。
+  String _summarizeBatch(MangaBatchImportReport report) {
     for (final MangaBatchVolumeResult volume in report.volumes) {
       debugPrint('[fushi-import] manga batch volume: '
           '${volume.status.name} ${volume.name}'
@@ -389,6 +547,10 @@ class _MangaImportDialogState extends State<MangaImportDialog>
   }
 
   Future<void> _doImport() async {
+    if (_batchPaths.isNotEmpty) {
+      await _doImportSelectionBatch(_batchPaths);
+      return;
+    }
     final String? path = _path;
     final ImportCarrier? carrier = _carrier;
     if (path == null || carrier == null) {

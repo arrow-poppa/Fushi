@@ -1,6 +1,6 @@
 import 'dart:async' show unawaited;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
@@ -13,18 +13,25 @@ import 'package:fushi_engine/media/source_library/source_library_row.dart';
 import 'package:fushi/src/media/source_library/source_library_scanner.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_task.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
+import 'package:fushi/src/media/video/iptv_playlist_import_dialog.dart';
 import 'package:fushi/src/media/video/video_import_dialog.dart';
 import 'package:fushi/src/pages/implementations/media_sources_view.dart';
+import 'package:fushi/src/utils/components/fushi_floating_chrome.dart';
+import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
 
 /// 库页导航壳里的「导入」视图：**本域内容入库的唯一入口页**。
 ///
-/// 自上而下两区：
-/// 1. 快速导入（[QuickImportSection]）——单件 / 一次性入口：书 / 视频统一为
-///    「导入单件 + 导入文件夹」两个按钮（文件夹二选一：设为常驻来源 / 仅导入
-///    一次，见 [MediaSourcesViewState.importFolder]）。
-/// 2. 常驻来源（[MediaSourcesView]）——本地与网络扫描根的管理列表，区头带
-///    「添加来源」按钮（TODO-2930 从页头收敛至此）。
+/// 自上而下两区：快速导入（[QuickImportSection]）——单件 / 一次性入口：书 / 视频
+/// 统一为「导入单件 + 导入文件夹」两个按钮（文件夹二选一：设为常驻来源 / 仅导入
+/// 一次，见 [MediaSourcesViewState.importFolder]）；常驻来源（[MediaSourcesView]）
+/// ——本地与网络扫描根的管理列表，区头带「添加来源」按钮（TODO-2930 从页头收敛
+/// 至此）。
+///
+/// 视频源扩展（Aniyomi）与小说源（LNReader）的仓库 / 扩展 / 在线源三段曾挂在本页
+/// 的分段选择器上；2026-09-27 起它们搬进顶层「浏览」模块
+/// （`BrowseOnlineSourcesView`，Mihon 的 Browse 形态），本页只剩本地来源。
 ///
 /// 此前单件导入按钮散在各库页页头（书 / 漫画在页头、视频已删、游戏在 FAB），
 /// 五个模块五种入口；现在统一收敛到「导入」视图同一位置（2026-08-13 用户定案）。
@@ -128,7 +135,6 @@ class _MediaSourcesPageState extends ConsumerState<MediaSourcesPage> {
   @override
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final List<QuickImportAction> quickActions = _quickImportActions();
     // 与书架 / 视频 / 词典三个库页同构：DesktopContentLayout + FushiPageHeader
     // 大标题 + FushiIconButton 动作，外层 Scaffold 由 HomePage 提供。
     return DesktopContentLayout(
@@ -141,27 +147,19 @@ class _MediaSourcesPageState extends ConsumerState<MediaSourcesPage> {
             // （PR#675 撤强制侧向留白），而 [MediaSourcesView] 自身只有行间的纵向
             // 间距，桌面上文字与开关会直接贴窗口边。留白取 spacing.page，与上方
             // [FushiPageHeader] 的横向内边距同源，标题与正文左边缘对齐；滚动条仍
-            // 贴真实边缘（padding 在 SingleChildScrollView 里，不在它外面）。
-            child: SingleChildScrollView(
-              padding: EdgeInsets.symmetric(horizontal: tokens.spacing.page),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: <Widget>[
-                  if (quickActions.isNotEmpty) ...<Widget>[
-                    QuickImportSection(actions: quickActions),
-                    const SizedBox(height: 28),
-                  ],
-                  _buildSourcesSectionHeader(),
-                  const SizedBox(height: 8),
-                  MediaSourcesView(
-                    key: _viewKey,
-                    mediaKind: widget.mediaKind,
-                    onScrapeSource: widget.onScrapeSource,
-                    onVideoScanCompleted: widget.onVideoScanCompleted,
-                    scrapeTaskController: widget.scrapeTaskController,
-                    onLibraryChanged: widget.onLibraryChanged,
-                  ),
-                ],
+            // 贴真实边缘（padding 在滚动视图里，不在它外面）。
+            //
+            // 顶部让出库页壳浮动工具区的高度（[FushiFloatingChromeInset]，不在壳里
+            // 时为 0）：内容滚到工具区底下，工具区收起后上方不再留一条空白。
+            child: FushiEntranceScope(
+              child: SingleChildScrollView(
+                padding: EdgeInsets.fromLTRB(
+                  tokens.spacing.page,
+                  FushiFloatingChromeInset.of(context) + tokens.spacing.gap,
+                  tokens.spacing.page,
+                  tokens.spacing.page,
+                ),
+                child: _buildLocalSegment(),
               ),
             ),
           ),
@@ -169,6 +167,76 @@ class _MediaSourcesPageState extends ConsumerState<MediaSourcesPage> {
       ),
     );
   }
+
+  /// 「本地」段：快速导入区 + 常驻来源。
+  Widget _buildLocalSegment() {
+    final List<QuickImportAction> quickActions = _quickImportActions();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        if (quickActions.isNotEmpty) ...<Widget>[
+          QuickImportSection(
+            actions: quickActions,
+            heroIcon:
+                widget.mediaKind == 'video' ? FushiIcons.video : FushiIcons.books,
+            formats: _supportedFormats(),
+            // 网络来源（SFTP / FTP / WebDAV / AList）也是一种导入方式：在网格里
+            // 给一张卡，与「常驻来源」区头的添加按钮走同一个 addSource。
+            extraActions: <QuickImportAction>[
+              QuickImportAction(
+                icon: FushiIcons.cloud,
+                label: t.media_source_add_network,
+                description: widget.mediaKind == 'video'
+                    ? t.media_source_network_subtitle_video
+                    : t.media_source_network_subtitle,
+                enabled: !_busy,
+                onTap: () async => _viewKey.currentState?.addSource(),
+              ),
+            ],
+          ),
+          const SizedBox(height: 28),
+        ],
+        FushiStaggeredEntrance(
+          index: 4,
+          child: _buildSourcesSectionHeader(),
+        ),
+        const SizedBox(height: 8),
+        FushiStaggeredEntrance(
+          index: 5,
+          child: MediaSourcesView(
+            key: _viewKey,
+            mediaKind: widget.mediaKind,
+            onScrapeSource: widget.onScrapeSource,
+            onVideoScanCompleted: widget.onVideoScanCompleted,
+            scrapeTaskController: widget.scrapeTaskController,
+            onLibraryChanged: widget.onLibraryChanged,
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// 拖放区「支持格式」chip 行（格式名不翻译）。
+  List<String> _supportedFormats() => switch (widget.mediaKind) {
+        'book' => const <String>[
+            'EPUB',
+            'PDF',
+            'TXT',
+            'SRT',
+            'ASS',
+            'MP3',
+            'M4B',
+          ],
+        'video' => const <String>[
+            'MP4',
+            'MKV',
+            'WEBM',
+            'M3U',
+            'M3U8',
+            'HTTP',
+          ],
+        _ => const <String>[],
+      };
 
   /// 本域的快速导入入口（各域只声明真正有的入口）。
   ///
@@ -178,24 +246,29 @@ class _MediaSourcesPageState extends ConsumerState<MediaSourcesPage> {
     return switch (widget.mediaKind) {
       'book' => <QuickImportAction>[
           QuickImportAction(
-            icon: Icons.upload_file_outlined,
+            icon: FushiIcons.importFile,
             label: t.srt_import,
             onTap: _importBookFile,
           ),
           QuickImportAction(
-            icon: Icons.drive_folder_upload_outlined,
+            icon: FushiIcons.folder,
             label: t.media_import_folder,
             onTap: _importFolder,
           ),
         ],
       'video' => <QuickImportAction>[
           QuickImportAction(
-            icon: Icons.movie_outlined,
+            icon: FushiIcons.video,
             label: t.video_import_action,
             onTap: _importVideo,
           ),
           QuickImportAction(
-            icon: Icons.drive_folder_upload_outlined,
+            icon: FushiIcons.tv,
+            label: t.video_iptv_import_action,
+            onTap: _importIptvPlaylist,
+          ),
+          QuickImportAction(
+            icon: FushiIcons.folder,
             label: t.media_import_folder,
             onTap: _importFolder,
           ),
@@ -209,6 +282,7 @@ class _MediaSourcesPageState extends ConsumerState<MediaSourcesPage> {
     final bool? imported = await showAppDialog<bool>(
       context: context,
       builder: (_) => BookImportDialog(
+        prefs: _appModel.prefsRepo,
         repo: SrtBookRepository(_appModel.database),
         audiobookRepo: AudiobookRepository(_appModel.database),
         db: _appModel.database,
@@ -243,6 +317,36 @@ class _MediaSourcesPageState extends ConsumerState<MediaSourcesPage> {
     if (bookUid != null && mounted) widget.onLibraryChanged?.call();
   }
 
+  /// M3U / IPTV 频道列表导入（对齐 SenPlayer 的 IPTV 播放列表）。频道按既有
+  /// 「清单拆集」形状入库；填进来的若其实是一条 HLS 流，转交 [VideoImportDialog]
+  /// 按单个视频 / 流链接导入（远端自动导入，本地预填待确认）。
+  Future<void> _importIptvPlaylist() async {
+    final VideoBookRepository repo = VideoBookRepository(_appModel.database);
+    final IptvPlaylistImportOutcome? outcome =
+        await showAppDialog<IptvPlaylistImportOutcome>(
+      context: context,
+      builder: (_) => IptvPlaylistImportDialog(repo: repo),
+    );
+    if (!mounted || outcome == null) return;
+    switch (outcome) {
+      case IptvPlaylistImported():
+        widget.onLibraryChanged?.call();
+      case IptvPlaylistIsHlsStream(
+          :final String? url,
+          :final String? localPath,
+        ):
+        final String? bookUid = await showAppDialog<String>(
+          context: context,
+          builder: (_) => VideoImportDialog(
+            repo: repo,
+            initialStreamUrl: url,
+            initialVideoPath: localPath,
+          ),
+        );
+        if (bookUid != null && mounted) widget.onLibraryChanged?.call();
+    }
+  }
+
   /// 书架 provider 失效（快速导入落库后书架 / 漫画库立即刷新）。
   void _invalidateBookProviders() {
     if (!mounted) return;
@@ -262,13 +366,13 @@ class _MediaSourcesPageState extends ConsumerState<MediaSourcesPage> {
         Expanded(
           child: Text(
             t.media_source_section_title,
-            style: Theme.of(context).textTheme.titleLarge,
+            style: context.fushiType.titleLargeEmphasized,
           ),
         ),
         FushiIconButton(
           tooltip: t.media_source_add,
           label: t.media_source_add,
-          icon: Icons.create_new_folder_outlined,
+          icon: FushiIcons.add,
           enabled: !busy,
           onTap: () {
             if (!busy) unawaited(_viewKey.currentState?.addSource());
@@ -285,7 +389,7 @@ class _MediaSourcesPageState extends ConsumerState<MediaSourcesPage> {
         FushiIconButton(
           tooltip: t.scrape_all,
           label: t.scrape_all,
-          icon: Icons.manage_search_outlined,
+          icon: FushiIcons.manageSearch,
           enabled: !busy,
           onTap: () {
             if (!busy) unawaited(widget.onScrapeAll!());
@@ -296,7 +400,7 @@ class _MediaSourcesPageState extends ConsumerState<MediaSourcesPage> {
         FushiIconButton(
           tooltip: t.video_source_scrape_clear_all,
           label: t.video_source_scrape_clear_all,
-          icon: Icons.delete_sweep_outlined,
+          icon: FushiIcons.deleteSweep,
           enabledColor: Theme.of(context).colorScheme.error,
           enabled: !busy,
           onTap: _clearAllScrapeRecords,
@@ -306,8 +410,8 @@ class _MediaSourcesPageState extends ConsumerState<MediaSourcesPage> {
           tooltip: t.video_source_scrape_tasks_open,
           label: t.video_source_scrape_tasks_open,
           icon: widget.scrapeTaskController?.isBusy == true
-              ? Icons.sync
-              : Icons.pending_actions_outlined,
+              ? FushiIcons.sync
+              : FushiIcons.pending,
           onTap: widget.onOpenScrapeTasks,
         ),
     ];

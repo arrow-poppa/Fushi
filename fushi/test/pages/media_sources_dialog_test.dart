@@ -1,5 +1,5 @@
 // TODO-817 M1c MediaSourcesDialog widget 行为 + 源码守卫测试：
-//  (1) 空扫描根仍显示 Hibiki 互联；漫画**不再**在这里显示 Mokuro.moe（BUG-1431）。
+//  (1) 空扫描根仍显示 Fushi 互联；漫画**不再**在这里显示 Mokuro.moe（BUG-1431）。
 //  (2) 预置 video 来源 -> 按 sortOrder 渲染 label/rootPath/统计文案。
 //  (3) lastScanError != null -> 显示 media_source_scan_error。
 //  (4) 移除来源 -> 确认对话框含 media_source_remove_keeps_media；确认后该来源消失，
@@ -13,10 +13,11 @@ import 'dart:io';
 
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/models.dart';
+import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/media_sources_dialog.dart';
 import 'package:fushi_core/fushi_core.dart';
 
@@ -35,8 +36,13 @@ Future<void> _pumpDialog(
   FushiDatabase db,
   String mediaKind,
 ) async {
+  // 移除来源会顺带修正「默认下载来源」偏好（BUG-2755），所以装配真实偏好仓库。
   final AppModel appModel = AppModel(testPlatformServices())
-    ..wireDatabaseForTesting(db);
+    ..wireDatabaseForTesting(db)
+    ..wireLocalAudioForTesting(
+      prefsRepo: PreferencesRepository(db),
+      databaseDirectory: Directory.systemTemp,
+    );
   await tester.pumpWidget(
     ProviderScope(
       overrides: <Override>[
@@ -178,12 +184,17 @@ void main() {
     await _pumpDialog(tester, db, 'video');
 
     expect(find.text('Anime'), findsOneWidget);
+    // 诊断包导出收进行尾「⋯」菜单（M3E 行只留高频动作）：先打开菜单再找。
+    await tester.tap(find.byKey(ValueKey<String>('media_source_menu_$anime')));
+    await tester.pumpAndSettle();
     expect(
       find.byKey(
         ValueKey<String>('video_scrape_diagnostic_export_$anime'),
       ),
       findsOneWidget,
     );
+    await tester.tapAt(Offset.zero);
+    await tester.pumpAndSettle();
     expect(find.text('/srv/anime'), findsOneWidget);
     expect(find.text('Movies'), findsOneWidget);
     // 统计文案用「N videos」（视频量词），N = 累计拥有数（2），不是 mediaCount(68)。
@@ -220,8 +231,10 @@ void main() {
     ));
     await _pumpDialog(tester, db, 'video');
 
-    // 点移除图标 -> 确认对话框。
-    await tester.tap(find.byIcon(Icons.remove_circle_outline));
+    // 行尾「⋯」菜单 -> 移除 -> 确认对话框。
+    await tester.tap(find.byKey(ValueKey<String>('media_source_menu_$sid')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(ValueKey<String>('media_source_remove_$sid')));
     await tester.pumpAndSettle();
     expect(find.text('Removing a source does not delete imported media.'),
         findsOneWidget);
@@ -291,7 +304,7 @@ void main() {
     await tester.pumpAndSettle();
 
     // 点「重新扫描」启动 async _rescan（此刻 State 仍 mounted）。
-    await tester.tap(find.byIcon(Icons.refresh));
+    await tester.tap(find.byTooltip('Rescan'));
     await tester.pump(); // 让 _rescan 起步进入 await（scan 尚未完成）。
 
     // 扫描 in-flight 时把对话框整棵换出树 -> State dispose。
@@ -359,10 +372,23 @@ void main() {
     late String src;
     setUpAll(() {
       // 实现体已从对话框文件搬到 [MediaSourcesView]（对话框与库页「来源」视图共用
-      // 同一份行为），守卫因此跟着扫内容体文件；断言逐条不变。
+      // 同一份行为），守卫因此跟着扫内容体文件；断言逐条不变。移除来源的落库步骤
+      // （含凭据清除）收进 removeSourceLibrary（BUG-2755），两份一起扫。
       src = File(
-        'lib/src/pages/implementations/media_sources_view.dart',
-      ).readAsStringSync();
+            'lib/src/pages/implementations/media_sources_view.dart',
+          ).readAsStringSync() +
+          File(
+            'lib/src/media/source_library/source_library_removal.dart',
+          ).readAsStringSync();
+    });
+
+    test('source removal goes through removeSourceLibrary', () {
+      expect(
+          File('lib/src/pages/implementations/media_sources_view.dart')
+              .readAsStringSync()
+              .contains('removeSourceLibrary('),
+          isTrue,
+          reason: '视图移除来源必须走 removeSourceLibrary（凭据与下载引用一起处理）');
     });
 
     test('secrets go through SourceLibraryCredentialStore, not the source row',
@@ -399,13 +425,14 @@ void main() {
     test('webdav transport wired: segment + WebDavSyncBackend test connection',
         () {
       // TODO-1274: WebDAV 作为第三种网络传输接入——transport 集含 webdav（书/漫画
-      // 三选、视频仅 WebDAV，见 _networkTransports），测试连接复用 sync 子系统的
+      // 四选、视频去掉 FTP，见 _networkTransports），测试连接复用 sync 子系统的
       // WebDavSyncBackend（PROPFIND 探活），凭据仍走 saveSecret（上面的红线守卫
       // 覆盖），绝不作为列写进来源行。
-      expect(src.contains("const <String>['sftp', 'ftp', 'webdav']"), isTrue,
-          reason: '书/漫画的网络来源 transport 集必须提供 SFTP/FTP/WebDAV 三选');
-      expect(src.contains("const <String>['webdav']"), isTrue,
-          reason: '视频网络来源必须收窄到仅 WebDAV（SFTP/FTP 无 HTTP 直链不可播）');
+      expect(src.contains("const <String>['sftp', 'ftp', 'webdav', 'alist']"),
+          isTrue,
+          reason: '书/漫画的网络来源 transport 集必须提供 SFTP/FTP/WebDAV/AList 四选');
+      expect(src.contains("const <String>['sftp', 'webdav', 'alist']"), isTrue,
+          reason: '视频网络来源必须收窄到 SFTP/WebDAV/AList（FTP 读不了区间不可 seek）');
       expect(src.contains('WebDavSyncBackend.instance.testConnection'), isTrue,
           reason: 'WebDAV 测试连接必须复用 sync 的 WebDavSyncBackend');
     });

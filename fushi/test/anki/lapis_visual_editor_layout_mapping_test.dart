@@ -3,14 +3,16 @@
 // 都走真实页面：装载 → 交互 → 点保存 → 断言弹回的 [LapisVisualEditorResult]。
 // 纯函数层（位置 CSS 生成 / 字段来源真相源）的守卫在
 // packages/fushi_anki/test/lapis_styling_test.dart。
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_colorpicker/flutter_colorpicker.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/anki/lapis_style_editor_page.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 
 import 'lapis_style_editor_harness.dart';
+import '../helpers/glass_unwrap.dart';
 
 /// 展开某个 [ExpansionTile] 并等动画结束。
 Future<void> _expand(WidgetTester tester, String title) async {
@@ -19,6 +21,42 @@ Future<void> _expand(WidgetTester tester, String title) async {
 }
 
 void main() {
+  group('首行缩进', () {
+    testWidgets('选了缩进档位后保存，托管区段带上 text-indent', (WidgetTester tester) async {
+      useWideWindow(tester);
+
+      final LapisVisualEditorResult? result = await openEditorAndSave(
+        tester,
+        initialCustomCss: '',
+        interact: (WidgetTester tester) async {
+          final Finder menu = find.byWidgetPredicate(
+            (Widget widget) =>
+                widget is FushiDropdownMenu<int> &&
+                '${(widget.key as ValueKey<String>?)?.value}'
+                    .startsWith('text-indent-'),
+          );
+          await tester.ensureVisible(menu);
+          await tester.pumpAndSettle();
+          await tester.tap(menu);
+          await tester.pumpAndSettle();
+          await tester.tap(
+            find.text(t.anki_lapis_visual_text_indent_chars(count: '2')).last,
+          );
+          await tester.pumpAndSettle();
+        },
+      );
+
+      expect(result, isNotNull);
+      expect(result!.customCss, contains('text-indent: 2.00em !important;'));
+      final LapisVisualStyleSheet sheet =
+          splitLapisVisualStyleSheet(result.customCss);
+      expect(
+        sheet.rules.values.map((LapisVisualRule r) => r.textIndentPercent),
+        contains(200),
+      );
+    });
+  });
+
   group('区块位置', () {
     testWidgets('选了例句位置后保存，托管区段带上桌面+移动端变量', (WidgetTester tester) async {
       useWideWindow(tester);
@@ -234,12 +272,10 @@ void main() {
       await tester.tap(find.text('Expression'));
       await tester.pumpAndSettle();
 
-      final FilledButton save = tester.widget<FilledButton>(
-        find.ancestor(
-          of: find.byIcon(Icons.save_outlined),
+      final FilledButton save = tester.widget<FilledButton>(glassUnwrap<FilledButton>(find.ancestor(
+          of: find.byIcon(FushiIcons.save),
           matching: find.byType(FilledButton),
-        ),
-      );
+        )),);
       expect(save.onPressed, isNull, reason: '改回原值仍算 dirty，保存按钮假亮');
     });
   });
@@ -287,7 +323,7 @@ void main() {
         initialBlocks: initial,
         interact: (WidgetTester tester) async {
           // 已有区域时该折叠区默认就是展开的，不能再点一次（会收起）。
-          await tester.tap(find.byIcon(Icons.delete_outline).first);
+          await tester.tap(find.byIcon(FushiIcons.delete).first);
           await tester.pumpAndSettle();
         },
       );
@@ -453,7 +489,9 @@ void main() {
         initialCustomCss: '',
         interact: (WidgetTester tester) async {
           // 文字颜色那一行的取色器入口（第一个调色板图标）。
-          await tester.tap(find.byIcon(Icons.palette_outlined).first);
+          await tester.ensureVisible(find.byIcon(FushiIcons.appearance).first);
+          await tester.pumpAndSettle();
+          await tester.tap(find.byIcon(FushiIcons.appearance).first);
           await tester.pumpAndSettle();
           expect(find.byType(ColorPicker), findsOneWidget);
           await tester.tap(find.text(t.dialog_ok));
@@ -476,6 +514,7 @@ void main() {
       useWideWindow(tester);
       await tester.pumpWidget(
         MaterialApp(
+          builder: lapisLegacyBridgeBuilder,
           home: LapisStyleEditorPage(
             initialCustomCss: '',
             fontScalePercent: 100,
@@ -484,7 +523,9 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      await tester.tap(find.byIcon(Icons.palette_outlined).first);
+      await tester.ensureVisible(find.byIcon(FushiIcons.appearance).first);
+      await tester.pumpAndSettle();
+      await tester.tap(find.byIcon(FushiIcons.appearance).first);
       await tester.pumpAndSettle();
       await tester.tap(
         find.descendant(
@@ -494,12 +535,10 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      final FilledButton save = tester.widget<FilledButton>(
-        find.ancestor(
-          of: find.byIcon(Icons.save_outlined),
+      final FilledButton save = tester.widget<FilledButton>(glassUnwrap<FilledButton>(find.ancestor(
+          of: find.byIcon(FushiIcons.save),
           matching: find.byType(FilledButton),
-        ),
-      );
+        )),);
       expect(save.onPressed, isNull, reason: '取消取色仍写了颜色');
     });
 

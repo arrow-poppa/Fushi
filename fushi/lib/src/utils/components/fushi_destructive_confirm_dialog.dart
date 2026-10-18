@@ -1,27 +1,39 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/sync/deletion_disclosure.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
 
 /// [FushiDestructiveConfirmDialog] 的返回值。
 ///
 /// pop `null` = 取消；非 null = 已确认，[checked] 携带可选勾选项状态
 /// （无 [FushiDestructiveConfirmDialog.checkboxLabel] 时恒为 false）。
-/// [deleteLocalFiles] 是挂在 [checked] 之下的二级勾选（无
-/// [FushiDestructiveConfirmDialog.localFilesSubtitle] 或主勾选未勾时恒为 false）。
+/// [deleteLocalFiles] / [deleteStatistics] 是挂在 [checked] 之下的两个二级勾选
+/// （对应的 subtitle 没传、或主勾选未勾时恒为 false）；没有主勾选时
+/// [deleteStatistics] 是独立勾选行的状态。
 @immutable
 class FushiDestructiveConfirmResult {
   const FushiDestructiveConfirmResult({
     required this.checked,
     this.deleteLocalFiles = false,
+    this.deleteStatistics = false,
+    this.deleteSubscriptions = false,
   });
 
   final bool checked;
 
   /// 用户是否要求连磁盘上的原始文件一起删（仅在 [checked] 为真时可能为真）。
   final bool deleteLocalFiles;
+
+  /// 用户是否要求连这些媒体攒下的统计一起删（有主勾选时仅在 [checked] 为真时
+  /// 可能为真）。
+  final bool deleteStatistics;
+
+  /// 用户是否要求连归属的下载订阅一起删（没传
+  /// [FushiDestructiveConfirmDialog.deleteSubscriptionsLabel] 时恒为 false）。
+  final bool deleteSubscriptions;
 }
 
 /// 全 app 统一的「确认销毁」对话框。
@@ -43,14 +55,18 @@ class FushiDestructiveConfirmDialog extends StatefulWidget {
     this.checkboxLabel,
     this.checkboxInitialValue = false,
     this.localFilesSubtitle,
+    this.statisticsSubtitle,
     this.checkedDisclosure,
+    this.checkedNote,
+    this.deleteSubscriptionsLabel,
     this.checkboxKey,
+    this.confirmKey,
     this.requireCheckboxToConfirm = false,
     super.key,
   }) : assert(
-          !requireCheckboxToConfirm || checkboxLabel != null,
-          '防呆闸没有勾选项就是一颗永远点不动的按钮',
-        );
+         !requireCheckboxToConfirm || checkboxLabel != null,
+         '防呆闸没有勾选项就是一颗永远点不动的按钮',
+       );
 
   final String title;
   final String message;
@@ -78,6 +94,17 @@ class FushiDestructiveConfirmDialog extends StatefulWidget {
   /// 会在用户下次勾主选时静默删掉磁盘原件。
   final String? localFilesSubtitle;
 
+  /// 「同时删除统计数据」二级勾选行的副标题；null = 这个入口不提供该选项，结果里
+  /// 的 [FushiDestructiveConfirmResult.deleteStatistics] 恒 false。
+  ///
+  /// 与 [localFilesSubtitle] 同款纪律（必填副标题、只在主勾选为真时可见、主勾选
+  /// 取消时复位），但**默认恒为未勾且不被记忆**：统计是与「这条媒体还在不在库里」
+  /// 正交的另一类事实，删条目远比删统计常见，默认值站在保留那一侧。
+  ///
+  /// 没有主勾选（[checkboxLabel] 为 null，如游戏库「移除游戏」：确认即删条目本身）
+  /// 时，它作为独立勾选行直接挂在正文下方。
+  final String? statisticsSubtitle;
+
   /// 勾选框被勾上后追加渲染的「会被删除 / 会被保留」逐项披露。
   ///
   /// 根因（BUG-1305）：本对话框的正文 [message] 与勾选行是两个静态节点，勾选翻转
@@ -86,8 +113,23 @@ class FushiDestructiveConfirmDialog extends StatefulWidget {
   /// 在勾选状态上，正文才不会再和实际行为说反话。
   final DeletionDisclosure? checkedDisclosure;
 
+  /// 勾选框被勾上后才追加在勾选行下方的一句说明（勾选会多带出的后果，如「对应
+  /// 的视频也会从媒体库中移除」）。与 [checkedDisclosure] 同理挂在勾选状态上：
+  /// 不勾时这件事不会发生，就不该出现在正文里。
+  final String? checkedNote;
+
+  /// 非 null 时在正文下方渲染独立勾选行「同时删除 N 个下载订阅」（删合集用）。
+  ///
+  /// 与主勾选**正交**：订阅删不删与成员本体删不删无关——只解散合集也该能把
+  /// 往这个合集里追更的订阅停掉。默认勾上：合集都不要了，订阅还在后台按身份
+  /// 继续下载，是用户最不想要的结果；null = 这个合集没有归属订阅，不摆这一行。
+  final String? deleteSubscriptionsLabel;
+
   /// 勾选行的 key（供测试 / 集成测试焦点驱动定位）。
   final Key? checkboxKey;
+
+  /// 确认（破坏性）按钮的 key（供测试 / 集成测试定位）。
+  final Key? confirmKey;
 
   /// **防呆闸**：true 时确认按钮在勾选前恒禁用（`onPressed: null`）。
   ///
@@ -106,6 +148,26 @@ class _FushiDestructiveConfirmDialogState
     extends State<FushiDestructiveConfirmDialog> {
   late bool _checked = widget.checkboxInitialValue;
   bool _deleteLocalFiles = false;
+  // 统计删除**永远**从未勾开始，也不进「记住这些选择」：删条目是常事，把看它花掉
+  // 的那些小时从图表里抹掉是另一件事，而且按身份立碑后其他设备也跟着删、没有撤销。
+  bool _deleteStatistics = false;
+  bool _deleteSubscriptions = true;
+
+  /// 统计勾选此刻是否可见：有主勾选时跟随主勾选，没有主勾选时恒可见。
+  bool get _statisticsOffered =>
+      widget.statisticsSubtitle != null &&
+      (widget.checkboxLabel == null || _checked);
+
+  /// 勾选态叠加后的披露：两个二级勾选各自把对应条目从「保留」翻到「删除」，
+  /// 与 `ReaderHistoryDeleteDialog` / 视频删除框同一叠加顺序（幂等、可交换）。
+  DeletionDisclosure _shownDisclosure(DeletionDisclosure base) {
+    DeletionDisclosure shown = base;
+    if (_deleteLocalFiles) shown = shown.withLocalFilesDeleted();
+    if (_statisticsOffered && _deleteStatistics) {
+      shown = shown.withStatisticsDeleted();
+    }
+    return shown;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -114,7 +176,10 @@ class _FushiDestructiveConfirmDialogState
     return FushiDialogFrame(
       maxWidth: 420,
       maxHeightFactor: 0.74,
+      // 勾选后披露正文会长于矮窗口：仅正文滚动，确认/取消始终留在面板内。
+      scrollable: false,
       child: FushiModalSheetFrame(
+        scrollable: true,
         title: widget.title,
         leadingIcon: widget.leadingIcon,
         bodyPadding: EdgeInsets.fromLTRB(
@@ -144,8 +209,8 @@ class _FushiDestructiveConfirmDialogState
                 // 原始视频文件）」），不是列表里的标题短语。[FushiListItem] 的
                 // titleMaxLines 默认 1 + ellipsis，在 420 宽的对话框里会把括号
                 // 里的免责说明整段吃掉，用户读到的是「…保留你的原始视…」——恰好
-                // 是最需要看清的那半句。此处父容器高度自由（外层
-                // [FushiDialogFrame] 默认 scrollable），放开行数不会像
+                // 是最需要看清的那半句。此处正文在 [FushiModalSheetFrame] 内滚动，
+                // 高度自由，放开行数不会像
                 // BUG-1184 的固定高容器那样撑破布局。
                 titleMaxLines: 3,
                 title: Text(widget.checkboxLabel!),
@@ -153,17 +218,17 @@ class _FushiDestructiveConfirmDialogState
                 // 焦点遍历（单站点契约，行即唯一停靠点）。
                 leading: ExcludeFocus(
                   child: IgnorePointer(
-                    child: Checkbox(
-                      value: _checked,
-                      onChanged: (_) {},
-                    ),
+                    child: FushiCheckbox(value: _checked, onChanged: (_) {}),
                   ),
                 ),
                 onTap: () => setState(() {
                   _checked = !_checked;
-                  // 主勾选取消 = 连成员都不删，磁盘原件更无从谈起；不复位就会留下
-                  // 一个看不见的 true。
-                  if (!_checked) _deleteLocalFiles = false;
+                  // 主勾选取消 = 连成员都不删，磁盘原件与统计更无从谈起；不复位
+                  // 就会留下一个看不见的 true。
+                  if (!_checked) {
+                    _deleteLocalFiles = false;
+                    _deleteStatistics = false;
+                  }
                 }),
               ),
               if (_checked && widget.localFilesSubtitle != null)
@@ -172,16 +237,63 @@ class _FushiDestructiveConfirmDialogState
                   subtitle: widget.localFilesSubtitle!,
                   onChanged: (bool v) => setState(() => _deleteLocalFiles = v),
                 ),
+              if (_statisticsOffered)
+                DeleteStatisticsRow(
+                  value: _deleteStatistics,
+                  subtitle: widget.statisticsSubtitle!,
+                  onChanged: (bool v) => setState(() => _deleteStatistics = v),
+                ),
+              if (_checked && widget.checkedNote != null)
+                Padding(
+                  padding: EdgeInsets.only(top: tokens.spacing.gap / 2),
+                  child: Text(
+                    widget.checkedNote!,
+                    key: const ValueKey<String>(
+                      'destructive-confirm-checked-note',
+                    ),
+                    style: tokens.type.listSubtitle,
+                  ),
+                ),
               if (_checked && widget.checkedDisclosure != null) ...<Widget>[
                 SizedBox(height: tokens.spacing.gap),
                 DeletionDisclosureView(
-                  // 勾了「同时删除本地文件」时披露必须跟着翻面，否则又回到
-                  // BUG-1305 那种「正文说保留、代码在删」的说反话状态。
-                  disclosure: _deleteLocalFiles
-                      ? widget.checkedDisclosure!.withLocalFilesDeleted()
-                      : widget.checkedDisclosure!,
+                  // 勾了「同时删除本地文件」/「同时删除统计数据」时披露必须跟着
+                  // 翻面，否则又回到 BUG-1305 那种「正文说保留、代码在删」的说
+                  // 反话状态。
+                  disclosure: _shownDisclosure(widget.checkedDisclosure!),
                 ),
               ],
+            ],
+            if (widget.deleteSubscriptionsLabel != null) ...[
+              SizedBox(height: tokens.spacing.gap),
+              FushiListItem(
+                key: const ValueKey<String>(
+                  'destructive-confirm-delete-subscriptions',
+                ),
+                density: FushiListDensity.compact,
+                padding: EdgeInsets.zero,
+                titleMaxLines: 3,
+                title: Text(widget.deleteSubscriptionsLabel!),
+                leading: ExcludeFocus(
+                  child: IgnorePointer(
+                    child: FushiCheckbox(
+                      value: _deleteSubscriptions,
+                      onChanged: (_) {},
+                    ),
+                  ),
+                ),
+                onTap: () => setState(
+                  () => _deleteSubscriptions = !_deleteSubscriptions,
+                ),
+              ),
+            ],
+            if (widget.checkboxLabel == null && _statisticsOffered) ...[
+              SizedBox(height: tokens.spacing.gap),
+              DeleteStatisticsRow(
+                value: _deleteStatistics,
+                subtitle: widget.statisticsSubtitle!,
+                onChanged: (bool v) => setState(() => _deleteStatistics = v),
+              ),
             ],
           ],
         ),
@@ -195,22 +307,31 @@ class _FushiDestructiveConfirmDialogState
               onPressed: () => Navigator.pop(context),
               child: Text(t.dialog_cancel),
             ),
-            adaptiveDialogAction(
-              context: context,
-              isDestructiveAction: true,
-              // 防呆闸：未勾选时 onPressed 为 null，按钮真禁用（不是点了没反应）。
-              onPressed: widget.requireCheckboxToConfirm && !_checked
-                  ? null
-                  : () => Navigator.pop(
+            KeyedSubtree(
+              key: widget.confirmKey,
+              child: adaptiveDialogAction(
+                context: context,
+                isDestructiveAction: true,
+                // 防呆闸：未勾选时 onPressed 为 null，按钮真禁用（不是点了没反应）。
+                onPressed: widget.requireCheckboxToConfirm && !_checked
+                    ? null
+                    : () => Navigator.pop(
                         context,
                         FushiDestructiveConfirmResult(
                           checked: _checked,
-                          deleteLocalFiles: _checked &&
+                          deleteLocalFiles:
+                              _checked &&
                               widget.localFilesSubtitle != null &&
                               _deleteLocalFiles,
+                          deleteStatistics:
+                              _statisticsOffered && _deleteStatistics,
+                          deleteSubscriptions:
+                              widget.deleteSubscriptionsLabel != null &&
+                              _deleteSubscriptions,
                         ),
                       ),
-              child: Text(widget.confirmLabel ?? t.dialog_delete),
+                child: Text(widget.confirmLabel ?? t.dialog_delete),
+              ),
             ),
           ],
         ),

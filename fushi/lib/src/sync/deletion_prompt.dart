@@ -1,5 +1,7 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/sync/deletion_disclosure.dart';
+import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi_engine/sync/deletion_propagation.dart';
 import 'package:fushi/src/sync/deletion_propagation_availability.dart';
 import 'package:fushi/src/sync/deletion_prompt_preferences.dart';
@@ -38,6 +40,7 @@ Future<DeleteDecision?> showDeleteScopeConfirm(
   DeletionDisclosure? disclosure,
   FushiDatabase? db,
   String? localFilesSubtitle,
+  String? statisticsSubtitle,
 }) async {
   final DeletePromptPreferenceStore? preferenceStore =
       db == null ? null : DeletePromptPreferenceStore(db);
@@ -54,6 +57,7 @@ Future<DeleteDecision?> showDeleteScopeConfirm(
       disclosure: disclosure,
       canSyncEverywhere: canSyncEverywhere,
       localFilesSubtitle: localFilesSubtitle,
+      statisticsSubtitle: statisticsSubtitle,
       rememberedChoices: rememberedChoices,
       onPersistChoices: preferenceStore?.write,
     ),
@@ -67,6 +71,7 @@ class _DeleteScopeConfirmDialog extends StatefulWidget {
     this.disclosure,
     this.canSyncEverywhere = true,
     this.localFilesSubtitle,
+    this.statisticsSubtitle,
     this.rememberedChoices,
     this.onPersistChoices,
   });
@@ -80,6 +85,13 @@ class _DeleteScopeConfirmDialog extends StatefulWidget {
   /// null = 这条目没有本机可删的原件 → 不渲染勾选框，恒 deleteLocalFiles=false。
   /// 非 null = 渲染，且这句副标题必须如实说清这个入口到底删什么。
   final String? localFilesSubtitle;
+
+  /// null = 这个入口不提供「同时删除统计数据」→ 恒 deleteStatistics=false。
+  /// 非 null = 渲染勾选行，副标题如实说清删掉的是哪些统计口径。
+  ///
+  /// 与另外两个勾选不同，它**不进**「记住这些选择」，每次都从未勾开始（见
+  /// [DeleteStatisticsRow]）。
+  final String? statisticsSubtitle;
   final DeletePromptRememberedChoices? rememberedChoices;
   final Future<void> Function(DeletePromptRememberedChoices?)?
       onPersistChoices;
@@ -92,6 +104,7 @@ class _DeleteScopeConfirmDialog extends StatefulWidget {
 class _DeleteScopeConfirmDialogState extends State<_DeleteScopeConfirmDialog> {
   late bool _syncDelete;
   late bool _deleteLocalFiles;
+  bool _deleteStatistics = false;
   late bool _rememberChoices;
   bool _saving = false;
 
@@ -126,8 +139,18 @@ class _DeleteScopeConfirmDialogState extends State<_DeleteScopeConfirmDialog> {
             : DeleteScope.keepLocalOnly,
         deleteLocalFiles:
             widget.localFilesSubtitle != null && _deleteLocalFiles,
+        deleteStatistics:
+            widget.statisticsSubtitle != null && _deleteStatistics,
       ),
     );
+  }
+
+  /// 披露跟着两个二级勾选翻面：勾了哪个，对应条目就从「会被保留」挪进「会被删除」。
+  DeletionDisclosure _shownDisclosure(DeletionDisclosure base) {
+    DeletionDisclosure shown = base;
+    if (_deleteLocalFiles) shown = shown.withLocalFilesDeleted();
+    if (_deleteStatistics) shown = shown.withStatisticsDeleted();
+    return shown;
   }
 
   @override
@@ -136,9 +159,13 @@ class _DeleteScopeConfirmDialogState extends State<_DeleteScopeConfirmDialog> {
     return FushiDialogFrame(
       maxWidth: 420,
       maxHeightFactor: 0.74,
+      // 底部「取消 / 删除」钉住，只让正文滚：M3E 分组勾选卡把正文撑高后，整框
+      // 一起滚会把「删除」推到 74% 高度之外，矮窗口（800x600）里要先滚才按得到。
+      scrollable: false,
       child: FushiModalSheetFrame(
+        scrollable: true,
         title: widget.title,
-        leadingIcon: Icons.delete_outline,
+        leadingIcon: FushiIcons.delete,
         bodyPadding: EdgeInsets.fromLTRB(
             tokens.spacing.card, 0, tokens.spacing.card, tokens.spacing.gap),
         footerPadding: EdgeInsets.fromLTRB(tokens.spacing.card,
@@ -151,34 +178,49 @@ class _DeleteScopeConfirmDialogState extends State<_DeleteScopeConfirmDialog> {
             if (widget.disclosure != null) ...<Widget>[
               SizedBox(height: tokens.spacing.gap),
               DeletionDisclosureView(
-                disclosure: _deleteLocalFiles
-                    ? widget.disclosure!.withLocalFilesDeleted()
-                    : widget.disclosure!,
+                disclosure: _shownDisclosure(widget.disclosure!),
               ),
             ],
             SizedBox(height: tokens.spacing.gap),
-            if (widget.canSyncEverywhere)
-              DeleteConfirmCheckboxRow(
-                title: t.delete_scope_sync_everywhere,
-                subtitle: _syncDelete
-                    ? t.delete_scope_sync_everywhere_desc
-                    : t.delete_scope_keep_local_desc,
-                value: _syncDelete,
-                onChanged: (bool v) => setState(() => _syncDelete = v),
-              )
-            else
+            if (!widget.canSyncEverywhere) ...<Widget>[
               const DeleteScopeUnavailableNote(),
-            if (widget.localFilesSubtitle != null)
-              DeleteLocalFilesRow(
-                value: _deleteLocalFiles,
-                subtitle: widget.localFilesSubtitle!,
-                onChanged: (bool v) => setState(() => _deleteLocalFiles = v),
-              ),
-            if (widget.canSyncEverywhere || widget.localFilesSubtitle != null)
-              DeleteRememberChoicesRow(
-                value: _rememberChoices,
-                onChanged: (bool v) => setState(() => _rememberChoices = v),
-              ),
+              SizedBox(height: tokens.spacing.gap / 2),
+            ],
+            // M3E：勾选项收成一组分段卡片（首尾大圆角、行间 2）。
+            FushiGroupedList(
+              children: <Widget>[
+                if (widget.canSyncEverywhere)
+                  DeleteConfirmCheckboxRow(
+                    title: t.delete_scope_sync_everywhere,
+                    subtitle: _syncDelete
+                        ? t.delete_scope_sync_everywhere_desc
+                        : t.delete_scope_keep_local_desc,
+                    value: _syncDelete,
+                    onChanged: (bool v) => setState(() => _syncDelete = v),
+                  ),
+                if (widget.localFilesSubtitle != null)
+                  DeleteLocalFilesRow(
+                    value: _deleteLocalFiles,
+                    subtitle: widget.localFilesSubtitle!,
+                    onChanged: (bool v) =>
+                        setState(() => _deleteLocalFiles = v),
+                  ),
+                if (widget.statisticsSubtitle != null)
+                  DeleteStatisticsRow(
+                    value: _deleteStatistics,
+                    subtitle: widget.statisticsSubtitle!,
+                    onChanged: (bool v) =>
+                        setState(() => _deleteStatistics = v),
+                  ),
+                if (widget.canSyncEverywhere ||
+                    widget.localFilesSubtitle != null)
+                  DeleteRememberChoicesRow(
+                    value: _rememberChoices,
+                    onChanged: (bool v) =>
+                        setState(() => _rememberChoices = v),
+                  ),
+              ],
+            ),
           ],
         ),
         footer: Wrap(
@@ -260,7 +302,7 @@ class _DeletionPromptDialogState extends State<DeletionPromptDialog> {
       scrollable: false,
       child: FushiModalSheetFrame(
         title: t.delete_prompt_title,
-        leadingIcon: Icons.delete_sweep_outlined,
+        leadingIcon: FushiIcons.deleteSweep,
         bodyPadding: EdgeInsets.fromLTRB(
           tokens.spacing.card,
           0,
@@ -287,24 +329,27 @@ class _DeletionPromptDialogState extends State<DeletionPromptDialog> {
                 constraints: BoxConstraints(
                   maxHeight: MediaQuery.of(context).size.height * 0.44,
                 ),
-                child: ListView.builder(
-                  shrinkWrap: true,
-                  itemCount: widget.views.length,
-                  itemBuilder: (_, int i) {
-                    final DeletionCandidateView v = widget.views[i];
-                    return AdaptiveSettingsRow(
-                      title: v.title,
-                      onTap: () => _toggle(i),
-                      trailing: Icon(
-                        _checked.contains(i)
-                            ? Icons.check_box
-                            : Icons.check_box_outline_blank,
-                        color: _checked.contains(i)
-                            ? Theme.of(context).colorScheme.primary
-                            : Theme.of(context).colorScheme.onSurfaceVariant,
-                      ),
-                    );
-                  },
+                child: FushiEntranceScope(
+                  child: ListView.builder(
+                    shrinkWrap: true,
+                    itemCount: widget.views.length,
+                    // M3E：候选是分段卡片（首尾大圆角、行间 2），错峰进场。
+                    itemBuilder: fushiStaggeredItemBuilder(
+                      (BuildContext context, int i) {
+                        final DeletionCandidateView v = widget.views[i];
+                        return FushiGroupedListItem(
+                          index: i,
+                          count: widget.views.length,
+                          child: DeleteConfirmCheckboxRow(
+                            title: v.title,
+                            value: _checked.contains(i),
+                            destructive: true,
+                            onChanged: (bool _) => _toggle(i),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
                 ),
               ),
             ),

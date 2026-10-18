@@ -1,6 +1,8 @@
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:fushi_engine/ocr/ocr_inference.dart';
+import 'package:fushi_engine/ocr/ocr_types.dart';
 
 /// 漫画整卷 OCR 服务的稳定接口（设计 docs/specs/2026-07-24-manga-ocr-design.md §5.3 生产者 B）。
 ///
@@ -29,9 +31,127 @@ abstract class MangaOcrService {
   /// 对一个裸图片目录跑整卷 OCR，产出内部 manga.json（不落库；落库由
   /// 导入器接手）。事件：逐页完成进度 → 最终 [MangaOcrVolumeEvent.finished]
   /// 携带 manga.json 绝对路径。
+  ///
+  /// [startPage]（按 `enumerateMangaPages` 自然序的页号）是处理起点：从它起
+  /// 向后、再绕回开头补齐（阅读器传当前页，眼前这页最先出结果）。做不到按序
+  /// 的实现（远端 / 外部 CLI）可以忽略它；按序处理的实现必须在逐页事件里如实
+  /// 给出 [MangaOcrVolumeEvent.pageIndex]——完成计数不再等于页号 + 1。
+  /// 产物 manga.json 的内容与页序与起点无关。
   Stream<MangaOcrVolumeEvent> ocrFolder({
     required String imageDirPath,
     String? volumeTitle,
+    int startPage = 0,
+  });
+}
+
+/// 读者当前页的「改道请求」：整卷任务运行中跟着读者走。
+///
+/// 起点页只在开跑那一刻定一次；手机上本地模型一页几十秒，读者翻得比识别快，
+/// 翻到的页永远还没轮到，体感就是「要等整卷识别完」。阅读器每翻一页 [request]
+/// 一次，执行器每处理一页前 [take] 一次，把处理游标挪到读者当前页
+/// （[MangaOcrPageScheduler.focus]）。
+class MangaOcrPageFocus {
+  int? _pending;
+  final List<void Function(int pageIndex)> _listeners =
+      <void Function(int pageIndex)>[];
+
+  /// 读者翻到了 [pageIndex]（按 `enumerateMangaPages` 自然序的页号）。
+  void request(int pageIndex) {
+    if (pageIndex < 0) return;
+    _pending = pageIndex;
+    for (final void Function(int pageIndex) listener
+        in List<void Function(int pageIndex)>.of(_listeners)) {
+      listener(pageIndex);
+    }
+  }
+
+  /// 取走最近一次还没被消费的请求；没有新请求时为 null。
+  int? take() {
+    final int? pending = _pending;
+    _pending = null;
+    return pending;
+  }
+
+  /// 执行器不在本 isolate 时（本地 ONNX 的整卷 isolate）用监听把请求转发过去。
+  void addListener(void Function(int pageIndex) listener) =>
+      _listeners.add(listener);
+
+  void removeListener(void Function(int pageIndex) listener) =>
+      _listeners.remove(listener);
+}
+
+/// 运行中能跟随 [MangaOcrPageFocus] 改道的整卷服务（本地 ONNX）。
+///
+/// 刻意做成可选能力而不是给 [MangaOcrService.ocrFolder] 加参数：远端 / 外部 CLI
+/// 与各测试替身没有「按页序处理」这回事，不该被迫接一个无意义的参数。
+abstract interface class MangaOcrFocusableService {
+  Stream<MangaOcrVolumeEvent> ocrFolder({
+    required String imageDirPath,
+    String? volumeTitle,
+    int startPage = 0,
+    MangaOcrPageFocus? focus,
+  });
+}
+
+/// 可选的页级能力（阅读器「边看边 OCR」）：只填逐页原子缓存，绝不把半卷结果
+/// 发布成 manga.json。
+///
+/// 页级请求走**常驻会话**：检测/识别 ORT 会话（几百 MB 模型）每个会话只建一次，
+/// 之后逐页复用；不再像整卷任务那样每次调用都新起 isolate、重建会话。
+abstract interface class MangaOcrPageService {
+  /// [imageDirPath] 下逐页缓存所在目录的绝对路径
+  /// （`<imageDirPath>/manga_ocr_out/_pages/<引擎签名>`）。
+  ///
+  /// 签名与 [openPageSession] 建出的会话**同源**（同一次按已安装模型解析的
+  /// 签名），调用方可以在打开会话前先按它查缓存命中，不会与会话写入的目录
+  /// 不一致。
+  Future<String> resolvePageCacheDirPath({required String imageDirPath});
+
+  /// 打开一个页级 OCR 会话。平台不支持 / 模型不齐时以错误完成，不建会话。
+  ///
+  /// [onAcceleration] 在会话建成后回报一次实际生效的执行后端与降级原因
+  /// （BUG-1163）。
+  ///
+  /// [textImagesOnly] 为真时会话只做文字图识别（[MangaOcrTextImageSession]，
+  /// 字幕位图整轨识别用）：不加载漫画检测器（RT-DETR）、不建补检，省下内存与
+  /// 建会话时间，便于并行开几个。这种会话上的 [MangaOcrPageSession.ocrPage]
+  /// 以 [StateError] 失败。
+  Future<MangaOcrPageSession> openPageSession({
+    required String imageDirPath,
+    void Function(MangaOcrAcceleration acceleration)? onAcceleration,
+    bool textImagesOnly = false,
+  });
+}
+
+/// 常驻的页级 OCR 会话：请求串行处理，推理会话在 [close] 前一直复用。
+///
+/// 生产实现同时实现 [MangaOcrTextImageSession]；调用方用 `is` 判断可选能力。
+abstract interface class MangaOcrPageSession {
+  /// 识别 [relativeUrl]（相对会话图片目录的正斜杠路径）并写入逐页缓存，
+  /// 返回缓存目录绝对路径（与 [MangaOcrPageService.resolvePageCacheDirPath]
+  /// 相同）。已有有效缓存时直接命中、不跑推理。会话关闭后以 [StateError] 失败；
+  /// 以 `textImagesOnly` 打开的会话上同样以 [StateError] 失败。
+  Future<String> ocrPage(String relativeUrl);
+
+  /// 关闭会话（幂等）：取消在跑页、让挂起请求失败，并释放 isolate 与 ORT 会话。
+  /// 返回的 Future 在资源真正释放后完成。
+  Future<void> close();
+}
+
+/// 页会话的可选能力：直接识别一张已裁好的文字图（字幕位图），跳过漫画检测器、补检、
+/// PNG 落盘与逐页缓存。整图当一个块交 RoutingOcrRecognizer（宽≥高 → PP 行检测 + 逐行识别；
+/// 竖排占多数 → 块识别器）。
+abstract interface class MangaOcrTextImageSession {
+  /// [rgba] 是 width*height*4 字节的 RGBA 像素（行优先）。返回整块识别结果
+  /// （text 为空 = 没读出字）。会话关闭 / 建会话失败时抛错（与 ocrPage 同语义）。
+  ///
+  /// 尺寸非正或 [rgba] 长度不等于 `width * height * 4` 时同步抛 [ArgumentError]。
+  /// 识别器只读 RGB、忽略 alpha：带透明的位图须先合成到底色上再交进来。
+  /// 结果里的坐标（行框）是这张图的像素坐标。
+  Future<OcrRecognition> recognizeTextImage(
+    Uint8List rgba, {
+    required int width,
+    required int height,
   });
 }
 
@@ -126,9 +246,11 @@ class MangaOcrAcceleration {
   bool get degraded => degradeReasons.isNotEmpty;
 
   /// 展示用短标签：两个模型同后端时只显示一个。
-  String get label => detection == recognition
-      ? detection.name.toUpperCase()
-      : '${detection.name.toUpperCase()}/${recognition.name.toUpperCase()}';
+  String get label {
+    return detection == recognition
+        ? detection.name.toUpperCase()
+        : '${detection.name.toUpperCase()}/${recognition.name.toUpperCase()}';
+  }
 
   @override
   String toString() => degraded
@@ -141,19 +263,27 @@ class MangaOcrVolumeEvent {
   const MangaOcrVolumeEvent.page({
     required this.pagesDone,
     required this.pagesTotal,
+    this.pageIndex,
     this.acceleration,
-  })  : mangaJsonPath = null,
-        finished = false;
+  }) : mangaJsonPath = null,
+       finished = false;
 
   const MangaOcrVolumeEvent.finished({
     required this.pagesTotal,
     required String this.mangaJsonPath,
     this.acceleration,
-  })  : pagesDone = pagesTotal,
-        finished = true;
+  }) : pagesDone = pagesTotal,
+       pageIndex = null,
+       finished = true;
 
   final int pagesDone;
   final int pagesTotal;
+
+  /// 刚完成的那一页的真实页号（按 `enumerateMangaPages` 自然序）。
+  ///
+  /// 整卷任务从 `startPage` 起旋转处理，完成计数不等于页号 + 1。null 只表示
+  /// 该实现不报页号（也就没按起点重排），消费方此时才可退回 `pagesDone - 1`。
+  final int? pageIndex;
 
   /// finished 事件携带产出的 manga.json 绝对路径。
   final String? mangaJsonPath;

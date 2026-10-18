@@ -1,30 +1,41 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:archive/archive_io.dart';
 import 'package:dio/dio.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:fushi/media.dart';
+import 'package:fushi/models.dart';
 import 'package:fushi/pages.dart';
-import 'package:fushi/src/media/media_search_text.dart';
+import 'package:fushi/src/media/video/video_subtitle_style.dart';
 import 'package:fushi/src/lookup/gal_hook_text_overlay_controller.dart';
 import 'package:fushi/src/models/app_font_loader.dart';
+import 'package:fushi/src/pages/implementations/font_preview/font_specimen.dart';
+import 'package:fushi/src/pages/implementations/font_preview/font_file_metadata.dart';
+import 'package:fushi/src/pages/implementations/font_preview/font_library_widgets.dart';
+import 'package:fushi/src/pages/implementations/font_preview/font_target_preview.dart';
+import 'package:fushi/src/pages/implementations/font_preview/system_font_browser_page.dart';
+import 'package:fushi/src/pages/implementations/font_preview/system_font_catalog.dart';
 import 'package:fushi/src/reader/font_catalog.dart';
+import 'package:fushi/src/reader/font_download_service.dart';
 import 'package:fushi/src/reader/reader_settings.dart';
+import 'package:fushi/src/media/drag_drop/fushi_file_drop_target.dart';
+import 'package:fushi/src/media/media_search_text.dart';
+import 'package:fushi/src/settings/settings_kit.dart';
+import 'package:fushi/src/utils/components/fushi_reorderable_grid.dart';
+import 'package:fushi/src/utils/components/fushi_search.dart';
+import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/components/batch_action_bar.dart';
-import 'package:fushi/src/utils/misc/channel_constants.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/utils.dart';
-import 'package:fushi_engine/utils/net/app_user_agent.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
+import 'package:fushi_core/fushi_core.dart' show FushiDatabase;
 import 'package:path/path.dart' as p;
-
-const _fontExtensions = {'.ttf', '.otf', '.ttc', '.woff', '.woff2'};
 
 /// A font added from a target-specific entry point must immediately belong to
 /// that target. Previously every add path silently assigned [FontTarget.body],
 /// so fonts downloaded from the dictionary/game lookup settings appeared in
 /// the catalog but had no effect on the surface that opened it.
-@visibleForTesting
 Map<FontTarget, bool> customFontInitialTargets(FontTarget target) =>
     <FontTarget, bool>{target: true};
 
@@ -73,7 +84,7 @@ class CustomFontEntry {
       CustomFontEntry(name: name, path: path, enabled: enabled ?? this.enabled);
 }
 
-@visibleForTesting
+/// 字体目录的一行（页面内存态；浏览器扩展字体端点追加行时也用它）。
 class CustomFontCatalogRow {
   CustomFontCatalogRow({
     required this.id,
@@ -100,7 +111,6 @@ class CustomFontCatalogRow {
   );
 }
 
-@visibleForTesting
 List<CustomFontCatalogRow> customFontCatalogRowsFromState(
   FontCatalogState state,
 ) {
@@ -129,7 +139,6 @@ List<CustomFontCatalogRow> customFontCatalogRowsFromState(
   ];
 }
 
-@visibleForTesting
 FontCatalogState customFontCatalogStateFromRows(
   List<CustomFontCatalogRow> rows,
 ) {
@@ -180,7 +189,6 @@ FontCatalogState customFontCatalogStateFromRows(
   );
 }
 
-@visibleForTesting
 Map<String, List<Map<String, dynamic>>> customFontLegacyListsFromRows(
   List<CustomFontCatalogRow> rows,
 ) {
@@ -202,6 +210,41 @@ bool customFontFileStillReferenced(
   return rows.any((CustomFontCatalogRow row) => row.path == filePath);
 }
 
+/// 删除字体行后清理文件：[rows] 是删除后的目录，仍有别的行引用 [filePath] 时
+/// 不删。返回是否真删了文件；IO 失败抛 [FileSystemException]（调用方决定怎么
+/// 报）。字体库页与控制通道（`CustomFontLibrary`）共用。
+Future<bool> deleteCustomFontFileIfUnreferenced(
+  List<CustomFontCatalogRow> rows,
+  String filePath,
+) async {
+  if (customFontFileStillReferenced(rows, filePath)) return false;
+  final File file = File(filePath);
+  if (!await file.exists()) return false;
+  await file.delete();
+  return true;
+}
+
+/// 这个字体行**格式上**用不了的用途 → 给用户看的原因。
+///
+/// 只有一条来源：native 分层窗（[FontTarget.gameLookup] /
+/// [FontTarget.floatingLyric]，同一个 `FloatingLyricWindow`）的 DirectWrite 只吃裸
+/// sfnt，WOFF/WOFF2 会被 `resolveForNativeOverlay` 静默跳过。判据与 loader 共用
+/// 同一个 [AppFontLoader.nativeOverlayCanUse]。字体库页（禁用对应芯片）与控制
+/// 通道（拒绝写入）共用。
+Map<FontTarget, String> customFontUnsupportedTargets(CustomFontCatalogRow row) {
+  final String? path = row.path;
+  if (AppFontLoader.nativeOverlayCanUse(path)) {
+    return const <FontTarget, String>{};
+  }
+  final String reason = t.import_unsupported_file_format(
+    ext: p.extension(path!).toLowerCase(),
+  );
+  return <FontTarget, String>{
+    FontTarget.gameLookup: reason,
+    FontTarget.floatingLyric: reason,
+  };
+}
+
 int _nextCatalogFontId(List<CustomFontCatalogRow> rows) {
   final RegExp generatedId = RegExp(r'^font_(\d+)$');
   int next = 1;
@@ -219,7 +262,7 @@ int _nextCatalogFontId(List<CustomFontCatalogRow> rows) {
   return next;
 }
 
-@visibleForTesting
+/// 推荐字体表的一项。浏览器扩展的字体端点也按这张表下载，所以不再是仅测试可见。
 class RecommendedFont {
   RecommendedFont({
     required this.name,
@@ -244,7 +287,6 @@ class RecommendedFont {
 //
 // jsDelivr 对整个包 >50MB 的目录会整目录 403（例如 notoserifsc），这类只能
 // 走 GitHub raw；GitHub raw 无此限制，对 CJK 大字体统一补一条兜底直链。
-@visibleForTesting
 List<RecommendedFont> get recommendedFontsCatalog => [
   // ── 推荐首选 ──
   RecommendedFont(
@@ -388,198 +430,6 @@ List<RecommendedFont> get recommendedFontsCatalog => [
   ),
 ];
 
-bool _isFontFile(String path) {
-  return _fontExtensions.contains(p.extension(path).toLowerCase());
-}
-
-// ── 系统字体扫描 ─────────────────────────────────────────────────────────────
-
-const _fontsChannel = FushiChannels.fonts;
-List<String>? _cachedSystemFonts;
-
-Future<List<String>> _getSystemFonts() async {
-  if (_cachedSystemFonts != null && _cachedSystemFonts!.isNotEmpty) {
-    return _cachedSystemFonts!;
-  }
-  if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
-    _cachedSystemFonts = await _getDesktopSystemFonts();
-  } else {
-    try {
-      final result = await _fontsChannel.invokeMethod<List<dynamic>>(
-        'listSystemFonts',
-      );
-      debugPrint('[fushi-fonts] channel returned ${result?.length} fonts');
-      _cachedSystemFonts = result?.cast<String>() ?? [];
-    } catch (e, stack) {
-      ErrorLogService.instance.log('CustomFontsPage.listSystemFonts', e, stack);
-      debugPrint('[fushi-fonts] channel error: $e');
-      _cachedSystemFonts = [];
-    }
-  }
-  return _cachedSystemFonts!;
-}
-
-Future<List<String>> _getDesktopSystemFonts() async {
-  final fontDirs = <String>[];
-  if (Platform.isWindows) {
-    fontDirs.add(r'C:\Windows\Fonts');
-    final localAppData = Platform.environment['LOCALAPPDATA'];
-    if (localAppData != null) {
-      fontDirs.add(p.join(localAppData, r'Microsoft\Windows\Fonts'));
-    }
-  } else if (Platform.isMacOS) {
-    fontDirs.addAll(['/System/Library/Fonts', '/Library/Fonts']);
-    final home = Platform.environment['HOME'];
-    if (home != null) fontDirs.add('$home/Library/Fonts');
-  } else if (Platform.isLinux) {
-    fontDirs.addAll(['/usr/share/fonts', '/usr/local/share/fonts']);
-    final home = Platform.environment['HOME'];
-    if (home != null) fontDirs.add('$home/.local/share/fonts');
-  }
-
-  final names = <String>{};
-  for (final dirPath in fontDirs) {
-    final dir = Directory(dirPath);
-    if (!dir.existsSync()) continue;
-    try {
-      await for (final entity in dir.list(recursive: true)) {
-        if (entity is! File) continue;
-        final ext = p.extension(entity.path).toLowerCase();
-        if (!_fontExtensions.contains(ext)) continue;
-        final name = p
-            .basenameWithoutExtension(entity.path)
-            .replaceAll(RegExp(r'[-_]'), ' ')
-            .replaceAll(
-              RegExp(
-                r'\s+(Regular|Bold|Italic|Light|Medium|Thin|'
-                r'Black|ExtraBold|SemiBold|ExtraLight|Condensed|Expanded)$',
-                caseSensitive: false,
-              ),
-              '',
-            );
-        if (name.isNotEmpty) names.add(name);
-      }
-    } catch (e) {
-      debugPrint('[fushi-fonts] error scanning $dirPath: $e');
-    }
-  }
-  final sorted = names.toList()..sort();
-  debugPrint('[fushi-fonts] desktop scan found ${sorted.length} fonts');
-  return sorted;
-}
-
-// ── 系统字体选择页 ────────────────────────────────────────────────────────────
-
-class _SystemFontPickerPage extends StatefulWidget {
-  const _SystemFontPickerPage({required this.alreadyAdded});
-  final Set<String> alreadyAdded;
-
-  @override
-  State<_SystemFontPickerPage> createState() => _SystemFontPickerPageState();
-}
-
-class _SystemFontPickerPageState extends State<_SystemFontPickerPage> {
-  List<String> _allFonts = [];
-  List<String> _filtered = [];
-  bool _loading = true;
-  final _searchController = TextEditingController();
-
-  @override
-  void initState() {
-    super.initState();
-    _loadFonts();
-  }
-
-  Future<void> _loadFonts() async {
-    final fonts = await _getSystemFonts();
-    if (!mounted) return;
-    setState(() {
-      _allFonts = fonts;
-      _filtered = fonts;
-      _loading = false;
-    });
-  }
-
-  void _onSearch(String query) {
-    // G6：与库页搜索同一归一化口径（日文字体族名常含全角/片假名差异）。
-    setState(() {
-      _filtered = filterByMediaSearch(
-        _allFonts,
-        query,
-        (String f) => <String>[f],
-      );
-    });
-  }
-
-  @override
-  void dispose() {
-    _searchController.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final ColorScheme scheme = Theme.of(context).colorScheme;
-    final List<Widget> fontRows = _loading
-        ? <Widget>[
-            AdaptiveSettingsRow(
-              title: t.custom_fonts_downloading,
-              icon: Icons.hourglass_empty,
-              trailing: adaptiveIndicator(context: context),
-            ),
-          ]
-        : _filtered.isEmpty
-        ? <Widget>[
-            AdaptiveSettingsRow(
-              title: t.custom_fonts_empty,
-              icon: Icons.font_download_outlined,
-            ),
-          ]
-        : _filtered.map((String name) {
-            final bool added = widget.alreadyAdded.contains(name);
-            // Single-choice list: added fonts show a trailing check,
-            // pickable fonts are plain tappable rows. No navigation chevron
-            // — tapping pops this page with the font name, it does not drill
-            // into a subpage, so a `chevron_right` would falsely imply one.
-            return AdaptiveSettingsRow(
-              title: name,
-              icon: Icons.font_download_outlined,
-              trailing: added ? Icon(Icons.check, color: scheme.outline) : null,
-              onTap: added ? null : () => Navigator.pop(context, name),
-            );
-          }).toList();
-
-    return AdaptiveSettingsScaffold(
-      title: Text(t.custom_fonts_add_system),
-      children: [
-        AdaptiveSettingsSection(
-          children: [
-            AdaptiveSettingsRow(
-              title: t.custom_fonts_search_hint,
-              icon: Icons.search,
-              controlBelow: true,
-              trailing: SizedBox(
-                width: double.infinity,
-                child: FushiTextField(
-                  controller: _searchController,
-                  hintText: t.custom_fonts_search_hint,
-                  contentPadding: EdgeInsets.symmetric(
-                    horizontal: tokens.spacing.rowHorizontal,
-                    vertical: tokens.spacing.rowVertical,
-                  ),
-                  onChanged: _onSearch,
-                ),
-              ),
-            ),
-          ],
-        ),
-        AdaptiveSettingsSection(children: fontRows),
-      ],
-    );
-  }
-}
-
 // ── 主页面 ────────────────────────────────────────────────────────────────────
 
 class CustomFontsPage extends BasePage {
@@ -597,20 +447,81 @@ class CustomFontsPage extends BasePage {
   BasePageState createState() => _CustomFontsPageState();
 }
 
-/// 字体用途的显示名。穷尽 switch：新增 [FontTarget] 时这里编译报错，逼着补文案，
-/// 而不是让新用途悄悄顶着枚举名出现在 UI 上。页面标题与每行的用途开关共用。
-String fontTargetLabel(FontTarget target) => switch (target) {
-      FontTarget.appUi => t.font_target_app_ui,
-      FontTarget.body => t.font_target_body,
-      FontTarget.dictionary => t.font_target_dictionary,
-      FontTarget.videoSubtitle => t.font_target_video_subtitle,
-      FontTarget.gameLookup => t.font_target_game_lookup,
-    };
-
 /// 阅读器设置的 DB 偏好 key：经单一真相编码器 [dbSourcePrefKey]（`reader_fushi`
 /// 是冻结的历史 sourceId，旧数据兼容，勿改）。
 String _readerPrefKey(String shortKey) =>
     dbSourcePrefKey(kReaderSourcePersistedKey, shortKey);
+
+/// 读字体目录状态：优先 v2 的 `font_catalog` + `font_targets` 两键，解析不出来
+/// 就从各用途的旧列表（`fontsForTarget`）合成。页面与浏览器扩展字体端点共用。
+Future<FontCatalogState> readCustomFontCatalogState({
+  required FushiDatabase database,
+  required ReaderSettings settings,
+}) async {
+  final String? catalogJson = await database.getPref(
+    _readerPrefKey(ReaderSettings.fontCatalogKey),
+  );
+  final String? targetsJson = await database.getPref(
+    _readerPrefKey(ReaderSettings.fontTargetsKey),
+  );
+  if (catalogJson != null && targetsJson != null) {
+    final FontCatalogState? state = FontCatalogState.tryParse(
+      catalogJson: catalogJson,
+      targetsJson: targetsJson,
+      targetKeys: <String>[
+        for (final FontTarget target in FontTarget.values)
+          ReaderSettings.fontKeyForTarget(target),
+      ],
+    );
+    if (state != null) return state;
+  }
+  return FontCatalogState.fromLegacy(<String, List<Map<String, dynamic>>>{
+    for (final FontTarget target in FontTarget.values)
+      ReaderSettings.fontKeyForTarget(target): settings.fontsForTarget(target),
+  });
+}
+
+/// 把字体目录状态写穿 DB（v2 两键 + 各用途旧列表），再刷新所有消费端：
+/// [ReaderSettings] 缓存、app 全局字体、Windows 的 galgame 分层窗、活着的阅读器。
+/// 页面与浏览器扩展字体端点共用——扩展下载的字体也要立刻在 app 里生效。
+Future<void> persistCustomFontState({
+  required AppModel appModel,
+  required ReaderSettings settings,
+  required FontCatalogState state,
+  required Map<String, List<Map<String, dynamic>>> legacy,
+}) async {
+  await appModel.database.setPref(
+    _readerPrefKey(ReaderSettings.fontCatalogKey),
+    jsonEncode(state.toCatalogJson()),
+  );
+  await appModel.database.setPref(
+    _readerPrefKey(ReaderSettings.fontTargetsKey),
+    jsonEncode(state.toTargetsJson()),
+  );
+  for (final MapEntry<String, List<Map<String, dynamic>>> entry
+      in legacy.entries) {
+    await appModel.database.setPref(
+      _readerPrefKey(entry.key),
+      jsonEncode(entry.value),
+    );
+  }
+  await settings.refreshFromDb();
+  await appModel.refreshAppFont();
+  // 平台门在**取单例之前**：GalHookTextOverlayController.instance 会把整套 galgame
+  // 单例图（含 GalIngameLookupController 与它挂上去、永不释放的监听器）建起来。
+  // 非 Windows 用户只是存了一次字体，不该因此拉起一整个 Windows 专属子系统。
+  if (GalHookTextOverlayController.isSupported) {
+    await GalHookTextOverlayController.instance.applyFontFromSettings();
+  }
+  ReaderFushiSource.onSettingsChangedLive?.call();
+}
+
+/// 字体落地目录：`<appDirectory>/custom_fonts`。不存在时创建。
+Directory customFontsDirectory(Directory appDirectory) {
+  final Directory dir = Directory(p.join(appDirectory.path, 'custom_fonts'));
+  if (!dir.existsSync()) dir.createSync(recursive: true);
+  return dir;
+}
 
 class _CustomFontsPageState extends BasePageState<CustomFontsPage> {
   ReaderSettings? _settings;
@@ -624,6 +535,7 @@ class _CustomFontsPageState extends BasePageState<CustomFontsPage> {
   void initState() {
     super.initState();
     _fontsReady = _initializeFonts();
+    _loadSystemFamilyKeys();
   }
 
   Future<void> _initializeFonts() async {
@@ -639,7 +551,10 @@ class _CustomFontsPageState extends BasePageState<CustomFontsPage> {
         ReaderFushiSource.readerSettings = settings;
       }
       _settings = settings;
-      final FontCatalogState state = await _readCatalogState(settings);
+      final FontCatalogState state = await readCustomFontCatalogState(
+        database: appModelNoUpdate.database,
+        settings: settings,
+      );
       if (!mounted) return;
       setState(() {
         _fonts = customFontCatalogRowsFromState(state);
@@ -664,46 +579,12 @@ class _CustomFontsPageState extends BasePageState<CustomFontsPage> {
 
   /// 这个字体行**格式上**用不了的用途 → 给用户看的原因。
   ///
-  /// 只有一条来源：native 分层窗（[FontTarget.gameLookup]）的 DirectWrite 只吃裸
+  /// 只有一条来源：native 分层窗（[FontTarget.gameLookup] /
+  /// [FontTarget.floatingLyric]，同一个 `FloatingLyricWindow`）的 DirectWrite 只吃裸
   /// sfnt，WOFF/WOFF2 会被 `resolveForNativeOverlay` 静默跳过。判据与 loader 共用
   /// 同一个 [AppFontLoader.nativeOverlayCanUse]，两处不会漂开。
-  Map<FontTarget, String> _unsupportedTargetsFor(CustomFontCatalogRow row) {
-    final String? path = row.path;
-    if (AppFontLoader.nativeOverlayCanUse(path)) {
-      return const <FontTarget, String>{};
-    }
-    return <FontTarget, String>{
-      FontTarget.gameLookup: t.import_unsupported_file_format(
-        ext: p.extension(path!).toLowerCase(),
-      ),
-    };
-  }
-
-  Future<FontCatalogState> _readCatalogState(ReaderSettings settings) async {
-    final String? catalogJson = await appModelNoUpdate.database.getPref(
-      _readerPrefKey(ReaderSettings.fontCatalogKey),
-    );
-    final String? targetsJson = await appModelNoUpdate.database.getPref(
-      _readerPrefKey(ReaderSettings.fontTargetsKey),
-    );
-    if (catalogJson != null && targetsJson != null) {
-      final FontCatalogState? state = FontCatalogState.tryParse(
-        catalogJson: catalogJson,
-        targetsJson: targetsJson,
-        targetKeys: <String>[
-          for (final FontTarget target in FontTarget.values)
-            ReaderSettings.fontKeyForTarget(target),
-        ],
-      );
-      if (state != null) return state;
-    }
-    return FontCatalogState.fromLegacy(<String, List<Map<String, dynamic>>>{
-      for (final FontTarget target in FontTarget.values)
-        ReaderSettings.fontKeyForTarget(target): settings.fontsForTarget(
-          target,
-        ),
-    });
-  }
+  Map<FontTarget, String> _unsupportedTargetsFor(CustomFontCatalogRow row) =>
+      customFontUnsupportedTargets(row);
 
   Future<void> _save() {
     final FontCatalogState state = customFontCatalogStateFromRows(_fonts);
@@ -714,7 +595,12 @@ class _CustomFontsPageState extends BasePageState<CustomFontsPage> {
     // previous multi-key write finishes. Preserve invocation order so an older
     // refresh cannot overwrite the newest in-memory target selection.
     final Future<void> operation = _saveTail.then(
-      (_) => _persistFontState(state, legacy),
+      (_) => persistCustomFontState(
+        appModel: appModel,
+        settings: _settings!,
+        state: state,
+        legacy: legacy,
+      ),
     );
     _saveTail = operation.catchError((Object error, StackTrace stack) {
       ErrorLogService.instance.log('CustomFontsPage.save', error, stack);
@@ -722,384 +608,176 @@ class _CustomFontsPageState extends BasePageState<CustomFontsPage> {
     return operation;
   }
 
-  Future<void> _persistFontState(
-    FontCatalogState state,
-    Map<String, List<Map<String, dynamic>>> legacy,
-  ) async {
-    await appModel.database.setPref(
-      _readerPrefKey(ReaderSettings.fontCatalogKey),
-      jsonEncode(state.toCatalogJson()),
-    );
-    await appModel.database.setPref(
-      _readerPrefKey(ReaderSettings.fontTargetsKey),
-      jsonEncode(state.toTargetsJson()),
-    );
-    for (final MapEntry<String, List<Map<String, dynamic>>> entry
-        in legacy.entries) {
-      await appModel.database.setPref(
-        _readerPrefKey(entry.key),
-        jsonEncode(entry.value),
-      );
+  /// 文件层执行体（复制 / 解包 / 多源下载），与浏览器扩展字体端点共用同一份。
+  late final FontDownloadService _fontService = FontDownloadService(
+    fontsDir: customFontsDirectory(appModel.appDirectory),
+  );
+
+  /// 把服务落好的文件登记成目录行，挂到本次进入页面的作用域用途。
+  /// 文件导入 / 压缩包解包 / 推荐字体下载 / URL 下载四个入口都汇到这里。
+  int _appendImported(List<ImportedFontFile> files) {
+    final List<CustomFontCatalogRow> rows = <CustomFontCatalogRow>[
+      for (final ImportedFontFile file in files)
+        CustomFontCatalogRow(
+          id: null,
+          name: file.name,
+          path: file.path,
+          targetEnabled: _newFontTargets(),
+        ),
+    ];
+    if (rows.isEmpty) return 0;
+    if (mounted) {
+      setState(() => _fonts.addAll(rows));
+    } else {
+      _fonts.addAll(rows);
     }
-    await _settings!.refreshFromDb();
-    await appModel.refreshAppFont();
-    // 平台门在**取单例之前**：GalHookTextOverlayController.instance 会把整套 galgame
-    // 单例图（含 GalIngameLookupController 与它挂上去、永不释放的监听器）建起来。
-    // 非 Windows 用户只是存了一次字体，不该因此拉起一整个 Windows 专属子系统。
-    if (GalHookTextOverlayController.isSupported) {
-      await GalHookTextOverlayController.instance.applyFontFromSettings();
-    }
-    ReaderFushiSource.onSettingsChangedLive?.call();
+    return rows.length;
   }
 
-  Directory get _fontsDir {
-    final dir = Directory(p.join(appModel.appDirectory.path, 'custom_fonts'));
-    if (!dir.existsSync()) dir.createSync(recursive: true);
-    return dir;
-  }
+  /// 文件选择器与桌面拖放共用的导入扩展名（字体 + 压缩包）。
+  static const List<String> _importExtensions = <String>[
+    'ttf',
+    'otf',
+    'ttc',
+    'woff',
+    'woff2',
+    'zip',
+    '7z',
+    'rar',
+    'tar',
+    'gz',
+  ];
 
   Future<void> _importFontFile() async {
     final result = await pickFilesByExtensions(
       context: context,
-      allowedExtensions: [
-        'ttf',
-        'otf',
-        'ttc',
-        'woff',
-        'woff2',
-        'zip',
-        '7z',
-        'rar',
-        'tar',
-        'gz',
-      ],
+      allowedExtensions: _importExtensions,
       allowMultiple: true,
     );
     if (result == null || result.files.isEmpty) return;
-
-    int count = 0;
-    for (final picked in result.files) {
-      if (picked.path == null) continue;
-      final ext = p.extension(picked.name).toLowerCase();
-
-      if (_fontExtensions.contains(ext)) {
-        count += await _addSingleFont(File(picked.path!), picked.name);
-      } else {
-        count += await _extractFontsFromArchive(File(picked.path!));
-      }
-    }
-
-    if (count > 0) {
-      await _save();
-      FushiToast.show(
-        msg: t.custom_fonts_imported_count(count: count),
-        severity: ToastSeverity.success,
-      );
-    }
+    await _importFiles(<(File, String)>[
+      for (final picked in result.files)
+        if (picked.path != null) (File(picked.path!), picked.name),
+    ]);
   }
 
-  Future<int> _addSingleFont(
-    File srcFile,
+  /// 桌面拖放：把拖进窗口的文件按扩展名过滤后走同一条导入路径。
+  Future<void> _importDroppedPaths(List<String> paths) async {
+    await _importFiles(<(File, String)>[
+      for (final String path in paths)
+        if (_importExtensions.contains(
+          p.extension(path).replaceFirst('.', '').toLowerCase(),
+        ))
+          (File(path), p.basename(path)),
+    ]);
+  }
+
+  /// 批量导入：M3E snackbar 显示逐个进度，结束后换成结果 snackbar（成功数 +
+  /// 失败数）。逐个串行——都要落到同一个字体目录、跑同一套解包与落库。
+  Future<void> _importFiles(List<(File, String)> files) async {
+    if (files.isEmpty) return;
+    await _fontsReady;
+    if (!mounted) return;
+    final ScaffoldMessengerState? messenger = ScaffoldMessenger.maybeOf(
+      context,
+    );
+    final ValueNotifier<int> done = ValueNotifier<int>(0);
+    final int total = files.length;
+    messenger?.hideCurrentSnackBar();
+    messenger?.showSnackBar(
+      FushiSnackBar(
+        duration: const Duration(minutes: 10),
+        content: ValueListenableBuilder<int>(
+          valueListenable: done,
+          builder: (BuildContext context, int n, Widget? _) => Row(
+            children: <Widget>[
+              SizedBox.square(
+                dimension: 20,
+                child: FushiCircularProgressIndicator(
+                  strokeWidth: 2.5,
+                  value: n / total,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  t.font_library_importing(
+                    current: (n + 1).clamp(1, total),
+                    total: total,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    int imported = 0;
+    int failed = 0;
+    for (final (File file, String name) in files) {
+      final int added = await _importPickedFile(file, name, quiet: true);
+      if (added == 0) failed++;
+      imported += added;
+      done.value = done.value + 1;
+    }
+    if (imported > 0) await _save();
+    messenger?.hideCurrentSnackBar();
+    final String message = imported > 0
+        ? <String>[
+            t.custom_fonts_imported_count(count: imported),
+            if (failed > 0) t.font_library_import_failed_count(n: failed),
+          ].join(' · ')
+        : t.font_library_import_failed_count(n: failed);
+    messenger?.showSnackBar(FushiSnackBar(content: Text(message)));
+  }
+
+  /// 用户选的单个文件（字体或压缩包）→ 服务落地 → 登记目录行。
+  /// 解不开 / 不是字体时返回 0，不中断同批其它文件；[quiet] 为 false 时
+  /// 额外 toast 一句（批量导入由调用方汇总成一条结果 snackbar）。
+  Future<int> _importPickedFile(
+    File src,
     String fileName, {
-    String? overrideName,
-  }) async {
-    final name = overrideName ?? p.basenameWithoutExtension(fileName);
-    var ext = p.extension(fileName).toLowerCase();
-    if (!_fontExtensions.contains(ext)) {
-      ext = await _detectFontExtension(srcFile) ?? '.ttf';
-    }
-    final destPath = p.join(
-      _fontsDir.path,
-      '${name}_${DateTime.now().millisecondsSinceEpoch}$ext',
-    );
-    await srcFile.copy(destPath);
-    final entry = CustomFontCatalogRow(
-      id: null,
-      name: name,
-      path: destPath,
-      targetEnabled: _newFontTargets(),
-    );
-    if (mounted) {
-      setState(() => _fonts.add(entry));
-    } else {
-      _fonts.add(entry);
-    }
-    return 1;
-  }
-
-  Future<String?> _detectFontExtension(File file) async {
-    try {
-      final raf = await file.open();
-      try {
-        final header = await raf.read(8);
-        if (header.length < 4) return null;
-        // wOFF
-        if (header[0] == 0x77 &&
-            header[1] == 0x4F &&
-            header[2] == 0x46 &&
-            header[3] == 0x46) {
-          return header.length >= 8 &&
-                  header[4] == 0x00 &&
-                  header[5] == 0x01 &&
-                  header[6] == 0x00 &&
-                  header[7] == 0x00
-              ? '.woff'
-              : '.woff2';
-        }
-        // TrueType / OpenType
-        if (header[0] == 0x00 &&
-            header[1] == 0x01 &&
-            header[2] == 0x00 &&
-            header[3] == 0x00) {
-          return '.ttf';
-        }
-        if (header[0] == 0x4F &&
-            header[1] == 0x54 &&
-            header[2] == 0x54 &&
-            header[3] == 0x4F) {
-          return '.otf';
-        }
-        // TTC
-        if (header[0] == 0x74 &&
-            header[1] == 0x74 &&
-            header[2] == 0x63 &&
-            header[3] == 0x66) {
-          return '.ttc';
-        }
-        return null;
-      } finally {
-        await raf.close();
-      }
-    } catch (e, stack) {
-      ErrorLogService.instance.log('CustomFontsPage.detectFontExt', e, stack);
-      return null;
-    }
-  }
-
-  Future<bool> _isValidFontFile(File file) async {
-    return await _detectFontExtension(file) != null;
-  }
-
-  Future<bool> _isZipFile(File file) async {
-    try {
-      final raf = await file.open();
-      try {
-        final header = await raf.read(4);
-        return header.length >= 4 &&
-            header[0] == 0x50 &&
-            header[1] == 0x4B &&
-            header[2] == 0x03 &&
-            header[3] == 0x04;
-      } finally {
-        await raf.close();
-      }
-    } catch (e, stack) {
-      ErrorLogService.instance.log('CustomFontsPage.isZipArchive', e, stack);
-      return false;
-    }
-  }
-
-  Future<int> _extractFontsFromArchive(
-    File archiveFile, {
-    String? overrideName,
+    bool quiet = false,
   }) async {
     try {
-      final bytes = await archiveFile.readAsBytes();
-      final archive = ZipDecoder().decodeBytes(bytes);
-      final fontEntries = archive.files
-          .where((entry) => entry.isFile && _isFontFile(entry.name))
-          .toList();
-      if (overrideName != null && fontEntries.isNotEmpty) {
-        final entry = fontEntries.firstWhere((entry) {
-          final base = p.basenameWithoutExtension(entry.name).toLowerCase();
-          return base.contains('regular') || base.contains('[wght]');
-        }, orElse: () => fontEntries.first);
-        final ext = p.extension(entry.name);
-        final destPath = p.join(
-          _fontsDir.path,
-          '${safeWindowsFileName(overrideName)}_${DateTime.now().millisecondsSinceEpoch}$ext',
-        );
-        File(destPath).writeAsBytesSync(entry.content as List<int>);
-        final fontEntry = CustomFontCatalogRow(
-          id: null,
-          name: overrideName,
-          path: destPath,
-          targetEnabled: _newFontTargets(),
-        );
-        if (mounted) {
-          setState(() => _fonts.add(fontEntry));
-        } else {
-          _fonts.add(fontEntry);
-        }
-        return 1;
-      }
-
-      int count = 0;
-      final ts = DateTime.now().millisecondsSinceEpoch;
-      for (final entry in fontEntries) {
-        final baseName = p.basenameWithoutExtension(entry.name);
-        final ext = p.extension(entry.name);
-        final destPath = p.join(_fontsDir.path, '${baseName}_$ts$ext');
-        File(destPath).writeAsBytesSync(entry.content as List<int>);
-        final fontEntry = CustomFontCatalogRow(
-          id: null,
-          name: baseName,
-          path: destPath,
-          targetEnabled: _newFontTargets(),
-        );
-        if (mounted) {
-          setState(() => _fonts.add(fontEntry));
-        } else {
-          _fonts.add(fontEntry);
-        }
-        count++;
-      }
-      return count;
-    } catch (e, stack) {
-      ErrorLogService.instance.log('CustomFontsPage.extractArchive', e, stack);
-      debugPrint('[fushi-fonts] archive extract failed: $e');
-      FushiToast.show(
-        msg: t.custom_fonts_archive_error,
-        severity: ToastSeverity.error,
+      return _appendImported(
+        await _fontService.importFile(src, fileName: fileName),
       );
+    } catch (e, stack) {
+      ErrorLogService.instance.log('CustomFontsPage.importFile', e, stack);
+      debugPrint('[fushi-fonts] import failed: $e');
+      if (!quiet) {
+        FushiToast.show(
+          msg: t.custom_fonts_archive_error,
+          severity: ToastSeverity.error,
+        );
+      }
       return 0;
     }
   }
 
-  /// 一次字体下载的结果。[importedCount] > 0 即成功；[error] 非空说明失败，
-  /// [cancelled] 是用户主动取消（既不算成功也不该报错）。
-  ///
-  /// 执行体不弹任何 toast / 对话框，就是为了让批量下载能把 N 条结果聚合成一句话。
+  /// 下载执行体：**不碰 Navigator、不弹 toast**，只跑「多源回退下载 → 校验 →
+  /// 解包/落库 → 登记目录行」。UI 由调用方负责。
   ///
   /// 批量下载真正要避开的是旧实现里「每条各弹一个 barrierDismissible:false +
   /// PopScope(canPop:false) 的独占模态框」——那种框在下载期间把整个 UI 锁死，
   /// 连着下 5 个字体就是连着锁 5 次，中途还没法看进度到哪了。
   ///
   /// 执行体的取消由调用方持有 [cancelToken]：批量时一次取消应当停掉整批。
-
-  /// 下载执行体：**不碰 Navigator、不弹 toast**，只跑「多源回退下载 → 校验 →
-  /// 解包/落库」。UI 由调用方负责。
-  Future<_FontDownloadResult> _runFontDownload(
-    String url, {
+  Future<FontDownloadResult> _runFontDownload(
+    List<String> urls, {
     required ValueNotifier<double?> progressNotifier,
     required CancelToken cancelToken,
-    List<String> mirrorUrls = const [],
     String? overrideName,
   }) async {
-    final allUrls = [url, ...mirrorUrls];
-    final ts = DateTime.now().millisecondsSinceEpoch;
-    final tempPath = p.join(_fontsDir.path, '_tmp_$ts');
-    try {
-      // BUG-1498：字体全在 cdn.jsdelivr.net / raw.githubusercontent.com /
-      // fonts.google.com 上，原先是裸 `Dio(...)`（`findProxy` 为 null，连 HTTPS_PROXY
-      // 都不读）。改经统一装配点，三级 URL 回退逻辑不变。
-      final dio = createAppDio(
-        options: BaseOptions(
-          connectTimeout: const Duration(seconds: 15),
-          receiveTimeout: const Duration(minutes: 10),
-          followRedirects: true,
-          maxRedirects: 10,
-          headers: {
-            'User-Agent': fushiUserAgent('custom-fonts'),
-            'Accept': '*/*',
-          },
-        ),
-      );
-
-      String? downloadedUrl;
-      Object? lastError;
-      for (int i = 0; i < allUrls.length; i++) {
-        final currentUrl = allUrls[i];
-        debugPrint(
-          '[fushi-fonts] trying source ${i + 1}/${allUrls.length}: $currentUrl',
-        );
-        progressNotifier.value = null;
-        try {
-          await dio.download(
-            currentUrl,
-            tempPath,
-            cancelToken: cancelToken,
-            onReceiveProgress: (received, total) {
-              if (total > 0) {
-                progressNotifier.value = received / total;
-              }
-            },
-          );
-          final tempFile = File(tempPath);
-          if (await tempFile.exists() &&
-              !await _isZipFile(tempFile) &&
-              !await _isValidFontFile(tempFile)) {
-            debugPrint(
-              '[fushi-fonts] source ${i + 1} returned non-font data, skipping',
-            );
-            lastError = Exception(
-              'Downloaded file is not a valid font or archive',
-            );
-            await tempFile.delete();
-            continue;
-          }
-          downloadedUrl = currentUrl;
-          break;
-        } on DioError catch (e) {
-          if (e.type == DioErrorType.cancel) rethrow;
-          lastError = e;
-          debugPrint('[fushi-fonts] source ${i + 1} failed: ${e.type.name}');
-          final f = File(tempPath);
-          if (await f.exists()) await f.delete();
-        }
-      }
-
-      if (downloadedUrl == null) {
-        final Object err = lastError ?? Exception('All sources failed');
-        if (err is Exception) throw err;
-        if (err is Error) throw err;
-        throw Exception(err.toString());
-      }
-
-      final tempFile = File(tempPath);
-      final fileName = _fileNameFromUrl(downloadedUrl);
-      int count = 0;
-      final isZip = await _isZipFile(tempFile);
-      if (isZip) {
-        count = await _extractFontsFromArchive(
-          tempFile,
-          overrideName: overrideName,
-        );
-        if (count == 0) {
-          count = await _addSingleFont(
-            tempFile,
-            fileName,
-            overrideName: overrideName,
-          );
-        }
-      } else {
-        count = await _addSingleFont(
-          tempFile,
-          fileName,
-          overrideName: overrideName,
-        );
-      }
-      if (await tempFile.exists()) await tempFile.delete();
-      return _FontDownloadResult(importedCount: count);
-    } on DioError catch (e, stack) {
-      final f = File(tempPath);
-      if (await f.exists()) await f.delete();
-      if (e.type == DioErrorType.cancel) {
-        return const _FontDownloadResult(cancelled: true);
-      }
-      debugPrint(
-        '[fushi-fonts] DioError: type=${e.type} '
-        'status=${e.response?.statusCode} msg=${e.message}',
-      );
-      debugPrint('[fushi-fonts] stack: $stack');
-      return _FontDownloadResult(error: e.type.name);
-    } catch (e, stack) {
-      final f = File(tempPath);
-      if (await f.exists()) await f.delete();
-      debugPrint('[fushi-fonts] download failed: $e');
-      debugPrint('[fushi-fonts] stack: $stack');
-      return _FontDownloadResult(error: '$e');
-    }
+    final FontDownloadResult result = await _fontService.download(
+      urls,
+      overrideName: overrideName,
+      cancelToken: cancelToken,
+      onProgress: (double? progress) => progressNotifier.value = progress,
+    );
+    _appendImported(result.files);
+    return result;
   }
 
   /// 单条下载：独占进度框 + 逐条 toast，行为与重构前一致。
@@ -1129,11 +807,10 @@ class _CustomFontsPageState extends BasePageState<CustomFontsPage> {
       );
     }
     try {
-      final _FontDownloadResult result = await _runFontDownload(
-        url,
+      final FontDownloadResult result = await _runFontDownload(
+        <String>[url, ...mirrorUrls],
         progressNotifier: progressNotifier,
         cancelToken: cancelToken,
-        mirrorUrls: mirrorUrls,
         overrideName: overrideName,
       );
       // 取消时进度框已被 onCancel 关掉，别再 pop 一次——那会连着把字体页也弹掉。
@@ -1162,19 +839,6 @@ class _CustomFontsPageState extends BasePageState<CustomFontsPage> {
     } finally {
       progressNotifier.dispose();
     }
-  }
-
-  String _fileNameFromUrl(String url) {
-    final uri = Uri.parse(url);
-    // Google Fonts download API: ?family=Font+Name → derive filename from query
-    if (uri.queryParameters.containsKey('family')) {
-      final family = uri.queryParameters['family']!.replaceAll(' ', '_');
-      return '$family.zip';
-    }
-    if (uri.pathSegments.isNotEmpty) {
-      return Uri.decodeComponent(uri.pathSegments.last);
-    }
-    return 'font_${DateTime.now().millisecondsSinceEpoch}';
   }
 
   Future<void> _importFromUrl() async {
@@ -1209,13 +873,13 @@ class _CustomFontsPageState extends BasePageState<CustomFontsPage> {
             valueListenable: titleNotifier,
             builder: (BuildContext context, String title, _) =>
                 CustomFontDownloadProgressDialog(
-              title: title,
-              progressNotifier: progressNotifier,
-              onCancel: () {
-                cancelToken.cancel();
-                Navigator.pop(ctx);
-              },
-            ),
+                  title: title,
+                  progressNotifier: progressNotifier,
+                  onCancel: () {
+                    cancelToken.cancel();
+                    Navigator.pop(ctx);
+                  },
+                ),
           ),
         ),
       );
@@ -1230,11 +894,10 @@ class _CustomFontsPageState extends BasePageState<CustomFontsPage> {
             ? '${font.name}  (${i + 1}/${fonts.length})'
             : font.name;
         progressNotifier.value = null;
-        final _FontDownloadResult result = await _runFontDownload(
-          font.urls.first,
+        final FontDownloadResult result = await _runFontDownload(
+          font.urls,
           progressNotifier: progressNotifier,
           cancelToken: cancelToken,
-          mirrorUrls: font.urls.skip(1).toList(),
           overrideName: font.name,
         );
         if (result.cancelled) {
@@ -1291,37 +954,229 @@ class _CustomFontsPageState extends BasePageState<CustomFontsPage> {
     await _downloadRecommendedFonts(fonts);
   }
 
+  /// 系统字体浏览页：每款字体用自己渲染日文样张，可多选一次加入。浏览页底部样张
+  /// 按当前预览中的用途渲染；加入后挂到进页作用域（[_newFontTargets]），与其余
+  /// 三个新增入口同一口径。
   Future<void> _addSystemFont() async {
-    final selected = await Navigator.push<String>(
+    await _fontsReady;
+    if (!mounted) return;
+    final List<String>? selected = await Navigator.push<List<String>>(
       context,
       adaptivePageRoute(
         context: context,
-        builder: (_) => _SystemFontPickerPage(alreadyAdded: _addedFontNames),
+        builder: (_) => SystemFontBrowserPage(
+          alreadyAdded: _addedFontNames,
+          target: _previewTarget,
+        ),
       ),
     );
-    if (selected == null || !mounted) return;
+    if (selected == null || selected.isEmpty || !mounted) return;
     setState(() {
-      _fonts.add(
-        CustomFontCatalogRow(
-          id: null,
-          name: selected,
-          path: null,
-          targetEnabled: _newFontTargets(),
-        ),
-      );
+      for (final String family in selected) {
+        _fonts.add(
+          CustomFontCatalogRow(
+            id: null,
+            name: family,
+            path: null,
+            targetEnabled: _newFontTargets(),
+          ),
+        );
+      }
     });
     _save();
+  }
+
+  // ── 状态变更广播 ───────────────────────────────────────────────────────────
+
+  /// 每次页面状态变化 +1：窄屏详情是独立路由（bottom sheet），靠它跟着刷新。
+  final ValueNotifier<int> _revision = ValueNotifier<int>(0);
+
+  @override
+  void setState(VoidCallback fn) {
+    super.setState(fn);
+    _revision.value = _revision.value + 1;
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    _sampleController.dispose();
+    _revision.dispose();
+    super.dispose();
+  }
+
+  // ── 预览 ────────────────────────────────────────────────────────────────────
+
+  /// 预览区当前展示的用途；进页时 = 作用域 [CustomFontsPage.target]，用户可在
+  /// 预览区切换。只影响预览，不改变新增字体挂到哪个用途。
+  late FontTarget _previewTarget = widget.target;
+
+  /// 行 identity → 解析出的引擎族名（null = 解析失败）。只增不删：同名同路径的
+  /// 条目族名不会变，删掉再加回来也直接复用。
+  final Map<String, String?> _resolvedFamilies = <String, String?>{};
+  final Set<String> _resolving = <String>{};
+
+  /// 行 identity → 文件元数据（格式 / 大小 / 字重 / 语言 / 风格）。只给文件行读。
+  final Map<String, FontFileMetadata?> _metadata =
+      <String, FontFileMetadata?>{};
+  final Set<String> _metadataLoading = <String>{};
+
+  /// 本机系统字体族名（小写），用于标出「系统里没有」的系统字体条目；
+  /// null = 还没枚举完或平台给不出可信名单，此时不下结论。
+  Set<String>? _systemFamilyKeys;
+
+  /// 本机系统字体族名（小写）→ 是否带日文字形（null = 平台判不出）。
+  Map<String, bool?> _systemJapanese = <String, bool?>{};
+
+  Future<void> _loadSystemFamilyKeys() async {
+    final SystemFontList list = await SystemFontCatalog.load();
+    if (!mounted || list.families.isEmpty) return;
+    setState(() {
+      _systemJapanese = <String, bool?>{
+        for (final SystemFontFamily f in list.families)
+          f.family.toLowerCase(): f.supportsJapanese,
+      };
+      if (list.namesReliable) {
+        _systemFamilyKeys = <String>{
+          for (final SystemFontFamily f in list.families)
+            f.family.toLowerCase(),
+        };
+      }
+    });
+  }
+
+  /// 为还没解析过的行排队解析族名（文件字体要经 FontLoader 注册）与读文件元数据，
+  /// 完成后刷新。
+  void _ensureResolved() {
+    for (final CustomFontCatalogRow row in _fonts) {
+      final String key = row.identity;
+      if (!_resolvedFamilies.containsKey(key) && _resolving.add(key)) {
+        resolveCatalogFontFamily(name: row.name, path: row.path).then((
+          String? family,
+        ) {
+          if (!mounted) return;
+          setState(() {
+            _resolving.remove(key);
+            _resolvedFamilies[key] = family;
+          });
+        });
+      }
+      final String? path = row.path;
+      if (path != null &&
+          !_metadata.containsKey(key) &&
+          _metadataLoading.add(key)) {
+        readFontFileMetadata(path).then((FontFileMetadata? meta) {
+          if (!mounted) return;
+          setState(() {
+            _metadataLoading.remove(key);
+            _metadata[key] = meta;
+          });
+        });
+      }
+    }
+  }
+
+  FontSpecimenState _specimenStateFor(CustomFontCatalogRow row) {
+    if (!_resolvedFamilies.containsKey(row.identity)) {
+      return FontSpecimenState.loading;
+    }
+    return _resolvedFamilies[row.identity] == null
+        ? FontSpecimenState.unavailable
+        : FontSpecimenState.ready;
+  }
+
+  /// 预览用途下已启用的条目，按用户顺序。
+  List<CustomFontCatalogRow> get _previewEnabledRows => <CustomFontCatalogRow>[
+    for (final CustomFontCatalogRow row in _fonts)
+      if (row.targetEnabled[_previewTarget] == true) row,
+  ];
+
+  bool _missingOnSystem(CustomFontCatalogRow row) {
+    final Set<String>? keys = _systemFamilyKeys;
+    return keys != null &&
+        !row.isFile &&
+        !keys.contains(row.name.toLowerCase());
+  }
+
+  FontLibraryEntryView _viewOf(CustomFontCatalogRow row) =>
+      FontLibraryEntryView(
+        identity: row.identity,
+        name: row.name,
+        isFile: row.isFile,
+        path: row.path,
+        family: _resolvedFamilies[row.identity],
+        state: _specimenStateFor(row),
+        // 与用途开关同一判据：键在即挂上（值是历史的 enabled 标记）。
+        targets: row.targets,
+        metadata: _metadata[row.identity],
+        missingOnSystem: _missingOnSystem(row),
+        // native 分层窗只吃裸 sfnt；WOFF/WOFF2 勾了游戏用途下游会静默跳过，
+        // 详情页直接把那枚用途按钮置灰，别让用户白设。
+        unsupportedTargets: _unsupportedTargetsFor(row),
+      );
+
+  FontLibraryTraits _traitsOf(CustomFontCatalogRow row) => fontLibraryTraitsFor(
+    name: row.name,
+    metadata: _metadata[row.identity],
+    systemSupportsJapanese: row.isFile
+        ? null
+        : _systemJapanese[row.name.toLowerCase()],
+  );
+
+  Widget _buildPreviewSection() {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final List<String> families =
+        effectiveFontTargetFamilies(_previewTarget, <FontPreviewCandidate>[
+          for (final CustomFontCatalogRow row in _previewEnabledRows)
+            FontPreviewCandidate(
+              family: _resolvedFamilies[row.identity],
+              path: row.path,
+            ),
+        ]);
+    return FushiCard(
+      pressScale: false,
+      padding: EdgeInsets.all(tokens.spacing.card),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Wrap(
+            spacing: tokens.spacing.gap,
+            runSpacing: tokens.spacing.gap,
+            children: [
+              for (final FontTarget target in FontTarget.values)
+                if (isFontTargetAvailableOnPlatform(target))
+                  FushiSelectableChip(
+                    key: ValueKey<String>('font-preview-target-${target.name}'),
+                    label: fontTargetLabel(target),
+                    selected: _previewTarget == target,
+                    onSelected: (_) => setState(() => _previewTarget = target),
+                  ),
+            ],
+          ),
+          SizedBox(height: tokens.spacing.gap),
+          FontTargetPreview(
+            target: _previewTarget,
+            families: families,
+            subtitleStyle: VideoSubtitleStyle.decode(
+              appModel.videoSubtitleStyle,
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _removeFont(int index) async {
     final CustomFontCatalogRow entry = _fonts[index];
     final String? filePath = entry.path;
-    setState(() => _fonts.removeAt(index));
+    setState(() {
+      _fonts.removeAt(index);
+      if (_detailIdentity == entry.identity) _detailIdentity = null;
+    });
     await _save();
-    if (filePath != null && !customFontFileStillReferenced(_fonts, filePath)) {
+    if (filePath != null) {
       try {
-        final f = File(filePath);
-        if (await f.exists()) await f.delete();
+        await deleteCustomFontFileIfUnreferenced(_fonts, filePath);
       } catch (e, stack) {
         ErrorLogService.instance.log('CustomFontsPage.deleteFont', e, stack);
         debugPrint('[Fushi] failed to delete font file $filePath: $e');
@@ -1333,11 +1188,31 @@ class _CustomFontsPageState extends BasePageState<CustomFontsPage> {
     );
   }
 
+  /// 删除前的破坏性确认（共享 M3E 确认框）：文件字体连文件一起删，系统字体
+  /// 只是移出字体库，文案分开说清楚。
+  Future<void> _confirmRemoveFont(int index) async {
+    final CustomFontCatalogRow row = _fonts[index];
+    final bool confirmed = await showFushiConfirmDialog(
+      context: context,
+      title: t.font_library_delete_title(name: row.name),
+      message: row.isFile
+          ? t.font_library_delete_message_file
+          : t.font_library_delete_message_system,
+      icon: FushiIcons.delete,
+      confirmLabel: t.font_library_delete_action,
+      destructive: true,
+    );
+    if (!confirmed || !mounted) return;
+    final int current = _indexOfIdentity(row.identity);
+    if (current >= 0) await _removeFont(current);
+  }
+
   /// [newIndex] 是**最终下标**（FushiReorderableColumn 语义），不是 SDK
   /// `ReorderableListView` 的「移除前下标」——故这里没有 `newIndex--` 修正。
   /// 上/下移按钮同样按最终下标传（下移传 index+1）。
   void _onReorder(int oldIndex, int newIndex) {
     if (oldIndex == newIndex) return;
+    if (newIndex < 0 || newIndex >= _fonts.length) return;
     setState(() {
       final item = _fonts.removeAt(oldIndex);
       _fonts.insert(newIndex, item);
@@ -1357,116 +1232,799 @@ class _CustomFontsPageState extends BasePageState<CustomFontsPage> {
     _save();
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return AdaptiveSettingsScaffold(
-      // 带作用域进来时把用途写进标题：用户从「设置·游戏·Hook 文本字体」点进来，
-      // 看到的是同一个全量字体库，不说明的话没法知道自己新导入的字体会挂到哪。
-      title: Text(
-        widget.target == FontTarget.body
-            ? t.custom_fonts_catalog_title
-            : '${t.custom_fonts_catalog_title} · '
-                '${fontTargetLabel(widget.target)}',
+  // ── 浏览：搜索 / 筛选 / 样例 / 布局 ──────────────────────────────────────────
+
+  final TextEditingController _searchController = TextEditingController();
+  final TextEditingController _sampleController = TextEditingController();
+  String _query = '';
+  FontLibraryFilter _filter = FontLibraryFilter.all;
+  FontSampleScript _script = FontSampleScript.japanese;
+
+  /// 用户手动选的布局；null = 跟随宽度（宽屏网格、窄屏列表）。
+  FontLibraryLayout? _layoutOverride;
+
+  /// 宽屏侧板里正在看的字体（行 identity）。
+  String? _detailIdentity;
+
+  /// 最近一次布局是否宽到放得下侧板（决定点卡片开侧板还是 bottom sheet）。
+  bool _wide = false;
+
+  /// 网格单元的固定高度（重排网格要求等高）。
+  static const double _gridCellExtent = 232;
+
+  /// 宽屏侧板宽度。
+  static const double _detailPanelWidth = 400;
+
+  int _indexOfIdentity(String identity) =>
+      _fonts.indexWhere((CustomFontCatalogRow row) => row.identity == identity);
+
+  bool get _isFiltered =>
+      _query.trim().isNotEmpty || _filter != FontLibraryFilter.all;
+
+  /// 当前搜索 + 筛选下可见的行（保留目录顺序）。
+  List<CustomFontCatalogRow> get _visibleRows {
+    final List<CustomFontCatalogRow> filtered = <CustomFontCatalogRow>[
+      for (final CustomFontCatalogRow row in _fonts)
+        if (fontLibraryFilterMatches(
+          _filter,
+          isFile: row.isFile,
+          traits: _traitsOf(row),
+        ))
+          row,
+    ];
+    return filterByMediaSearch(
+      filtered,
+      _query,
+      (CustomFontCatalogRow row) => <String>[row.name],
+    );
+  }
+
+  /// 有命中的筛选项才显示（全部 / 已导入 / 系统恒显示）。
+  List<FontLibraryFilter> get _availableFilters {
+    final List<FontLibraryTraits> traits = <FontLibraryTraits>[
+      for (final CustomFontCatalogRow row in _fonts) _traitsOf(row),
+    ];
+    bool any(bool Function(FontLibraryTraits traits) test) => traits.any(test);
+    return <FontLibraryFilter>{
+      FontLibraryFilter.all,
+      FontLibraryFilter.imported,
+      FontLibraryFilter.system,
+      if (any((FontLibraryTraits x) => x.japanese)) FontLibraryFilter.japanese,
+      if (any((FontLibraryTraits x) => x.chinese)) FontLibraryFilter.chinese,
+      if (any((FontLibraryTraits x) => x.styleClass == FontStyleClass.serif))
+        FontLibraryFilter.serif,
+      if (any(
+        (FontLibraryTraits x) => x.styleClass == FontStyleClass.sansSerif,
+      ))
+        FontLibraryFilter.sansSerif,
+      if (any(
+        (FontLibraryTraits x) => x.styleClass == FontStyleClass.monospace,
+      ))
+        FontLibraryFilter.monospace,
+      // 当前选中的筛选即使已无命中也留着，免得 chip 凭空消失。
+      if (!<FontLibraryFilter>{
+        FontLibraryFilter.all,
+        FontLibraryFilter.imported,
+        FontLibraryFilter.system,
+      }.contains(_filter))
+        _filter,
+    }.toList();
+  }
+
+  String _filterLabel(FontLibraryFilter filter) => switch (filter) {
+    FontLibraryFilter.all => t.font_library_filter_all,
+    FontLibraryFilter.imported => t.font_library_filter_imported,
+    FontLibraryFilter.system => t.font_library_filter_system,
+    FontLibraryFilter.japanese => t.font_library_filter_japanese,
+    FontLibraryFilter.chinese => t.font_library_filter_chinese,
+    FontLibraryFilter.serif => t.font_library_filter_serif,
+    FontLibraryFilter.sansSerif => t.font_library_filter_sans,
+    FontLibraryFilter.monospace => t.font_library_filter_mono,
+  };
+
+  String get _sampleText =>
+      fontLibrarySampleText(_script, _sampleController.text);
+
+  // ── 详情 / 上下文菜单 ─────────────────────────────────────────────────────
+
+  Widget _detailPanelFor(
+    int index, {
+    VoidCallback? onClose,
+    VoidCallback? beforeDelete,
+    ScrollController? scrollController,
+  }) {
+    final CustomFontCatalogRow row = _fonts[index];
+    return FontLibraryDetailPanel(
+      key: ValueKey<String>('font-detail-${row.identity}'),
+      entry: _viewOf(row),
+      script: _script,
+      customSample: _sampleController.text,
+      chainPosition: index + 1,
+      onToggleTarget: (FontTarget target) {
+        final int at = _indexOfIdentity(row.identity);
+        if (at >= 0) _toggleTarget(at, target);
+      },
+      onMoveUp: index > 0
+          ? () {
+              final int at = _indexOfIdentity(row.identity);
+              if (at > 0) _onReorder(at, at - 1);
+            }
+          : null,
+      onMoveDown: index < _fonts.length - 1
+          ? () {
+              final int at = _indexOfIdentity(row.identity);
+              if (at >= 0) _onReorder(at, at + 1);
+            }
+          : null,
+      onDelete: () {
+        // 窄屏 sheet 先收起再确认：删完这款已不存在，sheet 留着只是空壳。
+        beforeDelete?.call();
+        final int at = _indexOfIdentity(row.identity);
+        if (at >= 0) _confirmRemoveFont(at);
+      },
+      onClose: onClose,
+      scrollController: scrollController,
+    );
+  }
+
+  /// 点卡片：宽屏开侧板，窄屏开 bottom sheet（sheet 内容随 [_revision] 刷新）。
+  Future<void> _openDetail(CustomFontCatalogRow row) async {
+    if (_wide) {
+      setState(() => _detailIdentity = row.identity);
+      return;
+    }
+    final String identity = row.identity;
+    await adaptiveModalSheet<void>(
+      context: context,
+      builder: (BuildContext sheetContext) {
+        final bool apple = isGlassDesign(sheetContext);
+        return Material(
+          color: apple
+              ? appleColorsOf(sheetContext).secondaryGroupedBackground
+              : Theme.of(sheetContext).colorScheme.surfaceContainerLow,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.vertical(
+              top: Radius.circular(apple ? 12 : 28),
+            ),
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: SizedBox(
+            height: MediaQuery.sizeOf(sheetContext).height * 0.86,
+            child: ValueListenableBuilder<int>(
+              valueListenable: _revision,
+              builder: (BuildContext context, int _, Widget? __) {
+                final int index = _indexOfIdentity(identity);
+                if (index < 0) return const SizedBox.shrink();
+                return _detailPanelFor(
+                  index,
+                  beforeDelete: () => Navigator.of(sheetContext).pop(),
+                );
+              },
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  /// 右键 / 长按 / 「更多」钮的上下文菜单。坐标经 Overlay globalToLocal 消掉
+  /// FushiAppUiScale 缩放（BUG-781 同族纪律）。
+  Future<void> _showFontMenu(int index, Offset globalPosition) async {
+    final RenderObject? overlay = Overlay.of(
+      context,
+    ).context.findRenderObject();
+    if (overlay is! RenderBox) return;
+    final Offset anchor = overlay.globalToLocal(globalPosition);
+    final CustomFontCatalogRow row = _fonts[index];
+    PopupMenuItem<String> item(String value, IconData icon, String label) =>
+        PopupMenuItem<String>(
+          value: value,
+          child: Row(
+            children: <Widget>[
+              FushiIcon(icon, size: 20),
+              const SizedBox(width: 12),
+              Flexible(child: Text(label)),
+            ],
+          ),
+        );
+    final Map<FontTarget, String> unsupported = _unsupportedTargetsFor(row);
+    final String? action = await showFushiMenu<String>(
+      context: context,
+      position: RelativeRect.fromRect(
+        Rect.fromPoints(anchor, anchor),
+        Offset.zero & overlay.size,
       ),
-      children: [
-        AdaptiveSettingsSection(
-          children: [
-            AdaptiveSettingsNavigationRow(
-              title: t.custom_fonts_recommended,
-              icon: Icons.star_outline,
-              onTap: () {
-                if (!_fontsLoading) _openRecommended();
-              },
+      items: <PopupMenuEntry<String>>[
+        item('details', FushiIcons.info, t.font_library_details),
+        const PopupMenuDivider(),
+        for (final FontTarget target in visibleFontTargets)
+          if (!unsupported.containsKey(target))
+            item(
+              'target:${target.name}',
+              row.targetEnabled.containsKey(target)
+                  ? FushiIcons.check
+                  : fontTargetIcon(target),
+              fontTargetLabel(target),
             ),
-            AdaptiveSettingsNavigationRow(
-              title: t.custom_fonts_add_system,
-              icon: Icons.text_fields,
-              onTap: () {
-                if (!_fontsLoading) _addSystemFont();
-              },
-            ),
-            AdaptiveSettingsNavigationRow(
-              title: t.custom_fonts_import_file,
-              icon: Icons.file_open_outlined,
-              onTap: () {
-                if (!_fontsLoading) _importFontFile();
-              },
-            ),
-            AdaptiveSettingsNavigationRow(
-              title: t.custom_fonts_import_url,
-              icon: Icons.link,
-              onTap: () {
-                if (!_fontsLoading) _importFromUrl();
-              },
-            ),
-          ],
+        const PopupMenuDivider(),
+        if (index > 0) item('up', FushiIcons.expandLess, t.move_up),
+        if (index < _fonts.length - 1)
+          item('down', FushiIcons.expandMore, t.move_down),
+        item('delete', FushiIcons.delete, t.font_library_delete_action),
+      ],
+    );
+    if (action == null || !mounted) return;
+    final int at = _indexOfIdentity(row.identity);
+    if (at < 0) return;
+    if (action == 'details') {
+      await _openDetail(_fonts[at]);
+    } else if (action == 'up') {
+      _onReorder(at, at - 1);
+    } else if (action == 'down') {
+      _onReorder(at, at + 1);
+    } else if (action == 'delete') {
+      await _confirmRemoveFont(at);
+    } else if (action.startsWith('target:')) {
+      final String name = action.substring('target:'.length);
+      for (final FontTarget target in FontTarget.values) {
+        if (target.name == name) _toggleTarget(at, target);
+      }
+    }
+  }
+
+  Future<void> _showAddMenu(BuildContext anchorContext) async {
+    final RenderObject? box = anchorContext.findRenderObject();
+    final Offset at = box is RenderBox && box.hasSize
+        ? box.localToGlobal(box.size.bottomRight(Offset.zero))
+        : Offset.zero;
+    final RenderObject? overlay = Overlay.of(
+      context,
+    ).context.findRenderObject();
+    if (overlay is! RenderBox) return;
+    final Offset anchor = overlay.globalToLocal(at);
+    PopupMenuItem<VoidCallback> item(
+      IconData icon,
+      String label,
+      VoidCallback run,
+    ) => PopupMenuItem<VoidCallback>(
+      value: run,
+      child: Row(
+        children: <Widget>[
+          FushiIcon(icon, size: 20),
+          const SizedBox(width: 12),
+          Flexible(child: Text(label)),
+        ],
+      ),
+    );
+    final VoidCallback? run = await showFushiMenu<VoidCallback>(
+      context: context,
+      position: RelativeRect.fromRect(
+        Rect.fromPoints(anchor, anchor),
+        Offset.zero & overlay.size,
+      ),
+      items: <PopupMenuEntry<VoidCallback>>[
+        item(
+          FushiIcons.importFile,
+          t.custom_fonts_import_file,
+          _importFontFile,
         ),
-        if (_fontsLoading)
-          AdaptiveSettingsSection(
-            title: t.custom_fonts_manage,
-            children: [
-              AdaptiveSettingsRow(
-                title: t.custom_fonts_downloading,
-                icon: Icons.hourglass_top,
-              ),
-            ],
-          )
-        else if (_fonts.isEmpty)
-          AdaptiveSettingsSection(
-            title: t.custom_fonts_manage,
-            children: [
-              AdaptiveSettingsRow(
-                title: t.custom_fonts_empty,
-                icon: Icons.font_download_outlined,
-              ),
-            ],
-          )
-        else
-          AdaptiveSettingsSection(
-            title: t.custom_fonts_manage,
-            children: [
-              // 拖拽提示不再单列一行：每行左侧的 ☰ 手柄（见 CustomFontCatalogTile）
-              // 直接把「可拖拽重排」这件事画出来，比一句纯文字更直观。
-              AdaptiveSettingsRow(
-                title: t.custom_fonts_manage,
-                icon: Icons.format_size,
-                controlBelow: true,
-                // 自实现的 FushiReorderableColumn 而非 SDK ReorderableListView：
-                // 整棵树活在 FushiAppUiScale 的 Transform.scale 之下，而 SDK 的
-                // _DragItemProxy 用「全局坐标 − overlay 原点」纯平移、不认祖先
-                // 缩放，「界面大小」非 100% 时拖拽浮层按 (1−s)×距离 漂移、缩小时
-                // 一拖即飞出屏幕（BUG-778 同根因，当时只修了合集与词典两条链路，
-                // 这里漏了）。原本就是 shrinkWrap + NeverScrollableScrollPhysics
-                //（外层滚动），与本组件语义一致。
-                trailing: FushiReorderableColumn(
-                  itemCount: _fonts.length,
-                  keyForIndex: (int index) =>
-                      ValueKey<String>('${_fonts[index].name}-$index'),
-                  onReorder: _onReorder,
-                  itemBuilder: (context, index) {
-                    final CustomFontCatalogRow entry = _fonts[index];
-                    return CustomFontCatalogTile(
-                      name: entry.name,
-                      isFile: entry.isFile,
-                      targets: entry.targets,
+        item(FushiIcons.star, t.custom_fonts_recommended, _openRecommended),
+        item(FushiIcons.textFields, t.custom_fonts_add_system, _addSystemFont),
+        item(FushiIcons.link, t.custom_fonts_import_url, _importFromUrl),
+      ],
+    );
+    if (run != null && mounted) run();
+  }
+
+  // ── 构建 ──────────────────────────────────────────────────────────────────
+
+  Widget _sectionHeader(String text, {Widget? trailing}) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    return Padding(
+      padding: EdgeInsets.only(
+        top: tokens.spacing.section,
+        bottom: tokens.spacing.gap,
+      ),
+      child: FushiSectionTitle(
+        text,
+        trailing: trailing,
+        padding: EdgeInsets.zero,
+      ),
+    );
+  }
+
+  Widget _cardFor(
+    CustomFontCatalogRow row,
+    FontLibraryLayout layout, {
+    required bool reorderable,
+  }) {
+    final int index = _indexOfIdentity(row.identity);
+    return FontSpecimenCard(
+      key: ValueKey<String>('font-card-${row.identity}'),
+      entry: _viewOf(row),
+      sampleText: _sampleText,
+      layout: layout,
+      selected: _wide && _detailIdentity == row.identity,
+      // 重排模式下触摸长按留给拖拽；菜单走右键或卡片的「更多」钮。
+      allowLongPressMenu: !reorderable,
+      showDragHandle: reorderable && layout == FontLibraryLayout.list,
+      onOpen: () => _openDetail(row),
+      onContextMenu: (Offset position) => _showFontMenu(index, position),
+    );
+  }
+
+  List<Widget> _buildFontSlivers(
+    BuildContext context,
+    double width,
+    FontLibraryLayout layout,
+  ) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final double pad = tokens.spacing.page;
+    const double gap = 12;
+    final double inner = width - pad * 2 < 0 ? 0.0 : width - pad * 2;
+    final int columns = layout == FontLibraryLayout.list
+        ? 1
+        : ((inner + gap) / (inner < 600 ? 170 + gap : 280 + gap)).floor().clamp(
+            2,
+            6,
+          );
+
+    if (_fontsLoading) {
+      return <Widget>[
+        SliverPadding(
+          padding: EdgeInsets.symmetric(horizontal: pad),
+          sliver: layout == FontLibraryLayout.list
+              ? SliverList.separated(
+                  itemCount: 3,
+                  separatorBuilder: (_, __) => const SizedBox(height: gap),
+                  itemBuilder: (BuildContext context, int index) =>
+                      const FontSpecimenCardSkeleton(
+                        layout: FontLibraryLayout.list,
+                      ),
+                )
+              : SliverGrid.builder(
+                  itemCount: columns * 2,
+                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: columns,
+                    mainAxisExtent: _gridCellExtent,
+                    crossAxisSpacing: gap,
+                    mainAxisSpacing: gap,
+                  ),
+                  itemBuilder: (BuildContext context, int index) =>
+                      const FontSpecimenCardSkeleton(
+                        layout: FontLibraryLayout.grid,
+                      ),
+                ),
+        ),
+      ];
+    }
+
+    if (_fonts.isEmpty) {
+      return <Widget>[
+        SliverToBoxAdapter(
+          child: SettingsEmptyState(
+            icon: FushiIcons.font,
+            title: t.font_library_empty_title,
+            message: t.font_library_empty_message,
+            action: FushiFilledButton.tonalIcon(
+              onPressed: _importFontFile,
+              icon: const FushiIcon(FushiIcons.importFile),
+              label: Text(t.font_library_import_fab),
+            ),
+          ),
+        ),
+      ];
+    }
+
+    final List<CustomFontCatalogRow> visible = _visibleRows;
+    if (visible.isEmpty) {
+      return <Widget>[
+        SliverToBoxAdapter(
+          child: SettingsEmptyState(
+            icon: FushiIcons.searchOff,
+            title: t.font_library_no_match,
+          ),
+        ),
+      ];
+    }
+
+    // 无搜索、无筛选时卡片可拖拽排序（顺序 = 各用途的回退优先级）。
+    if (!_isFiltered) {
+      final Widget reorder = layout == FontLibraryLayout.list
+          // 自实现的 FushiReorderableColumn 而非 SDK ReorderableListView：
+          // 整棵树活在 FushiAppUiScale 的 Transform.scale 之下，而 SDK 的
+          // _DragItemProxy 用「全局坐标 − overlay 原点」纯平移、不认祖先
+          // 缩放，「界面大小」非 100% 时拖拽浮层按 (1−s)×距离 漂移、缩小时
+          // 一拖即飞出屏幕（BUG-778 同根因）。
+          ? FushiReorderableColumn(
+              itemCount: _fonts.length,
+              spacing: gap,
+              feedbackBorderRadius: FushiM3eShape.cardRadius,
+              keyForIndex: (int index) =>
+                  ValueKey<String>('${_fonts[index].identity}-$index'),
+              onReorder: _onReorder,
+              itemBuilder: (BuildContext context, int index) =>
+                  FushiStaggeredEntrance(
+                    index: index,
+                    child: _cardFor(_fonts[index], layout, reorderable: true),
+                  ),
+            )
+          : FushiReorderableGrid(
+              itemCount: _fonts.length,
+              crossAxisCount: columns,
+              childAspectRatio:
+                  ((inner - gap * (columns - 1)) / columns) / _gridCellExtent,
+              crossAxisSpacing: gap,
+              mainAxisSpacing: gap,
+              feedbackBorderRadius: FushiM3eShape.cardRadius,
+              keyForIndex: (int index) =>
+                  ValueKey<String>('${_fonts[index].identity}-$index'),
+              onReorder: _onReorder,
+              itemBuilder: (BuildContext context, int index) =>
+                  FushiStaggeredEntrance(
+                    index: index,
+                    child: _cardFor(_fonts[index], layout, reorderable: true),
+                  ),
+            );
+      return <Widget>[
+        SliverPadding(
+          padding: EdgeInsets.symmetric(horizontal: pad),
+          sliver: SliverToBoxAdapter(child: reorder),
+        ),
+      ];
+    }
+
+    return <Widget>[
+      SliverPadding(
+        padding: EdgeInsets.fromLTRB(pad, 0, pad, tokens.spacing.gap),
+        sliver: SliverToBoxAdapter(
+          child: Text(
+            t.font_library_reorder_filtered_hint,
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ),
+      ),
+      SliverPadding(
+        padding: EdgeInsets.symmetric(horizontal: pad),
+        sliver: layout == FontLibraryLayout.list
+            ? SliverList.separated(
+                itemCount: visible.length,
+                separatorBuilder: (_, __) => const SizedBox(height: gap),
+                itemBuilder: (BuildContext context, int index) =>
+                    FushiStaggeredEntrance(
                       index: index,
-                      isLast: index == _fonts.length - 1,
-                      onTargetToggled: (FontTarget target) =>
-                          _toggleTarget(index, target),
-                      onDelete: () => _removeFont(index),
-                      onMoveUp: () => _onReorder(index, index - 1),
-                      onMoveDown: () => _onReorder(index, index + 1),
-                      initiallyExpandRoles: widget.target != FontTarget.body,
-                      // native 分层窗只吃裸 sfnt；WOFF/WOFF2 勾了游戏用途下游会
-                      // 静默跳过，这里直接把那枚开关置灰，别让用户白设。
-                      unsupportedTargets: _unsupportedTargetsFor(entry),
+                      child: _cardFor(
+                        visible[index],
+                        layout,
+                        reorderable: false,
+                      ),
+                    ),
+              )
+            : SliverGrid.builder(
+                itemCount: visible.length,
+                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: columns,
+                  mainAxisExtent: _gridCellExtent,
+                  crossAxisSpacing: gap,
+                  mainAxisSpacing: gap,
+                ),
+                itemBuilder: fushiStaggeredItemBuilder(
+                  (BuildContext context, int index) =>
+                      _cardFor(visible[index], layout, reorderable: false),
+                ),
+              ),
+      ),
+    ];
+  }
+
+  Widget _buildBrowser(
+    BuildContext context,
+    SettingsSectionSpy spy,
+    double width,
+  ) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final double pad = tokens.spacing.page;
+    final FontLibraryLayout layout =
+        _layoutOverride ??
+        (width >= 600 ? FontLibraryLayout.grid : FontLibraryLayout.list);
+    final List<FontLibraryFilter> filters = _availableFilters;
+
+    final Widget toolbar = SettingsSectionAnchor(
+      title: t.font_library_section_fonts,
+      child: Padding(
+        padding: EdgeInsets.symmetric(horizontal: pad),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            _sectionHeader(
+              t.font_library_section_fonts,
+              trailing: _fonts.isEmpty
+                  ? null
+                  : SettingsCountBadge(count: _fonts.length),
+            ),
+            FushiSearchBar(
+              fieldKey: const ValueKey<String>('font-library-search'),
+              controller: _searchController,
+              hintText: t.custom_fonts_search_hint,
+              onQueryChanged: (String q) => setState(() => _query = q),
+            ),
+            SizedBox(height: tokens.spacing.gap),
+            SizedBox(
+              height: 48,
+              child: HorizontalDragScrollable(
+                child: ListView.separated(
+                  primary: false,
+                  scrollDirection: Axis.horizontal,
+                  itemCount: filters.length,
+                  separatorBuilder: (_, __) =>
+                      SizedBox(width: tokens.spacing.gap),
+                  itemBuilder: (BuildContext context, int index) {
+                    final FontLibraryFilter filter = filters[index];
+                    return Center(
+                      child: FushiSelectableChip(
+                        key: ValueKey<String>(
+                          'font-library-filter-${filter.name}',
+                        ),
+                        label: _filterLabel(filter),
+                        selected: _filter == filter,
+                        onSelected: (_) => setState(() => _filter = filter),
+                      ),
                     );
                   },
                 ),
               ),
-            ],
+            ),
+            SizedBox(height: tokens.spacing.gap),
+            FontSampleToolbar(
+              script: _script,
+              onScriptChanged: (FontSampleScript script) =>
+                  setState(() => _script = script),
+              controller: _sampleController,
+              onCustomChanged: () => setState(() {}),
+            ),
+            SizedBox(height: tokens.spacing.card),
+          ],
+        ),
+      ),
+    );
+
+    final Widget preview = SettingsSectionAnchor(
+      title: t.font_preview_title,
+      child: Padding(
+        padding: EdgeInsets.symmetric(horizontal: pad),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            _sectionHeader(t.font_preview_title),
+            if (_fontsLoading)
+              const SettingsLoadingState()
+            else
+              _buildPreviewSection(),
+          ],
+        ),
+      ),
+    );
+
+    final Widget sources = SettingsSectionAnchor(
+      title: t.font_library_section_sources,
+      child: Padding(
+        padding: EdgeInsets.symmetric(horizontal: pad),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            _sectionHeader(t.font_library_section_sources),
+            FushiCard(
+              pressScale: false,
+              padding: const EdgeInsets.symmetric(vertical: 6),
+              child: Column(
+                children: <Widget>[
+                  FontLibrarySourceRow(
+                    key: const ValueKey<String>('font-source-file'),
+                    icon: FushiIcons.importFile,
+                    title: t.custom_fonts_import_file,
+                    tone: FushiCardTone.primary,
+                    onTap: _fontsLoading ? null : _importFontFile,
+                  ),
+                  FontLibrarySourceRow(
+                    key: const ValueKey<String>('font-source-recommended'),
+                    icon: FushiIcons.star,
+                    title: t.custom_fonts_recommended,
+                    tone: FushiCardTone.tertiary,
+                    onTap: _fontsLoading ? null : _openRecommended,
+                  ),
+                  FontLibrarySourceRow(
+                    key: const ValueKey<String>('font-source-system'),
+                    icon: FushiIcons.textFields,
+                    title: t.custom_fonts_add_system,
+                    onTap: _fontsLoading ? null : _addSystemFont,
+                  ),
+                  FontLibrarySourceRow(
+                    key: const ValueKey<String>('font-source-url'),
+                    icon: FushiIcons.link,
+                    title: t.custom_fonts_import_url,
+                    onTap: _fontsLoading ? null : _importFromUrl,
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    return FushiEntranceScope(
+      replayKey: '${_filter.name}|${layout.name}|${_query.trim()}',
+      child: CustomScrollView(
+        primary: true,
+        slivers: <Widget>[
+          // 壳的页头让位（状态栏 + 叠放页头 + 跳转条）：内容往下滚时滚到页头底下。
+          SliverToBoxAdapter(
+            child: SizedBox(height: MediaQuery.paddingOf(context).top),
           ),
+          SliverToBoxAdapter(child: toolbar),
+          ..._buildFontSlivers(context, width, layout),
+          SliverToBoxAdapter(child: preview),
+          SliverToBoxAdapter(child: sources),
+          // FAB 下方留白，最后一行不被扩展 FAB 挡住。
+          const SliverToBoxAdapter(child: SizedBox(height: 112)),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    _ensureResolved();
+    final bool apple = isGlassDesign(context);
+    return SettingsKitScaffold(
+      // 带作用域进来时把用途写进标题：用户从「设置·游戏·Hook 文本字体」点进来，
+      // 看到的是同一个全量字体库，不说明的话没法知道自己新导入的字体会挂到哪。
+      title: widget.target == FontTarget.body
+          ? t.custom_fonts_catalog_title
+          : '${t.custom_fonts_catalog_title} · '
+                '${fontTargetLabel(widget.target)}',
+      leadingIcon: FushiIcons.font,
+      leadingTone: SettingsIconTone.purple,
+      actions: <Widget>[
+        Builder(
+          builder: (BuildContext context) {
+            final bool grid =
+                (_layoutOverride ??
+                    (_wide || MediaQuery.sizeOf(context).width >= 600
+                        ? FontLibraryLayout.grid
+                        : FontLibraryLayout.list)) ==
+                FontLibraryLayout.grid;
+            return FushiIconButton(
+              key: const ValueKey<String>('font-library-layout'),
+              icon: grid ? FushiIcons.listView : FushiIcons.gridView,
+              tooltip: grid
+                  ? t.font_library_view_list
+                  : t.font_library_view_grid,
+              onTap: () => setState(
+                () => _layoutOverride = grid
+                    ? FontLibraryLayout.list
+                    : FontLibraryLayout.grid,
+              ),
+            );
+          },
+        ),
+        Builder(
+          builder: (BuildContext anchorContext) => FushiIconButton(
+            key: const ValueKey<String>('font-library-add-menu'),
+            icon: FushiIcons.add,
+            tooltip: t.font_library_more_sources,
+            onTap: _fontsLoading ? null : () => _showAddMenu(anchorContext),
+          ),
+        ),
       ],
+      // Apple 没有 FAB：「导入字体文件」已是页头「+」菜单的首项（iOS / macOS
+      // 的添加动作在导航栏），MD3 才另挂扩展 FAB。
+      floatingActionButton: apple
+          ? null
+          : FushiFab(
+              key: const ValueKey<String>('font-library-import-fab'),
+              icon: const FushiIcon(FushiIcons.importFile),
+              label: Text(t.font_library_import_fab),
+              tooltip: t.custom_fonts_import_file,
+              onPressed: _fontsLoading ? null : _importFontFile,
+            ),
+      // 字体库正文（CustomScrollView）首个 sliver 吃页头让位，滚到页头底下。
+      bodyConsumesTopPadding: true,
+      bodyBuilder:
+          (
+            BuildContext context,
+            ScrollController controller,
+            SettingsSectionSpy spy,
+          ) {
+            return FushiFileDropTarget(
+              debugLabel: 'font-library',
+              enabled: !_fontsLoading,
+              onDrop: (List<String> paths, Offset _) =>
+                  _importDroppedPaths(paths),
+              child: LayoutBuilder(
+                builder: (BuildContext context, BoxConstraints constraints) {
+                  final bool wide = constraints.maxWidth >= 1000;
+                  _wide = wide;
+                  final int detailIndex = wide && _detailIdentity != null
+                      ? _indexOfIdentity(_detailIdentity!)
+                      : -1;
+                  final bool showPanel = detailIndex >= 0;
+                  final double browserWidth = showPanel
+                      ? constraints.maxWidth - _detailPanelWidth - 16
+                      : constraints.maxWidth;
+                  return Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: <Widget>[
+                      Expanded(
+                        child: _buildBrowser(context, spy, browserWidth),
+                      ),
+                      AnimatedSwitcher(
+                        duration: fushiMotionDuration(
+                          context,
+                          FushiMotion.medium,
+                        ),
+                        switchInCurve: FushiMotion.enter,
+                        switchOutCurve: FushiMotion.exit,
+                        transitionBuilder:
+                            (Widget child, Animation<double> animation) =>
+                                FadeTransition(
+                                  opacity: animation,
+                                  child: SizeTransition(
+                                    sizeFactor: animation,
+                                    axis: Axis.horizontal,
+                                    axisAlignment: -1,
+                                    child: child,
+                                  ),
+                                ),
+                        child: !showPanel
+                            ? const SizedBox.shrink(
+                                key: ValueKey<String>('none'),
+                              )
+                            : Padding(
+                                key: const ValueKey<String>('font-detail-side'),
+                                // 宽屏侧栏不随正文滚动：顶部让开叠放的页头。
+                                padding: EdgeInsetsDirectional.fromSTEB(
+                                  0,
+                                  4 + MediaQuery.paddingOf(context).top,
+                                  16,
+                                  16,
+                                ),
+                                child: SizedBox(
+                                  width: _detailPanelWidth,
+                                  child: Material(
+                                    color: apple
+                                        ? appleColorsOf(
+                                            context,
+                                          ).secondaryGroupedBackground
+                                        : Theme.of(
+                                            context,
+                                          ).colorScheme.surfaceContainerLow,
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: apple
+                                          ? const BorderRadius.all(
+                                              Radius.circular(12),
+                                            )
+                                          : FushiM3eShape.containerLargeRadius,
+                                    ),
+                                    clipBehavior: Clip.antiAlias,
+                                    child: _detailPanelFor(
+                                      detailIndex,
+                                      onClose: () => setState(
+                                        () => _detailIdentity = null,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                      ),
+                    ],
+                  );
+                },
+              ),
+            );
+          },
     );
   }
 }
@@ -1511,7 +2069,7 @@ class CustomFontDownloadProgressDialog extends StatelessWidget {
           builder: (_, progress, __) => Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              LinearProgressIndicator(value: progress),
+              FushiLinearProgressIndicator(value: progress),
               SizedBox(height: tokens.spacing.gap),
               Text(
                 progress != null
@@ -1610,21 +2168,6 @@ class _CustomFontUrlImportDialogState extends State<CustomFontUrlImportDialog> {
   }
 }
 
-/// 一次字体下载的结果：导入了几个字面、是否被取消、失败原因。
-class _FontDownloadResult {
-  const _FontDownloadResult({
-    this.importedCount = 0,
-    this.error,
-    this.cancelled = false,
-  });
-
-  final int importedCount;
-  final String? error;
-  final bool cancelled;
-
-  bool get succeeded => error == null && !cancelled && importedCount > 0;
-}
-
 /// 推荐字体页：**默认就是多选**，不设「进入选择态」开关。
 ///
 /// 这个页面唯一的用途就是挑字体下载，再要求先点一下「选择」纯属多余一步；词典
@@ -1645,8 +2188,8 @@ class _RecommendedFontsPageState extends State<RecommendedFontsPage> {
   final Set<String> _selected = <String>{};
 
   bool _isAdded(RecommendedFont font) => widget.alreadyAdded.any(
-        (String name) => name.toLowerCase() == font.name.toLowerCase(),
-      );
+    (String name) => name.toLowerCase() == font.name.toLowerCase(),
+  );
 
   /// 可勾选域：已装的不参与全选，与词典下载弹窗同判据——已经有的再下一遍只是
   /// 白跑一趟下载 + 导入。
@@ -1686,13 +2229,10 @@ class _RecommendedFontsPageState extends State<RecommendedFontsPage> {
                   key: const ValueKey<String>('recommended-fonts-download'),
                   tooltip: t.dialog_import,
                   icon: Icons.download_outlined,
-                  onTap: () => Navigator.pop(
-                    context,
-                    <RecommendedFont>[
-                      for (final RecommendedFont font in recommendedFontsCatalog)
-                        if (_selected.contains(font.name)) font,
-                    ],
-                  ),
+                  onTap: () => Navigator.pop(context, <RecommendedFont>[
+                    for (final RecommendedFont font in recommendedFontsCatalog)
+                      if (_selected.contains(font.name)) font,
+                  ]),
                 ),
               ],
             ),
@@ -1708,8 +2248,8 @@ class _RecommendedFontsPageState extends State<RecommendedFontsPage> {
               icon: Icons.font_download_outlined,
               onTap: added ? null : () => _toggle(font),
               trailing: added
-                  ? Icon(Icons.check, color: scheme.outline)
-                  : Checkbox(
+                  ? FushiIcon(Icons.check, color: scheme.outline)
+                  : FushiCheckbox(
                       value: selected,
                       onChanged: (_) => _toggle(font),
                     ),
@@ -1717,231 +2257,6 @@ class _RecommendedFontsPageState extends State<RecommendedFontsPage> {
           }).toList(),
         ),
       ],
-    );
-  }
-}
-
-@visibleForTesting
-class CustomFontCatalogTile extends StatefulWidget {
-  const CustomFontCatalogTile({
-    required this.name,
-    required this.isFile,
-    required this.targets,
-    required this.index,
-    required this.isLast,
-    required this.onTargetToggled,
-    required this.onDelete,
-    required this.onMoveUp,
-    required this.onMoveDown,
-    this.initiallyExpandRoles = false,
-    this.unsupportedTargets = const <FontTarget, String>{},
-    super.key,
-  });
-
-  final String name;
-  final bool isFile;
-  final Set<FontTarget> targets;
-
-  /// 进页时就展开用途开关。从非默认作用域（如「设置·游戏·Hook 文本字体」）进来时
-  /// 为 true：那条路径上的用户要找的正是「这个字体给游戏用不用」，折叠着等于没有。
-  final bool initiallyExpandRoles;
-
-  /// 本字体**格式上**用不了的用途 → 置灰时给用户看的原因，而不是让他勾一个下游会
-  /// 静默忽略的组合。当前唯一来源是 WOFF/WOFF2 遇上 [FontTarget.gameLookup]
-  /// （native DirectWrite 只吃裸 sfnt），判据见 `AppFontLoader.nativeOverlayCanUse`。
-  ///
-  /// 传的是**成文的原因**而不是裸枚举集合：拼文案要知道具体扩展名，而这只有持有
-  /// 字体行的页面侧知道。
-  final Map<FontTarget, String> unsupportedTargets;
-  final int index;
-  final bool isLast;
-  final ValueChanged<FontTarget> onTargetToggled;
-  final VoidCallback onDelete;
-  final VoidCallback onMoveUp;
-  final VoidCallback onMoveDown;
-
-  @override
-  State<CustomFontCatalogTile> createState() => _CustomFontCatalogTileState();
-}
-
-class _CustomFontCatalogTileState extends State<CustomFontCatalogTile> {
-  // 字体用途开关（逐个 FontTarget 一枚 FilterChip，见 _targetLabel 的穷尽 switch）。
-  // 默认折叠：每行不再被整排 FilterChip 撑高，一屏能看到更多字体。展开后才显示。
-  // 但从带作用域的入口进来时（initiallyExpandRoles）出生即展开。
-  late bool _rolesExpanded = widget.initiallyExpandRoles;
-
-  String _targetLabel(FontTarget target) => fontTargetLabel(target);
-
-  /// 本平台真有消费端的用途。gameLookup 只有 Windows 有 native 分层窗消费，
-  /// 其余平台勾上等于写一个永远没人读的偏好键——显示出来只会让用户以为设好了。
-  ///
-  /// 只影响**显示**：已存的 targetEnabled 由 customFontLegacyListsFromRows 按
-  /// FontTarget.values 全量回写，跨平台同步过来的勾选不会被这里的隐藏抹掉。
-  static List<FontTarget> get _visibleTargets => <FontTarget>[
-        for (final FontTarget target in FontTarget.values)
-          if (isFontTargetAvailableOnPlatform(target)) target,
-      ];
-
-  /// 折叠态摘要：把已启用的用途拼成一行，用户不展开也能一眼看到该字体用在哪。
-  String get _rolesSummary => <String>[
-    for (final FontTarget target in _visibleTargets)
-      if (widget.targets.contains(target)) _targetLabel(target),
-  ].join(' · ');
-
-  @override
-  Widget build(BuildContext context) {
-    final ColorScheme scheme = Theme.of(context).colorScheme;
-    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final bool cupertino = isCupertinoPlatform(context);
-    final TextStyle? titleStyle = cupertino
-        ? tokens.type.listTitle
-        : Theme.of(context).textTheme.bodyMedium;
-    final TextStyle? subtitleStyle = Theme.of(
-      context,
-    ).textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant);
-    // ☰ 拖拽手柄：整行本就可拖（外层 FushiReorderDragListener——桌面按下即拖、
-    // 移动端长按再拖），这枚手柄是把「可拖拽重排」画出来的视觉锚点，替代原先
-    // 单列一行的「拖拽以调整优先级」文字提示。
-    final Widget dragHandle = Tooltip(
-      message: t.custom_fonts_drag_hint,
-      child: Padding(
-        padding: EdgeInsets.only(right: tokens.spacing.gap),
-        child: Icon(
-          Icons.drag_indicator,
-          size: 20,
-          color: scheme.onSurfaceVariant,
-        ),
-      ),
-    );
-    final Widget actions = Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        FushiIconButton(
-          icon: Icons.keyboard_arrow_up,
-          size: 18,
-          tooltip: t.move_up,
-          enabled: widget.index > 0,
-          onTap: widget.onMoveUp,
-        ),
-        SizedBox(width: tokens.spacing.gap),
-        FushiIconButton(
-          icon: Icons.keyboard_arrow_down,
-          size: 18,
-          tooltip: t.move_down,
-          enabled: !widget.isLast,
-          onTap: widget.onMoveDown,
-        ),
-        SizedBox(width: tokens.spacing.gap),
-        FushiIconButton(
-          icon: Icons.delete_outline,
-          size: 18,
-          enabledColor: scheme.error,
-          tooltip: t.custom_fonts_removed,
-          onTap: widget.onDelete,
-        ),
-      ],
-    );
-    // 折叠头：点一下展开/收起 4 个用途开关。用普通 Icon（非 FushiIconButton）
-    // 与 InkWell，避免破坏「每行恰好 3 个动作按钮」的布局守卫。
-    final Widget rolesHeader = InkWell(
-      onTap: () => setState(() => _rolesExpanded = !_rolesExpanded),
-      borderRadius: tokens.radii.controlRadius,
-      child: Padding(
-        padding: EdgeInsets.symmetric(vertical: tokens.spacing.gap / 2),
-        child: Row(
-          children: [
-            Icon(
-              _rolesExpanded ? Icons.expand_less : Icons.expand_more,
-              size: 20,
-              color: scheme.onSurfaceVariant,
-            ),
-            SizedBox(width: tokens.spacing.gap),
-            Text(t.custom_fonts_font_roles, style: subtitleStyle),
-            if (!_rolesExpanded && _rolesSummary.isNotEmpty) ...[
-              SizedBox(width: tokens.spacing.gap),
-              Expanded(
-                child: Text(
-                  _rolesSummary,
-                  style: subtitleStyle,
-                  overflow: TextOverflow.ellipsis,
-                  maxLines: 1,
-                  textAlign: TextAlign.end,
-                ),
-              ),
-            ],
-          ],
-        ),
-      ),
-    );
-    // 不再自带拖拽监听：整行拖拽由外层 FushiReorderableColumn 统一接管
-    //（它按输入设备分流起拖：鼠标按下即拖、触摸长按），行内容保持纯净。
-    return Padding(
-      padding: EdgeInsets.symmetric(
-        horizontal: cupertino ? 16 : 12,
-        vertical: 10,
-      ),
-      child: ConstrainedBox(
-        constraints: BoxConstraints(minHeight: cupertino ? 58 : 60),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Row(
-              children: [
-                dragHandle,
-                Expanded(
-                  child: Text(
-                    widget.name,
-                    style: titleStyle,
-                    overflow: TextOverflow.ellipsis,
-                    maxLines: 1,
-                  ),
-                ),
-                SizedBox(width: tokens.spacing.gap),
-                actions,
-              ],
-            ),
-            Padding(
-              padding: const EdgeInsets.only(top: 2),
-              child: Text(
-                widget.isFile ? t.font_source_file : t.font_source_system,
-                style: subtitleStyle,
-                overflow: TextOverflow.ellipsis,
-                maxLines: 2,
-              ),
-            ),
-            SizedBox(height: tokens.spacing.gap),
-            rolesHeader,
-            if (_rolesExpanded) ...[
-              SizedBox(height: tokens.spacing.gap),
-              Wrap(
-                spacing: tokens.spacing.gap,
-                runSpacing: tokens.spacing.gap,
-                children: [
-                  for (final FontTarget target in _visibleTargets)
-                    if (widget.unsupportedTargets.containsKey(target))
-                      // 置灰而非隐藏：用户需要知道「这个用途存在，但这个字体格式
-                      // 用不了」，隐藏只会让人继续找不到、以为是 app 少做了。
-                      Tooltip(
-                        message: widget.unsupportedTargets[target]!,
-                        child: FilterChip(
-                          label: Text(_targetLabel(target)),
-                          selected: false,
-                          onSelected: null,
-                        ),
-                      )
-                    else
-                      FilterChip(
-                        label: Text(_targetLabel(target)),
-                        selected: widget.targets.contains(target),
-                        onSelected: (_) => widget.onTargetToggled(target),
-                      ),
-                ],
-              ),
-            ],
-          ],
-        ),
-      ),
     );
   }
 }

@@ -1,6 +1,6 @@
 import 'dart:ui';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/utils/components/clipboard_lookup_text_panel.dart';
@@ -49,7 +49,7 @@ void main() {
 
     await tester.pumpWidget(
       buildSubject(
-        text: 'abcdef',
+        text: 'あいうえおか',
         onLookup: (String value, Rect localRect, int _) {
           query = value;
           rect = localRect;
@@ -57,11 +57,34 @@ void main() {
       ),
     );
 
-    await tester.tap(find.text('c'));
+    await tester.tap(find.text('う'));
 
-    expect(query, 'cdef');
+    expect(query, 'うえおか');
     expect(rect, isNotNull);
     expect(rect, isNot(Rect.zero));
+  });
+
+  // BUG-2847：英文等拉丁文从词首起查。点 "world" 中间的 'r' 此前查的是 "rld"，
+  // 引擎匹配不到就只剩单个字母；锚点下标也要回到词首，高亮才框住整词。
+  testWidgets('tapping inside a Latin word looks up from the word start',
+      (WidgetTester tester) async {
+    String? query;
+    int? anchor;
+
+    await tester.pumpWidget(
+      buildSubject(
+        text: 'hello world',
+        onLookup: (String value, Rect _, int charIndex) {
+          query = value;
+          anchor = charIndex;
+        },
+      ),
+    );
+
+    await tester.tap(find.text('r'));
+
+    expect(query, 'world');
+    expect(anchor, 6);
   });
 
   testWidgets('shift-hover looks up the suffix under the pointer',
@@ -71,7 +94,7 @@ void main() {
 
     await tester.pumpWidget(
       buildSubject(
-        text: 'abcdef',
+        text: 'あいうえおか',
         onLookup: (String value, Rect localRect, int _) {
           query = value;
           rect = localRect;
@@ -82,14 +105,14 @@ void main() {
     await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
     final TestGesture mouse =
         await tester.createGesture(kind: PointerDeviceKind.mouse);
-    await mouse.addPointer(location: tester.getCenter(find.text('c')));
+    await mouse.addPointer(location: tester.getCenter(find.text('う')));
     await tester.pump();
-    await mouse.moveTo(tester.getCenter(find.text('c')));
+    await mouse.moveTo(tester.getCenter(find.text('う')));
     await tester.pump();
     await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
     await mouse.removePointer();
 
-    expect(query, 'cdef');
+    expect(query, 'うえおか');
     expect(rect, isNotNull);
     expect(rect, isNot(Rect.zero));
   });
@@ -163,7 +186,7 @@ void main() {
 
     await tester.pumpWidget(
       buildSubject(
-        text: 'abcdef',
+        text: 'あいうえおか',
         onLookup: (String value, Rect _, int __) {
           query = value;
         },
@@ -174,9 +197,9 @@ void main() {
     expect(find.textContaining('Clipboard'), findsNothing);
     expect(find.textContaining('剪贴板'), findsNothing);
 
-    await tester.tap(find.text('d'));
+    await tester.tap(find.text('え'));
 
-    expect(query, 'def');
+    expect(query, 'えおか');
   });
 
   // BUG-175 / TODO-222：剪贴板查词标题必须和词典弹窗 headword 标题同级，
@@ -206,7 +229,16 @@ void main() {
 
     expect(fontSize, isNotNull);
     expect(fontSize, 26);
-    expect(rendered.style?.fontWeight, FontWeight.w600);
+    // 字重取 pageTitle 角色：0ed90ed 起是 M3E headlineSmall Emphasized
+    // （Medium；测试默认 Android 平台不做 Windows/Linux 的 Semibold 取整）。
+    expect(rendered.style?.fontWeight, FontWeight.w500);
+    expect(
+      rendered.style?.fontWeight,
+      FushiDesignTokens.of(tester.element(find.text('あ')))
+          .type
+          .pageTitle
+          .fontWeight,
+    );
     expect(fontSize, greaterThan(labelMedium));
     expect(fontSize, greaterThan(theme.textTheme.bodyLarge?.fontSize ?? 16));
   });
@@ -224,7 +256,7 @@ void main() {
     final Text rendered = tester.widget<Text>(find.text('あ'));
 
     expect(rendered.style?.fontSize, 39);
-    expect(rendered.style?.fontWeight, FontWeight.w600);
+    expect(rendered.style?.fontWeight, FontWeight.w500);
   });
 
   // BUG-175：剪贴板查词文字「默认居中了」。回归守卫——本组件占满父级宽度并

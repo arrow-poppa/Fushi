@@ -1,12 +1,18 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:drift/drift.dart' show TableUpdate, TableUpdateQuery;
 import 'package:flutter/foundation.dart';
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/media/audiobook/audiobook_controller.dart';
 import 'package:fushi/src/media/audiobook/floating_lyric_channel.dart';
 import 'package:fushi/src/media/audiobook/floating_lyric_context.dart';
+import 'package:fushi/src/startup/exit_flush_registry.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/fushi_audio_handler.dart';
 import 'package:fushi_audio/fushi_audio.dart';
+import 'package:fushi_core/fushi_core.dart';
+import 'package:just_audio/just_audio.dart' show AudioSource;
 
 /// 进程级常驻有声书会话（TODO-291 阶段2）。
 ///
@@ -30,30 +36,44 @@ class AudiobookSession extends ChangeNotifier {
     required bool Function() showFloatingLyric,
     required bool Function() showMediaNotification,
     required FloatingLyricStyle Function() floatingLyricStyle,
-    required int Function() floatingLyricContextLines,
+    required int Function() floatingLyricVisibleLines,
     required bool Function() floatingLyricClickLookup,
     required FloatingLyricLookupHandler onFloatingLyricLookup,
     required AudioControlStreams controlStreams,
-  })  : _audioHandlerGetter = audioHandler,
-        _showFloatingLyric = showFloatingLyric,
-        _showMediaNotification = showMediaNotification,
-        _floatingLyricStyle = floatingLyricStyle,
-        _floatingLyricContextLines = floatingLyricContextLines,
-        _floatingLyricClickLookup = floatingLyricClickLookup,
-        _onFloatingLyricLookup = onFloatingLyricLookup,
-        _defaultFloatingLyricStyle = floatingLyricStyle,
-        _defaultFloatingLyricLookup = onFloatingLyricLookup,
-        _controlStreams = controlStreams;
+    required FushiDatabase? Function() database,
+    required Duration Function() studyIdleTimeout,
+  }) : _audioHandlerGetter = audioHandler,
+       _showFloatingLyric = showFloatingLyric,
+       _showMediaNotification = showMediaNotification,
+       _floatingLyricStyle = floatingLyricStyle,
+       _floatingLyricVisibleLines = floatingLyricVisibleLines,
+       _floatingLyricClickLookup = floatingLyricClickLookup,
+       _onFloatingLyricLookup = onFloatingLyricLookup,
+       _defaultFloatingLyricStyle = floatingLyricStyle,
+       _defaultFloatingLyricLookup = onFloatingLyricLookup,
+       _controlStreams = controlStreams,
+       _databaseGetter = database,
+       _studyIdleTimeout = studyIdleTimeout;
 
   final FushiAudioHandler? Function() _audioHandlerGetter;
   final bool Function() _showFloatingLyric;
   final bool Function() _showMediaNotification;
   final bool Function() _floatingLyricClickLookup;
 
-  /// TODO-708 P4: 悬浮字幕上下文行数 N（对称）。0=只当前行=今天单行观感。
-  /// 闭包注入（照 floatingLyricStyle 范式），每次 _syncFloatingLyric 读实时值。
-  final int Function() _floatingLyricContextLines;
+  /// 悬浮字幕同时显示句数（1 = 只当前句；0 = 按窗口高度自动，见
+  /// [floatingLyricVisibleSpan]）。闭包注入（照 floatingLyricStyle 范式），每次
+  /// _syncFloatingLyric 读实时值。
+  final int Function() _floatingLyricVisibleLines;
   final AudioControlStreams _controlStreams;
+
+  /// 后台听书学习时钟的库句柄来源（BUG-2558）。闭包注入，照本类其余依赖的范式——
+  /// 会话在 `AppModel` 字段初始化期构造，那时 `database` 还没 ready。返回 null =
+  /// 本会话不记后台听书统计（库尚未打开 / 不关心统计的测试装置），播放本身不受影响。
+  final FushiDatabase? Function() _databaseGetter;
+
+  /// 后台听书时钟的空闲门（设置项 `reading.stats_idle_timeout_minutes`）。闭包注入、
+  /// 每次起表现读，与阅读器「不在建时钟时快照」同律（BUG-2213）。
+  final Duration Function() _studyIdleTimeout;
 
   /// 悬浮窗样式来源。默认是 AppModel 注入的 app 级主题样式；reader attach 时换成
   /// reader 主题样式（深色书/竖排等），detach 时还原成默认，使后台听书也有合理样式。
@@ -101,6 +121,10 @@ class AudiobookSession extends ChangeNotifier {
 
   AudiobookPlayerController? _controller;
 
+  /// 当前会话来源的资源释放回调（TTS 朗读：停调度、解除缓存 pin）。在原生播放器
+  /// 真正放掉之后才调——播放器还开着文件时解除 pin，淘汰就可能删到它。
+  Future<void> Function()? _onReleased;
+
   /// start/stop 共用的生命周期队列。切书与退出可能来自页面、通知栏和数据迁移等
   /// 不同入口；串行化保证旧控制器已完成最终写入/stop/dispose 后，新一代才可发布。
   Future<void> _lifecycleTail = Future<void>.value();
@@ -147,6 +171,13 @@ class AudiobookSession extends ChangeNotifier {
   /// 悬浮窗关闭后落偏好的回调（设置 show_floating_lyric=false），由 AppModel 注入。
   Future<void> Function()? onFloatingLyricClosePersist;
 
+  /// 悬浮窗上次的窗口矩形（Windows；null = 平台默认位置）。AppModel 注入。
+  FloatingLyricWindowRect? Function()? floatingLyricWindowRect;
+
+  /// 用户拖动 / 缩放悬浮窗后的持久化回调（AppModel 注入）。
+  Future<void> Function(FloatingLyricWindowRect rect)?
+  onFloatingLyricBoundsPersist;
+
   /// 启动一个后台听书会话：创建并 load 控制器、装 persist 回调、订阅 cue 变化与
   /// audioHandler 控制流、按偏好拉起悬浮窗 / 媒体通知。
   ///
@@ -161,6 +192,8 @@ class AudiobookSession extends ChangeNotifier {
     required SessionPrefs prefs,
     required SessionPersistCallbacks persist,
     List<AudioCue> cues = const <AudioCue>[],
+    List<AudioSource>? audioSources,
+    Future<void> Function()? onReleased,
   }) {
     return _enqueueLifecycle<AudiobookPlayerController?>(
       () => _startInternal(
@@ -169,6 +202,8 @@ class AudiobookSession extends ChangeNotifier {
         prefs: prefs,
         persist: persist,
         cues: cues,
+        audioSources: audioSources,
+        onReleased: onReleased,
       ),
     );
   }
@@ -179,9 +214,16 @@ class AudiobookSession extends ChangeNotifier {
     required SessionPrefs prefs,
     required SessionPersistCallbacks persist,
     required List<AudioCue> cues,
+    List<AudioSource>? audioSources,
+    Future<void> Function()? onReleased,
   }) async {
     final AudiobookPlayerController? existing = _controller;
-    if (existing != null && _book?.bookKey == info.bookKey) {
+    // 同书复用只对录音有声书成立：同一本 EPUB 的录音有声书与 TTS 朗读是两种会话，
+    // 互相顶替、或重新开始朗读时都必须重新加载。
+    if (existing != null &&
+        _book?.bookKey == info.bookKey &&
+        !(_book?.isTtsSource ?? false) &&
+        !info.isTtsSource) {
       // 同书复用：刷新元数据（封面/标题可能更新过）后直接返回。
       _book = info;
       _rewirePersist(existing, persist);
@@ -203,6 +245,7 @@ class AudiobookSession extends ChangeNotifier {
       await controller.load(
         audiobook: info.audiobook,
         audioFiles: audioFiles,
+        audioSources: audioSources,
         initialFollowAudio: prefs.followAudio,
         initialDelayMs: prefs.delayMs,
         initialSpeed: prefs.speed,
@@ -212,6 +255,7 @@ class AudiobookSession extends ChangeNotifier {
       );
     } catch (e) {
       controller.dispose();
+      await onReleased?.call();
       rethrow;
     }
 
@@ -228,6 +272,8 @@ class AudiobookSession extends ChangeNotifier {
     controller.addListener(_onControllerChanged);
     _controller = controller;
     _book = info;
+    _onReleased = onReleased;
+    _watchStoredCues();
 
     _subscribeControlStreams(controller);
     await _startBackgroundSurfaces(controller);
@@ -261,6 +307,8 @@ class AudiobookSession extends ChangeNotifier {
       // cue（音频跳过的段落不算已读）。
       controller.onExplicitCueJump = reader.onExplicitCueJump;
     }
+    // BUG-2558：reader 接手统计，后台听书那只必须停——否则同一段时间两只时钟各记一遍。
+    _syncStudyClockRunState();
   }
 
   /// 退出 reader：把 WebView 侧回调清成「无 reader」安全默认，但不 dispose 控制器。
@@ -285,6 +333,8 @@ class AudiobookSession extends ChangeNotifier {
     }
     // 退 reader 后悬浮窗换回 app 级默认主题样式 + 默认查词（桌面后台听书点词无弹窗宿主）。
     restoreDefaultSurfaces();
+    // BUG-2558：reader 走了，若还在播就由本会话接手计时（「退出书籍页继续听」那一段）。
+    _syncStudyClockRunState();
   }
 
   /// 显式停止会话：dispose 控制器、隐藏悬浮窗、清媒体通知、取消订阅。
@@ -326,6 +376,14 @@ class AudiobookSession extends ChangeNotifier {
 
   Future<void> _stopInternal() async {
     final AudiobookPlayerController? controller = _controller;
+    final SessionBookInfo? stoppingBook = _book;
+    final Future<void> Function()? onReleased = _onReleased;
+    _onReleased = null;
+    // BUG-2558：在 _book / _controller 被清空**之前**结算后台听书时钟——清空之后判据
+    // 恒 false，但那时已经没人持有这只时钟了。
+    _retireStudyClock();
+    _storedCuesSub?.cancel();
+    _storedCuesSub = null;
     _reader = null;
     _controller = null;
     _book = null;
@@ -365,12 +423,35 @@ class AudiobookSession extends ChangeNotifier {
       } catch (error, stack) {
         remember(error, stack);
       }
+      // BUG-3197：stopPlayback 落库的是按**控制器手里那份 cue** 编码的全书毫秒。
+      // 会话期间字幕被换过（阅读器内 / 书架重新导入字幕）时，库里已经是新 cue，
+      // 仓库层也已把存着的进度换成新编码；旧编码那次落库若留着，下一次开书按
+      // 新 cue 一拆就落到别的文件 / 偏移——「重新导入字幕后听书进度被重置」。
+      // stop 之后（不是之前：stopPlayback 必须在本段同步进入，它的同步采样与
+      // 位置写接链不能被一次读库推到异步缺口之后）按库里那份 cue 把 stop 采样的
+      // 位置重新编码再落一次，真实时间位置（文件下标 + 文件内偏移）不变。
+      try {
+        await _reencodeAgainstStoredCues(controller, stoppingBook);
+      } catch (error, stack) {
+        ErrorLogService.instance.log(
+          'AudiobookSession.reencodeAgainstStoredCues',
+          error,
+          stack,
+        );
+      }
       // TODO-1212：用可 await 的 disposeAndRelease 取代同步 dispose()——后者的
       // `_player.dispose()` 是 fire-and-forget，返回时 libmpv 音频文件句柄仍在异步
       // 释放中；数据根迁移在停音频后立即 rename 数据根，句柄未放会撞「文件被占用」。
       // disposeAndRelease 先 `await _player.dispose()` 真放掉句柄再返回。
       try {
         await controller.disposeAndRelease();
+      } catch (error, stack) {
+        remember(error, stack);
+      }
+    }
+    if (onReleased != null) {
+      try {
+        await onReleased();
       } catch (error, stack) {
         remember(error, stack);
       }
@@ -388,6 +469,155 @@ class AudiobookSession extends ChangeNotifier {
     }
   }
 
+  /// 监听 cue 表的提交（BUG-3251）：正在播的这本书的字幕被整组替换（书架重新导入 /
+  /// 重新匹配 / 互联「只更新字幕」）时，立即把库里的新 cue 交给活控制器，周期位置
+  /// 写入从此按新 cue 编码。此前要等到 [stop] 才换编码（BUG-3197），期间 app 被直接
+  /// 杀掉，库里留下的就是旧编码，下次开书按新 cue 一拆，断点落到别的文件 / 偏移。
+  /// 仓库层把「换 cue + 换算库里进度」放在同一事务里，提交通知一定晚于换算。
+  StreamSubscription<Set<TableUpdate>>? _storedCuesSub;
+
+  void _watchStoredCues() {
+    _storedCuesSub?.cancel();
+    _storedCuesSub = null;
+    final FushiDatabase? db = _databaseGetter();
+    if (db == null) return;
+    // TTS 朗读的 cue 不在库里：库里那份是同一本书的录音有声书（或为空），不能拿来
+    // 覆盖朗读会话的时间轴。
+    if (_book?.isTtsSource ?? false) return;
+    _storedCuesSub = db
+        .tableUpdates(TableUpdateQuery.onTable(db.audioCues))
+        .listen((_) => unawaited(_adoptStoredCues(db)));
+  }
+
+  Future<void> _adoptStoredCues(FushiDatabase db) async {
+    final AudiobookPlayerController? controller = _controller;
+    final SessionBookInfo? book = _book;
+    if (controller == null || book == null || book.bookKey.isEmpty) return;
+    try {
+      final List<AudioCue> stored = await _storedCuesFor(db, book);
+      // 读库期间会话换了书 / 停了：不把这本的 cue 灌给别的控制器。
+      if (!identical(_controller, controller) ||
+          _book?.bookKey != book.bookKey) {
+        return;
+      }
+      controller.adoptReplacedBookCues(stored);
+    } catch (error, stack) {
+      ErrorLogService.instance.log(
+        'AudiobookSession.adoptStoredCues',
+        error,
+        stack,
+      );
+    }
+  }
+
+  /// 这本书在库里的全书 cue：字幕书按 uid 取扁平 cue，EPUB 有声书按 bookKey 取全书
+  /// cue（与 `AudiobookSessionLauncher` / 阅读器灌 cue 同源）。
+  static Future<List<AudioCue>> _storedCuesFor(
+    FushiDatabase db,
+    SessionBookInfo book,
+  ) =>
+      book.isSrtBookSource
+          ? SrtBookRepository(db).cuesFor(book.bookKey)
+          : AudiobookRepository(db).cuesForBook(book.bookKey);
+
+  /// BUG-3197：按库里当前那份全书 cue 给 [controller] 的 stop 位置换编码（仅当
+  /// 两者推出的文件时长不同，即会话期间字幕被整组替换过）。cue 的命名空间与
+  /// `AudiobookSessionLauncher` / 阅读器灌 cue 同源：字幕书按 uid 取扁平 cue，
+  /// EPUB 有声书按 bookKey 取全书 cue。
+  Future<void> _reencodeAgainstStoredCues(
+    AudiobookPlayerController controller,
+    SessionBookInfo? book,
+  ) async {
+    final FushiDatabase? db = _databaseGetter();
+    if (db == null || book == null || book.bookKey.isEmpty) return;
+    if (book.isTtsSource) return;
+    final List<AudioCue> stored = await _storedCuesFor(db, book);
+    await controller.reencodeStoppedPositionForCues(stored);
+  }
+
+  // ── 后台听书的学习统计（BUG-2558） ──────────────────────────────────────
+
+  /// **reader 不在场**期间的后台听书学习时钟（BUG-2558）。
+  ///
+  /// 阅读器那只时钟随 reader 页 `dispose` 一起 `detach()`，于是「退出书籍页 → 锁屏 →
+  /// 经媒体中心继续听」这整段过去**没有任何统计写入方**（`docs/plans/2026-09-06-
+  /// read-unit-ledger.md` 已记为已知缺口）。本时钟补的就是这一段。
+  ///
+  /// **与阅读器那只时钟互斥，不是并存**：判据里的 [hasReaderAttached] 保证同一时刻
+  /// 至多一只在跑。reader 在场时（哪怕 app 已切后台）由阅读器那只负责，它自己的判据
+  /// [studyClockMayRun] 里有同一条「有声书在播则豁免生命周期停表」的豁免；reader 一
+  /// 走，交接到这只。两只同时跑就是同一段时间记两遍。
+  ///
+  /// 只记时长、不记字数：后台没有正文视口，`ReadUnitLedger` 的「翻走即计」无从谈起
+  /// （与视频域只计时不计字同律）。身份用 [SessionBookInfo.studyMediaKey]，与阅读器
+  /// 同源，所以同一本书前后台听的时长落在同一条统计身份上。
+  StudyClock? _studyClock;
+
+  /// 本时钟此刻可跑：reader 不在场 + 有书 + **真在出声**。
+  ///
+  /// 「在出声」而不是「会话还活着」：媒体中心 / 耳机键按下暂停后会话仍在（通知还挂着、
+  /// 随时可续播），但那不是学习时间。用户要的正是这条——后台把有声书停了，统计跟着停。
+  bool get _studyClockMayRun =>
+      !hasReaderAttached && _book != null && (_controller?.isPlaying ?? false);
+
+  /// 取（必要时建）后台听书时钟。换书时 [_stopInternal] 已把上一只结算掉并置空，
+  /// 所以这里建出来的一定绑当前这本书。
+  StudyClock? _ensureStudyClock() {
+    final SessionBookInfo? book = _book;
+    if (book == null) return null;
+    final FushiDatabase? db = _databaseGetter();
+    if (db == null) return null;
+    return _studyClock ??= StudyClock(
+      database: db,
+      mediaKind: kActivityMediaBook,
+      mediaKey: book.studyMediaKey,
+      title: book.title,
+      format: BookFormat.epub.dbValue,
+      onWriteError: (Object e, StackTrace st) =>
+          ErrorLogService.instance.log('StudyClock.write(audiobook-bg)', e, st),
+      deferWrite: ExitFlushRegistry.instance.defer,
+    );
+  }
+
+  /// 把后台听书时钟对齐到判据（可跑 start、不可跑 stop，两边都对已是该状态的幂等）。
+  ///
+  /// 调用点必须覆盖判据三个输入的**每一次**翻转：播放态（[_onControllerChanged]，
+  /// just_audio 的 `playingStream` 经控制器 notify 传到这里）、reader 在场
+  /// （[attachReader] / [detachReader]）、书（[_stopInternal] 单独结算）。
+  void _syncStudyClockRunState() {
+    if (_studyClockMayRun) {
+      final StudyClock? clock = _ensureStudyClock();
+      if (clock == null) return;
+      // 空闲门每次从设置刷，不在建时钟时快照（与阅读器 `_ensureStudyClock` 同律，
+      // BUG-2213）。后台听书唯一的喂门输入是 cue 推进，见 [_touchStudyClockIfPlaying]。
+      clock.idleTimeout = _studyIdleTimeout();
+      clock.start();
+    } else {
+      unawaited(_studyClock?.stop());
+    }
+  }
+
+  /// 后台听书时钟此刻是否在走（行为测试用；生产代码不读）。
+  @visibleForTesting
+  bool get debugBackgroundStudyClockRunning => _studyClock?.isRunning ?? false;
+
+  /// 播放中每次 cue 推进喂一次空闲门（BUG-2212 同律：后台听书没有滚动回传，不喂门
+  /// 的话听一小时只记到空闲门那 10 分钟）。
+  void _touchStudyClockIfPlaying(AudiobookPlayerController controller) {
+    if (!controller.isPlaying) return;
+    _studyClock?.touch();
+  }
+
+  /// 结算并放掉后台听书时钟（换书 / 显式停会话 / 释放会话）。
+  ///
+  /// 同步段（结算 + 封段）在 `stop()` 的首个 await 之前完成，所以这里 `unawaited`
+  /// 只是不等落库那一步——与阅读器 [_syncStudyClockRunState] 的用法同律。
+  void _retireStudyClock() {
+    final StudyClock? clock = _studyClock;
+    _studyClock = null;
+    if (clock != null) unawaited(clock.stop());
+  }
+
   // ── 控制器 cue 变化的常驻同步 ────────────────────────────────────────────
 
   void _onControllerChanged() {
@@ -399,21 +629,28 @@ class AudiobookSession extends ChangeNotifier {
     // 常驻同步：悬浮窗 + 媒体通知。即便没有 reader（退书后台听书）也照刷。
     _syncFloatingLyric(controller);
     _syncMediaNotification(controller);
+    // BUG-2558：控制器的 notify 覆盖播放态翻转（`playingStream`）与 cue 推进两件事，
+    // 正好是后台听书统计需要的两个信号——起停表对齐判据、播放中喂空闲门。
+    _syncStudyClockRunState();
+    _touchStudyClockIfPlaying(controller);
     // 给迷你条 / 任何 session 监听者一次刷新（播放态 / cue 文本变了）。
     notifyListeners();
   }
 
   void _syncFloatingLyric(AudiobookPlayerController controller) {
     if (!_showFloatingLyric()) return;
-    final int n = _floatingLyricContextLines();
-    if (n <= 0) {
-      // N=0（默认）：payload 只有 text（无行标记键）。改用 display cue
+    final ({int before, int after}) span = floatingLyricVisibleSpan(
+      _floatingLyricVisibleLines(),
+      autoFillsWindow: !Platform.isAndroid,
+    );
+    if (span.before == 0 && span.after == 0) {
+      // 单句：payload 只有 text（无行标记键）。改用 display cue
       // （TODO-1065, BUG-509）：音频引子期先显示首句、句间 gap 提前显示下一句，
       // 消除首句空窗 / 「等上一句播完才出现」。reader 高亮仍用 currentCue，不受影响。
       final AudioCue? cue = controller.displayCueForFloatingLyric;
       FloatingLyricChannel.updateText(cue?.text ?? '');
     } else {
-      // N>0：与 lyrics.part.dart 同源的列表/索引选择（全书快照优先，否则章内），
+      // 多句：与 lyrics.part.dart 同源的列表/索引选择（全书快照优先，否则章内），
       // 切上下文窗口 → 组装多行块 + 当前行块内区间，推给原生渲染。
       final List<AudioCue> cues = controller.allBookCuesSnapshot.isNotEmpty
           ? controller.allBookCuesSnapshot
@@ -421,8 +658,12 @@ class AudiobookSession extends ChangeNotifier {
       // display cue 在选定列表中的下标（TODO-1065, BUG-509）：与 N=0 分支同源，
       // 首句前=首句、gap=下一句，让上下文窗口在引子期 / gap 也对齐即将播的句。
       final int index = controller.displayCueIndexIn(cues);
-      final FloatingLyricBlock block =
-          buildFloatingLyricBlock(cues: cues, index: index, n: n);
+      final FloatingLyricBlock block = buildFloatingLyricBlockRange(
+        cues: cues,
+        index: index,
+        before: span.before,
+        after: span.after,
+      );
       FloatingLyricChannel.updateText(
         block.text,
         currentLineStart: block.start,
@@ -432,7 +673,7 @@ class AudiobookSession extends ChangeNotifier {
     FloatingLyricChannel.setPlaybackState(playing: controller.isPlaying);
   }
 
-  /// TODO-708 P4: 设置页改上下文行数 N 后即时重推悬浮字幕文本（对称 [applyFloatingLyricStyle]）。
+  /// 设置页改同时显示句数后即时重推悬浮字幕文本（对称 [applyFloatingLyricStyle]）。
   /// 无活动会话时为 no-op（幂等）。
   Future<void> resyncFloatingLyricText() async {
     final AudiobookPlayerController? controller = _controller;
@@ -491,9 +732,9 @@ class AudiobookSession extends ChangeNotifier {
     _skipNextSub?.cancel();
     _skipPrevSub?.cancel();
     _floatingLyricSub?.cancel();
-    _playStreamSub = _controlStreams.playStream.listen((_) {
-      controller.togglePlayPause();
-    });
+    _playStreamSub = _controlStreams.playIntentStream.listen(
+      (MediaPlayIntent intent) => applyMediaPlayIntent(controller, intent),
+    );
     _seekStreamSub = _controlStreams.seekStream.listen((Duration pos) {
       controller.seekMs(pos.inMilliseconds);
     });
@@ -540,6 +781,8 @@ class AudiobookSession extends ChangeNotifier {
       windowWidth: style.windowWidth,
       clickLookupEnabled: _floatingLyricClickLookup(),
       slotTooltips: _slotTooltips,
+      rect: floatingLyricWindowRect?.call(),
+      styleExtras: style.nativeStyleArgs,
     );
     if (!shown) return false;
     await _applyFloatingLyricStyle(style);
@@ -576,6 +819,7 @@ class AudiobookSession extends ChangeNotifier {
       activeColor: style.activeColor,
       cornerRadius: style.cornerRadius,
       windowWidth: style.windowWidth,
+      styleExtras: style.nativeStyleArgs,
     );
     await FloatingLyricChannel.setClickLookupEnabled(
         _floatingLyricClickLookup());
@@ -616,6 +860,17 @@ class AudiobookSession extends ChangeNotifier {
       },
       onLockChanged: (bool locked) {
         debugPrint('[Fushi] floating-lyric position lock -> $locked');
+      },
+      // 用户拖动 / 拖角缩放后记住窗口矩形，下次拉起原样恢复（Windows）。
+      onBoundsChanged: (int left, int top, int width, int height) {
+        final FloatingLyricWindowRect rect = FloatingLyricWindowRect(
+          left: left,
+          top: top,
+          width: width,
+          height: height,
+        );
+        if (!rect.isValid) return;
+        unawaited(onFloatingLyricBoundsPersist?.call(rect));
       },
     );
   }
@@ -676,6 +931,13 @@ class AudiobookSession extends ChangeNotifier {
   void dispose() {
     // 进程退出：随 AppModel.dispose 一起清。stop 不能 await（dispose 同步），直接拆。
     final AudiobookPlayerController? controller = _controller;
+    // BUG-2558：dispose 是同步的，停表必须走 detach()（零 DB IO，攒下的写交
+    // ExitFlushRegistry.defer 在退出前统一 await）；在这里发起 stop() 就是无人 await
+    // 的事务，会与随后的 db.close() 互等（与阅读器 / PDF 的 dispose 同律）。
+    _studyClock?.detach();
+    _studyClock = null;
+    _storedCuesSub?.cancel();
+    _storedCuesSub = null;
     _playStreamSub?.cancel();
     _seekStreamSub?.cancel();
     _skipNextSub?.cancel();
@@ -685,6 +947,9 @@ class AudiobookSession extends ChangeNotifier {
       controller.removeListener(_onControllerChanged);
       controller.dispose();
     }
+    final Future<void> Function()? onReleased = _onReleased;
+    _onReleased = null;
+    if (onReleased != null) unawaited(onReleased());
     _controller = null;
     _book = null;
     _reader = null;
@@ -721,8 +986,10 @@ class SessionBookInfo {
     required this.title,
     required this.mediaIdentifier,
     this.isSrtBookSource = false,
+    this.isTtsSource = false,
     this.author,
     this.coverPath,
+    this.statsMediaKey,
   });
 
   final String bookKey;
@@ -739,8 +1006,27 @@ class SessionBookInfo {
   /// Audiobooks namespace and must be loaded through AudiobookRepository.
   final bool isSrtBookSource;
 
+  /// True when the session plays on-demand TTS synthesis of the EPUB text.
+  ///
+  /// Its cues live only in memory (one cue per synthesized sentence); stored
+  /// cues for the same [bookKey] belong to a recorded audiobook and must never
+  /// be adopted into this session.
+  final bool isTtsSource;
+
   final String? author;
   final String? coverPath;
+
+  /// 统计事实表 `study_segments` 的 `media_key`（BUG-2558）。
+  ///
+  /// **不能直接用 [bookKey]**：SRT 书源分支的 [bookKey] 是 `srt_books.uid`，而阅读器
+  /// 那只时钟用的是 `widget.bookKey`（= 传给 `AudiobookSessionLauncher.resolve` 的
+  /// 入参），两者对同一本书可能不是同一个串——记岔了就是同一本书在统计中心裂成两条。
+  /// [AudiobookSessionLauncher] 两条分支一律填**调用方传进来的那个 key**，与阅读器
+  /// 同源。null（旧构造点 / 测试）回退 [bookKey]：EPUB 分支两者本就相等。
+  final String? statsMediaKey;
+
+  /// 统计身份，见 [statsMediaKey]。
+  String get studyMediaKey => statsMediaKey ?? bookKey;
 }
 
 /// 控制器加载初值（从持久层读出）。
@@ -795,6 +1081,19 @@ class FloatingLyricStyle {
     required this.activeColor,
     this.cornerRadius = 0,
     this.windowWidth = 0,
+    this.fontFamily = '',
+    this.fontPath,
+    this.bold = true,
+    this.verticalText = false,
+    this.lineHeight = 1.0,
+    this.letterSpacing = 0,
+    this.textAlignment = 0,
+    this.textPadding = 20,
+    this.outlineColor = 0xE0000000,
+    this.outlineWidth = 1.6,
+    this.currentLineColor = 0,
+    this.contextLineOpacity = 0.55,
+    this.toolbarArgs = const <String, Object?>{},
   });
 
   final double fontSize;
@@ -813,6 +1112,52 @@ class FloatingLyricStyle {
   /// 720dip 起始 + 可拖拽），>0 时两端都按该 dp 设窗宽（居中）。
   final int windowWidth;
 
+  // ── 以下字段只有 Windows 原生窗（与 galgame hook 台词浮窗同一个
+  // `FloatingLyricWindow`）消费；Android overlay 读不到这些 key，多传是 no-op。
+  // 默认值 = 原生 `Style` 结构体默认，老调用点不传时观感不变。
+
+  /// 字族名 / 字体文件（`FontTarget.floatingLyric` 第一条可用 ttf/otf/ttc）。
+  final String fontFamily;
+  final String? fontPath;
+  final bool bold;
+
+  /// 竖排（字从上往下、行从右往左）。只有 Windows 原生窗支持。
+  final bool verticalText;
+  final double lineHeight;
+  final double letterSpacing;
+
+  /// 0 = 居中，1 = 左对齐。
+  final int textAlignment;
+  final double textPadding;
+  final int outlineColor;
+  final double outlineWidth;
+
+  /// 多行时当前句字色；alpha 0 = 沿用 [textColor]。
+  final int currentLineColor;
+
+  /// 多行时非当前句相对 [textColor] 的不透明度（0..1）。
+  final double contextLineOpacity;
+
+  /// M3E 浮动工具条配色（`galHookToolbarThemeArgs` 产出的那组 key）。
+  final Map<String, Object?> toolbarArgs;
+
+  /// 下发给原生 `show` / `updateStyle` 的扩展样式字段（历史具名参数之外的部分）。
+  Map<String, Object?> get nativeStyleArgs => <String, Object?>{
+    'fontFamily': fontFamily,
+    if (fontPath != null) 'fontPath': fontPath,
+    'bold': bold,
+    'verticalText': verticalText,
+    'lineHeight': lineHeight,
+    'letterSpacing': letterSpacing,
+    'textAlignment': textAlignment,
+    'textPadding': textPadding,
+    'outlineColor': outlineColor,
+    'outlineWidth': outlineWidth,
+    'currentLineColor': currentLineColor,
+    'contextLineOpacity': contextLineOpacity,
+    ...toolbarArgs,
+  };
+
   /// TODO-370: 按百分比（0..100）缩放某个 ARGB 颜色的 alpha 通道。100 = 原 alpha 不变
   /// （保持各表面历史观感），调小变更透明。两个悬浮字幕样式构造点（app 级 / reader 级）
   /// 共用此唯一实现，保证「同一个透明度设置，两处一致」。
@@ -824,18 +1169,42 @@ class FloatingLyricStyle {
   }
 }
 
+/// 系统媒体控制意图是否需要切换播放态：PLAY / PAUSE 有方向、只在状态不一致时切换
+/// （幂等——播放中补发的 PLAY 不得把声音暂停），耳机单击恒切换（BUG-2961）。
+bool mediaPlayIntentNeedsToggle(
+  MediaPlayIntent intent, {
+  required bool isPlaying,
+}) =>
+    switch (intent) {
+      MediaPlayIntent.play => !isPlaying,
+      MediaPlayIntent.pause => isPlaying,
+      MediaPlayIntent.toggle => true,
+    };
+
+/// 把系统媒体控制意图落到控制器上。复用 [AudiobookPlayerController.togglePlayPause]
+/// 的完整语义（清单句试听终点等），不另开第二条播放入口。
+void applyMediaPlayIntent(
+  AudiobookPlayerController controller,
+  MediaPlayIntent intent,
+) {
+  if (!mediaPlayIntentNeedsToggle(intent, isPlaying: controller.isPlaying)) {
+    return;
+  }
+  unawaited(controller.togglePlayPause());
+}
+
 /// audioHandler 控制流集合（lock-screen / 通知按钮 → 控制器）。由 AppModel 的
 /// `AudioController` 提供，会话订阅它在后台也能接 play/seek/skip。
 class AudioControlStreams {
   const AudioControlStreams({
-    required this.playStream,
+    required this.playIntentStream,
     required this.seekStream,
     required this.skipNextStream,
     required this.skipPreviousStream,
     required this.toggleFloatingLyricStream,
   });
 
-  final Stream<void> playStream;
+  final Stream<MediaPlayIntent> playIntentStream;
   final Stream<Duration> seekStream;
   final Stream<void> skipNextStream;
   final Stream<void> skipPreviousStream;

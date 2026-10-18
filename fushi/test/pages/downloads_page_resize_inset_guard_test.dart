@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-/// 源码守卫（BUG-1003）：独立「下载」页（[DownloadsPage] → 内联
+/// 源码守卫（BUG-1003）：「浏览」页（[BrowsePage]，原「下载」页 → 内联
 /// [AnimeDownloadDialog]）的 [Scaffold] 必须显式 `resizeToAvoidBottomInset: false`。
 ///
 /// 根因：内联下载流程把 apikey / 搜番 / Nyaa 查询 / 通用磁力等**输入框全放在页面
@@ -16,28 +16,37 @@ import 'package:flutter_test/flutter_test.dart';
 /// 复现，故用源码扫描守卫钉住这行接线不被回退。
 void main() {
   test(
-      'downloads_page 的 Scaffold 设 resizeToAvoidBottomInset:false（软键盘不顶掉贴底任务区）',
+      'browse_page 的 Scaffold 设 resizeToAvoidBottomInset:false（软键盘不顶掉贴底任务区）',
       () {
-    final File f = File('lib/src/pages/implementations/downloads_page.dart');
+    final File f = File('lib/src/pages/implementations/browse_page.dart');
     expect(f.existsSync(), isTrue,
-        reason: '找不到 downloads_page.dart（路径变了要同步本守卫）');
+        reason: '找不到 browse_page.dart（路径变了要同步本守卫）');
     final String src = f.readAsStringSync();
 
-    // 必须出现在文件里且落在 Scaffold(...) 内（本文件只有一个 Scaffold）。
+    // 必须出现在文件里且落在 Scaffold(...) 内（第一个 Scaffold 是浏览页本体）。
     final int scaffold = src.indexOf('Scaffold(');
     expect(scaffold, greaterThanOrEqualTo(0), reason: '下载页应是一个 Scaffold');
+    // 2026-10 体验优化：inset 关闭收窄到「下载」页签（其它页签的搜索框需要
+    // 键盘顶起 body），守卫改钉「下载页签 → false」这条条件接线。
     expect(
-      src.contains('resizeToAvoidBottomInset: false'),
+      src.contains('resizeToAvoidBottomInset: !onDownloads'),
       isTrue,
-      reason: '下载页 Scaffold 必须显式 resizeToAvoidBottomInset:false，'
+      reason: '下载页签的 Scaffold 必须 resizeToAvoidBottomInset:false，'
           '否则软键盘弹出会把贴底「下载任务」区顶到顶部输入框边上（BUG-1003）',
+    );
+    expect(
+      RegExp(r'onDownloads\s*=\s*tabs\[controller\.index[^;]*'
+              r'BrowseTab\.downloads;')
+          .hasMatch(src),
+      isTrue,
+      reason: 'onDownloads 必须按当前页签是否为「下载」求值（BUG-1003）',
     );
   });
 
   test('downloads task, subscription, and settings surfaces are full width',
       () {
     final String downloads = File(
-      'lib/src/pages/implementations/downloads_page.dart',
+      'lib/src/pages/implementations/browse_page.dart',
     ).readAsStringSync();
     final String jobs = File(
       'lib/src/pages/implementations/video_download_jobs_panel.dart',

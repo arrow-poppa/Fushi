@@ -57,7 +57,7 @@ void main() {
 
   test('ffmpeg-min build whitelist enables the mp4 muxer for video clips', () {
     // BUG-917: video clip export writes .mp4 (was: the source container). The
-    // bundled ffmpeg-min has NO matroska/webm/avi/mpegts muxer, so following the
+    // bundled ffmpeg-min has NO matroska/webm/avi muxer, so following the
     // source extension (mkv/webm/…) auto-selected an absent muxer → exit -22.
     final String script = workspaceFile('tool/ffmpeg-min/build-ffmpeg-min.sh');
     final RegExp muxers = RegExp(r'^MUXERS="([^"]*)"', multiLine: true);
@@ -94,7 +94,7 @@ void main() {
             'BUG-917.');
     expect(clip.contains('p.extension(inputPath)'), isFalse,
         reason: 'clip output extension must NOT follow the source container — '
-            'mkv/webm/avi/ts have no muxer in ffmpeg-min → exit -22. BUG-917.');
+            'mkv/webm/avi have no muxer in ffmpeg-min → exit -22. BUG-917.');
   });
 
   test('audiobook clip pipeline emits .aac audio, never .m4a/.mp4', () {
@@ -139,9 +139,41 @@ void main() {
     expect(list, contains('adts'),
         reason: 'desktop immersion clip audio writes .aac (adts container); '
             'without the adts muxer the card has no audio (TODO-1217).');
-    expect(list, isNot(contains('ipod')),
-        reason: 'ffmpeg-min still has no ipod muxer — proof the desktop branch '
-            'must NOT use .m4a (TODO-1217).');
+    // The recipe now lists `ipod` for the audiobook studio's .m4b export, but
+    // the desktop immersion branch must stay on .aac regardless: users on a
+    // vendored binary built before that recipe change have no ipod muxer, and
+    // .aac/adts works on every build.
+  });
+
+  test('ffmpeg-min recipe carries the audiobook studio loudness + M4B set', () {
+    // Audiobook studio export: EBU R128 loudness normalisation (loudnorm two
+    // pass, ebur128 measure, volume trim, alimiter true-peak guard, apad /
+    // anullsrc silence) and an .m4b (ipod muxer) with chapters/metadata from an
+    // ;FFMETADATA1 side input (ffmetadata demuxer) plus a jpg/png cover
+    // (image2 demuxer + mjpeg/png parsers, -c:v copy -disposition attached_pic).
+    final String script = workspaceFile('tool/ffmpeg-min/build-ffmpeg-min.sh');
+    Set<String> listOf(String name) =>
+        RegExp('^$name="([^"]*)"', multiLine: true)
+            .firstMatch(script)!
+            .group(1)!
+            .split(',')
+            .toSet();
+    expect(
+      listOf('FILTERS'),
+      containsAll(<String>[
+        'loudnorm',
+        'ebur128',
+        'volume',
+        'alimiter',
+        'apad',
+        'anullsrc',
+        'aresample',
+      ]),
+    );
+    expect(listOf('MUXERS'), containsAll(<String>['ipod', 'mp4']));
+    expect(listOf('DEMUXERS'), containsAll(<String>['ffmetadata', 'image2']));
+    expect(listOf('PARSERS'), containsAll(<String>['mjpeg', 'png']));
+    expect(listOf('ENCODERS'), contains('aac'));
   });
 
   test(

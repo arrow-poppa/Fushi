@@ -1,9 +1,21 @@
 import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi/utils.dart';
+import 'package:fushi_core/fushi_core.dart'
+    show
+        kLegacySchemaBridgeAppVersion,
+        kLegacySchemaBridgeReleaseUrl,
+        UnsupportedLegacySchemaException;
 
 /// Localized friendly clause for a known error class, or null if the error is
 /// not one we recognize (caller decides the fallback).
 String? _friendlyClause(Object error) {
+  // 最低 schema 门槛：备份 / 迁移包里的库比本版本能升级的下限还老。恢复在任何
+  // 破坏性动作之前就拒绝了，当前数据没动；告诉用户先装桥接版本导入一次。
+  if (error is UnsupportedLegacySchemaException) {
+    return t.backup_legacy_schema(
+        version: kLegacySchemaBridgeAppVersion,
+        url: kLegacySchemaBridgeReleaseUrl);
+  }
   // BUG-1323 / BUG-1348：凡是**有类型可依**的鉴权失败都在这里一次分派掉，绝不落到
   // 下面的字符串猜测区。下面那条 `error is SyncAuthError && l.contains('auth')` 会把
   // 任何带 'auth' 字样的鉴权错误都说成「登录已过期」——403 的凭据是好的，而
@@ -126,6 +138,13 @@ String friendlySyncAuthFailure(SyncAuthFailureKind kind, String? serverReason) {
       // 一台对端都没配对：以前落到字符串层的 `contains('not configured')` → 返回
       // null → 裸英文 'Fushi server credentials not configured' 直接上屏。
       return t.sync_err_not_paired;
+    case SyncAuthFailureKind.htmlPage:
+      // BUG-2631：服务端回的是网页（Cloudflare 挑战 / 反代错误页 / URL 是个网站）。
+      // 凭据没被评估过，「你的登录没问题」是错的；可操作项是核对地址。
+      // serverReason 在这条上只会是网页标题，整页标记在读体那层就已被丢掉。
+      final String? title = serverReason;
+      if (title == null || title.isEmpty) return t.sync_err_html_page;
+      return t.sync_err_html_page_detail(title: title);
   }
 }
 

@@ -14,6 +14,7 @@ class FushiPingResult {
     required this.tlsEnabled,
     this.fingerprint,
     this.deviceName,
+    this.hostId,
   });
 
   /// host 自报为 fushi（`app == 'fushi'`）。非 fushi / 非 JSON → false。
@@ -30,13 +31,17 @@ class FushiPingResult {
 
   /// host 展示名（`deviceName`，可空）。
   final String? deviceName;
+
+  /// host 稳定设备 id（`hostId`，老 host 无此字段 → null）。选路探测用它核对
+  /// 「这个地址背后还是不是我那台 host」。
+  final String? hostId;
 }
 
 /// BUG-1741：`/api/ping` 探测的失败分型（机器可读，与 [FushiPairV2Client] 的
 /// failure reason 共用同一套词汇）。
 ///
 /// 分型存在的唯一理由：旧实现把「证书指纹对不上」（安全事件）、「对端超时」、
-/// 「端口没人监听」和「那台机器不是 Hibiki」**全部**压成同一个 `null`，UI 只能
+/// 「端口没人监听」和「那台机器不是 Fushi」**全部**压成同一个 `null`，UI 只能
 /// 挑一句最含糊的话说，用户被引向完全错误的排查方向。
 enum FushiPingFailure {
   /// 证书类失败：钉扎指纹不符 / 握手被对端拒绝。**安全事件**，绝不可与
@@ -49,7 +54,7 @@ enum FushiPingFailure {
   /// 连不上：端口无监听、被防火墙拦、或明文请求打在 TLS-only 端口上被 reset。
   unreachable,
 
-  /// 连上了、也应答了，但对端不是 Hibiki（非 200 / 非 JSON / `app != 'fushi'`）。
+  /// 连上了、也应答了，但对端不是 Fushi（非 200 / 非 JSON / `app != 'fushi'`）。
   notFushi,
 }
 
@@ -128,6 +133,7 @@ Future<FushiPingOutcome> probeFushiPing(
         tlsEnabled: tlsEnabled,
         fingerprint: fingerprint,
         deviceName: json['deviceName'] as String?,
+        hostId: json['hostId'] as String?,
       ),
     );
   } catch (e) {

@@ -1,4 +1,11 @@
-import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
+import 'package:material_ui/material_ui.dart';
+
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/fushi_expressive_progress.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/misc/fushi_byte_format.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
 
 /// TODO-1213：视频加载态覆盖层（有上下文的加载反馈，替代裸 `CircularProgressIndicator`）。
 ///
@@ -9,6 +16,9 @@ import 'package:flutter/material.dart';
 /// - [phaseText]：当前阶段文案（连接流 / 下载字幕 / 缓冲 / 准备）。
 /// - [progress]：字幕下载阶段的确定性进度（0..1）→ 进度条 + 百分比；其它阶段传 null
 ///   → indeterminate 转圈 + 文案。
+/// - [readSpeed]：网络流的读取速度（bytes/s）；有采样就在文案下加一行「↓ 1.2 MB/s」，
+///   让「链路停滞」和「慢速下载」在转圈时分得开。本地文件 / 尚无采样传 null 或值
+///   为 null → 不渲染这一行。
 ///
 /// 纯展示、无状态、无副作用（不碰 `controller.load` 时序），便于 widget 测试。
 class VideoLoadingOverlay extends StatelessWidget {
@@ -17,6 +27,7 @@ class VideoLoadingOverlay extends StatelessWidget {
     required this.phaseText,
     required this.onBack,
     this.progress,
+    this.readSpeed,
     super.key,
   });
 
@@ -32,6 +43,9 @@ class VideoLoadingOverlay extends StatelessWidget {
   /// 字幕下载确定性进度（0..1）；null 表示当前阶段无确定性进度（indeterminate）。
   final double? progress;
 
+  /// 网络流读取速度（bytes/s）；null / 值为 null 时不显示速度行。
+  final ValueListenable<double?>? readSpeed;
+
   @override
   Widget build(BuildContext context) {
     final ColorScheme cs = Theme.of(context).colorScheme;
@@ -41,8 +55,8 @@ class VideoLoadingOverlay extends StatelessWidget {
         children: <Widget>[
           Align(
             alignment: AlignmentDirectional.topStart,
-            child: IconButton(
-              icon: const Icon(Icons.arrow_back),
+            child: FushiIconButtonControl(
+              icon: const FushiIcon(Icons.arrow_back),
               tooltip: MaterialLocalizations.of(context).backButtonTooltip,
               color: cs.onSurface,
               onPressed: onBack,
@@ -67,7 +81,7 @@ class VideoLoadingOverlay extends StatelessWidget {
                   SizedBox(
                     width: 44,
                     height: 44,
-                    child: CircularProgressIndicator(value: p),
+                    child: FushiCircularProgressIndicator(value: p),
                   ),
                   const SizedBox(height: 16),
                   Text(
@@ -80,12 +94,114 @@ class VideoLoadingOverlay extends StatelessWidget {
                       ],
                     ),
                   ),
+                  if (readSpeed != null)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: VideoReadSpeedLabel(
+                        readSpeed: readSpeed!,
+                        color: cs.onSurfaceVariant,
+                      ),
+                    ),
                 ],
               ),
             ),
           ),
         ],
       ),
+    );
+  }
+}
+
+/// 「↓ 1.2 MB/s」速度行：值为 null 时**不产生任何 Text**（加载 overlay 的测试钉着
+/// 「空标题只有一个 Text」）。局部 [ValueListenableBuilder] 重建，不牵动页面 setState。
+class VideoReadSpeedLabel extends StatelessWidget {
+  const VideoReadSpeedLabel({
+    required this.readSpeed,
+    required this.color,
+    super.key,
+  });
+
+  final ValueListenable<double?> readSpeed;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return ValueListenableBuilder<double?>(
+      valueListenable: readSpeed,
+      builder: (BuildContext context, double? bytesPerSecond, _) {
+        if (bytesPerSecond == null) return const SizedBox.shrink();
+        return Row(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            FushiIcon(Icons.arrow_downward, size: 14, color: color),
+            const SizedBox(width: 4),
+            Text(
+              FushiByteFormat.speed(bytesPerSecond),
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: color,
+                fontFeatures: const <FontFeature>[FontFeature.tabularFigures()],
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+/// 播放中途缓冲圈（media_kit 控制条的 `bufferingIndicatorBuilder`）：白色转圈 + 网络
+/// 流读取速度。fork 默认只画 `CircularProgressIndicator(color: 0xFFFFFFFF)`，seek 到未
+/// 缓冲段时用户同样分不清「在下」还是「卡死」。[readSpeed] 为 null（本地文件）时
+/// 与 fork 默认外观一致。
+class VideoBufferingIndicator extends StatelessWidget {
+  const VideoBufferingIndicator({this.readSpeed, this.visible, super.key});
+
+  final ValueListenable<double?>? readSpeed;
+
+  /// 播放器侧的显示判据（[VideoPlayerController.bufferingIndicatorVisible]）。
+  /// media_kit 只在它认为「缓冲中」时才挂这个组件，但它的判据在暂停跳转后会卡在
+  /// 真（BUG-3195）；为 false 时什么都不画。null = 不额外过滤。
+  final ValueListenable<bool>? visible;
+
+  @override
+  Widget build(BuildContext context) {
+    final ValueListenable<bool>? visible = this.visible;
+    if (visible == null) return _buildIndicator(context);
+    return ValueListenableBuilder<bool>(
+      valueListenable: visible,
+      builder: (BuildContext context, bool show, Widget? _) =>
+          show ? _buildIndicator(context) : const SizedBox.shrink(),
+    );
+  }
+
+  Widget _buildIndicator(BuildContext context) {
+    const Color color = Color(0xFFFFFFFF);
+    final ValueListenable<double?>? speed = readSpeed;
+    // MD3（非墨水屏）：M3 Expressive 形变加载指示（深色容器 + 主色形状，压在画面
+    // 上始终可见）；Apple / 墨水屏保持原转圈。
+    final ColorScheme cs = Theme.of(context).colorScheme;
+    final ColorScheme chrome = ColorScheme.fromSeed(
+      seedColor: cs.primary,
+      brightness: Brightness.dark,
+    );
+    final Widget spinner = isGlassDesign(context) || isEinkTheme(context)
+        ? const FushiCircularProgressIndicator(color: color)
+        : FushiExpressiveLoadingIndicator(
+            size: 64,
+            contained: true,
+            color: chrome.onPrimaryContainer,
+            containerColor: chrome.primaryContainer.withValues(alpha: 0.85),
+          );
+    if (speed == null) return spinner;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        spinner,
+        Padding(
+          padding: const EdgeInsets.only(top: 8),
+          child: VideoReadSpeedLabel(readSpeed: speed, color: color),
+        ),
+      ],
     );
   }
 }

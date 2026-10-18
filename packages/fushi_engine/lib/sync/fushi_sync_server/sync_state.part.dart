@@ -119,6 +119,45 @@ extension _FushiSyncServerSyncState on FushiSyncServer {
     }
   }
 
+  /// 标签清单跨设备 live 端点（互联标签同步，`tag_sync.dart`）。
+  ///
+  /// GET /api/library/tags — host 全部宿主的标签时钟清单；
+  /// POST /api/library/tags — client 上报本端清单，host 按 LWW 并入自己 DB，返回
+  /// 并入后的 host 清单。host 不实现 [TagSyncHost] → 404（老 host 同形）。
+  /// 鉴权与容错同 [_handleLibraryCollections]：走 Basic token 全量校验；坏 JSON /
+  /// 非法或高版本清单 → 400，绝不按旧语义误读新字段污染 host 数据。
+  Future<shelf.Response> _handleLibraryTags(
+    shelf.Request request,
+    String method,
+  ) async {
+    // Object? 局部量才能被 `is` 提升（TagSyncHost 不是 FushiLibraryHostService 的子类型）。
+    final Object? svc = _libraryService;
+    if (svc is! TagSyncHost) return shelf.Response.notFound('Tag sync off');
+    final TagSyncHost host = svc;
+    const Map<String, String> jsonHeaders = <String, String>{
+      'Content-Type': 'application/json; charset=utf-8'
+    };
+    switch (method) {
+      case 'GET':
+        final TagManifest manifest = await host.getTagManifest();
+        return shelf.Response.ok(manifest.canonicalJson(),
+            headers: jsonHeaders);
+      case 'POST':
+        final Map<String, dynamic>? json = await readJsonObjectBody(request);
+        if (json == null) return shelf.Response(400, body: 'Invalid JSON');
+        TagManifest incoming;
+        try {
+          incoming = TagManifest.fromJson(json);
+        } on FormatException catch (e) {
+          return shelf.Response(400, body: 'Invalid manifest: $e');
+        }
+        final TagManifest merged = await host.mergeTagManifest(incoming);
+        return shelf.Response.ok(merged.canonicalJson(), headers: jsonHeaders);
+      default:
+        return shelf.Response(405);
+    }
+  }
+
   /// Host → paired child service configuration.
   ///
   /// This endpoint carries API keys and connection credentials, so its security
@@ -188,7 +227,13 @@ extension _FushiSyncServerSyncState on FushiSyncServer {
       return shelf.Response.forbidden('Profile transfer disabled on host');
     }
     if (method == 'GET') {
-      final String json = await host.exportInterconnectProfile();
+      final String json;
+      try {
+        json = await host.exportInterconnectProfile();
+      } on InterconnectProfileUnavailableException catch (e) {
+        // 懂端点、开关开着、只是眼下没东西可给：409 带原因，client 如实报给用户。
+        return shelf.Response(409, body: e.message);
+      }
       return shelf.Response.ok(
         json,
         headers: const <String, String>{

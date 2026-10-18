@@ -1,11 +1,12 @@
 import 'dart:async';
 import 'dart:io';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart' hide ModifierKey;
 import 'package:macos_ui/macos_ui.dart' show WindowManipulator;
 import 'package:window_manager/window_manager.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
+import 'package:fushi/src/lookup/lookup_overlay_navigator.dart';
 import 'package:fushi/src/utils/window_caption_channel.dart';
 
 import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
@@ -78,22 +79,24 @@ bool _topRouteIsPopup(GlobalKey<NavigatorState> navigatorKey) {
 ///
 /// 2. OWN directional focus movement for BOTH the press edge ([KeyDownEvent])
 ///    AND OS auto-repeat ([KeyRepeatEvent]) when NO text field is focused and
-///    focus rests on a real Hibiki-managed control (BUG-263). This is the single
+///    focus rests on a navigable control (BUG-263) — a registered target OR a
+///    native leaf focusable of the current focus scope; the same candidate set
+///    the D-pad uses (手柄焦点重写 2026-09-28). This is the single
 ///    arbiter for "arrow = focus traversal": press and repeat now go through the
 ///    SAME [gamepadMoveFocusInDirection] (panel-aware geometry + reading-order +
 ///    scroll-edge fallback) — the gamepad D-pad and the keyboard arrow reach the
 ///    exact same focus engine. Previously the press edge was deliberately left to
 ///    WidgetsApp's framework [DirectionalFocusAction] (a plain focusInDirection
-///    with none of Hibiki's fallbacks) while only the repeat was taken here, so
+///    with none of Fushi's fallbacks) while only the repeat was taken here, so
 ///    holding an arrow switched focus engines mid-hold: the press could dead-end
 ///    at a row/panel/scroll edge that the very next repeat then escaped, and at a
-///    managed control the framework press and the Hibiki repeat resolved to
+///    managed control the framework press and the Fushi repeat resolved to
 ///    DIFFERENT targets. That split is the "focus steals shortcut / left-right
 ///    always conflicts" the user hit. Claiming the press here consumes the arrow
 ///    before it can reach the framework's [DirectionalFocusAction], so exactly
 ///    one focus engine runs.
 ///
-///    The managed-target gate is what keeps this from hijacking an arrow on a
+///    The navigable-target gate is what keeps this from hijacking an arrow on a
 ///    surface that owns it for itself — the reader's reading content / page-turn
 ///    and char cursor (its FocusNode is not a managed target), the video player,
 ///    the WebView. Those surfaces also consume the arrow in their OWN nearer
@@ -116,12 +119,14 @@ KeyEventResult _handleGlobalArrowFocus(
 
   if (editable == null) {
     // Part 2: no field focused — move focus on the press edge AND every repeat,
-    // but ONLY while focus rests on a real Hibiki-managed control. The
-    // managed-target gate keeps this from hijacking an arrow on a surface that
-    // owns it (reader page-turn / char cursor, video seek, raw page sink); those
-    // surfaces are not managed targets and consume the arrow in their own nearer
-    // handler first. [arrowFocusMoveDirection] already returns non-null only for
-    // a KeyDown or KeyRepeat (never a KeyUp), so both edges flow through the
+    // but ONLY while focus rests on a navigable control (registered target or a
+    // native leaf of the current focus scope — the D-pad's candidate set). The
+    // gate keeps this from hijacking an arrow on a surface that owns it (reader
+    // page-turn / char cursor, video seek, raw page sink); those surfaces
+    // consume the arrow in their own nearer handler first, and a container sink
+    // that wraps other focusables is never a candidate.
+    // [arrowFocusMoveDirection] already returns non-null only for a KeyDown or
+    // KeyRepeat (never a KeyUp), so both edges flow through the
     // single shared move below — press and repeat can never diverge.
     //
     // Resolve the controller from the FOCUSED context (the FushiFocusRoot sits
@@ -133,7 +138,7 @@ KeyEventResult _handleGlobalArrowFocus(
     final FushiFocusController? controller = focusContext == null
         ? null
         : FushiFocusRoot.maybeControllerOf(focusContext, listen: false);
-    if (controller == null || !controller.primaryFocusIsManagedTarget) {
+    if (controller == null || !controller.primaryFocusIsNavigable) {
       return KeyEventResult.ignored;
     }
     return _moveFocusForArrow(navigatorKey, registry, event, dir);
@@ -149,7 +154,7 @@ KeyEventResult _handleGlobalArrowFocus(
 /// Moves directional focus one step in [dir] from whichever route is on top,
 /// then ALWAYS consumes the arrow: at a scroll/list edge the move is a no-op but
 /// the arrow has still been "spent" (so it never falls back to the caret or to
-/// the framework's fallback that lacks Hibiki's reading-order step).
+/// the framework's fallback that lacks Fushi's reading-order step).
 ///
 /// 到了焦点目标的尽头（该方向再无受管控件、也没触发手柄式边缘接管）时，把这次
 /// 按键交给页面滚动：按注册表解析 [event]（默认 ↑/↓ = 单步滚动），命中就经
@@ -273,11 +278,34 @@ KeyEventResult _handleGlobalBack(
     }
   }
   if (action != ShortcutAction.globalBack) return KeyEventResult.ignored;
+  // BUG-2953：查词浮层自带导航层里开着菜单时，「返回」只关这一层菜单——它在根
+  // Navigator 之外，根 maybePop 会落到页面 PopScope、把浮层连同菜单一起关掉。
+  if (LookupOverlayNavigator.popActiveMenu()) return KeyEventResult.handled;
   final NavigatorState? nav = navigatorKey.currentState;
-  if (nav == null || !nav.canPop()) return KeyEventResult.ignored;
+  if (nav == null) return KeyEventResult.ignored;
+  if (!nav.canPop()) return _backOnRootRoute(nav);
   // Escape 落在弹层上：让给框架（见上方文档的两条既有语义）。
   if (event.logicalKey == LogicalKeyboardKey.escape &&
       _topRouteIsPopup(navigatorKey)) {
+    return KeyEventResult.ignored;
+  }
+  nav.maybePop();
+  return KeyEventResult.handled;
+}
+
+/// 根路由（首页）上按返回：没有可弹出的路由，但页内状态可能用 [PopScope]
+/// 拦截返回——例如书架 / 视频库的批量选择模式（BUG-250），返回应先退出选择。
+/// `canPop()` 为 false 时以前直接忽略，Esc 永远到不了这些 PopScope；这里只在
+/// 根路由当前声明「不弹出」（[RoutePopDisposition.doNotPop]，即有 PopScope
+/// 拦着）时调 [NavigatorState.maybePop] 把返回交给它，其余情况照旧忽略。
+KeyEventResult _backOnRootRoute(NavigatorState nav) {
+  Route<dynamic>? top;
+  nav.popUntil((Route<dynamic> route) {
+    top = route;
+    return true;
+  });
+  final Route<dynamic>? route = top;
+  if (route == null || route.popDisposition != RoutePopDisposition.doNotPop) {
     return KeyEventResult.ignored;
   }
   nav.maybePop();
@@ -296,18 +324,22 @@ KeyEventResult _handleEscapeWithoutRegistry(
   if (event is! KeyDownEvent || event.logicalKey != LogicalKeyboardKey.escape) {
     return KeyEventResult.ignored;
   }
+  // BUG-2953：查词浮层菜单先关（同 [_handleGlobalBack]）。
+  if (LookupOverlayNavigator.popActiveMenu()) return KeyEventResult.handled;
   final NavigatorState? nav = navigatorKey.currentState;
-  if (nav == null || !nav.canPop()) return KeyEventResult.ignored;
+  if (nav == null) return KeyEventResult.ignored;
+  if (!nav.canPop()) return _backOnRootRoute(nav);
   if (_topRouteIsPopup(navigatorKey)) return KeyEventResult.ignored;
   nav.maybePop();
   return KeyEventResult.handled;
 }
 
-/// BUG-1266：吞掉**没有任何处理器认领**的手柄 B，阻断 Android 的系统级按键兜底。
+/// BUG-1266：吞掉**没有任何处理器认领**且带系统兜底的手柄键，阻断 Android 的
+/// `Generic.kcm` fallback 合成第二个键。
 ///
 /// Android 的 `Generic.kcm` 为游戏手柄的 `BUTTON_B` 定义了 `fallback BACK`：当 app
 /// 的 view 层不消费 `KEYCODE_BUTTON_B` 时，系统会**另外合成一个 `KEYCODE_BACK`** 派发
-/// 下来。那条兜底路径完全绕过 Hibiki 的快捷键注册表，于是：
+/// 下来。那条兜底路径完全绕过 Fushi 的快捷键注册表，于是：
 ///   * 用户把「返回」改绑到 RB 后，B 仍然退出页面（改键在 B 上根本是假的）；
 ///   * 页面尚未拿到键盘焦点时（如视频页首帧未就绪），B 连页面自己的绑定都还没轮到，
 ///     就被系统直接判成返回——用户「进视频想回退两句，结果一路退回桌面」正是它。
@@ -315,19 +347,39 @@ KeyEventResult _handleEscapeWithoutRegistry(
 /// globalBack 就在上面的 [_handleGlobalBack] 里 pop（默认绑定，行为不变），改绑走了
 /// 就静默无操作，绝不再有第二条隐形返回路径。
 ///
-/// 只针对 B，不扩大到别的手柄键，因为只有它有 BACK 兜底：
-///   * `BUTTON_A` 的兜底是 `DPAD_CENTER`（= 确认焦点控件），是有益能力，保留；
-///   * D-pad 无按键兜底，且仍需放行给方向焦点移动，绝不能在此吞掉；
-///   * X/Y/LB/RB/扳机/Start/Select 在 `Generic.kcm` 里没有 fallback，吞不吞等价。
+/// B 不是唯一有系统兜底的键。AOSP `Generic.kcm`（2026-09 对照原文核对）给每个手柄
+/// 键都定义了 fallback，之前「X/Y/Start/Select 没有 fallback」的说法是错的：
+///   * `BUTTON_B` → BACK；
+///   * `BUTTON_X` → **DEL**、`BUTTON_Y` → **SPACE**：没人认领的 X/Y 会在聚焦的文本框里
+///     退格删字 / 打出空格（搜索框里按 Y 多一个空格、按 X 少一个字）；
+///   * `BUTTON_START` / `BUTTON_THUMBL` / `BUTTON_THUMBR` → DPAD_CENTER：没绑定的
+///     Start / L3 / R3 会「确认」当前焦点控件；`BUTTON_SELECT` → MENU；
+///   * `BUTTON_A` → DPAD_CENTER（= 确认焦点控件），是有益能力，**保留**；
+///   * `BUTTON_MODE`（Xbox 键）→ HOME：与系统「Guide 键回桌面」惯例一致，**放行**；
+///   * LB / RB / LT / RT 与 D-pad 没有 fallback：肩键扳机吞不吞等价，D-pad 仍需放行
+///     给方向焦点移动，绝不能在此吞掉。
+/// 于是策略统一为：**没绑定的手柄键 = 无操作**，只保留 A 的确认与 Mode 的回桌面。
 ///
-/// DOWN / UP / REPEAT 三个边沿都要消费：Android 的返回动作实际发生在 **ACTION_UP**，
-/// 只吞按下边沿会让抬起边沿照样合成出 BACK，等于没修。
+/// DOWN / UP / REPEAT 三个边沿都要消费：Android 的兜底动作（BACK 等）实际发生在
+/// **ACTION_UP**，只吞按下边沿会让抬起边沿照样合成出兜底键，等于没修。
 ///
 /// 判据独立成可单测的纯函数，让「吞哪些键」这条边界有直接断言，而不是只能从
 /// widget 行为反推。
 @visibleForTesting
-bool gamepadBackMustBeSwallowed(KeyEvent event) =>
-    GamepadButton.fromKeyEvent(event) == GamepadButton.b;
+bool gamepadSystemFallbackMustBeSwallowed(KeyEvent event) {
+  switch (GamepadButton.fromKeyEvent(event)) {
+    case GamepadButton.b:
+    case GamepadButton.x:
+    case GamepadButton.y:
+    case GamepadButton.start:
+    case GamepadButton.select:
+    case GamepadButton.thumbLeft:
+    case GamepadButton.thumbRight:
+      return true;
+    default:
+      return false;
+  }
+}
 
 /// Desktop window-level fullscreen toggle for the remappable
 /// [ShortcutAction.globalToggleFullscreen] key (TODO-1093). Distinct from the
@@ -402,8 +454,18 @@ KeyEventResult _handleGlobalScroll(
     return KeyEventResult.ignored;
   }
   if (focusedEditableText() != null) return KeyEventResult.ignored;
-  final PageScrollRequest? request =
-      pageScrollRequestFor(_resolveGlobalKeyboardAction(registry, event));
+  ShortcutAction? action = _resolveGlobalKeyboardAction(registry, event);
+  if (action == null) {
+    // 手柄键事件链（Android：引擎把手柄按钮送成 gameButton* KeyEvent）。桌面轮询
+    // 路径的同一兜底在 GamepadService._tryScrollPage；这里补齐 Android 那半边，
+    // 否则默认绑在 LB/RB 上的整屏滚动在 Android 上根本没有执行体——首页 / 设置 /
+    // 统计页按 LB/RB 一律无反应。同一个 [executePageScroll]，同一份目标解析。
+    final GamepadButton? gamepad = GamepadButton.fromKeyEvent(event);
+    if (gamepad != null) {
+      action = registry.resolveGamepad(gamepad, scope: ShortcutScope.global);
+    }
+  }
+  final PageScrollRequest? request = pageScrollRequestFor(action);
   if (request == null) return KeyEventResult.ignored;
   final BuildContext? focusContext =
       FocusManager.instance.primaryFocus?.context;
@@ -483,6 +545,8 @@ bool _executeGlobalMouseAction(
 ) {
   switch (action) {
     case ShortcutAction.globalBack:
+      // BUG-2953：查词浮层菜单先关（同 [_handleGlobalBack]）。
+      if (LookupOverlayNavigator.popActiveMenu()) return true;
       final NavigatorState? nav = navigatorKey.currentState;
       if (nav == null || !nav.canPop()) return false;
       // 键盘那条路对 Escape + 弹层有一条「让给框架」的例外（barrierDismissible
@@ -791,9 +855,12 @@ Widget wrapWithGlobalNavigation({
             _handleGlobalScroll(navigatorKey, registry, event);
         if (scrollResult == KeyEventResult.handled) return scrollResult;
       }
-      // BUG-1266：走到这里说明**没有任何**处理器认领这次手柄按键。对手柄 B 必须
-      // 就地消费，绝不能放行——见 [gamepadBackMustBeSwallowed] 的完整理由。
-      if (gamepadBackMustBeSwallowed(event)) return KeyEventResult.handled;
+      // BUG-1266：走到这里说明**没有任何**处理器认领这次手柄按键。带系统兜底的键
+      // （B → BACK、X → DEL、Y → SPACE、Start/L3/R3 → DPAD_CENTER、Select → MENU）
+      // 必须就地消费，绝不能放行——见 [gamepadSystemFallbackMustBeSwallowed]。
+      if (gamepadSystemFallbackMustBeSwallowed(event)) {
+        return KeyEventResult.handled;
+      }
       // 注册表未注入（widget 测试直接调本 wrapper，不带 registry）时的降级：按裸
       // Escape 退一层。生产路径永远带 registry，走上面那条可改键的 globalBack；
       // 这里只是让「不关心快捷键」的测试宿主仍有键盘退出能力，不是第二条产品路径。

@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:http/http.dart' as http;
 
 import 'package:fushi_engine/media/video/download/video_subtitle_registry.dart';
@@ -30,16 +30,20 @@ class JimakuSubtitleDialog extends StatelessWidget {
     this.httpClientFactory,
     this.seed = const SubtitleSearchSeed(),
     this.videoPath,
+    this.initialSeason,
     this.debugInitialCandidates,
     this.debugInitialSeriesMatches,
     this.debugInitialSeriesLookupFailed = false,
     super.key,
   });
 
-  final VideoSubtitleRegistry? Function()? subtitleRegistry;
+  final Future<VideoSubtitleRegistry?> Function()? subtitleRegistry;
   final String initialQuery;
   final SubtitleSearchSeed seed;
   final String? videoPath;
+
+  /// 见 [SubtitleSearchPanel.initialSeason]。
+  final int? initialSeason;
   final String initialApiKey;
   final Future<void> Function(String key) onApiKeyChanged;
   final String saveDirectory;
@@ -76,6 +80,7 @@ class JimakuSubtitleDialog extends StatelessWidget {
         httpClientFactory: httpClientFactory,
         seed: seed,
         videoPath: videoPath,
+        initialSeason: initialSeason,
         debugInitialCandidates: debugInitialCandidates,
         debugInitialSeriesMatches: debugInitialSeriesMatches,
         debugInitialSeriesLookupFailed: debugInitialSeriesLookupFailed,

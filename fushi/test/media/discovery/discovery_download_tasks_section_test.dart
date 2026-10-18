@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -86,11 +86,11 @@ void main() {
   setUp(() => LocaleSettings.setLocale(AppLocale.en));
 
   test('下载页任务 tab 挂了直链队列区块（BUG-1936 接线守卫）', () {
-    final File f = File('lib/src/pages/implementations/downloads_page.dart');
+    final File f = File('lib/src/pages/implementations/browse_page.dart');
     expect(
       f.existsSync(),
       isTrue,
-      reason: '找不到 downloads_page.dart（路径变了要同步本守卫）',
+      reason: '找不到 browse_page.dart（路径变了要同步本守卫）',
     );
     final String code = maskCommentsAndScriptLines(f.readAsStringSync());
     final int mokuro = code.indexOf('MangaDownloadTasksSection(');

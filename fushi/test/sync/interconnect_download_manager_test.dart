@@ -10,7 +10,7 @@ void main() {
     late InterconnectDownloadManager manager;
 
     setUp(() async {
-      dir = await Directory.systemTemp.createTemp('hibiki-interconnect-mgr');
+      dir = await Directory.systemTemp.createTemp('fushi-interconnect-mgr');
       manager = InterconnectDownloadManager();
     });
 
@@ -33,7 +33,10 @@ void main() {
         id: 'v1',
         title: 'Video One',
         dest: dest('v1.mp4'),
-        run: (File target, {void Function(double progress)? onProgress}) async {
+        run: (File target,
+            {void Function(double progress)? onProgress,
+            void Function(int received, int? total)? onBytes,
+            Future<void>? cancelSignal}) async {
           onProgress?.call(0.25);
           onProgress?.call(0.75);
         },
@@ -56,7 +59,10 @@ void main() {
         id: 'v1',
         title: 'Video One',
         dest: dest('v1.mp4'),
-        run: (File target, {void Function(double progress)? onProgress}) async {
+        run: (File target,
+            {void Function(double progress)? onProgress,
+            void Function(int received, int? total)? onBytes,
+            Future<void>? cancelSignal}) async {
           runCalls += 1;
           await gate.future;
         },
@@ -66,7 +72,10 @@ void main() {
         id: 'v1',
         title: 'Video One',
         dest: dest('v1.mp4'),
-        run: (File target, {void Function(double progress)? onProgress}) async {
+        run: (File target,
+            {void Function(double progress)? onProgress,
+            void Function(int received, int? total)? onBytes,
+            Future<void>? cancelSignal}) async {
           runCalls += 1;
         },
       );
@@ -85,7 +94,10 @@ void main() {
           id: 'v1',
           title: 'Video One',
           dest: dest('v1.mp4'),
-          run: (File target, {void Function(double progress)? onProgress}) =>
+          run: (File target,
+                  {void Function(double progress)? onProgress,
+                  void Function(int received, int? total)? onBytes,
+                  Future<void>? cancelSignal}) =>
               throw const SocketException('reset'),
         ),
         throwsA(isA<SocketException>()),
@@ -104,7 +116,9 @@ void main() {
           title: 'Video One',
           dest: dest('v1.mp4'),
           run: (File target,
-              {void Function(double progress)? onProgress}) async {},
+              {void Function(double progress)? onProgress,
+              void Function(int received, int? total)? onBytes,
+              Future<void>? cancelSignal}) async {},
           onComplete: (File f) => throw StateError('register failed'),
         ),
         throwsA(isA<StateError>()),
@@ -123,7 +137,9 @@ void main() {
         title: 'Video One',
         dest: dest('v1.mp4'),
         run: (File target,
-            {void Function(double progress)? onProgress}) async {},
+            {void Function(double progress)? onProgress,
+            void Function(int received, int? total)? onBytes,
+            Future<void>? cancelSignal}) async {},
       );
       // 没有任何页面 State 参与；任务仍可从 app 级 manager 取到。
       expect(manager.taskFor('v1'), isNotNull);
@@ -136,7 +152,10 @@ void main() {
         id: 'run',
         title: 'Running',
         dest: dest('run.mp4'),
-        run: (File target, {void Function(double progress)? onProgress}) =>
+        run: (File target,
+                {void Function(double progress)? onProgress,
+                void Function(int received, int? total)? onBytes,
+                Future<void>? cancelSignal}) =>
             gate.future,
       );
       // running 任务不可清除。
@@ -148,7 +167,9 @@ void main() {
         title: 'Done',
         dest: dest('done.mp4'),
         run: (File target,
-            {void Function(double progress)? onProgress}) async {},
+            {void Function(double progress)? onProgress,
+            void Function(int received, int? total)? onBytes,
+            Future<void>? cancelSignal}) async {},
       );
       manager.clearTask('done');
       expect(manager.taskFor('done'), isNull);
@@ -169,7 +190,9 @@ void main() {
                   title: id,
                   dest: dest('$id.mp4'),
                   run: (File target,
-                      {void Function(double progress)? onProgress}) async {
+                      {void Function(double progress)? onProgress,
+                      void Function(int received, int? total)? onBytes,
+                      Future<void>? cancelSignal}) async {
                     order.add('start:$id');
                     if (id == 'a') await firstGate.future;
                     if (fail) throw StateError('boom $id');
@@ -211,6 +234,75 @@ void main() {
             manager.taskFor('c')!.status, InterconnectDownloadStatus.completed);
       });
 
+      // 合集卡整体进度：聚的是成员任务的真实进度，不是批计数（批只在整集结束
+      // 时 +1，长片下载全程 0/N）。
+      test('aggregateFor folds member tasks into one progress/state', () async {
+        expect(manager.aggregateFor(<String>['a', 'b']), isNull,
+            reason: '没有成员有任务 → null，合集卡不画角标');
+
+        final Completer<void> gateA = Completer<void>();
+        final Completer<void> gateC = Completer<void>();
+        void Function(double)? reportC;
+        final Future<InterconnectDownloadTask> a = manager.startVideoDownload(
+          id: 'a',
+          title: 'a',
+          dest: dest('a.mp4'),
+          run: (File target,
+                  {void Function(double progress)? onProgress,
+                  void Function(int received, int? total)? onBytes,
+                  Future<void>? cancelSignal}) =>
+              gateA.future,
+        );
+        await Future<void>.delayed(Duration.zero);
+        InterconnectDownloadAggregate agg =
+            manager.aggregateFor(<String>['a', 'b', 'c'])!;
+        expect(agg.total, 1, reason: '分母只算有任务的成员');
+        expect(agg.isRunning, isTrue);
+        expect(agg.progress, 0, reason: '首个进度回报前计 0');
+
+        gateA.complete();
+        await a;
+        final Future<InterconnectDownloadTask> b = manager.startVideoDownload(
+          id: 'b',
+          title: 'b',
+          dest: dest('b.mp4'),
+          run: (File target,
+                  {void Function(double progress)? onProgress,
+                  void Function(int received, int? total)? onBytes,
+                  Future<void>? cancelSignal}) =>
+              throw StateError('boom'),
+        );
+        await expectLater(b, throwsStateError);
+        final Future<InterconnectDownloadTask> c = manager.startVideoDownload(
+          id: 'c',
+          title: 'c',
+          dest: dest('c.mp4'),
+          run: (File target,
+              {void Function(double progress)? onProgress,
+              void Function(int received, int? total)? onBytes,
+              Future<void>? cancelSignal}) async {
+            reportC = onProgress;
+            await gateC.future;
+          },
+        );
+        await Future<void>.delayed(Duration.zero);
+        reportC!(0.4);
+        agg = manager.aggregateFor(<String>['a', 'b', 'c'])!;
+        expect(agg.total, 3);
+        expect(agg.running, 1);
+        expect(agg.failed, 1);
+        expect(agg.isRunning, isTrue);
+        // a 完成计 1、b 失败计 0、c 进行中计 0.4 → 1.4 / 3。
+        expect(agg.progress, closeTo(1.4 / 3, 1e-9));
+
+        gateC.complete();
+        await c;
+        agg = manager.aggregateFor(<String>['a', 'b', 'c'])!;
+        expect(agg.isRunning, isFalse);
+        expect(agg.isFailed, isTrue, reason: '全部结束且有失败 → 失败态');
+        expect(agg.progress, closeTo(2 / 3, 1e-9));
+      });
+
       test('duplicate startBatch while running returns the live batch',
           () async {
         final Completer<void> gate = Completer<void>();
@@ -235,6 +327,104 @@ void main() {
         gate.complete();
         await first;
       });
+    });
+  });
+
+  // BUG-2944：传输原语每读一块就回报一次进度，此前每次都通知，订阅整个管理器的
+  // 书架 / 媒体库页跟着每块整页重建，iOS 下载期间掉帧。
+  group('progress notification throttle (BUG-2944)', () {
+    late Directory dir;
+
+    setUp(() async {
+      dir = await Directory.systemTemp.createTemp('fushi-interconnect-thr');
+    });
+
+    tearDown(() async {
+      if (dir.existsSync()) {
+        try {
+          dir.deleteSync(recursive: true);
+        } catch (_) {}
+      }
+    });
+
+    test('sub-percent chunks within the interval do not notify', () async {
+      int clock = 1000;
+      final InterconnectDownloadManager manager =
+          InterconnectDownloadManager(now: () => clock);
+      addTearDown(manager.dispose);
+      final List<InterconnectDownloadBadgeState?> badges =
+          <InterconnectDownloadBadgeState?>[];
+      int notifications = 0;
+      manager.addListener(() {
+        notifications += 1;
+        badges.add(manager.badgeStateFor('v1'));
+      });
+
+      await manager.startVideoDownload(
+        id: 'v1',
+        title: 'Video One',
+        dest: File('${dir.path}/v1.mp4'),
+        run: (File target,
+            {void Function(double progress)? onProgress,
+            void Function(int received, int? total)? onBytes,
+            Future<void>? cancelSignal}) async {
+          // 1000 块，每块 1/100000：总共只走到 1%，时钟不动。
+          for (int i = 1; i <= 1000; i++) {
+            onBytes?.call(i, 100000);
+          }
+          // 时钟走过间隔，同百分比也要通知一次（字节数在变）。
+          clock += InterconnectDownloadManager.progressNotifyIntervalMs;
+          onBytes?.call(1001, 100000);
+          // 百分比跨整数立即通知。
+          onBytes?.call(50000, 100000);
+        },
+      );
+
+      // 起跑 1 + 0%→1% 跨整数 1 + 间隔到期 1 + 跨到 50% 1 + 完成 1，
+      // 远少于 1000 块的逐块通知。
+      expect(notifications, lessThan(10));
+      expect(
+        badges
+            .whereType<InterconnectDownloadBadgeState>()
+            .map((InterconnectDownloadBadgeState b) => b.percent),
+        containsAll(<int>[1, 50]),
+      );
+      final InterconnectDownloadTask task = manager.taskFor('v1')!;
+      expect(task.status, InterconnectDownloadStatus.completed,
+          reason: '状态变化不节流，完成必须通知到');
+      expect(badges.last?.status, InterconnectDownloadStatus.completed);
+    });
+
+    test('badgeStateFor is value-equal while only bytes move', () async {
+      final InterconnectDownloadManager manager = InterconnectDownloadManager();
+      addTearDown(manager.dispose);
+      final Completer<void> gate = Completer<void>();
+      late void Function(int received, int? total) report;
+      final Future<InterconnectDownloadTask> run = manager.startVideoDownload(
+        id: 'v1',
+        title: 'Video One',
+        dest: File('${dir.path}/v1.mp4'),
+        run: (File target,
+            {void Function(double progress)? onProgress,
+            void Function(int received, int? total)? onBytes,
+            Future<void>? cancelSignal}) async {
+          report = onBytes!;
+          await gate.future;
+        },
+      );
+
+      report(1000, 100000);
+      final InterconnectDownloadBadgeState? a = manager.badgeStateFor('v1');
+      report(1500, 100000);
+      final InterconnectDownloadBadgeState? b = manager.badgeStateFor('v1');
+      // 同为 1%：select 比较相等 → 卡片不重建。
+      expect(a, equals(b));
+      expect(a?.percent, 1);
+      report(2000, 100000);
+      expect(manager.badgeStateFor('v1'), isNot(equals(a)));
+
+      gate.complete();
+      await run;
     });
   });
 }

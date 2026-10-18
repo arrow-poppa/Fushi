@@ -11,7 +11,8 @@
 /// 用户只能靠读文字分辨「成了还是崩了」。
 library;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 
 /// 通知语义。
 ///
@@ -20,6 +21,9 @@ enum ToastSeverity { neutral, info, success, warning, error }
 
 /// 把 [ToastSeverity] 映射成 (背景色, 前景色, 图标)。[ToastSeverity.neutral] 返回
 /// null＝不着色，交回各系统的主题默认（旧行为）。
+///
+/// 图标是 M3E 语义符号（FushiIcons，实心版作状态徽记）；Apple 设计系统下 FushiIcon
+/// 渲染时自动换成同语义 SF 符号。
 ///
 /// 用固定 Material 800 色阶而非主题取色：保证四态在任意主题下语义清晰、对比达标，
 /// 也让无 BuildContext 的降级路径（独立弹窗 Activity 的原生 toast）能复用同一配色。
@@ -35,33 +39,34 @@ enum ToastSeverity { neutral, info, success, warning, error }
       return (
         background: const Color(0xFF2E7D32), // green 800
         foreground: Colors.white,
-        icon: Icons.check_circle_rounded,
+        icon: FushiIcons.filled(FushiIcons.success),
       );
     case ToastSeverity.warning:
       return (
         background: const Color(0xFFEF6C00), // orange 800
         // orange 800 配白字仅约 3.08:1；黑字约 6.81:1，满足普通正文 4.5:1。
         foreground: Colors.black,
-        icon: Icons.warning_amber_rounded,
+        icon: FushiIcons.filled(FushiIcons.warning),
       );
     case ToastSeverity.error:
       return (
         background: const Color(0xFFC62828), // red 800
         foreground: Colors.white,
-        icon: Icons.error_rounded,
+        icon: FushiIcons.filled(FushiIcons.error),
       );
     case ToastSeverity.info:
       return (
         background: const Color(0xFF1565C0), // blue 800
         foreground: Colors.white,
-        icon: Icons.info_rounded,
+        icon: FushiIcons.filled(FushiIcons.info),
       );
   }
 }
 
 /// TODO-1325 #6: 制卡结果 toast 的语义状态。决定 MD3 toast 的着色与 Material 图标，
 /// 让「加入了 / 已存在 / 失败 / 制卡中」一眼可辨，而不再只靠弹窗里 mine 按钮的图标变化。
-enum MineToastStatus { added, duplicate, failed, pending }
+/// [queued]：卡存进了设备端待发制卡队列，稍后补发（不是失败，也还没进 Anki）。
+enum MineToastStatus { added, duplicate, failed, pending, queued }
 
 /// 把 [MineToastStatus] 映射成 toast 的 (背景色, 前景色, 图标)。用固定 Material 色阶
 /// （绿/橙/红/蓝）而非主题取色，保证四态在任意主题下都语义清晰、对比达标；也让无
@@ -74,25 +79,31 @@ enum MineToastStatus { added, duplicate, failed, pending }
       return (
         background: const Color(0xFF2E7D32), // green 800
         foreground: Colors.white,
-        icon: Icons.check_circle_rounded,
+        icon: FushiIcons.filled(FushiIcons.success),
       );
     case MineToastStatus.duplicate:
       return (
         background: const Color(0xFFEF6C00), // orange 800
         foreground: Colors.black,
-        icon: Icons.library_add_check_rounded,
+        icon: FushiIcons.filled(FushiIcons.libraryAdd),
       );
     case MineToastStatus.failed:
       return (
         background: const Color(0xFFC62828), // red 800
         foreground: Colors.white,
-        icon: Icons.error_rounded,
+        icon: FushiIcons.filled(FushiIcons.error),
       );
     case MineToastStatus.pending:
       return (
         background: const Color(0xFF1565C0), // blue 800
         foreground: Colors.white,
-        icon: Icons.sync_rounded,
+        icon: FushiIcons.sync,
+      );
+    case MineToastStatus.queued:
+      return (
+        background: const Color(0xFF1565C0), // blue 800
+        foreground: Colors.white,
+        icon: FushiIcons.schedule,
       );
   }
 }
@@ -108,6 +119,7 @@ ToastSeverity mineToastSeverity(MineToastStatus status) {
     case MineToastStatus.failed:
       return ToastSeverity.error;
     case MineToastStatus.pending:
+    case MineToastStatus.queued:
       return ToastSeverity.info;
   }
 }

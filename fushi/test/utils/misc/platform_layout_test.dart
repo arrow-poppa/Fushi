@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/collections/collection_shelf_row.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
@@ -11,10 +11,17 @@ import '../../sync/desktop_lookup_foreground_guard_static_test.dart'
 /// 页面壳里「自己补横向内边距」的判据：`padding:` 位置上出现一个横向 EdgeInsets，
 /// 且取自 `spacing.page`（设计 token，不是散落魔数）。
 bool _hasOwnHorizontalInset(String code) {
+  // 两种写法都算「自带横向内边距」：`symmetric(horizontal: spacing.page …)`，或
+  // 分段选择器统一后（PR #1553）的 `fromLTRB(spacing.page, …, spacing.page, …)`
+  // ——左值就是横向留白，把它换成别的 mutation 同样能杀红。
   return RegExp(
     r'padding:\s*EdgeInsets\.symmetric\(\s*horizontal:[^;]{0,120}?spacing\.page',
     dotAll: true,
-  ).hasMatch(code);
+  ).hasMatch(code) ||
+      RegExp(
+        r'padding:\s*EdgeInsets\.fromLTRB\(\s*(?:tokens\.)?spacing\.page\s*,',
+        dotAll: true,
+      ).hasMatch(code);
 }
 
 void main() {
@@ -167,7 +174,7 @@ void main() {
       expect(
         desktopContentPadding(
           WindowSizeClass.medium,
-          DesktopContentKind.dictionary,
+          DesktopContentKind.settings,
         ),
         const EdgeInsets.symmetric(horizontal: 16),
       );
@@ -286,8 +293,9 @@ void main() {
       );
 
       // TODO-1352：dictionary 宽屏改为 full-bleed（null 上限），子内容宽度
-      // = 屏幕 1600 - 2×24 侧向留白 = 1552（不再锁 1040→992）。
-      expect(tester.getSize(find.byKey(childKey)).width, 1552);
+      // = 整屏 1600：查词页内各块自带页边内缩，不再叠 2×24 侧向留白
+      // （2026-10-06 与外壳大标题同一条页边）。
+      expect(tester.getSize(find.byKey(childKey)).width, 1600);
     });
 
     testWidgets('reader shelf spans edge-to-edge on wide desktop', (

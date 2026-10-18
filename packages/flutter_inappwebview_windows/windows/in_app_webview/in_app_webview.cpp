@@ -210,9 +210,20 @@ namespace flutter_inappwebview_plugin
       // intended behavior. NOTE: all environments created against the same user
       // data folder must use identical options (mismatch fails with
       // 0x8007139F) — this is the plugin's single default-environment site.
+      //
+      // BUG-3497: `fushi.local` is a virtual host served entirely by the
+      // WebResourceRequested interceptor, yet Chromium still resolves it on
+      // every main-frame navigation. `.local` goes to Windows multicast name
+      // resolution (mDNS/LLMNR), which only fails after ~2.7 s and is not
+      // negatively cached, so every book open and chapter turn sat blank for
+      // ~2 s. The lookup already fails today (NavigationCompleted below turns
+      // that failure into success); `~NOTFOUND` makes it fail immediately
+      // without touching the system resolver. Keep the host in sync with
+      // kReaderResourceHost (guard: webview2_reader_host_resolver_guard_test).
       auto options = Make<CoreWebView2EnvironmentOptions>();
       options->put_AdditionalBrowserArguments(
-        L"--autoplay-policy=no-user-gesture-required");
+        L"--autoplay-policy=no-user-gesture-required "
+        L"--host-resolver-rules=\"MAP fushi.local ~NOTFOUND\"");
       hr = CreateCoreWebView2EnvironmentWithOptions(
         nullptr, userDataFolder.empty() ? nullptr : userDataFolder.c_str(),
         options.Get(),
@@ -258,7 +269,7 @@ namespace flutter_inappwebview_plugin
       // Deliberately UNCONDITIONAL — not a missing knob. Exposing it as a
       // setting would need a matching Dart field in
       // flutter_inappwebview_platform_interface, which lives in pub-cache and is
-      // NOT forked here (only this windows package is vendored). And no Hibiki
+      // NOT forked here (only this windows package is vendored). And no Fushi
       // surface wants a browser status bar: every WebView in this app renders
       // EPUB / dictionary content, never a browsing chrome.
       //
@@ -285,7 +296,7 @@ namespace flutter_inappwebview_plugin
     //
     // WebView2 defaults AllowExternalDrop=TRUE, which makes the runtime register
     // its own IDropTarget on the HOST top-level HWND so files can be dropped INTO
-    // the web page. Hibiki only renders trusted EPUB/dictionary HTML in WebView,
+    // the web page. Fushi only renders trusted EPUB/dictionary HTML in WebView,
     // so dropping OS files into the page is never wanted. Worse, that registration
     // fights desktop_drop, which calls RegisterDragDrop once for the whole window:
     // WebView2 silently takes over the host HWND's drop target while a reader /
@@ -2051,37 +2062,66 @@ namespace flutter_inappwebview_plugin
       lastCursorPos_);
   }
 
-  void InAppWebView::sendScroll(double delta, bool horizontal)
+  void InAppWebView::sendScroll(double delta, bool horizontal,
+    COREWEBVIEW2_MOUSE_EVENT_VIRTUAL_KEYS extraKeys)
   {
     if (!webViewCompositionController) {
       return;
     }
 
-    // delta * 6 gives me a multiple of WHEEL_DELTA (120) for a mouse notch (delta≈20).
-    constexpr auto kScrollMultiplier = 6;
-
-    // BUG-1065 根因：这里的 delta 是 Flutter 的**逻辑像素**（framework converter.dart
-    // 对 scrollDelta 统一除过 devicePixelRatio），而 kScrollMultiplier=6 的前提「一档
-    // delta≈20」只在 dpr=1（100% 缩放）成立。150% 缩放下一档只剩 20/1.5≈13.3 → *6=80
-    // → 0.67 个 WHEEL_DELTA，同一份 popup.js 收到的 deltaY 就比 app 外裸 WebView2 窗
-    // （global_lookup_window.cpp 原样转发系统 WHEEL_DELTA=120）小 1/dpr，用户直观感受
-    // 就是「app 内弹窗滚得比 app 外慢」。本文件的鼠标坐标（sendMouseInput / setPosition）
-    // 早已乘 captureScaleFactor_ 还原 WebView raw pixel，唯独滚轮 delta 要按 Flutter
-    // 事件被除掉的 device DPR 还原——先还原再乘倍数，
-    // 使 WebView2 收到的 wheel 单位与系统原生一致。dpr=1 时逐帧与改前完全相同。
-    // 副作用（正向）：dpr≥2 时改前 deltaY 会跌破 popup.js 的 60px 粗/细设备阈值被误判
-    // 成触控板（factor 1.0 而非 0.24）而暴快，还原后分类回到设计假设。
+    // 视频页查词框滚轮比 galgame 覆盖窗「又快又一格一大跳」的根因（2026-09-27）：
+    // 这里原先写死 `delta * 6 * dpr`，前提是「Flutter 一档 delta≈20 逻辑像素」。现行
+    // Windows 引擎（flutter_window.cc UpdateScrollOffsetMultiplier / WM_MOUSEWHEEL）
+    // 一档发的是 `WHEEL_DELTA 的份数 × 行数×100/3` **物理**像素——系统默认 3 行即
+    // 100；框架 converter 再除以 devicePixelRatio 交到这里。于是一档到 WebView2 成了
+    // 100/dpr × 6 × dpr = 600 = 5 个 WHEEL_DELTA，而 app 外覆盖窗
+    // （global_lookup_window.cpp）原样转发系统的 120。同一份 popup.js 收到 5 倍 deltaY，
+    // 被它的单步上限（POPUP_WHEEL_MAX_VISUAL_STEP）截成一格 120px 的硬跳。
+    //
+    // 正确换算是把引擎那条乘法原样逆回去：逻辑像素 × dpr = 物理像素，÷(行数×100/3)
+    // = WHEEL_DELTA 份数，× WHEEL_DELTA = 原生滚轮单位。行数与引擎读同一个系统值
+    // （SPI_GETWHEELSCROLLLINES），用户改了「一次滚动行数」两边一起变，WebView2 再按
+    // 同一个设置把单位换成像素——与原生窗口逐档一致。触控板 pan-zoom 走同一入口：
+    // 物理像素 → 份数 → WebView2 还原成同样的像素，1:1。
+    // BUG-1065（按 dpr 还原被框架除掉的倍率）仍然成立，体现在 `* dprScale` 上。
     const double dprScale =
       (deviceScaleFactor_ > 0.0f) ? static_cast<double>(deviceScaleFactor_) : 1.0;
+    // 引擎只在建窗时读一次行数（FlutterWindow 构造里 UpdateScrollOffsetMultiplier，
+    // 之后不响应 WM_SETTINGCHANGE），运行中改「一次滚动行数」引擎仍用旧倍率。这里若每个
+    // 事件重读，改设置后两边就失配——所以同样只读一次（进程内首个滚轮事件，Flutter 窗口
+    // 早已建好，读到的就是引擎用的那个值）。
+    static const UINT linesPerScroll = [] {
+      UINT lines = 3;
+      if (!SystemParametersInfo(SPI_GETWHEELSCROLLLINES, 0, &lines, 0)) {
+        lines = 3;
+      }
+      return lines;
+    }();
+    // 与引擎同一公式、同一截断：引擎算 `float(行数) * 100.0 / 3.0` 后以 **int** 传给
+    // SendScroll（1 行 = 33 而非 33.3），这里逐位照抄才能逆得严丝合缝。「整页滚动」
+    // （WHEEL_PAGESCROLL）与 0 行都不是像素语义，回落系统默认 3 行（=100），绝不除零。
+    int engineMultiplier = 100;
+    if (linesPerScroll > 0 && linesPerScroll != WHEEL_PAGESCROLL && linesPerScroll <= 100) {
+      engineMultiplier = static_cast<int>(
+        static_cast<float>(static_cast<float>(linesPerScroll) * 100.0 / 3.0));
+      if (engineMultiplier <= 0) {
+        engineMultiplier = 100;
+      }
+    }
+    const double wheelUnitsPerLogicalPixel =
+      dprScale * static_cast<double>(WHEEL_DELTA) / static_cast<double>(engineMultiplier);
 
     // BUG-870 根因：static_cast<short>(delta * 6) 向零截断且无跨帧余量累积。精密触控板
     // 慢滑时 Flutter 每帧下发很小的 delta，delta*6 不足 1 时被截成 0 → 根本不发 wheel 给
     // WebView2 → 弹窗「滚不动 / 很难滚」（鼠标一档 delta≈20→120 不受影响，每帧即过整单位）。
     // 这是 popup.js 的 TODO-1387 子像素残差修复够不到的更上游截断点：wheel 还没进 DOM 就没了。
     // 改为按轴累加被截掉的小数余量，小 delta 攒够整数 wheel 单位再发，绝不丢帧。
-    double& residual = horizontal ? scrollResidualX_ : scrollResidualY_;
-    double scaled = delta * kScrollMultiplier * dprScale + residual;
-    // 防极快甩动 delta*6 溢出 short（否则环绕成反向跳变）；被夹掉的部分直接丢弃、不进余量。
+    const bool pinch =
+      (extraKeys & COREWEBVIEW2_MOUSE_EVENT_VIRTUAL_KEYS_CONTROL) != 0;
+    double& residual = pinch ? pinchResidual_
+      : (horizontal ? scrollResidualX_ : scrollResidualY_);
+    double scaled = delta * wheelUnitsPerLogicalPixel + residual;
+    // 防极快甩动换算后溢出 short（否则环绕成反向跳变）；被夹掉的部分直接丢弃、不进余量。
     if (scaled > 32760.0) { scaled = 32760.0; }
     else if (scaled < -32760.0) { scaled = -32760.0; }
     auto offset = static_cast<short>(scaled);  // toward zero
@@ -2093,13 +2133,21 @@ namespace flutter_inappwebview_plugin
     }
 
     if (horizontal) {
+      // 两个滚轮轴的符号约定相反：WM_MOUSEWHEEL 正值 = 向上滚（内容下移），
+      // WM_MOUSEHWHEEL 正值 = 向右滚（内容左移；Chromium 的 Win 输入构建器把它取反
+      // 成 WebKit 的「正 = 向左」，DOM deltaX 因而为正）。本入口的 delta 是「内容
+      // 移动量」（Dart 侧传 -scrollDelta / 触控板 panDelta，两者都是内容跟着走的
+      // 方向），纵向正好对上 WHEEL 的约定，横向必须取反才对上 HWHEEL。此前横向原样
+      // 下发 → 倾斜滚轮向右滚成向左、触控板两指横滑内容逆着手指走，阅读器横向
+      // 翻页随之反向（反馈 794gISjvgV）。
       webViewCompositionController->SendMouseInput(
-        COREWEBVIEW2_MOUSE_EVENT_KIND_HORIZONTAL_WHEEL, virtualKeys_.state(),
-        offset, lastCursorPos_);
+        COREWEBVIEW2_MOUSE_EVENT_KIND_HORIZONTAL_WHEEL,
+        virtualKeys_.state() | extraKeys, static_cast<short>(-offset),
+        lastCursorPos_);
     }
     else {
       webViewCompositionController->SendMouseInput(COREWEBVIEW2_MOUSE_EVENT_KIND_WHEEL,
-        virtualKeys_.state(), offset,
+        virtualKeys_.state() | extraKeys, offset,
         lastCursorPos_);
     }
   }
@@ -2116,6 +2164,17 @@ namespace flutter_inappwebview_plugin
     if (delta_y != 0.0) {
       sendScroll(delta_y, false);
     }
+  }
+
+  // BUG-2758：触控板捏合 → 带 Ctrl 的纵向滚轮，与 Chromium 在原生窗口里对
+  // DirectManipulation 捏合的合成方式一致（页面按 exp(-deltaY/100) 还原比例）。
+  // 换算与普通滚动同一条逻辑像素 → 滚轮单位链路，DOM 收到的 deltaY 1:1。
+  void InAppWebView::setPinchDelta(double delta)
+  {
+    if (!webViewCompositionController || delta == 0.0) {
+      return;
+    }
+    sendScroll(delta, false, COREWEBVIEW2_MOUSE_EVENT_VIRTUAL_KEYS_CONTROL);
   }
 
   bool InAppWebView::createSurface(const HWND parentWindow,

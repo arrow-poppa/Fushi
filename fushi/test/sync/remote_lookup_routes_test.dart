@@ -10,10 +10,10 @@ import 'package:shelf/shelf.dart' as shelf;
 
 import 'fushi_sync_server_source_corpus.dart';
 
-/// [FushiSyncServer] 与 [YomitanApiServer] 共用的查词/制卡 handler 壳与音频 token
+/// [FushiSyncServer] 与 [FushiApiServer] 共用的查词/制卡 handler 壳与音频 token
 /// 存储。抽出前两边各一份，且只有互联侧修了 BUG-908(a) 的上限——合成一份后扩展侧
 /// 也有了上限（本文件把这条行为钉死）。两台服务器各自的 HTTP 级用例
-/// （`fushi_sync_server_*_test` / `yomitan_api_server_*_test`）继续覆盖分发与鉴权。
+/// （`fushi_sync_server_*_test` / `fushi_api_server_*_test`）继续覆盖分发与鉴权。
 void main() {
   group('RemoteAudioTokenStore', () {
     late DateTime clock;
@@ -206,6 +206,19 @@ void main() {
           400);
     });
 
+    test('anki/open（#1409）：无挖词 service → {outcome:failed}，非法 JSON → 400',
+        () async {
+      final RemoteLookupRoutes off =
+          RemoteLookupRoutes(audioTokens: RemoteAudioTokenStore());
+      final shelf.Response r = await off
+          .handleOpenInAnki(post('/api/anki/open', {'expression': '猫'}));
+      expect(r.statusCode, 200);
+      expect(jsonDecode(await r.readAsString()), {'outcome': 'failed'});
+      expect(
+          (await off.handleOpenInAnki(post('/api/anki/open', '{'))).statusCode,
+          400);
+    });
+
     test('readJsonObjectBody：空体 / 非 object / 非法 JSON 一律 null；object 原样返回',
         () async {
       expect(await readJsonObjectBody(post('/x', '')), isNull);
@@ -252,8 +265,8 @@ void main() {
     // 必须扫合并语料，只扫主库会让搬进 part 的重复壳真空通过。
     final Map<String, String Function()> sources = <String, String Function()>{
       '../packages/fushi_engine/lib/sync/fushi_sync_server.dart': readFushiSyncServerSource,
-      'lib/src/sync/yomitan_api_server.dart': () =>
-          File('lib/src/sync/yomitan_api_server.dart').readAsStringSync(),
+      'lib/src/sync/fushi_api_server.dart': () =>
+          File('lib/src/sync/fushi_api_server.dart').readAsStringSync(),
     };
     const Map<String, List<String>> banned = <String, List<String>>{
       '../packages/fushi_engine/lib/sync/fushi_sync_server.dart': <String>[
@@ -267,7 +280,7 @@ void main() {
         '_generateAudioToken(',
         '_pruneAudioTokens(',
       ],
-      'lib/src/sync/yomitan_api_server.dart': <String>[
+      'lib/src/sync/fushi_api_server.dart': <String>[
         'class _YomitanAudioToken',
         'Future<shelf.Response> _handleMine(',
         'Future<shelf.Response> _handleMineForward(',

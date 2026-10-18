@@ -1,12 +1,13 @@
 import 'dart:async';
 import 'dart:io';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/models.dart';
+import 'package:fushi/src/media/audiobook/audiobook_controller.dart';
 import 'package:fushi/src/media/audiobook/audiobook_session.dart';
 import 'package:fushi/src/media/audiobook/floating_lyric_channel.dart';
 import 'package:fushi/src/media/audiobook/now_listening_mini_bar.dart';
@@ -112,7 +113,7 @@ void main() {
         title: 'Test Book',
         mediaIdentifier: 'fushi://book/a',
       ),
-      audioFiles: <File>[makeFile('hibiki-minibar-flash.mp3')],
+      audioFiles: <File>[makeFile('fushi-minibar-flash.mp3')],
       prefs: const SessionPrefs(
         followAudio: true,
         delayMs: 0,
@@ -187,7 +188,7 @@ void main() {
         title: 'Test Book',
         mediaIdentifier: 'fushi://book/a',
       ),
-      audioFiles: <File>[makeFile('hibiki-minibar-locked-tree.mp3')],
+      audioFiles: <File>[makeFile('fushi-minibar-locked-tree.mp3')],
       prefs: const SessionPrefs(
         followAudio: true,
         delayMs: 0,
@@ -239,7 +240,7 @@ void main() {
         title: 'Test Book',
         mediaIdentifier: 'fushi://book/a',
       ),
-      audioFiles: <File>[makeFile('hibiki-minibar-post-frame.mp3')],
+      audioFiles: <File>[makeFile('fushi-minibar-post-frame.mp3')],
       prefs: const SessionPrefs(
         followAudio: true,
         delayMs: 0,
@@ -305,7 +306,7 @@ void main() {
         title: 'Test Book',
         mediaIdentifier: 'fushi://book/a',
       ),
-      audioFiles: <File>[makeFile('hibiki-minibar-notify.mp3')],
+      audioFiles: <File>[makeFile('fushi-minibar-notify.mp3')],
       prefs: const SessionPrefs(
         followAudio: true,
         delayMs: 0,

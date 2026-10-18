@@ -89,6 +89,26 @@ inline constexpr LookupGeometryProviderIdentity
          kLookupGeometryProviderIdSmashFzmedia},
         {kLookupGeometryProviderEngineExactLayout,
          kLookupGeometryProviderIdCmvs},
+        {kLookupGeometryProviderEngineExactLayout,
+         kLookupGeometryProviderIdArtemis},
+        {kLookupGeometryProviderEngineExactLayout,
+         kLookupGeometryProviderIdReallive},
+        {kLookupGeometryProviderEngineExactLayout,
+         kLookupGeometryProviderIdCatSystem2},
+        {kLookupGeometryProviderEngineExactLayout,
+         kLookupGeometryProviderIdUnityMono},
+        {kLookupGeometryProviderEngineExactLayout,
+         kLookupGeometryProviderIdBgi},
+        {kLookupGeometryProviderEngineExactLayout,
+         kLookupGeometryProviderIdYuris},
+        {kLookupGeometryProviderEngineExactLayout,
+         kLookupGeometryProviderIdMalie},
+        {kLookupGeometryProviderEngineExactLayout,
+         kLookupGeometryProviderIdFvp},
+        {kLookupGeometryProviderEngineExactLayout,
+         kLookupGeometryProviderIdKogadoHy},
+        {kLookupGeometryProviderEngineExactLayout,
+         kLookupGeometryProviderIdLuca},
         {kLookupGeometryProviderPositionedTextApi,
          kLookupGeometryProviderIdGdiPositioned},
         {kLookupGeometryProviderPositionedTextApi,
@@ -134,6 +154,26 @@ inline constexpr LookupGeometryProviderIdentity
          kLookupGeometryProviderIdSmashFzmedia},
         {kLookupGeometryProviderEngineExactLayout,
          kLookupGeometryProviderIdSiglus},
+        {kLookupGeometryProviderEngineExactLayout,
+         kLookupGeometryProviderIdArtemis},
+        {kLookupGeometryProviderEngineExactLayout,
+         kLookupGeometryProviderIdReallive},
+        {kLookupGeometryProviderEngineExactLayout,
+         kLookupGeometryProviderIdCatSystem2},
+        {kLookupGeometryProviderEngineExactLayout,
+         kLookupGeometryProviderIdUnityMono},
+        {kLookupGeometryProviderEngineExactLayout,
+         kLookupGeometryProviderIdBgi},
+        {kLookupGeometryProviderEngineExactLayout,
+         kLookupGeometryProviderIdYuris},
+        {kLookupGeometryProviderEngineExactLayout,
+         kLookupGeometryProviderIdMalie},
+        {kLookupGeometryProviderEngineExactLayout,
+         kLookupGeometryProviderIdFvp},
+        {kLookupGeometryProviderEngineExactLayout,
+         kLookupGeometryProviderIdKogadoHy},
+        {kLookupGeometryProviderEngineExactLayout,
+         kLookupGeometryProviderIdLuca},
 };
 
 inline constexpr bool IsLookupGeometryNativeInputGatedProvider(uint32_t kind,
@@ -378,13 +418,17 @@ class GeometryProviderRegistry {
                   const LookupGeometryHitPublication& publication,
                   uint64_t* published_seq = nullptr) {
     if (published_seq != nullptr) *published_seq = 0;
-    if (!IsPublicationSane(header, publication)) return false;
+    if (!IsPublicationSane(header, publication)) {
+      last_hit_reject_ = kHitRejectInsane;
+      return false;
+    }
 
     AcquireSRWLockExclusive(&lock_);
     const int provider_index = LookupGeometryProductionProviderIndex(
         publication.provider_kind, publication.provider_id);
     if (provider_index < 0 || !ready_offers_[provider_index] ||
         AtomicLoadShared32(&header->lookup_enabled) == 0) {
+      last_hit_reject_ = kHitRejectProviderNotReady;
       ReleaseSRWLockExclusive(&lock_);
       return false;
     }
@@ -400,15 +444,24 @@ class GeometryProviderRegistry {
         !native_input_allowed ||
         publication.text_generation < text_generation_ ||
         publication.geometry_generation < geometry_generation_) {
+      last_hit_reject_ =
+          !same_provider            ? kHitRejectOtherProvider
+          : active_retire_pending_  ? kHitRejectRetirePending
+          : !native_input_allowed   ? kHitRejectNativeInputGated
+          : publication.text_generation < text_generation_
+              ? kHitRejectStaleText
+              : kHitRejectStaleGeometry;
       ReleaseSRWLockExclusive(&lock_);
       return false;
     }
 
     LookupHitSlot* slot = LookupHitOf(header);
     if (slot == nullptr) {
+      last_hit_reject_ = kHitRejectNoSlot;
       ReleaseSRWLockExclusive(&lock_);
       return false;
     }
+    last_hit_reject_ = kHitRejectNone;
 
     active_kind_ = publication.provider_kind;
     active_id_ = publication.provider_id;
@@ -454,6 +507,22 @@ class GeometryProviderRegistry {
     ReleaseSRWLockExclusive(&lock_);
     return true;
   }
+
+  // 最近一次 PublishHit 失败的原因（诊断用，只由发布线程读写）。PublishHit 的
+  // false 分支有七种，调用方只拿到一个 bool；真机上一笔点击没变成 hit 时要能说出
+  // 是哪一道门（BUG-2710）。
+  enum HitReject : uint32_t {
+    kHitRejectNone = 0,
+    kHitRejectInsane = 1,
+    kHitRejectProviderNotReady = 2,
+    kHitRejectOtherProvider = 3,
+    kHitRejectRetirePending = 4,
+    kHitRejectNativeInputGated = 5,
+    kHitRejectStaleText = 6,
+    kHitRejectStaleGeometry = 7,
+    kHitRejectNoSlot = 8,
+  };
+  uint32_t last_hit_reject() const { return last_hit_reject_; }
 
  private:
   static bool IsHeaderSane(const SharedHeader* header, bool require_enabled) {
@@ -763,6 +832,7 @@ class GeometryProviderRegistry {
   uint32_t active_id_ = kLookupGeometryProviderIdUnknown;
   uint32_t active_status_ = kLookupGeometryStatusUnavailable;
   bool active_retire_pending_ = false;
+  uint32_t last_hit_reject_ = 0;
   uint32_t active_retire_status_ = kLookupGeometryStatusUnavailable;
   uint64_t text_generation_ = 0;
   uint64_t geometry_generation_ = 0;

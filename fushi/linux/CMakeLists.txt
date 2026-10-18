@@ -118,6 +118,43 @@ endforeach(bundled_library)
 install(TARGETS fushidicts_ffi LIBRARY DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
   COMPONENT Runtime)
 
+# 互联 P2P 隧道（iroh，copy-if-present）：native/fushi_p2p/build_linux_so.sh 产出
+# prebuilt/linux-x64/libfushi_p2p.so 则随包进 bundle/lib/（Dart 侧按 <exe>/lib/ 定位）；
+# 缺失时 P2P 能力判不可用，其余互联照常。与 Windows / Android 同一语义。
+set(FUSHI_P2P_SO
+  "${CMAKE_CURRENT_SOURCE_DIR}/../../native/fushi_p2p/prebuilt/linux-x64/libfushi_p2p.so")
+if(EXISTS "${FUSHI_P2P_SO}")
+  install(FILES "${FUSHI_P2P_SO}" DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
+    COMPONENT Runtime)
+endif()
+
+# SRS 排程内核（fsrs-rs，copy-if-present）：native/fushi_fsrs/build_linux_so.sh 产出
+# prebuilt/linux-x64/libfushi_fsrs.so 则随包进 bundle/lib/（Dart 侧按裸名经 $ORIGIN/lib 定位）；
+# 缺失时 SRS 原生内核判不可用，构建照常。与 fushi_p2p 同一语义。
+set(FUSHI_FSRS_SO
+  "${CMAKE_CURRENT_SOURCE_DIR}/../../native/fushi_fsrs/prebuilt/linux-x64/libfushi_fsrs.so")
+if(EXISTS "${FUSHI_FSRS_SO}")
+  install(FILES "${FUSHI_FSRS_SO}" DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
+    COMPONENT Runtime)
+endif()
+
+# 内置 libtorrent 引擎（copy-if-present）：native/fushi_torrent/build_linux_so.sh 产出
+# prebuilt/linux-x64/libfushi_torrent_ffi.so（vcpkg 静态链 libtorrent/boost/openssl +
+# -static-libstdc++，只剩 glibc 动态），与无头服务端随包的是同一份。存在则随包进
+# bundle/lib/（Dart 侧 EmbeddedTorrentEngine 按 <exe>/lib/ 定位），缺失时下载后端回退
+# 外接 qBittorrent，构建照常——Linux 没有 Windows 那道 Release 强制门：没有 CI / 发布
+# 流水线构建 Linux app（所有者 2026-09-30 拍板），本机构建不该因缺 vcpkg 而失败。
+set(FUSHI_TORRENT_SO
+  "${CMAKE_CURRENT_SOURCE_DIR}/../../native/fushi_torrent/prebuilt/linux-x64/libfushi_torrent_ffi.so")
+if(EXISTS "${FUSHI_TORRENT_SO}")
+  install(FILES "${FUSHI_TORRENT_SO}" DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
+    COMPONENT Runtime)
+else()
+  message(STATUS
+    "fushi_torrent: ${FUSHI_TORRENT_SO} not found; the bundle will not ship the "
+    "embedded torrent engine (run native/fushi_torrent/build_linux_so.sh first).")
+endif()
+
 # Copy the native assets provided by the build.dart from all packages.
 set(NATIVE_ASSETS_DIR "${PROJECT_BUILD_DIR}native_assets/linux/")
 install(DIRECTORY "${NATIVE_ASSETS_DIR}"

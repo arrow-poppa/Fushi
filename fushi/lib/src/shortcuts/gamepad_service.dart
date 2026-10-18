@@ -6,11 +6,12 @@ import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 // Cross-platform controller plugin: GameInput on Windows, GameController on
 // iOS/macOS, evdev/SDL on Linux. Aliased because it also exports a
-// `GamepadButton` enum that would clash with Hibiki's.
+// `GamepadButton` enum that would clash with Fushi's.
 import 'package:gamepads/gamepads.dart' as gp;
 
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/focus/fushi_focus_scroll.dart';
+import 'package:fushi/src/lookup/lookup_overlay_navigator.dart';
 import 'package:fushi/src/shortcuts/dictionary_popup_gamepad.dart';
 import 'package:fushi/src/shortcuts/global_external_lookup_route.dart';
 import 'package:fushi/src/shortcuts/input_binding.dart';
@@ -101,6 +102,20 @@ bool dispatchDictionaryPopupGamepadButton(
 @immutable
 class GamepadButtonIntent extends Intent {
   const GamepadButtonIntent(this.button);
+
+  final GamepadButton button;
+}
+
+/// Intent dispatched when a polled controller [button] goes back UP (BUG-3330).
+///
+/// Most pages only care about the press edge ([GamepadButtonIntent]); a page with a
+/// HOLD action (the video page's 按住临时倍速) also needs the release edge, which the
+/// desktop poller otherwise never surfaced — Android gets it for free as a
+/// `KeyUpEvent` on the native key path. Unhandled releases are simply dropped: no
+/// global fallback acts on a release.
+@immutable
+class GamepadButtonReleaseIntent extends Intent {
+  const GamepadButtonReleaseIntent(this.button);
 
   final GamepadButton button;
 }
@@ -276,7 +291,7 @@ class GamepadFrameBits {
   static const int axisMax = 32767;
 }
 
-/// Bridges physical game controllers into Hibiki's input pipeline on platforms
+/// Bridges physical game controllers into Fushi's input pipeline on platforms
 /// where the Flutter engine does NOT surface controller buttons as
 /// `LogicalKeyboardKey.gameButton*` key events.
 ///
@@ -424,6 +439,7 @@ class GamepadService {
     _poller = _PluginGamepadPoller(
       processor: GamepadFrameProcessor(
         onButton: _dispatchButton,
+        onButtonRelease: _dispatchButtonRelease,
         onLongPress: _dispatchLongPress,
         onStickMove: _dispatchStickMove,
         onRightStickScroll: _dispatchRightStickScroll,
@@ -508,6 +524,8 @@ class GamepadService {
         // 行为不变：命中才 pop，未绑定仍是无操作。
         if (registry?.resolveGamepad(button, scope: ShortcutScope.universal) ==
             ShortcutAction.globalBack) {
+          // BUG-2953：查词浮层自带导航层里开着菜单时只关菜单（菜单不在根栈上）。
+          if (LookupOverlayNavigator.popActiveMenu()) return;
           navigatorKey.currentState?.maybePop();
         }
         return;
@@ -532,6 +550,20 @@ class GamepadService {
       default:
         return;
     }
+  }
+
+  /// BUG-3330: a polled button went back up. Only the focused page's
+  /// [GamepadButtonReleaseIntent] handler sees it (hold actions); there is no
+  /// global fallback for a release. While the in-game lookup card owns the pad,
+  /// releases are swallowed like presses.
+  void _dispatchButtonRelease(GamepadButton button) {
+    if (GalIngameLookupGamepadRoute.current != null) return;
+    final BuildContext? ctx = _dispatchContext;
+    if (ctx == null) return;
+    Actions.maybeInvoke<GamepadButtonReleaseIntent>(
+      ctx,
+      GamepadButtonReleaseIntent(button),
+    );
   }
 
   /// TODO-700 T6: the focus direction a D-pad press should move, resolved through
@@ -811,7 +843,7 @@ TraversalDirection? arrowTraversalDirection(LogicalKeyboardKey key) {
 /// events continuously move focus — the move itself stays the caller's
 /// [gamepadMoveFocusInDirection], so KeyDown and KeyRepeat share one geometry/
 /// reading-order path (the framework's bare DirectionalFocusAction does NOT
-/// carry Hibiki's reading-order fallback, so relying on it for repeats would
+/// carry Fushi's reading-order fallback, so relying on it for repeats would
 /// dead-end at row/panel edges where the press edge advanced fine).
 TraversalDirection? arrowFocusMoveDirection(KeyEvent event) {
   if (event is! KeyDownEvent && event is! KeyRepeatEvent) return null;
@@ -845,10 +877,12 @@ EditableText? focusedEditableText() {
 ///    still progress: down/right = next, up/left = previous.
 ///
 ///
-/// With a Hibiki focus root, controller failure only falls through to
-/// directional geometry. Reading-order fallback stays disabled there so a
-/// shelf edge can escape to the side rail or top bar without sliding sideways
-/// through shelf items.
+/// With a Fushi focus root the controller is the ONLY engine: its candidate
+/// set covers registered targets and native focusables of the current focus
+/// scope alike, so when it finds nothing in [direction] the press only gets the
+/// edge-scroll takeover below and otherwise stops at the edge. There is no
+/// reading-order slide, so a shelf edge can escape to the side rail or top bar
+/// without sliding sideways through shelf items.
 ///
 /// Returns whether focus actually changed.
 bool gamepadMoveFocusInDirection(
@@ -861,12 +895,11 @@ bool gamepadMoveFocusInDirection(
     if (controller.move(fushiFocusDirectionFromTraversal(direction))) {
       return true;
     }
-    // No registered target in this direction: take over and scroll the focused
-    // control's nearest scrollable by a screen-fraction, so a long list/page
-    // does not dead-end at its last focusable. Axis-matched so a left/right
-    // press never scrolls a vertical list. At the scroll extent this returns
-    // false and the press falls through to the (disabled) reading-order
-    // fallback — i.e. it simply stops at the edge.
+    // No target in this direction: take over and scroll the focused control's
+    // nearest scrollable by a screen-fraction, so a long list/page does not
+    // dead-end at its last focusable. Axis-matched so a left/right press never
+    // scrolls a vertical list. At the scroll extent this returns false — i.e.
+    // it simply stops at the edge.
     final BuildContext? focusContext =
         controller.activeContext ?? FocusManager.instance.primaryFocus?.context;
     if (controller.activeIsOnlyFocusableInNearestScrollable &&
@@ -878,11 +911,11 @@ bool gamepadMoveFocusInDirection(
         )) {
       return true;
     }
-    return _movePrimaryFocusInDirection(
-      context,
-      direction,
-      allowReadingOrderFallback: false,
-    );
+    // 手柄焦点重写：控制器的候选集已经包含当前作用域里的原生控件，它说「该方向
+    // 没有目标」就是没有。旧实现在这里再跑一遍框架 focusInDirection——第二套
+    // 引擎会落到控制器刻意排除的节点上（整页 key sink、受管复合控件的内部节点），
+    // 同一次按键两套引擎结论不一致正是「焦点乱跳」的来源。
+    return false;
   }
 
   return _movePrimaryFocusInDirection(
@@ -959,7 +992,7 @@ bool _movePrimaryFocusInDirection(
   }
 }
 
-/// Pure, platform-free normalization of controller frames into Hibiki
+/// Pure, platform-free normalization of controller frames into Fushi
 /// [GamepadButton] presses and a single repeating directional signal.
 ///
 /// Frames use the [GamepadFrameBits] bitmask layout. Separated from the I/O so
@@ -968,6 +1001,7 @@ bool _movePrimaryFocusInDirection(
 class GamepadFrameProcessor {
   GamepadFrameProcessor({
     required this.onButton,
+    this.onButtonRelease,
     this.onLongPress,
     this.onStickMove,
     this.onRightStickScroll,
@@ -989,6 +1023,15 @@ class GamepadFrameProcessor {
   /// instead, so a controller has TWO independent directional channels (stick =
   /// focus-only navigation, d-pad = bindable).
   final void Function(GamepadButton button) onButton;
+
+  /// BUG-3330: emits the RELEASE edge of a discrete button, a trigger, or the
+  /// held D-pad direction, so a page can implement hold-to-act (the video page's
+  /// 按住临时倍速). Always follows the matching [onButton] press. For A in
+  /// long-press mode the tap is itself decided on release, so its release edge is
+  /// emitted right after that tap (a hold-to-act on A therefore cannot hold on
+  /// desktop — A's hold is the long-press). D-pad auto-repeat presses in between
+  /// are ordinary [onButton] presses. Null = releases are not reported.
+  final void Function(GamepadButton button)? onButtonRelease;
 
   /// TODO-700 T6: the LEFT STICK's directional channel — fixed, generic FOCUS
   /// movement only (never the dictionary lookup / caret entry / registry). Null
@@ -1056,6 +1099,18 @@ class GamepadFrameProcessor {
   /// Clears all transient state — call when the controller disconnects or the
   /// active controller changes, so a stale bitmask can't fire spurious edges.
   void reset() {
+    // BUG-3330: a controller that vanishes mid-hold never sends its up edges;
+    // release whatever was held so a hold-to-act cannot get stuck engaged.
+    final void Function(GamepadButton button)? release = onButtonRelease;
+    if (release != null) {
+      for (final MapEntry<int, GamepadButton> entry in buttonBits.entries) {
+        if ((_prevButtons & entry.key) != 0) release(entry.value);
+      }
+      if (_prevLeftTrigger) release(GamepadButton.lt);
+      if (_prevRightTrigger) release(GamepadButton.rt);
+      final TraversalDirection? held = _heldDir;
+      if (held != null) release(dpadButtonFor(held));
+    }
     _prevButtons = 0;
     _prevLeftTrigger = false;
     _prevRightTrigger = false;
@@ -1085,6 +1140,7 @@ class GamepadFrameProcessor {
       final bool down = (buttons & mask) != 0;
       final bool wasDown = (_prevButtons & mask) != 0;
       if (down && !wasDown) onButton(entry.value);
+      if (!down && wasDown) onButtonRelease?.call(entry.value);
     }
 
     // A: mirror a mouse's tap-vs-long-press. Decide on RELEASE — a release
@@ -1105,6 +1161,7 @@ class GamepadFrameProcessor {
         }
       } else if (!aDown && aWas) {
         if (!_aLongFired) onButton(GamepadButton.a);
+        onButtonRelease?.call(GamepadButton.a);
         _aDownMs = 0;
       }
     }
@@ -1112,9 +1169,11 @@ class GamepadFrameProcessor {
     // Triggers behave as digital buttons past the standard threshold.
     final bool lt = leftTrigger > GamepadFrameBits.triggerThreshold;
     if (lt && !_prevLeftTrigger) onButton(GamepadButton.lt);
+    if (!lt && _prevLeftTrigger) onButtonRelease?.call(GamepadButton.lt);
     _prevLeftTrigger = lt;
     final bool rt = rightTrigger > GamepadFrameBits.triggerThreshold;
     if (rt && !_prevRightTrigger) onButton(GamepadButton.rt);
+    if (!rt && _prevRightTrigger) onButtonRelease?.call(GamepadButton.rt);
     _prevRightTrigger = rt;
 
     _prevButtons = buttons;
@@ -1127,6 +1186,12 @@ class GamepadFrameProcessor {
     //    keeps moving focus even while no D-pad is held. Both carry the SAME
     //    hysteresis + held-direction auto-repeat (TODO-699 feel preserved).
     final TraversalDirection? dpadDir = _dpadDirection(buttons);
+    final TraversalDirection? previousDpadDir = _heldDir;
+    if (previousDpadDir != null && previousDpadDir != dpadDir) {
+      // The held direction ended (released, or switched to another direction):
+      // report its release before the new direction's press.
+      onButtonRelease?.call(dpadButtonFor(previousDpadDir));
+    }
     if (dpadDir != null) {
       _updateHeldDirection(dpadDir, nowMs: nowMs);
     } else {

@@ -50,15 +50,36 @@ StatSourceKind? statSourceKindOf(MediaKind kind) => switch (kind) {
       MediaKind.game => StatSourceKind.game,
     };
 
-/// 标签宿主种类 → 标签墓碑域（[BookTagMembershipTombstones].mediaType 的值域，
-/// 复用 [MediaKind]）。只有 epub/video 进 tag live-sync、有墓碑语义；其余
-/// kind 调到这里是调用方 bug——扔 ArgumentError 而不是静默写错域（写错域的
-/// 墓碑所有读取端都命不中，跨端标签移除会静默失传，review5-9）。
-MediaKind tombstoneMediaKindOf(TagHostKind kind) => switch (kind) {
-      TagHostKind.epub => MediaKind.epub,
-      TagHostKind.video => MediaKind.video,
-      TagHostKind.srt ||
-      TagHostKind.collection ||
-      TagHostKind.game =>
-        throw ArgumentError.value(kind, 'kind', '该 kind 不进 tag sync，无墓碑域'),
+/// 标签宿主种类 → 标签墓碑域（[BookTagMembershipTombstones].mediaType 的落库值）。
+///
+/// 五个宿主种类都进互联标签同步、都有墓碑语义（tag_sync_engine）。epub / srt /
+/// video / game 与 [MediaKind] 同串同义（旧行零迁移）；合集不是媒体、[MediaKind]
+/// 里没有它，墓碑域直接取 [TagHostKind.collection] 的落库值 `'collection'`。
+/// 穷尽 switch：以后加宿主种类编译期就逼着在这里定墓碑域，不会静默写错域（写错
+/// 域的墓碑所有读取端都命不中，跨端标签移除会静默失传，review5-9）。
+String tagTombstoneDomainOf(TagHostKind kind) => switch (kind) {
+      TagHostKind.epub => MediaKind.epub.dbValue,
+      TagHostKind.srt => MediaKind.srt.dbValue,
+      TagHostKind.video => MediaKind.video.dbValue,
+      TagHostKind.game => MediaKind.game.dbValue,
+      TagHostKind.collection => TagHostKind.collection.dbValue,
+    };
+
+/// 合集所属的**库页域**（书架 / 漫画库 / 视频库 / 游戏库）。合集表本身不带种类列
+/// （同一张 `media_collections` 承载全部库页），一个合集属于哪个库页由它的成员
+/// 推导：任一成员落在某域，该合集就在那个域的「加入合集」列表里出现（BUG-2974）。
+enum CollectionShelfDomain { books, manga, video, games }
+
+/// 合集/书架种类 → 库页域。[MediaKind.epub] 同时承载书与漫画（`epub_books.format`
+/// 为 `manga` 的行住漫画库），由调用方按格式给出 [isManga]；其它种类忽略它。
+CollectionShelfDomain collectionShelfDomainOf(
+  MediaKind kind, {
+  bool isManga = false,
+}) =>
+    switch (kind) {
+      MediaKind.epub =>
+        isManga ? CollectionShelfDomain.manga : CollectionShelfDomain.books,
+      MediaKind.srt => CollectionShelfDomain.books,
+      MediaKind.video => CollectionShelfDomain.video,
+      MediaKind.game => CollectionShelfDomain.games,
     };

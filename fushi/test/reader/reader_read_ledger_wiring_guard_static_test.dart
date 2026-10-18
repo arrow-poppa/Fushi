@@ -51,7 +51,7 @@ void main() {
         'generation != _navigateGeneration',
         'chapter != _currentChapter',
         '!identical(controller, _controller)',
-        '_lyricsMode',
+        // 2026-10-04 歌词覆盖层：正文文档不再被歌词替换，这道闸不再看歌词态。
         'return;',
       ]) {
         expect(guard, contains(rejection));
@@ -96,7 +96,7 @@ void main() {
         'chapter != _currentChapter',
         '!identical(controller, _controller)',
         '_restoreInFlight',
-        '_lyricsMode',
+        // 2026-10-04 歌词覆盖层：正文在歌词层下面照常记账，这道闸不再看歌词态。
         'return;',
       ]) {
         expect(guard, contains(rejection));
@@ -105,7 +105,9 @@ void main() {
         'parseReaderStableProgressDetails(result)',
         '_applyImagePageProgressFallback()',
         '_lastProgressSection =',
-        '_readLedger.arrive(',
+        // BUG-3100：经开始方式门再 arrive（arriveReadUnitThroughStartGate 内部调
+        // ledger.arrive，门与顺序由 reader_study_clock_start_mode_wiring_guard 钉）。
+        'arriveReadUnitThroughStartGate(',
         '_debouncedSavePosition(',
       ]) {
         expect(code.indexOf(consumer), greaterThan(gateEnd));
@@ -126,9 +128,7 @@ void main() {
       final int gate = body.indexOf(
         'if (unitStart >= 0 && unitEnd > unitStart) {',
       );
-      final int arrive = body.indexOf(
-        '_readLedger.arrive(unitStart, unitEnd);',
-      );
+      final int arrive = body.indexOf('arriveReadUnitThroughStartGate(');
       expect(gate, isNonNegative, reason: 'JS 拿不到起 / 止点时不 arrive（宁可不计）');
       expect(arrive, greaterThan(gate));
     });
@@ -138,8 +138,14 @@ void main() {
       expect(containsIdentifier(body, 'addChars'), isFalse);
     });
 
-    test('全语料只有 _refreshProgress 调 _readLedger.arrive(', () {
-      expect('_readLedger.arrive('.allMatches(masked), hasLength(1));
+    test('全语料只有 _refreshProgress 落定入账（歌词覆盖层不入账）', () {
+      // 2026-10-04 歌词覆盖层（对齐 Niratan，取代 BUG-2597 的「歌词单元入账」）：
+      // 歌词模式是盖在正文上的一层，正文在下面照常跟随音频翻页，字数照常由正文的
+      // _refreshProgress 入账；歌词层不写任何统计，全语料只剩这一处 arrive。
+      // BUG-3100 起这唯一一处经 arriveReadUnitThroughStartGate(ledger: _readLedger)。
+      expect('arriveReadUnitThroughStartGate('.allMatches(masked), hasLength(1));
+      expect('_readLedger.arrive('.allMatches(masked), isEmpty);
+      expect(masked.contains('_arriveLyricsCueUnit'), isFalse);
     });
   });
 
@@ -190,8 +196,7 @@ void main() {
       expect(
         containsIdentifier(body, '_readLedger'),
         isFalse,
-        reason:
-            'BUG-2225：旧 restoreIsInPlace 拿「恢复锚 vs 上次采样」比对，同章跳转不经 '
+        reason: 'BUG-2225：旧 restoreIsInPlace 拿「恢复锚 vs 上次采样」比对，同章跳转不经 '
             '_beginNavigation、恢复锚就是上次采样 → 恒判原位 → 跳走前那页被 rebase 掉',
       );
     });
@@ -286,7 +291,8 @@ void main() {
       expect('_readLedger.reset('.allMatches(masked), hasLength(2));
       final int review = masked.indexOf('void _onSourceReviewChanged() {');
       expect(review, isNonNegative);
-      final String body = masked.substring(review, masked.indexOf('\n  }\n', review));
+      final String body =
+          masked.substring(review, masked.indexOf('\n  }\n', review));
       expect(body, contains('_readLedger.reset();'));
     });
   });
@@ -310,8 +316,7 @@ void main() {
       expect(
         containsCodeLine(body, '_studyClock?.detach();'),
         isTrue,
-        reason:
-            'dispose 是同步的：停表必须走 detach（内部零 IO，'
+        reason: 'dispose 是同步的：停表必须走 detach（内部零 IO，'
             '攒下的写交给 ExitFlushRegistry.defer），不许自己起事务',
       );
       expect(
@@ -383,9 +388,19 @@ void main() {
       expect(containsCodeLine(body, 'await _studyClock?.flushNow();'), isTrue);
     });
 
-    test('leave 恰五处：跳句 + _beginNavigation + 三个同章跳转入口；'
+    test(
+        'leave 恰五处：跳句 + _beginNavigation + 三个同章跳转入口；'
         '关书三条路（dispose / onSourcePagePop / 进程退出）零账本动作', () {
+      // 2026-10-04 歌词覆盖层：进歌词不再换掉正文文档，正文仍站在当前页并继续跟随，
+      // 所以进歌词**不**结算正文页（旧 BUG-2597 的第六处 leave 随之删除）。
       expect('_readLedger.leave('.allMatches(masked), hasLength(5));
+      expect(
+        containsIdentifier(
+          methodBody(corpus, 'Future<void> _toggleLyricsMode()'),
+          '_readLedger',
+        ),
+        isFalse,
+      );
       // BUG-2264：关书不是翻走。dispose 只 detach() 停表；`settle` 已从账本删除，
       // 任何形式的「关书结算当前页」回潮都会让开关一次涨一次。
       expect('_studyClock?.detach();'.allMatches(masked), hasLength(1));
@@ -398,9 +413,9 @@ void main() {
   });
 
   group('搜索跳转不对账本做动作（只滚动、不 notifyRestoreComplete，落点首个 arrive 结算旧页）', () {
-    test('onSearchJump 无账本动作', () {
+    test('onSearchJump（_jumpToSearchResult）无账本动作', () {
       final int start = masked.indexOf(
-        'onSearchJump: (BookSearchResult result, String query) async {',
+        'Future<void> _jumpToSearchResult(',
       );
       expect(start, isNonNegative);
       final int end = masked.indexOf('switch (action) {', start);
@@ -462,8 +477,9 @@ void main() {
       );
       expect(
         '_scheduleReanchorSettleProgressRefresh('.allMatches(masked),
-        hasLength(3),
-        reason: '定义 + 听书 reveal + B-3 丢弃，共用一个单 Timer',
+        hasLength(4),
+        // 2026-10-04：退出歌词覆盖层时把正文 reveal 到当前句，同一个补刷。
+        reason: '定义 + 听书 reveal + B-3 丢弃 + 退出歌词 reveal，共用一个单 Timer',
       );
     });
   });

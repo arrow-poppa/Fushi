@@ -1,5 +1,6 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_engine/media/video/jimaku_client.dart';
 import 'package:fushi/utils.dart';
 
@@ -72,7 +73,7 @@ class JimakuEntryPicker extends StatelessWidget {
         children: <Widget>[
           Padding(
             padding: const EdgeInsets.only(top: 2),
-            child: Icon(
+            child: FushiIcon(
               selected
                   ? Icons.radio_button_checked
                   : Icons.radio_button_unchecked,
@@ -120,7 +121,7 @@ class JimakuEntryPicker extends StatelessWidget {
           const SizedBox(
             width: 14,
             height: 14,
-            child: CircularProgressIndicator(strokeWidth: 2),
+            child: FushiCircularProgressIndicator(strokeWidth: 2),
           ),
           const SizedBox(width: 6),
           Text(t.video_jimaku_source_loading, style: theme.textTheme.bodySmall),
@@ -182,13 +183,20 @@ class JimakuLanguagePicker extends StatelessWidget {
       spacing: 8,
       runSpacing: 8,
       children: <Widget>[
-        ChoiceChip(
+        FushiChoiceChip(
           label: Text(t.video_jimaku_language_all),
           selected: selectedLanguage == null,
           onSelected: enabled ? (_) => onSelected(null) : null,
         ),
-        for (final String language in kJimakuLanguageCodes)
-          ChoiceChip(
+        // 选中的语言可能来自 AI 下视频写入的每系列记忆（西语、法语……不在这四种
+        // 里）：补一枚 chip，否则一个都不亮、点掉以后也选不回来。
+        for (final String language in <String>[
+          ...kJimakuLanguageCodes,
+          if (selectedLanguage != null &&
+              !kJimakuLanguageCodes.contains(selectedLanguage))
+            selectedLanguage!,
+        ])
+          FushiChoiceChip(
             label: Text(jimakuLanguageLabel(language)),
             selected: selectedLanguage == language,
             onSelected: enabled ? (_) => onSelected(language) : null,

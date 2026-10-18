@@ -1,5 +1,11 @@
+import 'package:fushi_engine/media/media_extensions.dart'
+    show isAudioOnlyMediaPath;
 import 'package:fushi_engine/media/source_library/source_library_row.dart';
+import 'package:fushi_engine/media/video/bluray/bluray_disc_extras.dart';
+import 'package:fushi_engine/media/video/external_video.dart'
+    show normalizeVideoPath;
 import 'package:fushi_engine/media/video/metadata/video_local_extra_classifier.dart';
+import 'package:fushi_engine/media/video/metadata/video_web_download_classifier.dart';
 import 'package:fushi_engine/media/video/scraper/collection_member_policy.dart'
     show multiMemberCollectionIdByVideoUid;
 import 'package:fushi_engine/media/video/video_filename_parser.dart';
@@ -49,6 +55,21 @@ class VideoSourceScrapeWork {
   );
 }
 
+/// [VideoSourceWorkPlanner.plan] 会不会为 [source] 产出作品单元：只有视频来源，
+/// 且不是目录分组模式（目录模式按导入目录组织，不按作品识别）。
+bool videoSourcePlansScrapeWorks(SourceLibraryRow source) =>
+    source.mediaKind == 'video' && source.videoGroupingMode != 'folder';
+
+/// [VideoSourceWorkPlanner.plan] 会不会把 [book] 放进某个作品单元：NCOP/NCED/
+/// 预告/花絮仍是 VideoBook，但不是可独立识别的作品；纯音频（原声专辑曲目等）
+/// 同理——拿曲名去动画资料源搜只会失败或误绑，封面走同目录专辑封面。yt-dlp
+/// 默认命名下载的 YouTube 视频（`标题 [videoId].ext`）也没有资料源作品身份，
+/// 不进计划（[isYtDlpYoutubeDownloadPath]）。
+bool videoBookJoinsScrapePlan(VideoBookRow book) =>
+    !isAudioOnlyMediaPath(book.videoPath) &&
+    classifyLocalVideoExtra(book.videoPath) == null &&
+    !isYtDlpYoutubeDownloadPath(book.videoPath);
+
 /// 从已入库的 `sourceId` 与合集成员关系生成按作品去重的刮削计划。
 class VideoSourceWorkPlanner {
   const VideoSourceWorkPlanner(this._database);
@@ -56,7 +77,7 @@ class VideoSourceWorkPlanner {
   final FushiDatabase _database;
 
   Future<List<VideoSourceScrapeWork>> plan(SourceLibraryRow source) async {
-    if (source.mediaKind != 'video' || source.videoGroupingMode == 'folder') {
+    if (!videoSourcePlansScrapeWorks(source)) {
       return const <VideoSourceScrapeWork>[];
     }
 
@@ -64,6 +85,12 @@ class VideoSourceWorkPlanner {
         .where((VideoBookRow row) => row.sourceId == source.id)
         .toList();
     if (sourceBooks.isEmpty) return const <VideoSourceScrapeWork>[];
+    // 蓝光盘的特典（正片集合之外、远短于正片的标题，以及没被选成标题的播放
+    // 列表）：盘名就是片名，各自拿去识别只会把制作特辑认成整部电影。正片不在库时
+    // 最长的那条特典顶上、照常进计划（[blurayDiscExtras]）。
+    final Map<String, String> discExtras = await blurayDiscExtras(
+      sourceBooks.map((VideoBookRow row) => row.videoPath),
+    );
 
     final List<MediaCollectionItemRow> allItems =
         await _database.getAllCollectionItems();
@@ -84,7 +111,8 @@ class VideoSourceWorkPlanner {
     for (final VideoBookRow book in sourceBooks) {
       // NCOP/NCED/预告/花絮仍是 VideoBook，继续出现在“全部视频”；但它们不是
       // 可独立识别的作品，不能让一次来源刮削多出四个必失败任务。
-      if (classifyLocalVideoExtra(book.videoPath) != null) continue;
+      if (!videoBookJoinsScrapePlan(book)) continue;
+      if (discExtras.containsKey(normalizeVideoPath(book.videoPath))) continue;
       final int? collectionId = primaryCollections[book.bookUid];
       final VideoNameInfo parsed =
           parseVideoFilename(p.basename(book.videoPath));

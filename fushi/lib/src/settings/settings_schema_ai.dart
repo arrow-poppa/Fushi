@@ -1,511 +1,294 @@
-/// 查词设置里的「AI 解释」分区（BYOK）。
-///
-/// 完整契约见 [docs/agent/ai-explanation.md](../../../docs/agent/ai-explanation.md)；
-/// 这里只负责把那套配置摆成设置行。
-///
-/// 分区结构对齐参考实现的设置页：一个 provider 选择，四组各自的字段按当前 provider
-/// 显隐（对应参考实现的 `_updateProviderVisibility`），再加一组通用行为与提示词。
-/// 显隐用 item 自带的 `visible` 闭包——它在**渲染时**求值，不会破坏 schema 树按
-/// locale 的缓存（`settings_schema_cache_test.dart` 钉死了这条）。
-library;
-
-import 'package:flutter/material.dart';
-import 'package:fushi/src/ai/ai_prompt_renderer.dart';
-import 'package:fushi/src/ai/ai_provider_config.dart';
-import 'package:fushi/src/ai/ai_request_builder.dart';
+import 'package:material_ui/material_ui.dart';
+import 'package:fushi_engine/ai/web_knowledge.dart';
+import 'package:fushi_engine/media/video/acquisition/video_acquisition_models.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
+import 'package:fushi/src/models/module_id.dart';
+import 'package:fushi/src/models/module_registry.dart';
+import 'package:fushi/src/models/store_compliance.dart';
+import 'package:fushi/src/pages/implementations/ai_interconnect_host_row.dart';
+import 'package:fushi/src/pages/implementations/ai_provider_settings_section.dart';
+import 'package:fushi/src/pages/implementations/ai_web_knowledge_sites_section.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
+import 'package:fushi/src/settings/settings_kit.dart' show settingsResetSpecFor;
 import 'package:fushi/utils.dart';
+import 'package:fushi_engine/media/video/subtitle/subtitle_language_preference.dart'
+    show subtitleLanguageNativeName;
 
-/// 当前选中的 provider。
-AiProvider _provider(SettingsContext c) =>
-    c.appModel.aiSettings.read().provider;
-
-bool _isOpenAi(SettingsContext c) => _provider(c) == AiProvider.openai;
-bool _isGemini(SettingsContext c) => _provider(c) == AiProvider.gemini;
-bool _isDeepSeek(SettingsContext c) => _provider(c) == AiProvider.deepseek;
-bool _isCustom(SettingsContext c) => _provider(c) == AiProvider.custom;
-
-/// 自定义端点是否指向 OpenRouter。
+/// 「AI」一级设置分类：用户自配的大模型提供商 + 每个功能用哪家。
 ///
-/// OpenRouter 专属的三行（路由策略 / provider 标识 / 允许兜底）在别的端点上是**惰性
-/// 的**——请求构造器会整段跳过它们。摆出来只会让人以为配了有用，所以按真实判据显隐，
-/// 与出站那条判据同源（`AiRequestBuilder.isOpenRouterEndpoint`，按注册域名匹配，不是
-/// 子串）。
-bool _isOpenRouter(SettingsContext c) =>
-    _isCustom(c) &&
-    AiRequestBuilder.isOpenRouterEndpoint(
-      c.appModel.aiSettings.read().customEndpoint,
-    );
-
-/// 思考强度选到「自定义」时才需要那个自由值输入框。
-bool _needsThinkingValue(SettingsContext c) =>
-    _isCustom(c) &&
-    c.appModel.aiSettings.read().customThinkingIntensity ==
-        AiThinkingIntensity.custom;
-
-List<SettingsSegmentOption<AiThinkingMode>> _thinkingModeOptions() =>
-    <SettingsSegmentOption<AiThinkingMode>>[
-      SettingsSegmentOption<AiThinkingMode>(
-        value: AiThinkingMode.unset,
-        label: t.ai_explain_option_default,
-      ),
-      SettingsSegmentOption<AiThinkingMode>(
-        value: AiThinkingMode.enabled,
-        label: t.ai_explain_option_enabled,
-      ),
-      SettingsSegmentOption<AiThinkingMode>(
-        value: AiThinkingMode.disabled,
-        label: t.ai_explain_option_disabled,
-      ),
-    ];
-
-List<SettingsSegmentOption<AiThinkingIntensity>> _thinkingIntensityOptions({
-  required bool withCustom,
-}) => <SettingsSegmentOption<AiThinkingIntensity>>[
-  SettingsSegmentOption<AiThinkingIntensity>(
-    value: AiThinkingIntensity.unset,
-    label: t.ai_explain_option_default,
-  ),
-  SettingsSegmentOption<AiThinkingIntensity>(
-    value: AiThinkingIntensity.high,
-    label: t.ai_explain_option_high,
-  ),
-  SettingsSegmentOption<AiThinkingIntensity>(
-    value: AiThinkingIntensity.max,
-    label: t.ai_explain_option_max,
-  ),
-  if (withCustom)
-    SettingsSegmentOption<AiThinkingIntensity>(
-      value: AiThinkingIntensity.custom,
-      label: t.ai_explain_option_custom,
+/// 归在独立的「AI」模块（`ModuleId.ai`，2026-10-13 起；此前挂在 `services` 下）：
+/// 用户要能把 AI 整块关掉而不连坐在线服务。判据表见 `module_registry.dart`，别在
+/// 此另写一份。
+///
+/// 提供商与功能指派走 [SettingsDestination.body] 逃生口：提供商是一份**可增删的
+/// 记录列表**（每条还带自己的探测状态与模型下拉），schema 的声明式 item 树表达
+/// 不了；与 OPDS / Torznab 段同一条切法。body 之后再挂声明式 section（`AI 下视频`
+/// 的画质 / 片源 / 码率 / 字幕语言默认值），`bodyBeforeSections` 让 body 排在前面。
+///
+/// **必须零参、返回纯字面量树**：schema 按 locale 缓存（见 `settings_schema.dart`
+/// 的 `_SettingsSchemaCache`），任何构造期读运行状态的口子都会让缓存发陈旧数据，
+/// 守卫 `test/settings/settings_schema_cache_test.dart` 钉死这条。
+SettingsDestination buildAiDestination() {
+  return SettingsDestination(
+    id: SettingsDestinationId.ai,
+    // 「功能模块」门控：关掉本模块 = 整条分类不渲染 / 不进搜索索引 / 主从详情不可选
+    // （三条渲染路径共用 isVisible）。
+    visible: (SettingsContext c) => isSettingsDestinationVisible(
+      SettingsDestinationId.ai,
+      c.appModel.moduleVisibility,
     ),
-];
-
-/// 「AI 解释」分区。
-///
-/// 默认折叠：绝大多数用户不配 AI，展开会把查词分类顶得很长。
-SettingsSection buildAiExplanationSection() {
-  return SettingsSection(
-    id: 'lookup.section.ai_explain',
-    title: t.ai_explain_section,
-    footer: t.ai_explain_section_hint,
-    presentation: SettingsSectionPresentation.collapsed,
-    items: <SettingsItem>[
-      // ---- provider ----
-      SettingsSegmentedItem<AiProvider>(
-        id: 'lookup.ai_explain.provider',
-        title: t.ai_explain_provider,
-        subtitle: t.ai_explain_provider_hint,
-        icon: Icons.auto_awesome_outlined,
-        dropdown: true,
-        options: const <SettingsSegmentOption<AiProvider>>[
-          SettingsSegmentOption<AiProvider>(
-            value: AiProvider.openai,
-            label: 'OpenAI',
-          ),
-          SettingsSegmentOption<AiProvider>(
-            value: AiProvider.gemini,
-            label: 'Google Gemini',
-          ),
-          SettingsSegmentOption<AiProvider>(
-            value: AiProvider.deepseek,
-            label: 'DeepSeek',
-          ),
-          SettingsSegmentOption<AiProvider>(
-            value: AiProvider.custom,
-            label: 'Custom (OpenAI-compatible)',
-          ),
-        ],
-        selected: _provider,
-        onChanged: (SettingsContext c, AiProvider value) async {
-          await c.appModel.aiSettings.setProvider(value);
-          c.refresh();
-        },
-      ),
-
-      // ---- 凭据：一行，按当前 provider 读写对应的 key ----
-      SettingsTextItem(
-        id: 'lookup.ai_explain.api_key',
-        title: t.ai_explain_api_key,
-        subtitle: t.ai_explain_api_key_hint,
-        icon: Icons.key_outlined,
-        secret: true,
-        value: (SettingsContext c) =>
-            c.appModel.aiCredentials.readApiKey(_provider(c)),
-        onChanged: (SettingsContext c, String value) async {
-          await c.appModel.aiCredentials.writeApiKey(_provider(c), value);
-          c.refresh();
-        },
-      ),
-
-      // ---- 模型 ----
+    title: t.ai_settings_title,
+    summary: t.ai_settings_summary,
+    icon: FushiIcons.aiAssistant,
+    body: (SettingsContext settingsContext) =>
+        const AiProviderSettingsSection(),
+    bodyBeforeSections: true,
+    sections: <SettingsSection>[
+      // 联网资料：app 自己抓条目正文喂给 AI，与提供商有没有联网工具无关，所以不另设
+      // 门控——整页已经过 AI 模块门，这一段跟着页面走。内置站是声明式开关；自定义
+      // MediaWiki 站点是可增删的记录列表，走 custom 行（同提供商列表的切法）。
       //
-      // 参考实现给 OpenAI / Gemini 摆的是写死的下拉（11 个 Gemini 条目里已经混着
-      // preview 名），但 BYOK 用户必须能用上 app 没听说过的模型，写死的清单只会过期。
-      // 这里统一用文本框 + 占位提示 + 一键重置成默认值（见 §8 的偏离说明）。
-      SettingsTextItem(
-        id: 'lookup.ai_explain.openai_model',
-        title: t.ai_explain_model,
-        subtitle: t.ai_explain_model_hint,
-        icon: Icons.memory_outlined,
-        visible: _isOpenAi,
-        placeholder: AiDefaults.openaiModel,
-        resetValue: (SettingsContext c) => AiDefaults.openaiModel,
-        value: (SettingsContext c) => c.appModel.aiSettings.read().openaiModel,
-        onChanged: (SettingsContext c, String value) async {
-          await c.appModel.aiSettings.setOpenaiModel(value);
-          c.refresh();
-        },
-      ),
-      SettingsTextItem(
-        id: 'lookup.ai_explain.gemini_model',
-        title: t.ai_explain_model,
-        subtitle: t.ai_explain_model_hint,
-        icon: Icons.memory_outlined,
-        visible: _isGemini,
-        placeholder: AiDefaults.geminiModel,
-        resetValue: (SettingsContext c) => AiDefaults.geminiModel,
-        value: (SettingsContext c) => c.appModel.aiSettings.read().geminiModel,
-        onChanged: (SettingsContext c, String value) async {
-          await c.appModel.aiSettings.setGeminiModel(value);
-          c.refresh();
-        },
-      ),
-      SettingsTextItem(
-        id: 'lookup.ai_explain.deepseek_model',
-        title: t.ai_explain_model,
-        subtitle: t.ai_explain_model_hint,
-        icon: Icons.memory_outlined,
-        visible: _isDeepSeek,
-        placeholder: 'deepseek-chat',
-        value: (SettingsContext c) =>
-            c.appModel.aiSettings.read().deepseekModel,
-        onChanged: (SettingsContext c, String value) async {
-          await c.appModel.aiSettings.setDeepseekModel(value);
-          c.refresh();
-        },
-      ),
-      SettingsTextItem(
-        id: 'lookup.ai_explain.custom_model',
-        title: t.ai_explain_model,
-        subtitle: t.ai_explain_model_hint,
-        icon: Icons.memory_outlined,
-        visible: _isCustom,
-        placeholder: 'vendor/model',
-        value: (SettingsContext c) => c.appModel.aiSettings.read().customModel,
-        onChanged: (SettingsContext c, String value) async {
-          await c.appModel.aiSettings.setCustomModel(value);
-          c.refresh();
-        },
-      ),
-
-      // ---- Gemini 思考级别 ----
-      SettingsSegmentedItem<AiGeminiThinkingLevel>(
-        id: 'lookup.ai_explain.gemini_thinking',
-        title: t.ai_explain_thinking_level,
-        icon: Icons.psychology_outlined,
-        visible: _isGemini,
-        dropdown: true,
-        options: <SettingsSegmentOption<AiGeminiThinkingLevel>>[
-          SettingsSegmentOption<AiGeminiThinkingLevel>(
-            value: AiGeminiThinkingLevel.unset,
-            label: t.ai_explain_option_default,
-          ),
-          SettingsSegmentOption<AiGeminiThinkingLevel>(
-            value: AiGeminiThinkingLevel.minimal,
-            label: t.ai_explain_option_minimal,
-          ),
-          SettingsSegmentOption<AiGeminiThinkingLevel>(
-            value: AiGeminiThinkingLevel.low,
-            label: t.ai_explain_option_low,
-          ),
-          SettingsSegmentOption<AiGeminiThinkingLevel>(
-            value: AiGeminiThinkingLevel.medium,
-            label: t.ai_explain_option_medium,
-          ),
-          SettingsSegmentOption<AiGeminiThinkingLevel>(
-            value: AiGeminiThinkingLevel.high,
-            label: t.ai_explain_option_high,
+      // 2026-10-08 所有者：AI 页外层只放总配置（提供商 / 默认提供商），各功能的单独
+      // 配置折叠起来。下面两段都是功能级配置，默认折叠，收起时摘要报改过几项。
+      SettingsSection(
+        id: 'ai.web_knowledge',
+        title: t.ai_web_knowledge_section,
+        footer: t.ai_web_knowledge_section_hint,
+        presentation: SettingsSectionPresentation.collapsed,
+        summaryBuilder: (SettingsContext c) =>
+            _aiSectionModifiedSummary('ai.web_knowledge', c),
+        items: <SettingsItem>[
+          for (final WebKnowledgeSite site in kBuiltinWebKnowledgeSites)
+            SettingsSwitchItem(
+              id: 'ai.web_knowledge.${site.id}',
+              title: webKnowledgeSiteDisplayLabel(site),
+              icon: FushiIcons.globe,
+              value: (SettingsContext c) => c
+                  .appModel
+                  .prefsRepo
+                  .aiWebKnowledgeEnabledSiteIds
+                  .contains(site.id),
+              onChanged: (SettingsContext c, bool value) =>
+                  setWebKnowledgeSiteEnabled(
+                    c.appModel.prefsRepo,
+                    site.id,
+                    enabled: value,
+                  ),
+              defaultValue: true,
+            ),
+          // 自定义站点是可增删的记录：每条一行，与上面内置站的开关行同组并列。
+          SettingsCustomItem.rows(
+            id: 'ai.web_knowledge.custom',
+            searchTitle: t.ai_web_knowledge_custom_title,
+            cliList: buildWebKnowledgeCustomCliList(),
+            rowsBuilder: (SettingsContext c) => c.appModel.isPreferencesReady
+                ? buildAiWebKnowledgeCustomSiteRows(
+                    c.context,
+                    c.appModel.prefsRepo,
+                    c.refresh,
+                  )
+                : const <Widget>[],
           ),
         ],
-        selected: (SettingsContext c) =>
-            c.appModel.aiSettings.read().geminiThinkingLevel,
-        onChanged: (SettingsContext c, AiGeminiThinkingLevel value) async {
-          await c.appModel.aiSettings.setGeminiThinkingLevel(value);
-          c.refresh();
-        },
       ),
-
-      // ---- DeepSeek 思考 ----
-      SettingsSegmentedItem<AiThinkingMode>(
-        id: 'lookup.ai_explain.deepseek_thinking_mode',
-        title: t.ai_explain_thinking_mode,
-        icon: Icons.psychology_outlined,
-        visible: _isDeepSeek,
-        dropdown: true,
-        options: _thinkingModeOptions(),
-        selected: (SettingsContext c) =>
-            c.appModel.aiSettings.read().deepseekThinkingMode,
-        onChanged: (SettingsContext c, AiThinkingMode value) async {
-          await c.appModel.aiSettings.setDeepseekThinkingMode(value);
-          c.refresh();
-        },
-      ),
-      SettingsSegmentedItem<AiThinkingIntensity>(
-        id: 'lookup.ai_explain.deepseek_thinking_intensity',
-        title: t.ai_explain_thinking_intensity,
-        icon: Icons.tune_outlined,
-        visible: _isDeepSeek,
-        dropdown: true,
-        options: _thinkingIntensityOptions(withCustom: false),
-        selected: (SettingsContext c) =>
-            c.appModel.aiSettings.read().deepseekThinkingIntensity,
-        onChanged: (SettingsContext c, AiThinkingIntensity value) async {
-          await c.appModel.aiSettings.setDeepseekThinkingIntensity(value);
-          c.refresh();
-        },
-      ),
-
-      // ---- 自定义端点 ----
-      SettingsTextItem(
-        id: 'lookup.ai_explain.endpoint',
-        title: t.ai_explain_endpoint,
-        subtitle: t.ai_explain_endpoint_hint,
-        icon: Icons.link_outlined,
-        visible: _isCustom,
-        placeholder: 'https://api.example.com/v1/chat/completions',
-        keyboardType: TextInputType.url,
-        value: (SettingsContext c) =>
-            c.appModel.aiSettings.read().customEndpoint,
-        onChanged: (SettingsContext c, String value) async {
-          await c.appModel.aiSettings.setCustomEndpoint(value);
-          // 端点决定 OpenRouter 三行的显隐，所以必须刷新整页。
-          c.refresh();
-        },
-      ),
-
-      // ---- OpenRouter 路由（仅当端点真是 OpenRouter）----
-      SettingsSegmentedItem<AiProviderRoutingMode>(
-        id: 'lookup.ai_explain.routing_mode',
-        title: t.ai_explain_routing_mode,
-        icon: Icons.alt_route_outlined,
-        visible: _isOpenRouter,
-        dropdown: true,
-        options: <SettingsSegmentOption<AiProviderRoutingMode>>[
-          SettingsSegmentOption<AiProviderRoutingMode>(
-            value: AiProviderRoutingMode.unset,
-            label: t.ai_explain_option_default,
+      SettingsSection(
+        id: 'ai.video_download',
+        title: t.ai_video_download_section,
+        // 「AI 下视频」= 在线发现 + 下载中心两条能力都在才有意义：iOS 合规砍掉任一
+        // 条（判据只在 store_compliance.dart 写一次）或用户关了下载模块，这一段
+        // 整个不渲染、不进搜索索引。
+        visible: (SettingsContext c) =>
+            StoreRestrictedCapability.downloads.isAvailable &&
+            StoreRestrictedCapability.externalDiscovery.isAvailable &&
+            c.appModel.moduleVisibility.isEnabled(ModuleId.browse),
+        presentation: SettingsSectionPresentation.collapsed,
+        summaryBuilder: (SettingsContext c) =>
+            _aiSectionModifiedSummary('ai.video_download', c),
+        items: <SettingsItem>[
+          // 经 Fushi 互联交给已配对电脑办（PR #1749 的 `/api/assistant` 会话）：判据一直是
+          // 「下载执行设备」偏好，此前只挂在下载设置页，AI 页看不到这条路。这里是同一
+          // 偏好的第二处入口；未配对时给可见说明 + 去配对，而不是整行消失。
+          SettingsCustomItem.rows(
+            id: 'ai.interconnect_host',
+            searchTitle: t.ai_interconnect_host_title,
+            rowsBuilder: (SettingsContext c) => c.appModel.isPreferencesReady
+                ? <Widget>[AiInterconnectHostRow(appModel: c.appModel)]
+                : const <Widget>[],
           ),
-          SettingsSegmentOption<AiProviderRoutingMode>(
-            value: AiProviderRoutingMode.order,
-            label: t.ai_explain_routing_prioritize,
+          SettingsSegmentedItem<String>(
+            id: 'ai.video_download_quality',
+            dropdown: true,
+            title: t.ai_video_download_quality,
+            subtitle: t.ai_video_download_quality_hint,
+            options: <SettingsSegmentOption<String>>[
+              SettingsSegmentOption<String>(
+                value: '',
+                label: t.ai_video_download_quality_unset,
+              ),
+              SettingsSegmentOption<String>(
+                value: kVideoAcquisitionPrefAsk,
+                label: t.ai_video_download_quality_ask,
+              ),
+              // 档位字面量（`2160p` …）是分辨率事实，不翻译；`best` / `any` 才有文案。
+              for (final VideoAcquisitionQuality quality
+                  in VideoAcquisitionQuality.values)
+                SettingsSegmentOption<String>(
+                  value: quality.storageKey,
+                  label: switch (quality) {
+                    VideoAcquisitionQuality.best =>
+                      t.ai_video_download_quality_best,
+                    VideoAcquisitionQuality.any =>
+                      t.ai_video_download_quality_any,
+                    _ => quality.storageKey,
+                  },
+                ),
+            ],
+            selected: (SettingsContext c) =>
+                c.appModel.prefsRepo.aiVideoDownloadQuality,
+            onChanged: (SettingsContext c, String value) =>
+                c.appModel.prefsRepo.setAiVideoDownloadQuality(value),
+            defaultValue: '',
           ),
-          SettingsSegmentOption<AiProviderRoutingMode>(
-            value: AiProviderRoutingMode.only,
-            label: t.ai_explain_routing_only,
+          SettingsSegmentedItem<VideoAcquisitionSourcePref>(
+            id: 'ai.video_download_source',
+            dropdown: true,
+            title: t.ai_video_download_source,
+            subtitle: t.ai_video_download_source_hint,
+            options: <SettingsSegmentOption<VideoAcquisitionSourcePref>>[
+              for (final VideoAcquisitionSourcePref source
+                  in VideoAcquisitionSourcePref.values)
+                SettingsSegmentOption<VideoAcquisitionSourcePref>(
+                  value: source,
+                  label: switch (source) {
+                    VideoAcquisitionSourcePref.any =>
+                      t.ai_video_download_source_any,
+                    VideoAcquisitionSourcePref.best =>
+                      t.ai_video_download_source_best,
+                    VideoAcquisitionSourcePref.bluray =>
+                      t.ai_video_download_source_bluray,
+                    VideoAcquisitionSourcePref.web =>
+                      t.ai_video_download_source_web,
+                  },
+                ),
+            ],
+            selected: (SettingsContext c) => VideoAcquisitionSourcePref.parse(
+              c.appModel.prefsRepo.aiVideoDownloadSource,
+            ),
+            onChanged: (SettingsContext c, VideoAcquisitionSourcePref value) =>
+                c.appModel.prefsRepo.setAiVideoDownloadSource(value.storageKey),
+            defaultValue: VideoAcquisitionSourcePref.any,
           ),
-          SettingsSegmentOption<AiProviderRoutingMode>(
-            value: AiProviderRoutingMode.ignore,
-            label: t.ai_explain_routing_ignore,
+          SettingsSegmentedItem<VideoAcquisitionBitratePref>(
+            id: 'ai.video_download_bitrate',
+            dropdown: true,
+            title: t.ai_video_download_bitrate,
+            subtitle: t.ai_video_download_bitrate_hint,
+            options: <SettingsSegmentOption<VideoAcquisitionBitratePref>>[
+              for (final VideoAcquisitionBitratePref bitrate
+                  in VideoAcquisitionBitratePref.values)
+                SettingsSegmentOption<VideoAcquisitionBitratePref>(
+                  value: bitrate,
+                  label: switch (bitrate) {
+                    VideoAcquisitionBitratePref.any =>
+                      t.ai_video_download_bitrate_any,
+                    VideoAcquisitionBitratePref.high =>
+                      t.ai_video_download_bitrate_high,
+                    VideoAcquisitionBitratePref.low =>
+                      t.ai_video_download_bitrate_low,
+                  },
+                ),
+            ],
+            selected: (SettingsContext c) => VideoAcquisitionBitratePref.parse(
+              c.appModel.prefsRepo.aiVideoDownloadBitrate,
+            ),
+            onChanged: (SettingsContext c, VideoAcquisitionBitratePref value) =>
+                c.appModel.prefsRepo.setAiVideoDownloadBitrate(
+                  value.storageKey,
+                ),
+            defaultValue: VideoAcquisitionBitratePref.any,
+          ),
+          // 跳过特典：对所有下载进视频来源的任务生效（管线现读偏好），放在这一段是
+          // 因为「带不带 PV」是用户在配 AI 下视频时提的；键是全局下载偏好。
+          SettingsSwitchItem(
+            id: 'ai.video_download_skip_extras',
+            title: t.ai_video_download_skip_extras,
+            subtitle: t.ai_video_download_skip_extras_hint,
+            icon: Icons.movie_filter_outlined,
+            value: (SettingsContext c) =>
+                c.appModel.prefsRepo.videoDownloadSkipExtras,
+            onChanged: (SettingsContext c, bool value) =>
+                c.appModel.prefsRepo.setVideoDownloadSkipExtras(value),
+            defaultValue: false,
+          ),
+          SettingsSegmentedItem<String>(
+            id: 'ai.video_download_subtitle_language',
+            dropdown: true,
+            title: t.ai_video_download_subtitle_language,
+            subtitle: t.ai_video_download_subtitle_language_hint,
+            options: <SettingsSegmentOption<String>>[
+              SettingsSegmentOption<String>(
+                value: '',
+                label: t.ai_video_download_subtitle_language_unset,
+              ),
+              SettingsSegmentOption<String>(
+                value: kVideoAcquisitionPrefAsk,
+                label: t.ai_video_download_subtitle_language_ask,
+              ),
+              SettingsSegmentOption<String>(
+                value: kVideoAcquisitionSubtitleOriginal,
+                label: t.ai_video_download_subtitle_language_original,
+              ),
+              // 语言名用母语写法（与字幕面板同一函数），不随界面语言变。
+              for (final String code in kVideoAcquisitionSubtitleLanguageCodes)
+                SettingsSegmentOption<String>(
+                  value: code,
+                  label: subtitleLanguageNativeName(code),
+                ),
+              SettingsSegmentOption<String>(
+                value: kVideoAcquisitionSubtitleNone,
+                label: t.ai_video_download_subtitle_language_none,
+              ),
+            ],
+            selected: (SettingsContext c) =>
+                c.appModel.prefsRepo.aiVideoDownloadSubtitleLanguage,
+            onChanged: (SettingsContext c, String value) =>
+                c.appModel.prefsRepo.setAiVideoDownloadSubtitleLanguage(value),
+            defaultValue: '',
           ),
         ],
-        selected: (SettingsContext c) =>
-            c.appModel.aiSettings.read().customRoutingMode,
-        onChanged: (SettingsContext c, AiProviderRoutingMode value) async {
-          await c.appModel.aiSettings.setCustomRoutingMode(value);
-          c.refresh();
-        },
       ),
-      SettingsTextItem(
-        id: 'lookup.ai_explain.routing_slugs',
-        title: t.ai_explain_routing_slugs,
-        subtitle: t.ai_explain_routing_slugs_hint,
-        icon: Icons.dns_outlined,
-        visible: _isOpenRouter,
-        placeholder: 'deepinfra/turbo, fireworks',
-        value: (SettingsContext c) =>
-            c.appModel.aiSettings.read().customRoutingSlugs,
-        onChanged: (SettingsContext c, String value) async {
-          await c.appModel.aiSettings.setCustomRoutingSlugs(value);
-        },
+    ],
+    bodySearchEntries: <SettingsBodySearchEntry>[
+      SettingsBodySearchEntry(
+        id: 'ai.providers',
+        title: t.ai_providers_section,
+        subtitle: t.ai_providers_section_summary,
       ),
-      SettingsSwitchItem(
-        id: 'lookup.ai_explain.allow_fallbacks',
-        title: t.ai_explain_allow_fallbacks,
-        icon: Icons.backup_outlined,
-        visible: _isOpenRouter,
-        value: (SettingsContext c) =>
-            c.appModel.aiSettings.read().customAllowFallbacks,
-        onChanged: (SettingsContext c, bool value) async {
-          await c.appModel.aiSettings.setCustomAllowFallbacks(value);
-          c.refresh();
-        },
-      ),
-
-      // ---- 自定义端点的思考选项 ----
-      SettingsSegmentedItem<AiThinkingMode>(
-        id: 'lookup.ai_explain.custom_thinking_mode',
-        title: t.ai_explain_thinking_mode,
-        icon: Icons.psychology_outlined,
-        visible: _isCustom,
-        dropdown: true,
-        options: _thinkingModeOptions(),
-        selected: (SettingsContext c) =>
-            c.appModel.aiSettings.read().customThinkingMode,
-        onChanged: (SettingsContext c, AiThinkingMode value) async {
-          await c.appModel.aiSettings.setCustomThinkingMode(value);
-          c.refresh();
-        },
-      ),
-      SettingsSegmentedItem<AiThinkingIntensity>(
-        id: 'lookup.ai_explain.custom_thinking_intensity',
-        title: t.ai_explain_thinking_intensity,
-        icon: Icons.tune_outlined,
-        visible: _isCustom,
-        dropdown: true,
-        options: _thinkingIntensityOptions(withCustom: true),
-        selected: (SettingsContext c) =>
-            c.appModel.aiSettings.read().customThinkingIntensity,
-        onChanged: (SettingsContext c, AiThinkingIntensity value) async {
-          await c.appModel.aiSettings.setCustomThinkingIntensity(value);
-          // 选到「自定义」才出自由值输入框。
-          c.refresh();
-        },
-      ),
-      SettingsTextItem(
-        id: 'lookup.ai_explain.custom_thinking_value',
-        title: t.ai_explain_thinking_value,
-        subtitle: t.ai_explain_thinking_value_hint,
-        icon: Icons.edit_outlined,
-        visible: _needsThinkingValue,
-        placeholder: 'medium, 2000, or {"max_tokens":2000}',
-        value: (SettingsContext c) =>
-            c.appModel.aiSettings.read().customThinkingValue,
-        onChanged: (SettingsContext c, String value) async {
-          await c.appModel.aiSettings.setCustomThinkingValue(value);
-        },
-      ),
-
-      // ---- 自定义请求体 ----
-      //
-      // 就地校验：非法 JSON 在这里说出来，用户还看着这个框；否则要等到下一次查词
-      // 才在弹窗里看到一句「生成失败」，而那时错在哪根本无从判断。
-      SettingsTextItem(
-        id: 'lookup.ai_explain.request_body',
-        title: t.ai_explain_request_body,
-        subtitle: t.ai_explain_request_body_hint,
-        icon: Icons.data_object_outlined,
-        visible: _isCustom,
-        placeholder: '{"reasoning":{"max_tokens":2000}}',
-        value: (SettingsContext c) =>
-            c.appModel.aiSettings.read().customRequestBodyJson,
-        onChanged: (SettingsContext c, String value) async {
-          await c.appModel.aiSettings.setCustomRequestBodyJson(value);
-          final String? error = validateAiRequestBodyJson(value);
-          if (error != null && c.context.mounted) {
-            ScaffoldMessenger.maybeOf(
-              c.context,
-            )?.showSnackBar(SnackBar(content: Text(error)));
-          }
-          c.refresh();
-        },
-      ),
-
-      // ---- 通用行为 ----
-      SettingsSwitchItem(
-        id: 'lookup.ai_explain.auto_generate',
-        title: t.ai_explain_auto_generate,
-        subtitle: t.ai_explain_auto_generate_hint,
-        icon: Icons.play_circle_outline,
-        value: (SettingsContext c) =>
-            c.appModel.aiSettings.read().autoGenerateOnLookup,
-        onChanged: (SettingsContext c, bool value) async {
-          await c.appModel.aiSettings.setAutoGenerate(value);
-          c.refresh();
-        },
-      ),
-      SettingsSwitchItem(
-        id: 'lookup.ai_explain.stream',
-        title: t.ai_explain_stream,
-        subtitle: t.ai_explain_stream_hint,
-        icon: Icons.bolt_outlined,
-        value: (SettingsContext c) =>
-            c.appModel.aiSettings.read().streamResponse,
-        onChanged: (SettingsContext c, bool value) async {
-          await c.appModel.aiSettings.setStreamResponse(value);
-          c.refresh();
-        },
-      ),
-      SettingsSwitchItem(
-        id: 'lookup.ai_explain.cancel_pending',
-        title: t.ai_explain_cancel_pending,
-        subtitle: t.ai_explain_cancel_pending_hint,
-        icon: Icons.cancel_outlined,
-        value: (SettingsContext c) =>
-            c.appModel.aiSettings.read().cancelPendingRequests,
-        onChanged: (SettingsContext c, bool value) async {
-          await c.appModel.aiSettings.setCancelPending(value);
-          c.refresh();
-        },
-      ),
-      SettingsSwitchItem(
-        id: 'lookup.ai_explain.unknown_fallback',
-        title: t.ai_explain_unknown_fallback,
-        subtitle: t.ai_explain_unknown_fallback_hint,
-        icon: Icons.help_outline,
-        value: (SettingsContext c) =>
-            c.appModel.aiSettings.read().unknownWordFallback,
-        onChanged: (SettingsContext c, bool value) async {
-          await c.appModel.aiSettings.setUnknownWordFallback(value);
-          c.refresh();
-        },
-      ),
-
-      // ---- 提示词 ----
-      SettingsTextItem(
-        id: 'lookup.ai_explain.prompt',
-        title: t.ai_explain_prompt,
-        subtitle: t.ai_explain_prompt_hint,
-        icon: Icons.chat_outlined,
-        placeholder: kAiDefaultUserPrompt,
-        resetValue: (SettingsContext c) => kAiDefaultUserPrompt,
-        value: (SettingsContext c) => c.appModel.aiSettings.read().userPrompt,
-        onChanged: (SettingsContext c, String value) async {
-          await c.appModel.aiSettings.setUserPrompt(value);
-        },
-      ),
-      SettingsTextItem(
-        id: 'lookup.ai_explain.system_prompt',
-        title: t.ai_explain_system_prompt,
-        subtitle: t.ai_explain_system_prompt_hint,
-        icon: Icons.rule_outlined,
-        value: (SettingsContext c) => c.appModel.aiSettings.read().systemPrompt,
-        onChanged: (SettingsContext c, String value) async {
-          await c.appModel.aiSettings.setSystemPrompt(value);
-        },
-      ),
-      SettingsTextItem(
-        id: 'lookup.ai_explain.temperature',
-        title: t.ai_explain_temperature,
-        subtitle: t.ai_explain_temperature_hint,
-        icon: Icons.thermostat_outlined,
-        placeholder: '0.7',
-        keyboardType: const TextInputType.numberWithOptions(decimal: true),
-        resetValue: (SettingsContext c) => AiDefaults.temperature.toString(),
-        value: (SettingsContext c) =>
-            c.appModel.aiSettings.read().temperature.toString(),
-        onChanged: (SettingsContext c, String value) async {
-          // 逗号小数点：很多地区就是这么打的，参考实现的设置页也接受。
-          final double? parsed = double.tryParse(
-            value.trim().replaceAll(',', '.'),
-          );
-          await c.appModel.aiSettings.setTemperature(
-            parsed ?? AiDefaults.temperature,
-          );
-          c.refresh();
-        },
+      SettingsBodySearchEntry(
+        id: 'ai.features',
+        title: t.ai_features_section,
+        subtitle: t.ai_features_section_summary,
       ),
     ],
   );
+}
+
+/// 折叠分组的摘要：本组有几项改过默认值（判据与页级「恢复本页默认」同一个
+/// [settingsResetSpecFor]）；一项都没改就不显示摘要。
+///
+/// 在渲染时按 id 回查本页 schema 的那一组，而不是在构造期捕获 item 列表——
+/// [buildAiDestination] 必须保持零参的纯字面量树（见其文档）。
+String? _aiSectionModifiedSummary(String sectionId, SettingsContext context) {
+  if (!context.appModel.isPreferencesReady) return null;
+  final SettingsSection section = buildAiDestination().sections.firstWhere(
+    (SettingsSection candidate) => candidate.id == sectionId,
+  );
+  final int count = section.items
+      .where(
+        (SettingsItem item) =>
+            settingsResetSpecFor(item, context)?.modified ?? false,
+      )
+      .length;
+  return count == 0 ? null : t.settings_section_modified_count(n: count);
 }

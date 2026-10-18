@@ -4,16 +4,20 @@ import 'dart:io';
 
 import 'package:clipboard/clipboard.dart';
 import 'package:file_picker/file_picker.dart';
-import 'package:flutter/cupertino.dart';
+import 'package:cupertino_ui/cupertino_ui.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
+import 'package:flutter/services.dart' show MethodChannel, PlatformException;
 import 'package:flutter_exit_app/flutter_exit_app.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/module_registry.dart';
 import 'package:fushi/src/pages/implementations/migration_page.dart';
+import 'package:fushi/src/pages/implementations/game_stream_join_page.dart';
 import 'package:fushi/src/pages/implementations/migration_import_page.dart';
+import 'package:fushi/src/pages/implementations/external_reader_import_page.dart';
 import 'package:fushi/src/migration/migration_target_channel.dart';
 import 'package:fushi/src/profile/profile_repository.dart';
+import 'package:fushi/src/profile/profile_view_model.dart';
 import 'package:fushi/src/settings/settings_actions.dart' show pushSettingsPage;
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
@@ -35,8 +39,27 @@ import 'package:fushi/src/sync/desktop_oauth.dart'
 import 'package:fushi/src/sync/desktop_oauth_wait_dialog.dart';
 import 'package:fushi/src/sync/dropbox_sync_backend.dart';
 import 'package:fushi/src/sync/ftp_sync_backend.dart';
+import 'package:fushi/src/sync/interconnect_host_update_tile.dart';
+import 'package:fushi/src/updates/host_self_update_service.dart'
+    show hostRemoteUpdatePlatformSupported;
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
+import 'package:fushi/src/sync/remote_book_client.dart' show RemoteBookClient;
+import 'package:fushi/src/sync/hidden_remote_books.dart'
+    show remoteBookSourceHost, resolveShelfRemoteBookClient;
+import 'package:fushi/src/pages/implementations/hidden_remote_books_page.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi_engine/sync/interconnect_device_name.dart';
+import 'package:fushi/src/sync/interconnect_link_pairing.dart';
+import 'package:fushi/src/sync/interconnect_peer_addresses.dart';
+import 'package:fushi_engine/sync/interconnect_host_addresses.dart';
+import 'package:fushi_engine/sync/interconnect_p2p.dart'
+    show InterconnectP2pRuntime, parseInterconnectP2pUrl;
+import 'package:fushi/src/sync/interconnect_p2p_path_badge.dart';
+import 'package:fushi_engine/sync/pairing/fushi_pair_link.dart';
+import 'package:mobile_scanner/mobile_scanner.dart';
+import 'package:qr_flutter/qr_flutter.dart';
 import 'package:fushi/src/sync/interconnect_url.dart';
 import 'package:fushi/src/sync/onedrive_sync_backend.dart';
 import 'package:fushi/src/sync/fushi_server_controller.dart';
@@ -53,6 +76,8 @@ import 'package:fushi_engine/sync/tls/fushi_tofu_probe.dart';
 import 'package:fushi/src/sync/sync_activity.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi/src/sync/sync_auto_trigger.dart';
+import 'package:fushi/src/sync/sync_compare_cli.dart'
+    show listSyncCompareForCli;
 import 'package:fushi/src/sync/sync_compare_dialog.dart';
 import 'package:fushi/src/sync/sync_error_messages.dart';
 import 'package:fushi/src/sync/sync_progress.dart';
@@ -81,6 +106,7 @@ export 'package:fushi/src/sync/manual_sync_ui.dart' show summarizeSyncReport;
 part 'sync_settings_schema/account.part.dart';
 part 'sync_settings_schema/backend_config.part.dart';
 part 'sync_settings_schema/interconnect.part.dart';
+part 'sync_settings_schema/interconnect_link.part.dart';
 part 'sync_settings_schema/actions.part.dart';
 part 'sync_settings_schema/backup.part.dart';
 part 'sync_settings_schema/data_root.part.dart';
@@ -96,12 +122,12 @@ SettingsDestination buildSyncBackupDestination() {
     ),
     title: t.settings_destination_sync_backup,
     summary: t.sync_summary,
-    icon: Icons.sync,
+    icon: FushiIcons.sync,
     sections: <SettingsSection>[
       // ── Group 1: Sync method — the backend + its own auth/config ──────
       // Each control is scoped to the backend it actually applies to:
       // OAuth account row for cloud backends; credential box for WebDAV/FTP/
-      // SFTP; URL list + LAN discovery for the Hibiki P2P backend.
+      // SFTP; URL list + LAN discovery for the Fushi P2P backend.
       SettingsSection(
         id: 'sync.method.section',
         presentation: SettingsSectionPresentation.alwaysExpanded,
@@ -109,13 +135,13 @@ SettingsDestination buildSyncBackupDestination() {
         items: <SettingsItem>[
           SettingsCustomItem(
             id: 'sync.mode',
-            icon: Icons.cloud_outlined,
+            icon: FushiIcons.cloud,
             builder: (SettingsContext ctx) =>
                 _BackendSelectorWidget(settingsContext: ctx),
           ),
           SettingsCustomItem(
             id: 'sync.account_status',
-            icon: Icons.account_circle_outlined,
+            icon: FushiIcons.account,
             visible: (SettingsContext ctx) =>
                 isOAuthSyncBackend(_syncSettings(ctx).backendType),
             builder: (SettingsContext ctx) =>
@@ -128,18 +154,18 @@ SettingsDestination buildSyncBackupDestination() {
             id: 'sync.server_settings',
             title: t.sync_server_settings,
             subtitle: t.sync_server_settings_hint,
-            icon: Icons.dns_outlined,
+            icon: FushiIcons.server,
             visible: (SettingsContext ctx) =>
                 hasServerSettings(_syncSettings(ctx).backendType),
             child: _buildSyncServerSettingsPage,
           ),
           // 互联被选为同步方式时的指引行（BUG-1088）：连接配置（URL/token/配对/
-          // LAN 发现/host 开关）在独立的「Hibiki 互联」分类里，这里只指路不复制。
+          // LAN 发现/host 开关）在独立的「Fushi 互联」分类里，这里只指路不复制。
           SettingsStatusItem(
             id: 'sync.interconnect_config_note',
             title: t.sync_backend_fushi_server,
             subtitle: t.interconnect_moved_note,
-            icon: Icons.devices_outlined,
+            icon: FushiIcons.devices,
             visible: (SettingsContext ctx) =>
                 _syncSettings(ctx).backendType == SyncBackendType.fushiServer,
           ),
@@ -156,7 +182,7 @@ SettingsDestination buildSyncBackupDestination() {
           SettingsSwitchItem(
             id: 'sync.statistics',
             title: t.sync_statistics,
-            icon: Icons.query_stats_outlined,
+            icon: FushiIcons.statistics,
             value: (SettingsContext ctx) => _syncSettings(ctx).syncStats,
             onChanged: (SettingsContext ctx, bool value) async {
               _syncSettings(ctx).syncStats = value;
@@ -176,7 +202,7 @@ SettingsDestination buildSyncBackupDestination() {
             id: 'sync.content',
             title: t.sync_content,
             subtitle: t.sync_content_warning,
-            icon: Icons.book_outlined,
+            icon: FushiIcons.books,
             visible: (SettingsContext ctx) =>
                 _syncSettings(ctx).backendType != SyncBackendType.fushiServer,
             value: (SettingsContext ctx) => _syncSettings(ctx).syncContent,
@@ -191,7 +217,7 @@ SettingsDestination buildSyncBackupDestination() {
             id: 'sync.audiobook_files',
             title: t.sync_audiobook_files,
             subtitle: t.sync_audiobook_files_warning,
-            icon: Icons.audio_file_outlined,
+            icon: FushiIcons.audiobook,
             visible: (SettingsContext ctx) =>
                 _syncSettings(ctx).backendType != SyncBackendType.fushiServer,
             value: (SettingsContext ctx) =>
@@ -212,7 +238,7 @@ SettingsDestination buildSyncBackupDestination() {
             id: 'sync.video_files',
             title: t.sync_video_files,
             subtitle: t.sync_video_files_warning,
-            icon: Icons.video_file_outlined,
+            icon: FushiIcons.video,
             visible: (SettingsContext ctx) =>
                 _syncSettings(ctx).backendType != SyncBackendType.fushiServer,
             value: (SettingsContext ctx) => _syncSettings(ctx).syncVideoFiles,
@@ -223,9 +249,12 @@ SettingsDestination buildSyncBackupDestination() {
               ).setSyncVideoFilesEnabled(value);
             },
           ),
-          // 远端占位卡开关抽成共享 builder：同步内容分类与 Hibiki 互联分类共享同一份
+          // 远端占位卡开关抽成共享 builder：同步内容分类与 Fushi 互联分类共享同一份
           // 定义（占位卡渲染的是互联对端的远端条目，逻辑上属互联，故互联分类也提供）。
           buildShowRemoteEntriesItem(),
+          // 书架上「仅从本机移除」的远端书找回列表（反馈 nvlhtczbro）：紧挨着
+          // 「显示远端条目」，同属远端占位卡的显示偏好。
+          buildHiddenRemoteBooksItem(),
         ],
       ),
       // ── Group 3: When to sync — auto-sync + manual actions ────────────
@@ -237,7 +266,7 @@ SettingsDestination buildSyncBackupDestination() {
           SettingsSwitchItem(
             id: 'sync.auto_sync',
             title: t.sync_auto_sync,
-            icon: Icons.sync_outlined,
+            icon: FushiIcons.sync,
             // Auto-sync is an OUTBOUND switch: it triggers app-open/background/
             // book-close pushes through the resolved backend. Outbound only
             // vanishes when the selected sync method IS the interconnect and
@@ -264,11 +293,11 @@ SettingsDestination buildSyncBackupDestination() {
             visible: (SettingsContext ctx) => _cloudOutboundUnavailable(ctx),
             title: t.sync_server_mode_active,
             subtitle: t.sync_server_mode_clients_drive,
-            icon: Icons.router_outlined,
+            icon: FushiIcons.server,
           ),
           SettingsCustomItem(
             id: 'sync.sync_now',
-            icon: Icons.sync,
+            icon: FushiIcons.sync,
             visible: (SettingsContext ctx) => !_cloudOutboundUnavailable(ctx),
             builder: (SettingsContext ctx) =>
                 _SyncNowWidget(settingsContext: ctx),
@@ -276,8 +305,14 @@ SettingsDestination buildSyncBackupDestination() {
           SettingsActionItem(
             id: 'sync.compare',
             title: t.sync_compare,
-            icon: Icons.compare_arrows,
+            icon: FushiIcons.swap,
             visible: (SettingsContext ctx) => !_cloudOutboundUnavailable(ctx),
+            // 列出差异与默认选择；逐条选择后提交走 sync.compare_apply
+            // （`fushi_cli sync compare` / `sync compare-apply`，sync_compare_cli.dart）。
+            cli: SettingsCliAction(
+              run: (SettingsContext ctx, Map<String, String> _) =>
+                  listSyncCompareForCli(ctx.appModel),
+            ),
             onTap: (SettingsContext ctx) => showSyncCompareDialog(
               ctx.context,
               ctx.appModel.database,
@@ -313,7 +348,7 @@ SettingsDestination buildSyncBackupDestination() {
             searchTitle: t.sync_asset_legacy_notice_title,
             visible: (SettingsContext ctx) =>
                 _syncSettings(ctx).backendType != SyncBackendType.fushiServer,
-            icon: Icons.info_outline,
+            icon: FushiIcons.info,
             builder: (SettingsContext ctx) =>
                 _LegacyAssetSyncNotice(settingsContext: ctx),
           ),
@@ -322,12 +357,12 @@ SettingsDestination buildSyncBackupDestination() {
             searchTitle: t.sync_asset_dictionary,
             visible: (SettingsContext ctx) =>
                 _syncSettings(ctx).backendType != SyncBackendType.fushiServer,
-            icon: Icons.menu_book_outlined,
+            icon: FushiIcons.readingMode,
             builder: (SettingsContext ctx) => _AssetTransferMenuRow(
               settingsContext: ctx,
               kind: SyncAssetKind.dictionary,
               title: t.sync_asset_dictionary,
-              icon: Icons.menu_book_outlined,
+              icon: FushiIcons.readingMode,
             ),
           ),
           SettingsCustomItem(
@@ -335,12 +370,27 @@ SettingsDestination buildSyncBackupDestination() {
             searchTitle: t.sync_asset_local_audio,
             visible: (SettingsContext ctx) =>
                 _syncSettings(ctx).backendType != SyncBackendType.fushiServer,
-            icon: Icons.graphic_eq_outlined,
+            icon: FushiIcons.audio,
             builder: (SettingsContext ctx) => _AssetTransferMenuRow(
               settingsContext: ctx,
               kind: SyncAssetKind.localAudio,
               title: t.sync_asset_local_audio,
-              icon: Icons.graphic_eq_outlined,
+              icon: FushiIcons.audio,
+            ),
+          ),
+          // 用户导入的字体文件 + 字体库配置（各用途的选用顺序与开关）。备份 zip 早就
+          // 带字体（BUG-183），这一行补上同步通道：换一台设备点「下载」即得同一套字体。
+          SettingsCustomItem(
+            id: 'sync.fonts_transfer',
+            searchTitle: t.sync_asset_fonts,
+            visible: (SettingsContext ctx) =>
+                _syncSettings(ctx).backendType != SyncBackendType.fushiServer,
+            icon: FushiIcons.font,
+            builder: (SettingsContext ctx) => _AssetTransferMenuRow(
+              settingsContext: ctx,
+              kind: SyncAssetKind.fonts,
+              title: t.sync_asset_fonts,
+              icon: FushiIcons.font,
             ),
           ),
         ],
@@ -353,15 +403,50 @@ SettingsDestination buildSyncBackupDestination() {
         items: <SettingsItem>[
           SettingsCustomItem(
             id: 'sync.backup_export',
-            icon: Icons.upload_file_outlined,
+            icon: FushiIcons.upload,
             builder: (SettingsContext ctx) =>
                 _BackupExportWidget(settingsContext: ctx),
           ),
           SettingsCustomItem(
             id: 'sync.backup_import',
-            icon: Icons.download_outlined,
+            icon: FushiIcons.download,
             builder: (SettingsContext ctx) =>
                 _BackupImportWidget(settingsContext: ctx),
+          ),
+          // 第三方阅读器（Hoshi Reader iOS / Android）的 `.hoshi` 书库备份：
+          // 书 + 阅读位置 + 统计。五端都给——备份文件本身跨端通用。
+          SettingsActionItem(
+            id: 'sync.hoshi_import',
+            title: t.hoshi_import_entry,
+            subtitle: t.hoshi_import_entry_subtitle,
+            icon: FushiIcons.importFile,
+            // CLI 直接给备份文件（代替系统文件选择器）：扫描 → 预览 →（非 dry_run）
+            // 起后台导入任务（task get / task cancel），与导入页同一个
+            // ExternalReaderImportService。
+            cli: SettingsCliAction(
+              params: const <SettingsCliParam>[
+                SettingsCliParam(
+                  'value',
+                  help: '.hoshi / .zip 备份文件绝对路径',
+                  path: true,
+                ),
+                SettingsCliParam(
+                  'dry_run',
+                  help: 'true = 只扫描并预览，不导入',
+                  required: false,
+                ),
+              ],
+              run: (SettingsContext ctx, Map<String, String> args) =>
+                  runExternalReaderImportFromCli(
+                    ctx,
+                    args['value']!,
+                    dryRun: args['dry_run'] == 'true',
+                  ),
+            ),
+            onTap: (SettingsContext ctx) => pushSettingsPage(
+              ctx,
+              (_) => ExternalReaderImportPage(appModel: ctx.appModel),
+            ),
           ),
           // Hibiki→Fushi 跨包名迁移入口（改名迁移计划 P1-3/P2-2）；仅 Android——
           // 桌面端数据目录可直接搬迁，不走导出/导入通道。同一份代码按**运行时
@@ -370,7 +455,7 @@ SettingsDestination buildSyncBackupDestination() {
           if (!kIsWeb && Platform.isAndroid)
             SettingsCustomItem(
               id: 'sync.migration_to_fushi',
-              icon: Icons.drive_file_move_outlined,
+              icon: FushiIcons.moveFile,
               builder: (SettingsContext ctx) {
                 final bool runningAsLegacy =
                     ctx.appModel.packageInfo.packageName == kHibikiPackageName;
@@ -381,7 +466,7 @@ SettingsDestination buildSyncBackupDestination() {
                   subtitle: runningAsLegacy
                       ? t.migration_settings_entry_subtitle
                       : t.migration_import_entry_subtitle,
-                  icon: Icons.drive_file_move_outlined,
+                  icon: FushiIcons.moveFile,
                   onTap: () => Navigator.of(ctx.context).push(
                     MaterialPageRoute<void>(
                       builder: (_) => runningAsLegacy
@@ -414,7 +499,7 @@ SettingsDestination _buildSyncServerSettingsPage() {
   return SettingsDestination(
     id: SettingsDestinationId.syncBackup,
     title: t.sync_server_settings,
-    icon: Icons.dns_outlined,
+    icon: FushiIcons.server,
     sections: <SettingsSection>[
       SettingsSection(
         id: 'sync.webdav.section',
@@ -422,7 +507,7 @@ SettingsDestination _buildSyncServerSettingsPage() {
         items: <SettingsItem>[
           SettingsCustomItem(
             id: 'sync.webdav_config',
-            icon: Icons.dns_outlined,
+            icon: FushiIcons.server,
             visible: (SettingsContext ctx) =>
                 _syncSettings(ctx).backendType == SyncBackendType.webDav,
             builder: (SettingsContext ctx) =>
@@ -430,7 +515,7 @@ SettingsDestination _buildSyncServerSettingsPage() {
           ),
           SettingsCustomItem(
             id: 'sync.ftp_config',
-            icon: Icons.dns_outlined,
+            icon: FushiIcons.server,
             visible: (SettingsContext ctx) =>
                 _syncSettings(ctx).backendType == SyncBackendType.ftp,
             builder: (SettingsContext ctx) =>
@@ -438,7 +523,7 @@ SettingsDestination _buildSyncServerSettingsPage() {
           ),
           SettingsCustomItem(
             id: 'sync.sftp_config',
-            icon: Icons.dns_outlined,
+            icon: FushiIcons.server,
             visible: (SettingsContext ctx) =>
                 _syncSettings(ctx).backendType == SyncBackendType.sftp,
             builder: (SettingsContext ctx) =>
@@ -468,7 +553,7 @@ SettingsSection buildDataStorageLocationSection() {
     items: <SettingsItem>[
       SettingsCustomItem(
         id: 'sync.data_storage_location',
-        icon: Icons.folder_special_outlined,
+        icon: FushiIcons.folder,
         visible: (SettingsContext ctx) => isDesktopPlatform,
         builder: (SettingsContext ctx) => _DataRootWidget(settingsContext: ctx),
       ),
@@ -476,7 +561,7 @@ SettingsSection buildDataStorageLocationSection() {
   );
 }
 
-/// Hibiki 互联独立一级分类：设备直连（client 连接配置 + LAN 发现）与本机作为
+/// Fushi 互联独立一级分类：设备直连（client 连接配置 + LAN 发现）与本机作为
 /// 服务器（host 模式）。与 [buildSyncBackupDestination] 同库定义，共享
 /// `_syncSettings` 私有状态与全部互联 widget；配置区可见性仍以「互联被选为
 /// 同步方式」门控（与拆分前在同步分类内的行为一致，零行为变化），未启用时
@@ -494,7 +579,7 @@ SettingsDestination buildInterconnectDestination() {
     ),
     title: t.settings_destination_interconnect,
     summary: t.interconnect_summary,
-    icon: Icons.devices_outlined,
+    icon: FushiIcons.devices,
     sections: <SettingsSection>[
       // 互联总开关（独立于云备份后端，二者可并存）。开关常显；关闭时下方配置区隐藏，
       // 副标题说明互联与云同步互不排斥。footer 用一句话讲清角色模型（哪台开服务器、
@@ -509,7 +594,7 @@ SettingsDestination buildInterconnectDestination() {
             id: 'interconnect.enabled',
             title: t.interconnect_enable,
             subtitle: t.interconnect_enable_hint,
-            icon: Icons.hub_outlined,
+            icon: FushiIcons.hub,
             value: (SettingsContext ctx) =>
                 _syncSettings(ctx).interconnectEnabled,
             onChanged: (SettingsContext ctx, bool value) =>
@@ -535,8 +620,31 @@ SettingsDestination buildInterconnectDestination() {
               final int n = _syncSettings(ctx).peerCount;
               return n == 0 ? null : t.interconnect_devices_paired_count(n: n);
             },
-            icon: Icons.devices_outlined,
+            icon: FushiIcons.devices,
             child: _buildInterconnectDevicesPage,
+          ),
+          SettingsActionItem(
+            id: 'interconnect.game_stream',
+            title: t.game_stream_join,
+            icon: FushiIcons.cast,
+            cli: const SettingsCliAction.unsupported(
+              '加入游戏串流是实时画面接收界面（串流本身只能在 app 里看）；'
+              '游戏库操作用 fushi_cli game 命令',
+            ),
+            onTap: (SettingsContext ctx) => pushSettingsPage(
+              ctx,
+              (BuildContext context) => GameStreamJoinPage(
+                repository: SyncRepository(ctx.appModel.database),
+                readSettings: () =>
+                    ctx.appModel.prefsRepo.gameStreamVideoSettings,
+                writeSettings:
+                    ctx.appModel.prefsRepo.setGameStreamVideoSettings,
+                readLookupLayout: () =>
+                    ctx.appModel.prefsRepo.gameStreamLookupLayout,
+                writeLookupLayout:
+                    ctx.appModel.prefsRepo.setGameStreamLookupLayout,
+              ),
+            ),
           ),
         ],
       ),
@@ -556,7 +664,7 @@ SettingsDestination buildInterconnectDestination() {
             id: 'interconnect.upload_content',
             title: t.interconnect_upload_content,
             subtitle: t.interconnect_upload_content_hint,
-            icon: Icons.book_outlined,
+            icon: FushiIcons.books,
             value: (SettingsContext ctx) =>
                 _syncSettings(ctx).interconnectSyncContent,
             onChanged: (SettingsContext ctx, bool value) async {
@@ -566,34 +674,46 @@ SettingsDestination buildInterconnectDestination() {
               ).setInterconnectSyncContentEnabled(value);
             },
           ),
-          SettingsSwitchItem(
-            id: 'interconnect.upload_dictionary',
-            title: t.interconnect_upload_dictionary,
-            subtitle: t.interconnect_upload_dictionary_hint,
-            icon: Icons.menu_book_outlined,
-            value: (SettingsContext ctx) =>
-                _syncSettings(ctx).interconnectSyncDictionary,
-            onChanged: (SettingsContext ctx, bool value) async {
-              _syncSettings(ctx).interconnectSyncDictionary = value;
-              await SyncRepository(
-                ctx.appModel.database,
-              ).setInterconnectSyncDictionaryEnabled(value);
-            },
-          ),
-          // BUG-2494：互联页没有任何「把对端的词典拉下来」的入口——上面那个开关虽然
-          // 实际驱动的是双向 union，但文案是「上传」，用户不会把它当成下载；云备份页
-          // 那行「词典 · 传输 ▾」在同步方式=互联时被藏掉、且 runManualAssetTransfer
-          // 显式跳过互联通道。这里给互联通道自己一行显式的上传/下载动作，跑在
+          // BUG-2494：互联通道自己一行显式的上传/下载动作，跑在
           // SyncAssetChannelScope.interconnect 上，只碰互联对端、不碰云盘。
+          // BUG-2762：这一行是互联页词典的**唯一**入口。以前上面还有一个「上传词典」
+          // 自动同步开关，与本行在同一组里并排成两个「词典」，且开关实际驱动的是双向
+          // union、文案却是「上传」；现在与云备份页同形——词典只由显式动作搬。
           SettingsCustomItem(
             id: 'interconnect.dictionary_transfer',
             searchTitle: t.sync_asset_dictionary,
-            icon: Icons.menu_book_outlined,
+            icon: FushiIcons.readingMode,
             builder: (SettingsContext ctx) => _AssetTransferMenuRow(
               settingsContext: ctx,
               kind: SyncAssetKind.dictionary,
               title: t.sync_asset_dictionary,
-              icon: Icons.menu_book_outlined,
+              icon: FushiIcons.readingMode,
+              scope: SyncAssetChannelScope.interconnect,
+            ),
+          ),
+          // 反馈 #5mB56tqXHa：本地音频数据库与词典同属显式搬运——互联协议（live 端点）
+          // 早已支持（_syncLocalAudioLive），只是互联页缺这一行入口。
+          SettingsCustomItem(
+            id: 'interconnect.local_audio_transfer',
+            searchTitle: t.sync_asset_local_audio,
+            icon: FushiIcons.audio,
+            builder: (SettingsContext ctx) => _AssetTransferMenuRow(
+              settingsContext: ctx,
+              kind: SyncAssetKind.localAudio,
+              title: t.sync_asset_local_audio,
+              icon: FushiIcons.audio,
+              scope: SyncAssetChannelScope.interconnect,
+            ),
+          ),
+          SettingsCustomItem(
+            id: 'interconnect.fonts_transfer',
+            searchTitle: t.sync_asset_fonts,
+            icon: FushiIcons.font,
+            builder: (SettingsContext ctx) => _AssetTransferMenuRow(
+              settingsContext: ctx,
+              kind: SyncAssetKind.fonts,
+              title: t.sync_asset_fonts,
+              icon: FushiIcons.font,
               scope: SyncAssetChannelScope.interconnect,
             ),
           ),
@@ -601,7 +721,7 @@ SettingsDestination buildInterconnectDestination() {
             id: 'interconnect.upload_audiobook_files',
             title: t.interconnect_upload_audiobook_files,
             subtitle: t.interconnect_upload_audiobook_files_hint,
-            icon: Icons.audio_file_outlined,
+            icon: FushiIcons.audiobook,
             value: (SettingsContext ctx) =>
                 _syncSettings(ctx).interconnectSyncAudioBookFiles,
             onChanged: (SettingsContext ctx, bool value) async {
@@ -615,7 +735,7 @@ SettingsDestination buildInterconnectDestination() {
             id: 'interconnect.upload_video_files',
             title: t.interconnect_upload_video_files,
             subtitle: t.interconnect_upload_video_files_hint,
-            icon: Icons.video_file_outlined,
+            icon: FushiIcons.video,
             value: (SettingsContext ctx) =>
                 _syncSettings(ctx).interconnectSyncVideoFiles,
             onChanged: (SettingsContext ctx, bool value) async {
@@ -644,7 +764,7 @@ SettingsDestination buildInterconnectDestination() {
             id: 'interconnect.share_statistics',
             title: t.interconnect_share_statistics,
             subtitle: t.interconnect_share_statistics_hint,
-            icon: Icons.bar_chart_outlined,
+            icon: FushiIcons.barChart,
             value: (SettingsContext ctx) =>
                 _syncSettings(ctx).interconnectSyncStats,
             onChanged: (SettingsContext ctx, bool value) async {
@@ -658,7 +778,7 @@ SettingsDestination buildInterconnectDestination() {
             id: 'interconnect.share_favorites',
             title: t.interconnect_share_favorites,
             subtitle: t.interconnect_share_favorites_hint,
-            icon: Icons.star_outline,
+            icon: FushiIcons.star,
             value: (SettingsContext ctx) =>
                 _syncSettings(ctx).interconnectSyncFavorites,
             onChanged: (SettingsContext ctx, bool value) async {
@@ -687,14 +807,14 @@ SettingsDestination buildInterconnectDestination() {
             id: 'interconnect.mine_to_server',
             title: t.anki_mine_to_server,
             subtitle: t.anki_mine_to_server_hint,
-            icon: Icons.note_add_outlined,
+            icon: FushiIcons.ankiCard,
             value: (SettingsContext ctx) => ctx.appModel.mineToServerEnabled,
             onChanged: (SettingsContext ctx, bool value) =>
                 ctx.appModel.setMineToServer(value),
           ),
           SettingsCustomItem(
             id: 'interconnect.backup_backend',
-            icon: Icons.backup_outlined,
+            icon: FushiIcons.backup,
             builder: (SettingsContext ctx) =>
                 _InterconnectBackupBackendWidget(settingsContext: ctx),
           ),
@@ -707,7 +827,7 @@ SettingsDestination buildInterconnectDestination() {
             id: 'interconnect.service_config_sync',
             title: t.sync_interconnect_service_config_toggle,
             subtitle: t.sync_interconnect_service_config_toggle_desc,
-            icon: Icons.key_outlined,
+            icon: FushiIcons.key,
             value: (SettingsContext ctx) =>
                 _syncSettings(ctx).interconnectServiceConfigSync,
             onChanged: (SettingsContext ctx, bool value) async {
@@ -715,6 +835,24 @@ SettingsDestination buildInterconnectDestination() {
               await SyncRepository(
                 ctx.appModel.database,
               ).setInterconnectServiceConfigSyncEnabled(value);
+            },
+          ),
+          // 跟随已配对设备自动登录 Fushi 账户（所有者 2026-10-16 拍板：默认开、无按钮无
+          // 确认）。仅对把本机标记为「我的设备」的已配对 host 生效（host 侧另有一道门）；
+          // 只在本机这个 Profile 从没登录过账户时生效，主动退出过就不再自动登回去。本机
+          // 只交出自己新生成的公钥，私钥不经互联。
+          SettingsSwitchItem(
+            id: 'interconnect.leaderboard_follow_login',
+            title: t.interconnect_leaderboard_follow_login_toggle,
+            subtitle: t.interconnect_leaderboard_follow_login_toggle_desc,
+            icon: FushiIcons.profiles,
+            value: (SettingsContext ctx) =>
+                _syncSettings(ctx).leaderboardFollowPairedLogin,
+            onChanged: (SettingsContext ctx, bool value) async {
+              _syncSettings(ctx).leaderboardFollowPairedLogin = value;
+              await SyncRepository(
+                ctx.appModel.database,
+              ).setLeaderboardFollowPairedLoginEnabled(value);
             },
           ),
           // 「配置文件」（Profile）双向搬运：用户诉求是把一台设备调好的配置搬到另一
@@ -725,7 +863,7 @@ SettingsDestination buildInterconnectDestination() {
           SettingsCustomItem(
             id: 'interconnect.profile_upload',
             searchTitle: t.interconnect_profile_upload,
-            icon: Icons.settings_backup_restore_outlined,
+            icon: FushiIcons.restoreBackup,
             builder: (SettingsContext ctx) =>
                 _InterconnectProfileTransferWidget(
                   settingsContext: ctx,
@@ -735,12 +873,25 @@ SettingsDestination buildInterconnectDestination() {
           SettingsCustomItem(
             id: 'interconnect.profile_download',
             searchTitle: t.interconnect_profile_download,
-            icon: Icons.settings_backup_restore_outlined,
+            icon: FushiIcons.restoreBackup,
             builder: (SettingsContext ctx) =>
                 _InterconnectProfileTransferWidget(
                   settingsContext: ctx,
                   direction: _ProfileTransferDirection.download,
                 ),
+          ),
+          // 主机版本 / 更新主机（反馈 Pp8XPyve0N）：在 client 上就能看到 host 跑的
+          // 版本、让它自己下载安装新版。门（host 开关 / 平台 / 局域网 / nonce）全在
+          // host 端，这一行只展示状态与 host 给的拒绝原因。
+          SettingsCustomItem(
+            id: 'interconnect.host_update',
+            searchTitle: t.interconnect_host_update_title,
+            icon: FushiIcons.server,
+            builder: (SettingsContext ctx) => InterconnectHostUpdateTile(
+              remote: InterconnectHostUpdateRemote(
+                SyncRepository(ctx.appModel.database),
+              ),
+            ),
           ),
         ],
       ),
@@ -764,7 +915,7 @@ SettingsDestination buildInterconnectDestination() {
                   ? t.interconnect_host_running(port: s.serverPort)
                   : t.interconnect_host_off;
             },
-            icon: Icons.router_outlined,
+            icon: FushiIcons.server,
             child: _buildInterconnectHostPage,
           ),
         ],
@@ -782,7 +933,7 @@ SettingsDestination buildInterconnectDestination() {
             id: 'interconnect.related_settings',
             title: t.interconnect_related_entry,
             subtitle: t.interconnect_related_entry_hint,
-            icon: Icons.travel_explore_outlined,
+            icon: FushiIcons.travelExplore,
             onTap: (SettingsContext ctx) async {
               SettingsSearchReveal.pendingItemId = 'lookup.remote_lookup';
               await pushSettingsPage(
@@ -805,21 +956,21 @@ SettingsDestination _buildInterconnectDevicesPage() {
   return SettingsDestination(
     id: SettingsDestinationId.interconnect,
     title: t.interconnect_devices_page,
-    icon: Icons.devices_outlined,
+    icon: FushiIcons.devices,
     sections: <SettingsSection>[
       SettingsSection(
         id: 'interconnect.server_config.section',
         presentation: SettingsSectionPresentation.alwaysExpanded,
         items: <SettingsItem>[
           SettingsCustomItem(
-            id: 'sync.hibiki_server_config',
-            icon: Icons.devices_outlined,
+            id: 'sync.fushi_server_config',
+            icon: FushiIcons.devices,
             builder: (SettingsContext ctx) =>
                 _FushiServerConfigWidget(settingsContext: ctx),
           ),
           SettingsCustomItem(
             id: 'sync.lan_devices',
-            icon: Icons.wifi_find_outlined,
+            icon: FushiIcons.wifi,
             builder: (SettingsContext ctx) =>
                 _LanDiscoveryWidget(settingsContext: ctx),
           ),
@@ -835,7 +986,7 @@ SettingsDestination _buildInterconnectHostPage() {
   return SettingsDestination(
     id: SettingsDestinationId.interconnect,
     title: t.interconnect_host_page,
-    icon: Icons.router_outlined,
+    icon: FushiIcons.server,
     sections: <SettingsSection>[
       SettingsSection(
         id: 'interconnect.server_mode.section',
@@ -843,9 +994,44 @@ SettingsDestination _buildInterconnectHostPage() {
         items: <SettingsItem>[
           SettingsCustomItem(
             id: 'sync.server_mode',
-            icon: Icons.router_outlined,
+            icon: FushiIcons.server,
             builder: (SettingsContext ctx) =>
                 _ServerModeWidget(settingsContext: ctx),
+          ),
+          // 弱网转码：对端在外面用手机网络播本机的片子时，host 按对端选的画质档
+          // 切段转码成 HLS。默认开——它是纯按需的，对端不报画质档就一个 ffmpeg
+          // 都不会起，行为与从前逐字节相同；关掉它的意愿（「这台机器不想被烤」）
+          // 该由用户显式表达。判据另有 ffmpeg 可用性那道（移动端当 host 时能力位
+          // 恒 false，这个开关开着也不会转）。
+          SettingsSwitchItem(
+            id: 'interconnect.transcode_host',
+            title: t.interconnect_transcode_host_toggle,
+            subtitle: t.interconnect_transcode_host_toggle_desc,
+            icon: FushiIcons.video,
+            value: (SettingsContext ctx) =>
+                ctx.appModel.prefsRepo.interconnectTranscodeEnabled,
+            onChanged: (SettingsContext ctx, bool value) async {
+              await ctx.appModel.prefsRepo.setInterconnectTranscodeEnabled(
+                value,
+              );
+            },
+          ),
+          // 游戏串流「从库里启动」许可。默认关：开了就等于允许已配对设备在本机起
+          // 游戏进程，必须是主机主人的显式意愿；端点另有 HTTPS + 已配对 peer token
+          // 两道门。只在有本地游戏库的 Windows 上出现。
+          SettingsSwitchItem(
+            id: 'interconnect.game_stream_remote_launch',
+            title: t.game_stream_remote_launch_title,
+            subtitle: t.game_stream_remote_launch_hint,
+            icon: FushiIcons.games,
+            visible: (SettingsContext ctx) => Platform.isWindows,
+            value: (SettingsContext ctx) =>
+                ctx.appModel.prefsRepo.gameStreamRemoteLaunchEnabled,
+            onChanged: (SettingsContext ctx, bool value) async {
+              await ctx.appModel.prefsRepo.setGameStreamRemoteLaunchEnabled(
+                value,
+              );
+            },
           ),
           // host 侧「配置文件」读写许可。默认关：入站写没有显式开关就是一条无 UI 的
           // 隐形通道（BUG-988 立过的规矩），出站同理——整份 Profile 比四个内容上传
@@ -854,7 +1040,7 @@ SettingsDestination _buildInterconnectHostPage() {
             id: 'interconnect.profile_transfer_host',
             title: t.interconnect_profile_host_toggle,
             subtitle: t.interconnect_profile_host_toggle_desc,
-            icon: Icons.rule_folder_outlined,
+            icon: FushiIcons.profiles,
             value: (SettingsContext ctx) =>
                 _syncSettings(ctx).interconnectProfileTransfer,
             onChanged: (SettingsContext ctx, bool value) async {
@@ -864,13 +1050,52 @@ SettingsDestination _buildInterconnectHostPage() {
               ).setInterconnectProfileTransferEnabled(value);
             },
           ),
+          // 允许已配对设备跟随本机 Fushi 账户自动登录（总闸，默认开，所有者 2026-10-16
+          // 拍板）。仅对标记为「我的设备」的已配对设备生效（配对审批选「允许 · 这是我的
+          // 设备」或在已配对设备列表里手动标记；升级前配对的设备默认「仅互联」，不追溯
+          // 授权）。对端只交来它自己的公钥，由本机账户代绑；本机私钥 / 恢复码从不外传。
+          // 端点另有 HTTPS + 已配对 peer token 两道门；本开关关掉 = 403 disabled。
+          SettingsSwitchItem(
+            id: 'interconnect.leaderboard_link_host',
+            title: t.interconnect_leaderboard_link_host_toggle,
+            subtitle: t.interconnect_leaderboard_link_host_toggle_desc,
+            icon: FushiIcons.profiles,
+            value: (SettingsContext ctx) =>
+                _syncSettings(ctx).interconnectLeaderboardLinkHost,
+            onChanged: (SettingsContext ctx, bool value) async {
+              _syncSettings(ctx).interconnectLeaderboardLinkHost = value;
+              await SyncRepository(
+                ctx.appModel.database,
+              ).setInterconnectLeaderboardLinkHostEnabled(value);
+            },
+          ),
+          // 远程更新本机许可（反馈 Pp8XPyve0N）。默认关：让别的设备在本机下载安装
+          // 可执行文件必须是主人的显式意愿。端点另有已配对 peer token + 局域网信任区
+          // + 一次性 nonce 几道门。只在本机能应用内自更新的平台出现（平台门 =
+          // PlatformUpdater.supportsInAppInstall，与 host 端点同一个判据）。
+          SettingsSwitchItem(
+            id: 'interconnect.remote_update_host',
+            title: t.interconnect_host_update_host_toggle,
+            subtitle: t.interconnect_host_update_host_toggle_desc,
+            icon: FushiIcons.server,
+            visible: (SettingsContext ctx) =>
+                hostRemoteUpdatePlatformSupported(),
+            value: (SettingsContext ctx) =>
+                _syncSettings(ctx).interconnectRemoteUpdate,
+            onChanged: (SettingsContext ctx, bool value) async {
+              _syncSettings(ctx).interconnectRemoteUpdate = value;
+              await SyncRepository(
+                ctx.appModel.database,
+              ).setInterconnectRemoteUpdateEnabled(value);
+            },
+          ),
         ],
       ),
     ],
   );
 }
 
-/// 远端占位卡开关。同步内容分类与 Hibiki 互联分类共享同一份定义（单一真相源）：
+/// 远端占位卡开关。同步内容分类与 Fushi 互联分类共享同一份定义（单一真相源）：
 /// 多端库联合视图（spec 2026-07-12 §2.1/§2.4），书架/视频页主网格是否把「远端有、
 /// 本地无」的条目渲染成占位卡（云角标 + 远端封面，点击下载/流播）。纯显示偏好
 /// （PreferencesRepository），默认开；关闭时占位卡全部不渲染。离线/未配对/后端不可达
@@ -880,11 +1105,42 @@ SettingsItem buildShowRemoteEntriesItem() {
     id: 'sync.show_remote_entries',
     title: t.sync_show_remote_entries,
     subtitle: t.sync_show_remote_entries_warning,
-    icon: Icons.devices_other_outlined,
+    icon: FushiIcons.devices,
     value: (SettingsContext ctx) => ctx.appModel.prefsRepo.showRemoteEntries,
     onChanged: (SettingsContext ctx, bool value) async {
       await ctx.appModel.prefsRepo.setShowRemoteEntries(value);
     },
+  );
+}
+
+/// 「已从本机移除的远端书」入口的副标题：有记录时带条数。条数与说明的拼法交给各语言
+/// 的文案（BUG-3244：以前硬拼 `'$n · 说明'`，数字没有量词、语序也不能按语言调整）。
+String hiddenRemoteBooksSubtitle(int n) => n == 0
+    ? t.remote_hidden_books_hint
+    : t.remote_hidden_books_hint_count(n: n);
+
+/// 「已从本机移除的远端书」找回列表入口，副标题报条数。
+SettingsItem buildHiddenRemoteBooksItem() {
+  return SettingsNavigationItem(
+    id: 'sync.hidden_remote_books',
+    title: t.remote_hidden_books_title,
+    subtitleBuilder: (SettingsContext ctx) => hiddenRemoteBooksSubtitle(
+      ctx.appModel.prefsRepo.hiddenRemoteBooks.length,
+    ),
+    icon: FushiIcons.visibilityOff,
+    onTap: (SettingsContext ctx) => pushSettingsPage(
+      ctx,
+      (_) => HiddenRemoteBooksPage(
+        prefs: ctx.appModel.prefsRepo,
+        // 只读核对：不在远端建同步根（BUG-3245）。
+        remoteClientLoader: () => resolveShelfRemoteBookClient(
+          ctx.appModel.database,
+          createRootFolder: false,
+        ),
+        sourceHostResolver: (RemoteBookClient client) =>
+            remoteBookSourceHost(ctx.appModel.database, client),
+      ),
+    ),
   );
 }
 
@@ -911,7 +1167,7 @@ void resetSyncSettingsStateForTest() {
   _activeSyncOwner = null;
 }
 
-/// Whether this device is actively HOSTING a Hibiki interconnect server — the
+/// Whether this device is actively HOSTING a Fushi interconnect server — the
 /// only role with no outbound "sync now" / "compare" (BUG-084). Requires BOTH
 /// the persisted host flag AND interconnect being enabled: a stale serverEnabled
 /// left over from a past interconnect session must NOT gate manual sync when
@@ -972,7 +1228,6 @@ class _SyncSettingsState {
   bool syncVideoFiles = false;
   // BUG-988：互联通道专属的「上传内容到对端」开关，独立于上面的云备份 sync* 开关。
   bool interconnectSyncContent = false;
-  bool interconnectSyncDictionary = false;
   bool interconnectSyncAudioBookFiles = false;
   bool interconnectSyncVideoFiles = false;
   // 互联专属的「共享统计 / 共享收藏夹」（双向合并，非上传）。默认 true = 拆开关前
@@ -985,10 +1240,17 @@ class _SyncSettingsState {
 
   /// host 侧：是否允许已配对设备读写本机「配置文件」（Profile）。默认 false。
   bool interconnectProfileTransfer = false;
+
+  /// host 侧：是否允许已配对设备跟随本机账户自动登录。默认 true。
+  bool interconnectLeaderboardLinkHost = true;
+
+  /// client 侧：本机无账户时是否跟随已配对设备自动登录。默认 true。
+  bool leaderboardFollowPairedLogin = true;
+  bool interconnectRemoteUpdate = false;
   bool _loaded = false;
   bool _loading = false;
 
-  /// Bumped whenever the persisted Hibiki *client* config (URLs / token) is
+  /// Bumped whenever the persisted Fushi *client* config (URLs / token) is
   /// mutated from outside the client-config widget (e.g. LAN pairing). The
   /// client-config widget listens and reloads — this is the single source of
   /// truth replacing the previous "loaded once in initState" stale state.
@@ -1008,13 +1270,15 @@ class _SyncSettingsState {
   }
 
   Future<void> _reloadPeerCount() async {
-    final int count = (await _repo.getFushiClientUrls()).length;
+    final int count = interconnectPeerRepresentatives(
+      await _repo.getFushiClientUrls(),
+    ).length;
     if (peerCount == count) return;
     peerCount = count;
     _settingsContext.refresh();
   }
 
-  /// Mutual-exclusion role state for the Hibiki interconnect: a device may be a
+  /// Mutual-exclusion role state for the Fushi interconnect: a device may be a
   /// host (server on, others connect to it) OR a client (connected outward to a
   /// peer), never both. The two flags below are the shared truth the server and
   /// client widgets read to gate each other; [roleRevision] notifies on change.
@@ -1082,8 +1346,6 @@ class _SyncSettingsState {
       syncAudioBookFiles = await _repo.isSyncAudioBookFilesEnabled();
       syncVideoFiles = await _repo.isSyncVideoFilesEnabled();
       interconnectSyncContent = await _repo.isInterconnectSyncContentEnabled();
-      interconnectSyncDictionary = await _repo
-          .isInterconnectSyncDictionaryEnabled();
       interconnectSyncAudioBookFiles = await _repo
           .isInterconnectSyncAudioBookFilesEnabled();
       interconnectSyncVideoFiles = await _repo
@@ -1095,11 +1357,17 @@ class _SyncSettingsState {
           .isInterconnectServiceConfigSyncEnabled();
       interconnectProfileTransfer = await _repo
           .isInterconnectProfileTransferEnabled();
+      interconnectLeaderboardLinkHost = await _repo
+          .isInterconnectLeaderboardLinkHostEnabled();
+      leaderboardFollowPairedLogin = await _repo
+          .isLeaderboardFollowPairedLoginEnabled();
+      interconnectRemoteUpdate = await _repo
+          .isInterconnectRemoteUpdateEnabled();
       serverEnabled = await _repo.isServerEnabled();
       serverPort = await _repo.getServerPort();
       final List<FushiClientUrl> urls = await _repo.getFushiClientUrls();
       hasClientConnection = urls.isNotEmpty;
-      peerCount = urls.length;
+      peerCount = interconnectPeerRepresentatives(urls).length;
       _loaded = true;
       _settingsContext.refresh();
     } finally {

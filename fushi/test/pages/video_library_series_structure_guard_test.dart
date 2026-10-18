@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import '../helpers/source_guard.dart' show compactCode;
+
 void main() {
   test('视频库固定为主页、系列、全部视频、来源四个保活分区', () {
     final String section = File(
@@ -49,10 +51,22 @@ void main() {
     expect(page, contains('video-all-videos-layout-toggle'));
     expect(page, contains('_canonicalCollectionPosterProvider'));
     expect(page, contains('_canonicalBookPosterProvider'));
+    // 系列墙自 series-first 拆分后全员竖卡：墙 sliver 直接以 portrait 建格，
+    // `_VideoWallEntry` 不再持有封面 provider 做朝向探测（几千条目的库首帧
+    // 会先付几千次磁盘 stat）。锁墙 sliver 的建格朝向，而不是某个字段名。
+    final String wallSliver = page.substring(
+      page.indexOf('Widget _buildVideoWallSliver('),
+      page.indexOf('Widget _buildAllVideoGridSliver('),
+    );
+    expect(
+      wallSliver,
+      contains('.build(VideoCardOrientation.portrait)'),
+      reason: '系列墙必须使用竖版刮削封面，不能再被分集截图探测成横卡',
+    );
     expect(
       page,
-      contains('forcedOrientation: VideoCardOrientation.portrait'),
-      reason: '系列墙必须使用竖版刮削封面，不能再被分集截图探测成横卡',
+      isNot(contains('forcedOrientation:')),
+      reason: '墙格不得回潮到「预先求封面 provider + 朝向探测」的旧模型',
     );
     expect(page, contains('video_home_continue_episode_number'));
     expect(page, contains('video_home_remaining_minutes'));
@@ -99,9 +113,23 @@ void main() {
     expect(orderedStart, greaterThanOrEqualTo(0));
     expect(orderedEnd, greaterThan(orderedStart));
     final String orderedBlock = page.substring(orderedStart, orderedEnd);
+    // BUG-2835 起条目级筛选收进 `_passesLocalFilters`：ordered 必须经它过，
+    // 它的方法体里必须仍有系列页的花絮排除。
+    expect(orderedBlock, contains('_passesLocalFilters(b)'));
+    final int passesStart = page.indexOf('bool _passesLocalFilters(');
+    final int passesEnd = page.indexOf(
+      'bool _isCollectionMember(',
+      passesStart,
+    );
+    expect(passesStart, greaterThanOrEqualTo(0));
+    expect(passesEnd, greaterThan(passesStart));
+    final String passesBlock = page.substring(passesStart, passesEnd);
     expect(
-      orderedBlock,
-      contains('_localExtraBookUids.contains(b.bookUid)'),
+      compactCode(passesBlock),
+      contains(
+        '!(widget.section==VideoLibrarySection.series&&'
+        '_localExtraBookUids.contains(b.bookUid))&&',
+      ),
       reason: '放宽准入不等于放行花絮：父作品的短篇/花絮仍须排除',
     );
 
@@ -184,9 +212,11 @@ void main() {
       allVideosBuilderStart,
       allVideosBuilderEnd,
     );
+    // 列表档本地行与远端行合成一个索引空间、在 itemBuilder 里按 index 现建
+    //（真懒构建），锚的是两条路径都还在，不是某个变量名。
     for (final String token in <String>[
-      '_buildAllVideoListRow(book)',
-      '_buildAllVideoRemoteListRow(video)',
+      '_buildAllVideoListRow(ordered[index])',
+      '_buildAllVideoRemoteListRow(',
       'orientation: VideoCardOrientation.landscape',
       '_buildAllVideoGridSliver(',
     ]) {

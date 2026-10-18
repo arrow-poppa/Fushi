@@ -4,7 +4,7 @@ import 'package:fushi/src/mining/galgame_japanese_locale.dart';
 /// BUG-1477 守卫：转区必须**有开关**，且 `auto` 的判据不能再把「32 位」当成
 /// 「日文原版」的代理。
 ///
-/// 现场：用户下的汉化版 galgame，Hibiki 转区启动后报错闪退，直接双击才能玩。
+/// 现场：用户下的汉化版 galgame，Fushi 转区启动后报错闪退，直接双击才能玩。
 /// 老判据是 `launchMode && automaticJapaneseLocale && exeIs32Bit(exe)`，而
 /// `automaticJapaneseLocale` 默认 true 且**整条 UI→source 通路上根本没有这个形参**——
 /// 不是「忘了传」，是没有这个自由度。汉化版恰好落在最坏格：32 位（老引擎）+
@@ -14,11 +14,7 @@ void main() {
     test('attach 模式（非 launch）永远不转区——进程早就建好了', () {
       for (final GalJapaneseLocaleMode mode in GalJapaneseLocaleMode.values) {
         expect(
-          resolveJapaneseLocale(
-            mode: mode,
-            launchMode: false,
-            is32Bit: true,
-          ),
+          resolveJapaneseLocale(mode: mode, launchMode: false, is32Bit: true),
           isFalse,
           reason: '$mode 下 attach 也必须短路——这是用户当前唯一的临时绕法',
         );
@@ -242,10 +238,10 @@ void main() {
             );
             final GalJapaneseLocaleSkipReason? reason =
                 resolveJapaneseLocaleSkipReason(
-              need: need,
-              is32Bit: is32Bit,
-              systemAnsiCodePage: acp,
-            );
+                  need: need,
+                  is32Bit: is32Bit,
+                  systemAnsiCodePage: acp,
+                );
             expect(reason == null, applied, reason: '$need $is32Bit $acp');
           }
         }
@@ -257,7 +253,13 @@ void main() {
         GalJapaneseLocaleSkipReason.values
             .map(galJapaneseLocaleSkipReasonToKey)
             .toList(),
-        <String>['not_needed', 'unknown', 'acp_932', 'not_32bit'],
+        <String>[
+          'not_needed',
+          'unknown',
+          'acp_932',
+          'not_32bit',
+          'runtime_unavailable',
+        ],
       );
     });
   });
@@ -265,7 +267,9 @@ void main() {
   group('need / evidence key 编码', () {
     test('是稳定字面量，不是 enum.name/index', () {
       expect(
-          galJapaneseLocaleNeedToKey(GalJapaneseLocaleNeed.needed), 'needed');
+        galJapaneseLocaleNeedToKey(GalJapaneseLocaleNeed.needed),
+        'needed',
+      );
       expect(
         galJapaneseLocaleNeedToKey(GalJapaneseLocaleNeed.notNeeded),
         'not_needed',
@@ -317,10 +321,7 @@ void main() {
       // 不该转却转了会让汉化版字表越界**直接闪退**，用户还不知道是 Fushi 干的。
       expect(galJapaneseLocaleModeFromKey(''), GalJapaneseLocaleMode.off);
       expect(galJapaneseLocaleModeFromKey(null), GalJapaneseLocaleMode.off);
-      expect(
-        galJapaneseLocaleModeFromKey('未来新档位'),
-        GalJapaneseLocaleMode.off,
-      );
+      expect(galJapaneseLocaleModeFromKey('未来新档位'), GalJapaneseLocaleMode.off);
       expect(kGalDefaultJapaneseLocaleMode, GalJapaneseLocaleMode.off);
     });
 

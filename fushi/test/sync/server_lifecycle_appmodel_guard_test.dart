@@ -11,7 +11,7 @@ import 'sync_settings_schema_source_corpus.dart';
 
 FushiDatabase _memDb() => FushiDatabase.forTesting(NativeDatabase.memory());
 
-/// BUG-085: the Hibiki LAN sync server must be owned app-wide by AppModel, not
+/// BUG-085: the Fushi LAN sync server must be owned app-wide by AppModel, not
 /// by the sync-settings page widget — leaving the page must not kill the host.
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -77,27 +77,17 @@ void main() {
       expect(languageArg, lessThan(removeLocalAudio),
           reason: 'sidecar 语言匹配应使用当前学习语言偏好');
     });
-
-    test(
-        '_propagateDictionaryDeleteToRemote routes live backend via '
-        'backend.deleteRemoteDictionary', () {
-      final String src =
-          File('lib/src/models/app_model.dart').readAsStringSync();
-      expect(src.contains('backend.deleteRemoteDictionary'), isTrue,
-          reason: '删除传播必须对 InterconnectSyncBackend 调 live DELETE 端点');
-      expect(src.contains('backend is InterconnectSyncBackend'), isTrue,
-          reason: '必须有 is InterconnectSyncBackend 分流判定');
-    });
   });
 
   group('source guards: AppModel wires audio params into host service (T3.4)',
       () {
-    test('AppModel 传 localAudioEntries: 到 LocalLibraryHostService', () {
+    test('AppModel 传 localAudioEntriesProvider: 到 LocalLibraryHostService', () {
       final String src =
           File('lib/src/models/app_model.dart').readAsStringSync();
-      expect(src.contains('localAudioEntries:'), isTrue,
-          reason:
-              'AppModel 必须把 localAudioEntries 传给 LocalLibraryHostService');
+      // BUG-2815：必须是现读的 provider，不是互联启动时的快照。
+      expect(src.contains('localAudioEntriesProvider: () => localAudioDbs'),
+          isTrue,
+          reason: 'AppModel 必须把现读的本地音频清单传给 LocalLibraryHostService');
     });
 
     test('AppModel 传 audioDatabaseRoot: 到 LocalLibraryHostService', () {

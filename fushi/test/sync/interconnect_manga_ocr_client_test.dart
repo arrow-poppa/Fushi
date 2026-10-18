@@ -32,6 +32,7 @@ class _FakeOcrService implements MangaOcrService {
   bool supported = true;
   bool ready;
   bool cancelled = false;
+  int ocrCalls = 0;
   Completer<void>? gate;
 
   @override
@@ -56,7 +57,9 @@ class _FakeOcrService implements MangaOcrService {
   Stream<MangaOcrVolumeEvent> ocrFolder({
     required String imageDirPath,
     String? volumeTitle,
+    int startPage = 0,
   }) {
+    ocrCalls += 1;
     final StreamController<MangaOcrVolumeEvent> controller =
         StreamController<MangaOcrVolumeEvent>();
     controller.onCancel = () => cancelled = true;
@@ -138,9 +141,11 @@ void main() {
     return server;
   }
 
-  InterconnectMangaOcrClient buildClient() => InterconnectMangaOcrClient(
+  InterconnectMangaOcrClient buildClient({String? preferredModel}) =>
+      InterconnectMangaOcrClient(
         repo: repo,
         pollDelay: (int attempt) => const Duration(milliseconds: 10),
+        preferredModel: () => preferredModel,
       );
 
   Directory writeVolume() {
@@ -241,6 +246,101 @@ void main() {
     expect(target, isNotNull);
     expect(target!.baseUrl, 'http://127.0.0.1:${isReady.port}');
     expect(target.capability.usable, isTrue);
+  });
+
+  group('client picks the host model', () {
+    late _FakeOcrService hostDefault;
+    late _FakeOcrService ctc;
+
+    Future<void> startMultiModelHost({bool ctcReady = true}) async {
+      hostDefault = _FakeOcrService();
+      ctc = _FakeOcrService(ready: ctcReady);
+      await startHost(
+        hostDefault,
+        manager: MangaOcrHostJobManager(
+          service: hostDefault,
+          // 多模型 host 的接线是通用的：本机模型目前只剩 manga_ctc，另一个 key
+          // 只是代表「host 默认用的另一个模型」。
+          modelServices: <String, MangaOcrService>{
+            'other_model': hostDefault,
+            'manga_ctc': ctc,
+          },
+          jobRoot: Directory(p.join(tmpRoot.path, 'jobs')),
+        ),
+      );
+    }
+
+    test('capabilities list each model with its own readiness', () async {
+      await startMultiModelHost(ctcReady: false);
+      final MangaOcrRemoteTarget target = (await buildClient().probe())!;
+      expect(
+        <String, bool>{
+          for (final MangaOcrRemoteModel m in target.capability.models)
+            m.key: m.ready,
+        },
+        <String, bool>{'other_model': true, 'manga_ctc': false},
+      );
+      // 没点名：沿用 host 默认，就绪态是 host 默认模型的。
+      expect(target.model, isNull);
+      expect(target.capability.usable, isTrue);
+    });
+
+    test('the named model runs instead of the host default', () async {
+      await startMultiModelHost();
+      final InterconnectMangaOcrClient client =
+          buildClient(preferredModel: 'manga_ctc');
+      final MangaOcrRemoteTarget target = (await client.probe())!;
+      expect(target.model, 'manga_ctc');
+      expect(target.capability.usable, isTrue);
+
+      await client
+          .run(target: target, imageDirPath: writeVolume().path)
+          .drain<void>();
+      expect(ctc.ocrCalls, 1);
+      expect(hostDefault.ocrCalls, 0);
+    });
+
+    test('a named model the host has not downloaded is reported missing',
+        () async {
+      await startMultiModelHost(ctcReady: false);
+      final MangaOcrRemoteTarget target =
+          (await buildClient(preferredModel: 'manga_ctc').probe())!;
+      expect(target.capability.usable, isFalse);
+      expect(target.capability.modelsMissing, isTrue);
+    });
+
+    // 已删除的 manga-ocr / Baberu（2026-10）：旧客户端可能还点名它们，host 明确
+    // 拒绝而不是悄悄换模型。
+    for (final String removed in <String>['manga_ocr', 'baberu']) {
+      test('a model the host does not offer is refused, not swapped ($removed)',
+          () async {
+        await startMultiModelHost();
+        final InterconnectMangaOcrClient client =
+            buildClient(preferredModel: removed);
+        final MangaOcrRemoteTarget target = (await client.probe())!;
+        expect(target.capability.modelsMissing, isTrue);
+
+        await expectLater(
+          client
+              .run(target: target, imageDirPath: writeVolume().path)
+              .drain<void>(),
+          throwsA(isA<MangaOcrRemoteException>().having(
+              (MangaOcrRemoteException e) => e.code, 'code', 'unknown_model')),
+        );
+        expect(hostDefault.ocrCalls, 0);
+        expect(ctc.ocrCalls, 0);
+      });
+    }
+
+    test('an old host without a model list never receives a model name',
+        () async {
+      final _FakeOcrService service = _FakeOcrService();
+      await startHost(service);
+      final MangaOcrRemoteTarget target =
+          (await buildClient(preferredModel: 'manga_ctc').probe())!;
+      expect(target.model, isNull);
+      expect(target.capability.usable, isTrue);
+    });
   });
 
   test('probe returns null against a host without manga OCR wiring (skew)',

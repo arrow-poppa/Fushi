@@ -4,7 +4,9 @@ set -euo pipefail
 script_directory="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repository_root="$(cd "$script_directory/.." && pwd)"
 flutter_project="$repository_root/fushi"
-flutter_sdk="${FUSHI_FLUTTER_SDK:-${HOME}/fvm/versions/3.41.6}"
+# The pinned version lives in fushi/.fvmrc (same pin as CI, guarded); do not copy it here.
+pinned_flutter="$(sed -n 's/.*"flutter"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$flutter_project/.fvmrc")"
+flutter_sdk="${FUSHI_FLUTTER_SDK:-${HOME}/fvm/versions/${pinned_flutter}}"
 flutter="$flutter_sdk/bin/flutter"
 configuration="debug"
 show_logs=false
@@ -14,7 +16,7 @@ usage() {
   cat <<'EOF'
 usage: script/build_and_run.sh [--debug|--release] [--logs] [--verify]
 
-Builds the macOS app, bundles the pinned Aidoku and Mihon runtimes, and launches fushi.
+Builds the macOS app, bundles the pinned Mihon runtime, and launches fushi.
 Set FUSHI_FLUTTER_SDK to override the default Flutter SDK location.
 EOF
 }
@@ -37,7 +39,7 @@ if [[ "$(uname -s)" != "Darwin" ]]; then
 fi
 
 if [[ ! -x "$flutter" ]]; then
-  echo "Flutter 3.41.6 was not found at $flutter_sdk" >&2
+  echo "Flutter ${pinned_flutter} (fushi/.fvmrc) was not found at $flutter_sdk" >&2
   echo "Set FUSHI_FLUTTER_SDK to an installed Flutter SDK." >&2
   exit 1
 fi
@@ -56,21 +58,14 @@ if [[ "$verify_only" == false ]]; then
     "$flutter" build macos "--$configuration"
   )
 
-  # 本机开发只在本机跑，默认 host 架构省一次交叉编译；CI 走 universal（默认值），
-  # 见 tool/aidoku/build_macos_runtime.sh 里的 BUG-1922 注释。
-  FUSHI_AIDOKU_ARCHS="${FUSHI_AIDOKU_ARCHS:-host}" \
-    "$repository_root/tool/aidoku/build_macos_runtime.sh" \
-    "$app/Contents/Resources/aidoku_runtime"
-
   mihon_cache="$repository_root/.dart_tool/mihon_bridge"
   case "$(uname -m)" in
     arm64) mihon_host_runtime="runtime-macos-arm64" ;;
-    x86_64) mihon_host_runtime="runtime-macos-x64" ;;
-    *) echo "unsupported macOS architecture: $(uname -m)" >&2; exit 1 ;;
+    *) echo "unsupported macOS architecture: $(uname -m) (the macOS app ships arm64 only)" >&2; exit 1 ;;
   esac
   if [[ ! -f "$mihon_cache/m-extension-server.jar" || \
         ! -x "$mihon_cache/$mihon_host_runtime/bin/java" ]]; then
-    FUSHI_MIHON_ARCHS=host bash "$repository_root/tool/mihon/build_desktop_runtime.sh" \
+    bash "$repository_root/tool/mihon/build_desktop_runtime.sh" \
       "$mihon_cache" \
       "$repository_root/.dart_tool/mihon-downloads"
   fi
@@ -109,15 +104,9 @@ if [[ ! -x "$app/Contents/MacOS/fushi" ]]; then
   exit 1
 fi
 
-# 与两条 macOS CI job 用同一道门（BUG-1922）。本地是 host 构建，所以不传 app
-# 本体做架构覆盖核对 —— 那条不变式只在出发布包的 CI 上成立。
-bash "$repository_root/tool/aidoku/verify_macos_runtime.sh" \
-  "$app/Contents/Resources/aidoku_runtime"
-
 case "$(uname -m)" in
   arm64) mihon_host_runtime="runtime-macos-arm64" ;;
-  x86_64) mihon_host_runtime="runtime-macos-x64" ;;
-  *) echo "unsupported macOS architecture: $(uname -m)" >&2; exit 1 ;;
+  *) echo "unsupported macOS architecture: $(uname -m) (the macOS app ships arm64 only)" >&2; exit 1 ;;
 esac
 if [[ ! -f "$app/Contents/Resources/mihon_bridge/m-extension-server.jar" || \
       ! -x "$app/Contents/Resources/mihon_bridge/$mihon_host_runtime/bin/java" ]]; then
@@ -136,5 +125,5 @@ open -n "$app"
 
 if [[ "$show_logs" == true ]]; then
   log stream --style compact --level info \
-    --predicate 'process == "fushi" OR process == "fushi-aidoku-runtime"'
+    --predicate 'process == "fushi"'
 fi

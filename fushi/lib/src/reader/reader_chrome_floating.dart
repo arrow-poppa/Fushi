@@ -90,6 +90,49 @@ double bottomChromeReserve({
   return chromeHeight;
 }
 
+/// 查词弹窗的底部避让高（逻辑 px，BUG-3292）：弹窗不能排进底部 chrome 此刻**真的
+/// 画着**的那块区域。
+///
+///  * 挤压底栏占位（[squeezeReserve] > 0）→ [readerBottomReserve]（正文的同一份预留）。
+///  * 底部 chrome 不占正文位置、但此刻在画（[floatingChromePainted]：「点空白隐藏
+///    控制栏」形态下被点出来，且有东西可画）→ [chromeBaseBand] + [floatingChromeExtent]：
+///    chrome 坐在它下方那条带之上、自身高 [floatingChromeExtent]。此前这种形态一律 0
+///    （「不占正文位置」），但底部 chrome 排在查词弹层**之后**绘制，弹窗按「底部没
+///    东西」排版，被盖住下半截（用户：查词「格式出现问题」）。悬浮工具栏样式与贴边
+///    样式都会这样画——门控看的是「不占位」，不是工具栏样式。
+///  * 其余 → 0（chrome 收起时弹窗照旧用满到屏底）。
+double readerPopupBottomReserve({
+  required double squeezeReserve,
+  required double readerBottomReserve,
+  required bool floatingChromePainted,
+  required double floatingChromeExtent,
+  required double chromeBaseBand,
+}) {
+  if (squeezeReserve > 0) return readerBottomReserve;
+  if (floatingChromePainted && floatingChromeExtent > 0) {
+    return chromeBaseBand + floatingChromeExtent;
+  }
+  return 0;
+}
+
+/// 底部 chrome 下沿离屏底的距离（逻辑 px）——它画在哪条带之上，与阅读器页的实际
+/// 摆放同一口径：
+///
+///  * 悬浮工具栏样式：坐在状态行画出来的带（[paintedFooterBand]）之上，离它的外边距
+///    已计入 chrome 自身的 extent。
+///  * 贴边样式、读数独立成行（[separatePlaybackStatus]）：底栏要么坐在状态行带之上，
+///    要么把读数行并进自己最底部（那一行高同样是 [paintedFooterBand]），两者顶沿
+///    一样高。
+///  * 贴边样式、读数并进播放条：底栏贴屏底，下面垫一条系统底 inset（[bottomInset]）。
+double readerBottomChromeBaseBand({
+  required bool floatingToolbars,
+  required bool separatePlaybackStatus,
+  required double paintedFooterBand,
+  required double bottomInset,
+}) => floatingToolbars || separatePlaybackStatus
+    ? paintedFooterBand
+    : bottomInset;
+
 /// BUG-379 / BUG-1343 / BUG-1381：**独立 HTML 文档**（歌词模式 [LyricsModeHtml]、
 /// spread 整页图）的 WebView 四周留白，是「阅读器页给独立文档留多少空间」的唯一真相源。
 ///
@@ -170,31 +213,15 @@ bool bottomBarVisible({
   return chromeExpanded;
 }
 
-/// 鼠标在正文上移动时对悬浮 chrome 的处置（与视频播放器同一手感：移动即唤出、
-/// 持续移动期间常驻、停手后按计时收起）。
-enum ReaderHoverRevealAction {
-  /// 非悬浮态（挤压常驻）：什么都不做。
-  none,
-
-  /// 悬浮态已收起：唤出并武装自动收起。
-  reveal,
-
-  /// 悬浮态已可见：重新武装计时（移动中不收起）。
-  rearm,
-}
-
-/// 鼠标移动 → [ReaderHoverRevealAction]。只认真实鼠标（[isMouse]）：触屏没有
-/// hover，手写笔悬停也不该把控制栏顶出来。
-ReaderHoverRevealAction readerHoverRevealAction({
-  required bool floating,
-  required bool transientVisible,
-  required bool isMouse,
-}) {
-  if (!floating || !isMouse) return ReaderHoverRevealAction.none;
-  return transientVisible
-      ? ReaderHoverRevealAction.rearm
-      : ReaderHoverRevealAction.reveal;
-}
+/// 「关掉顶栏和底栏」此刻是否真的生效——页面布局、唤栏闸门与悬浮球接管的唯一判据。
+///
+/// 栏关掉后，返回 / 设置 / 开回栏这几条出口全靠应用内悬浮球（阅读器场景把它们
+/// 固定在球上、球也不给「关闭」键）。所以应用内悬浮球关着时偏好**不生效**：栏照常
+/// 显示，否则触屏（尤其 iOS：没有系统返回键）会被关在一本没有任何 chrome 的书里。
+bool readerToolbarsHidden({
+  required bool hideToolbarsPreference,
+  required bool inAppFloatingBallEnabled,
+}) => hideToolbarsPreference && inAppFloatingBallEnabled;
 
 /// BUG-1195：视觉小说（VN）模式下一次「空白点击」的归宿。
 enum ReaderVnBlankTapAction {
@@ -214,7 +241,8 @@ enum ReaderVnBlankTapAction {
   /// 不重锚，所以同一下里翻页 + 唤栏互不干扰。
   advanceAndRevealChrome,
 
-  /// 底栏本来就常驻可见（挤压态且已展开）：只推进到下一屏。
+  /// 底栏本来就常驻可见（挤压态且已展开），或顶栏和底栏已被关掉（悬浮球接管，
+  /// [readerToolbarsHidden]）：只推进到下一屏。
   advance,
 }
 
@@ -238,7 +266,12 @@ ReaderVnBlankTapAction readerVnBlankTapAction({
   required bool chromeExpanded,
   required bool bottomBarFloating,
   required bool transientVisible,
+  required bool toolbarsHidden,
 }) {
+  // 栏被关掉先于一切：此时栏的三态（挤压收起 / 悬浮隐藏 / 悬浮可见）都不存在，
+  // 空白点只剩「推进」这一个含义（否则隐藏态的第一下会被当成「只唤栏不推进」
+  // 吞掉，VN 永远推不动）。回到栏的入口在悬浮球上。
+  if (toolbarsHidden) return ReaderVnBlankTapAction.advance;
   // 悬浮态与 [bottomBarVisible] 同一口径：不读 chromeExpanded（那是挤压态的
   // 持久开关，在悬浮态可能以 false 残留）。
   if (bottomBarFloating) {
@@ -297,5 +330,11 @@ bool topProgressUsesFrostedGlass({required bool floating}) => floating;
 bool topProgressPillShowsBlur({
   required bool floating,
   required bool obscured,
-}) =>
-    topProgressUsesFrostedGlass(floating: floating) && !obscured;
+}) => topProgressUsesFrostedGlass(floating: floating) && !obscured;
+
+/// 阅读器「工具栏样式」偏好（`reader_toolbar_style`）是否走悬浮形态。
+///
+/// 只有显式的 `'docked'`（贴边：整宽实体条）是贴边；默认 `'floating'` 与任何
+/// 未知值一律悬浮（M3 Expressive floating toolbar 是默认形态）。阅读器页的
+/// `_floatingToolbars` 只经这里换算，设置页与页面不各写一份判据。
+bool readerToolbarsFloating(String toolbarStyle) => toolbarStyle != 'docked';

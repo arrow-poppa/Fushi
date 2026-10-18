@@ -44,6 +44,32 @@ extension _FushiSyncServerVideo on FushiSyncServer {
       final File? file =
           await svc.resolveVideoFile(streamUrlId, episodeIndex: episodeIndex);
       if (file == null) return shelf.Response.notFound('Video not found');
+      // 弱网转码：client 报画质档（`?maxWidth=1280&maxBitrate=3000000`），host 决定
+      // 认不认。四个闸门缺一不可——档位有效、用户没关开关、本机真能 exec ffmpeg
+      // （移动端 host 的进程内 ffmpeg-kit 没有可接管的 stdout，见
+      // [transcodeAvailable]）、以及探得出时长（HLS playlist 要按时长切段，探不出就
+      // 没法生成）。任一不成立就静默退回原文件直传：client 收到的 `transcoded: false`
+      // 会让它把画质档收起来，而不是播一个永远出不来的流。
+      // 蓝光标题：`file` 是几 KB 的 `.mpls`，不是视频。直传时改下发段表（见下方
+      // `discTitle`），转码时时长取 MPLS 的精确值，分段命令由共享蓝光输入改写处理。
+      final BlurayTitleStreams? disc = await readBlurayTitleStreams(file.path);
+      final VideoTranscodeProfile? requestedProfile =
+          VideoTranscodeProfile.fromQuery(request.url.queryParameters);
+      int? transcodeDurationMs;
+      if (requestedProfile != null && _videoTranscodeEnabled) {
+        transcodeDurationMs = disc != null
+            ? disc.playlist.duration.inMilliseconds
+            : await probeVideoDurationMs(file.path);
+      }
+      final VideoTranscodeProfile? transcodeProfile =
+          transcodeDurationMs != null && transcodeDurationMs > 0
+              ? requestedProfile
+              : null;
+      final int? transcodeAudioStreamIndex = transcodeProfile == null
+          ? null
+          : int.tryParse(
+              request.url.queryParameters['audioStreamIndex'] ?? '',
+            );
       // BUG-1568：签发前先按 TTL 清过期，再把数量收束到 [_maxVideoStreamTokens] 内
       // （淘汰最旧者）。对照 audio token 的 BUG-908(a) 修法：消费侧（GET /stream）的
       // prune 等不到「只签发不取流」的调用者，上限必须在签发侧强制。
@@ -54,6 +80,9 @@ extension _FushiSyncServerVideo on FushiSyncServer {
         videoId: streamUrlId,
         createdAt: _now(),
         episodeIndex: episodeIndex,
+        transcodeProfile: transcodeProfile,
+        transcodeAudioStreamIndex: transcodeAudioStreamIndex,
+        transcodeDurationMs: transcodeProfile == null ? null : transcodeDurationMs,
       );
       final String encodedId = Uri.encodeFull(streamUrlId);
       // stream / subtitle URL 都带 episode=N，让 client 取流 / 下字幕命中同一集。
@@ -61,8 +90,51 @@ extension _FushiSyncServerVideo on FushiSyncServer {
         'token': tokenValue,
         if (episodeIndex > 0) 'episode': '$episodeIndex',
       };
+      // 蓝光标题直传：每段一个分段 URL（同一 token），client 用 EDL 拼回与本地播放
+      // 逐 tick 相同的时间轴（bluray_remote_title.dart）。转码时不需要它——HLS 分段
+      // 由 host 从播放列表直接转出。
+      final BlurayRemoteTitle? discTitle = disc == null || transcodeProfile != null
+          ? null
+          : disc.remoteTitle(
+              (int stream) => request.requestedUri
+                  .replace(
+                    path: '/api/library/videos/$encodedId/'
+                        '$kBlurayClipPathSuffix',
+                    queryParameters: <String, String>{
+                      ...streamQuery,
+                      'n': '$stream',
+                    },
+                  )
+                  .toString(),
+            );
+      // 光盘标题的制卡抽帧源：client 的 ffmpeg 打不开 `edl://`，host 能转码时另签一张
+      // 低清 HLS 的 token 给它（与 YouTube 的 360p 制卡流同一个字段、同一种用途）；转
+      // 不了就不给，client 制卡时没有画面而不是对着 EDL 报错。句子音频本来就走 host
+      // 端裁切（`/clipaudio`），不依赖这条。
+      Uri? miningUri;
+      if (discTitle != null && _videoTranscodeEnabled) {
+        _enforceVideoTokenCap();
+        final String miningToken = _generateVideoToken();
+        _videoStreamTokens[miningToken] = _VideoStreamToken(
+          videoId: streamUrlId,
+          createdAt: _now(),
+          episodeIndex: episodeIndex,
+          transcodeProfile: _kDiscMiningTranscodeProfile,
+          transcodeDurationMs: disc!.playlist.duration.inMilliseconds,
+        );
+        miningUri = request.requestedUri.replace(
+          path: '/api/library/videos/$encodedId/hls.m3u8',
+          queryParameters: <String, String>{
+            'token': miningToken,
+            if (episodeIndex > 0) 'episode': '$episodeIndex',
+          },
+        );
+      }
+      // 转码时 client 拿到的是一张 HLS playlist（播放器自己再去取 init 段与各分段，
+      // 那些 URL 由 playlist 内部用相对路径给出）；不转码时还是老的整文件流。
       final Uri streamUri = request.requestedUri.replace(
-        path: '/api/library/videos/$encodedId/stream',
+        path: '/api/library/videos/$encodedId/'
+            '${transcodeProfile == null ? 'stream' : 'hls.m3u8'}',
         queryParameters: streamQuery,
       );
       // subtitle URL 不含 token（走 Basic 鉴权），但带 episode=N。
@@ -84,8 +156,27 @@ extension _FushiSyncServerVideo on FushiSyncServer {
         episodeIndex,
       );
       return jsonResponse(<String, dynamic>{
-        'url': streamUri.toString(),
+        // 蓝光标题给 EDL（各段地址都是 host 的 http(s) URL）：旧 client 不认
+        // `discTitle`，原样交给 libmpv 也能播明文 http host；新 client 读 `discTitle`
+        // 逐段过本地 TLS 中继后自己拼。
+        'url': discTitle?.edlUri() ?? streamUri.toString(),
+        if (discTitle != null) 'discTitle': discTitle.toJson(),
+        if (miningUri != null) ...<String, dynamic>{
+          'miningVideoUrl': miningUri.toString(),
+          'miningVideoHasAudio': true,
+        },
         'subtitleUrl': subtitleUri?.toString(),
+        // 这条流是不是**转码流**（HLS）。client 据此显示画质档当前值，并知道内嵌
+        // 字幕不在流里、要走 /subtitle 外挂下发。seek 不需要特殊处理——HLS 的进度条
+        // 与定位由播放器原生支持。
+        'transcoded': transcodeProfile != null,
+        // 「这台 host 支不支持转码」——与当次有没有转码分开报。client 起播时默认走
+        // 自动档（局域网里就是不转码），若只回 `transcoded: false`，它就永远无从得知
+        // 画质档可不可选，画质菜单会一直不出现。
+        'transcodeAvailable': _videoTranscodeEnabled,
+        // 既有字段语义（BUG-2590）：false = 流不是源容器原样，内嵌字幕不能指望
+        // libmpv 自绘。转码把容器整个换掉了，必须如实报 false。
+        'streamIsOriginalContainer': transcodeProfile == null,
         if (sub != null) 'subtitleFileName': p.basename(sub.path),
         if (embeddedTracks.isNotEmpty)
           'embeddedSubtitleTracks': <Map<String, Object?>>[
@@ -117,26 +208,151 @@ extension _FushiSyncServerVideo on FushiSyncServer {
       final File? file =
           await svc.resolveVideoFile(streamId, episodeIndex: tok.episodeIndex);
       if (file == null) return shelf.Response.notFound('Video not found');
-      return serveFileWithRange(file, request);
+      // 带 ETag + 按需校验 If-Range：client 下载续传会带上次记下的验证器，文件在
+      // host 上被替换时降级 200 全量；播放器的盲 Range（seek）不带 If-Range，照常
+      // 206（ifRangeRequired: false）。
+      if (!file.existsSync()) {
+        return shelf.Response.notFound('Video not found');
+      }
+      return serveFileWithRange(
+        file,
+        request,
+        etag: videoFileEtag(file),
+        ifRangeRequired: false,
+      );
+    }
+
+    // GET /api/library/videos/<id>/hls.m3u8         — 转码播放列表
+    // GET /api/library/videos/<id>/hlsseg.ts?n=<i>  — 第 i 个分段（MPEG-TS）
+    // 两条都豁免 Basic（播放器取 playlist / 分段都是裸 GET），门是 URL 里的短时
+    // token；画质档绑在 token 上，不从 query 取——分段谁拿到 URL 谁能取，让它自带
+    // 编码参数就等于把「在 host 上起一个任意参数的 ffmpeg」敞开给 URL 持有者。
+    //
+    // 两条路径**必须带 FFmpeg 认的扩展名**（BUG-2630）：FFmpeg 6.1.3+ / 7.1.1+ / 8.0
+    // （2025 年安全加固回移）的 hls demuxer 对每个分段 URL 先查
+    // `allowed_segment_extensions` 白名单（扩展名取 query 之前的路径尾，
+    // `ff_match_url_ext`），不在名单上直接 `Invalid data found`——随包 libmpv 四端
+    // （Android / iOS / macOS 6.1.6，Windows master 构建）都在门内，裸 `hlsseg?token=`
+    // 让转码流一开就死。分段为什么是 TS 不是 fMP4 见 `live_transcode.dart` 文件头。
+    // 守卫 `fushi/test/sync/fushi_sync_server_hls_segment_ext_guard_test.dart`。
+    // GET /api/library/videos/<id>/bdclip.m2ts?token=&n=<i> — 蓝光标题第 i 个码流
+    // （豁免 Basic，靠 token；加密盘先解密再发，支持 Range）。
+    final String? clipId = _extractVideoId(reqPath, kBlurayClipPathSuffix);
+    if (clipId != null) {
+      if (method != 'GET') return shelf.Response(405);
+      return _handleBlurayClip(svc, request, clipId);
+    }
+
+    for (final String suffix in const <String>[
+      'hls.m3u8',
+      kTranscodeSegmentPathSuffix,
+    ]) {
+      final String? hlsId = _extractVideoId(reqPath, suffix);
+      if (hlsId == null) continue;
+      if (method != 'GET') return shelf.Response(405);
+      return _handleTranscodeHls(svc, request, hlsId, suffix);
+    }
+
+    // GET /api/library/videos/<id>/graphicsubtitle?embeddedStreamIndex=N[&episode=E][&part=header]
+    // 图形字幕（PGS / VobSub / DVB）整轨回传：host 在本机把那一条字幕轨原样抽出来，
+    // client 解析出逐句起止（制卡锚句 / 句子音频），不为字幕把整片再读一遍。需 Basic
+    // 鉴权（不在 /stream 豁免名单）。embeddedStreamIndex 与 `/subtitle` 同义（ffmpeg
+    // `0:s:N`，即 `embeddedSubtitleTracks[].streamIndex`）。文本轨走 `/subtitle`，这里 404。
+    final String? graphicSubtitleId =
+        _extractVideoId(reqPath, 'graphicsubtitle');
+    if (graphicSubtitleId != null) {
+      if (method != 'GET') return shelf.Response(405);
+      return _handleGraphicSubtitleTrack(svc, request, graphicSubtitleId);
+    }
+
+    // POST /api/library/videos/<id>/subtitle/backfill  {language?}
+    // 立即给这一个视频补字幕（刮削后自动补的同一条服务，单视频入口）。必须在
+    // `/subtitle` 之前匹配：bookUid 允许含 `/`，`subtitle` 后缀匹配不到这条，但
+    // 顺序写明白免得以后有人调换。
+    final String? backfillId = _extractVideoId(reqPath, 'subtitle/backfill');
+    if (backfillId != null) {
+      if (method != 'POST') return shelf.Response(405);
+      final VideoSubtitleBackfillRunner? runner = videoSubtitleBackfill;
+      if (runner == null) {
+        return shelf.Response(501, body: 'Subtitle backfill not available');
+      }
+      String? language;
+      final String body = await request.readAsString();
+      if (body.trim().isNotEmpty) {
+        final Object? decoded;
+        try {
+          decoded = jsonDecode(body);
+        } on FormatException {
+          return shelf.Response(400, body: 'Invalid JSON');
+        }
+        if (decoded is! Map) {
+          return shelf.Response(400, body: 'JSON object body required');
+        }
+        final String lang = (decoded['language'] ?? '').toString().trim();
+        if (lang.isNotEmpty) {
+          if (!RegExp(r'^[A-Za-z]{2,3}([-_][A-Za-z0-9]{1,8})*$')
+              .hasMatch(lang)) {
+            return shelf.Response(400, body: 'Invalid language tag');
+          }
+          language = lang;
+        }
+      }
+      final VideoSubtitleBackfillReport? report =
+          await runner(backfillId, language: language);
+      if (report == null) return shelf.Response.notFound('Video not found');
+      return jsonResponse(report.toJson());
     }
 
     // GET /api/library/videos/<id>/subtitle — 字幕（需 Basic 鉴权，中间件已处理）
     // PUT 同路径 — client→host 上传该视频的外挂字幕 sidecar（BUG-964，随
     // syncVideoFiles live push）。后缀（`.srt` / `.ja.srt` …）经
-    // X-Hibiki-Subtitle-Suffix header 上报，服务端白名单校验；老 host 无此分支
+    // [kSubtitleSuffixHeader] 上报，服务端白名单校验；老 host 无此分支
     // 对 PUT 回 405，client 据此优雅降级。
     final String? subtitleId = _extractVideoId(reqPath, 'subtitle');
     if (subtitleId != null) {
       if (method == 'PUT') {
         final String suffix =
-            _decodeHeaderValue(request, 'x-hibiki-subtitle-suffix') ?? '';
+            _decodeHeaderValue(request, kSubtitleSuffixHeader) ?? '';
         final Directory tmpDir =
-            Directory.systemTemp.createTempSync('hibiki_subtitle_in');
+            Directory.systemTemp.createTempSync('fushi_subtitle_in');
         final File tmp = File(p.join(tmpDir.path, 'upload.bin'));
         final IOSink sink = tmp.openWrite();
         try {
           await request.read().forEach(sink.add);
           await sink.close();
+          // [kSubtitleDefaultHeader]: 1 = 用户在远端播放时导入 / 重定时的字幕，要设成
+          // 这一集的默认字幕（后缀由 host 按自己的学习语言定，旧的高优先级 sidecar
+          // 改名让位，见 [VideoSubtitleDefaultHost]）。本 host 的库服务不支持该能力时
+          // 回 409、**不落盘**：退回 importVideoSubtitle 会按 client 报的后缀覆盖同名
+          // 旧字幕且不留备份（BUG-2728）。client 本该先看 capabilities 的
+          // `liveLibrary.videoSubtitleDefault` 再上传（老 host 不认这个 header，只能靠
+          // client 那一侧的门），这里是新 host 的第二道门。
+          final bool asDefault =
+              _decodeHeaderValue(request, kSubtitleDefaultHeader) == '1';
+          if (asDefault) {
+            if (svc is! VideoSubtitleDefaultHost) {
+              return shelf.Response(
+                409,
+                body: 'Default subtitle import unsupported',
+              );
+            }
+            final VideoSubtitleDefaultHost host =
+                svc as VideoSubtitleDefaultHost;
+            final String placed = await host.importDefaultVideoSubtitle(
+              tmp,
+              id: subtitleId,
+              format: p.extension(suffix),
+            );
+            // 新旧两个名字都回：改名前的 client 只读旧名，读不到会把这次成功的
+            // 上传误报成「host 不支持」（见 kLegacyInterconnectHeaderNames）。
+            return shelf.Response(
+              200,
+              headers: <String, String>{
+                kSubtitleSuffixHeader: placed,
+                kLegacyInterconnectHeaderNames[kSubtitleSuffixHeader]!: placed,
+              },
+            );
+          }
           await svc.importVideoSubtitle(tmp, id: subtitleId, suffix: suffix);
           return shelf.Response(200);
         } on ArgumentError catch (e) {
@@ -156,6 +372,46 @@ extension _FushiSyncServerVideo on FushiSyncServer {
           } catch (_) {
             // best-effort
           }
+        }
+      }
+      // DELETE ?which=primary|secondary|all（缺省 primary）[&sidecars=all]：清字幕
+      // 源（+ 主字幕 cue），本视频自己的 sidecar 改名备份，不删别处文件、不碰视频。
+      if (method == 'DELETE') {
+        if (svc is! VideoSubtitleClearHost) {
+          return shelf.Response.notFound('Subtitle clearing not supported');
+        }
+        final String whichText =
+            request.url.queryParameters['which'] ?? 'primary';
+        final VideoSubtitleClearScope? which =
+            VideoSubtitleClearScope.values.asNameMap()[whichText];
+        if (which == null) {
+          return shelf.Response(400,
+              body: 'which must be primary, secondary or all');
+        }
+        final String sidecars = request.url.queryParameters['sidecars'] ?? '';
+        if (sidecars.isNotEmpty && sidecars != 'all') {
+          return shelf.Response(400, body: 'sidecars must be all');
+        }
+        try {
+          final VideoSubtitleClearResult result =
+              await (svc as VideoSubtitleClearHost).clearVideoSubtitle(
+            subtitleId,
+            which: which,
+            allSidecars: sidecars == 'all',
+          );
+          return jsonResponse(result.toJson());
+        } on ArgumentError catch (e) {
+          return shelf.Response(400, body: 'Invalid video id: ${e.message}');
+        } on StateError {
+          return shelf.Response.notFound('Video not found');
+        } on VideoSubtitleSidecarBusy catch (e) {
+          return shelf.Response(
+            409,
+            body: jsonEncode(e.toJson()),
+            headers: const <String, String>{
+              'Content-Type': 'application/json; charset=utf-8',
+            },
+          );
         }
       }
       if (method != 'GET') return shelf.Response(405);
@@ -323,11 +579,11 @@ extension _FushiSyncServerVideo on FushiSyncServer {
         return shelf.Response(400, body: 'Invalid video id');
       }
       final String title =
-          _decodeHeaderValue(request, 'x-hibiki-video-title') ?? id;
+          _decodeHeaderValue(request, kVideoTitleHeader) ?? id;
       final String? fileName =
-          _decodeHeaderValue(request, 'x-hibiki-video-filename');
+          _decodeHeaderValue(request, kVideoFilenameHeader);
       final Directory tmpDir =
-          Directory.systemTemp.createTempSync('hibiki_video_in');
+          Directory.systemTemp.createTempSync('fushi_video_in');
       final File tmp = File(p.join(tmpDir.path, 'upload.bin'));
       final IOSink sink = tmp.openWrite();
       try {
@@ -477,6 +733,74 @@ extension _FushiSyncServerVideo on FushiSyncServer {
     return null;
   }
 
+  /// `GET .../graphicsubtitle` 的处理：反查文件 → 按流号找轨（必须是图形轨）→ 交注入
+  /// 的抽取实现 → 原样回传整轨字节。
+  Future<shelf.Response> _handleGraphicSubtitleTrack(
+    FushiLibraryHostService service,
+    shelf.Request request,
+    String id,
+  ) async {
+    final GraphicSubtitleTrackExporter? exporter = graphicSubtitleTrackExporter;
+    if (exporter == null) {
+      return shelf.Response(501, body: 'Graphic subtitle export not available');
+    }
+    final int? streamIndex = int.tryParse(
+      request.url.queryParameters['embeddedStreamIndex'] ?? '',
+    );
+    if (streamIndex == null || streamIndex < 0) {
+      return shelf.Response(400, body: 'embeddedStreamIndex required');
+    }
+    final int episodeIndex = _episodeIndexFromRequest(request);
+    final File? videoFile =
+        await service.resolveVideoFile(id, episodeIndex: episodeIndex);
+    if (videoFile == null) return shelf.Response.notFound('Video not found');
+    EmbeddedSubtitleTrack? track;
+    for (final EmbeddedSubtitleTrack candidate
+        in await listEmbeddedSubtitleTracks(videoFile.path)) {
+      if (candidate.streamIndex == streamIndex) {
+        track = candidate;
+        break;
+      }
+    }
+    // 文本轨有 `/subtitle`（转出可查词的文字），这里只接图形轨。
+    if (track == null || subtitleFormatForCodec(track.codec) != null) {
+      return shelf.Response.notFound('Graphic subtitle track not found');
+    }
+    final GraphicSubtitleTrackExport? export;
+    try {
+      export = await exporter(
+        videoPath: videoFile.path,
+        streamIndex: track.streamIndex,
+        codec: track.codec,
+      );
+    } on GraphicSubtitleTrackExportUnsupported catch (e) {
+      return shelf.Response(415,
+          body: 'Unsupported graphic subtitle: ${e.codec}');
+    } catch (e) {
+      fushiDebugPrint('graphic subtitle export failed: $e');
+      return shelf.Response(500, body: 'Graphic subtitle export failed');
+    }
+    if (export == null || !export.file.existsSync()) {
+      return shelf.Response(500, body: 'Graphic subtitle export failed');
+    }
+    // `?part=header`：轨头 JSON（VobSub 调色板 / DVB 页号等载荷里没有的 extradata）；
+    // 这条轨没有轨头（PGS）时 404。缺省回载荷。两次请求命中抽取实现的同一份缓存。
+    final bool wantsHeader = request.url.queryParameters['part'] == 'header';
+    final File? file = wantsHeader ? export.headerFile : export.file;
+    if (file == null || !file.existsSync()) {
+      return shelf.Response.notFound('Graphic subtitle track header not found');
+    }
+    return shelf.Response.ok(
+      file.openRead(),
+      headers: <String, String>{
+        'Content-Type':
+            wantsHeader ? 'application/json' : 'application/octet-stream',
+        'Content-Length': '${file.lengthSync()}',
+        'X-Fushi-Graphic-Subtitle-Format': export.format,
+      },
+    );
+  }
+
   Future<File?> _resolveVideoCover(
     FushiLibraryHostService service,
     String id,
@@ -519,6 +843,224 @@ extension _FushiSyncServerVideo on FushiSyncServer {
       _videoStreamTokens.remove(oldestKey);
     }
   }
+
+  /// 本 host 此刻认不认转码请求：用户开关 ∧ 本机能 exec ffmpeg 子进程。
+  ///
+  /// 每次请求实时读偏好（而不是启动时快照一次）——用户在设置里关掉之后不该还要重启
+  /// 互联服务才生效。
+  bool get _videoTranscodeEnabled =>
+      readInterconnectTranscodeEnabled(_prefs) && transcodeAvailable();
+
+  /// 转码 HLS 的三条子路径：playlist / 初始化段 / 分段。
+  ///
+  /// 共用一次 token 校验与文件反查。token 里没有画质档 = 这条流当初就没按转码签发，
+  /// 一律 404——不给「拿一个直传 token 去点转码」的路径。
+  Future<shelf.Response> _handleTranscodeHls(
+    FushiLibraryHostService svc,
+    shelf.Request request,
+    String videoId,
+    String suffix,
+  ) async {
+    _pruneVideoTokens();
+    final String? tokenValue = request.url.queryParameters['token'];
+    if (tokenValue == null || tokenValue.isEmpty) {
+      return shelf.Response(401,
+          body: 'Missing token',
+          headers: <String, String>{'Content-Type': 'text/plain'});
+    }
+    final _VideoStreamToken? tok = _videoStreamTokens[tokenValue];
+    if (tok == null || tok.videoId != videoId) {
+      return shelf.Response(403,
+          body: 'Invalid or expired token',
+          headers: <String, String>{'Content-Type': 'text/plain'});
+    }
+    final VideoTranscodeProfile? profile = tok.transcodeProfile;
+    final int durationMs = tok.transcodeDurationMs ?? 0;
+    if (profile == null || durationMs <= 0) {
+      return shelf.Response.notFound('Not a transcoded stream');
+    }
+    final File? file =
+        await svc.resolveVideoFile(videoId, episodeIndex: tok.episodeIndex);
+    if (file == null) return shelf.Response.notFound('Video not found');
+
+    if (suffix == 'hls.m3u8') {
+      // 分段 URI 用相对形式：playlist 自己的路径是
+      // `/api/library/videos/<id>/hls.m3u8`，于是 `hlsseg.ts?...` 会被播放器解析成
+      // `/api/library/videos/<id>/hlsseg.ts?...`——不必在这里重建 host/端口/协议，
+      // 也就不会在反代或多网卡后面拼出一个对端连不上的绝对地址。扩展名不可省
+      // （见上面路由处的 BUG-2630 说明）。
+      final String tokenQuery = 'token=${Uri.encodeQueryComponent(tokenValue)}';
+      final String playlist = buildTranscodeHlsPlaylist(
+        durationMs: durationMs,
+        segmentUri: (int index) =>
+            '$kTranscodeSegmentPathSuffix?$tokenQuery&n=$index',
+      );
+      return shelf.Response.ok(
+        playlist,
+        headers: <String, String>{
+          'Content-Type': 'application/vnd.apple.mpegurl',
+          'Cache-Control': 'no-store',
+        },
+      );
+    }
+
+    final int? index = int.tryParse(request.url.queryParameters['n'] ?? '');
+    final int count = transcodeSegmentCount(durationMs);
+    if (index == null || index < 0 || index >= count) {
+      return shelf.Response.notFound('Segment out of range');
+    }
+    final Uint8List? segment = await _runTranscode(
+      () => transcodeSegment(
+        inputPath: file.path,
+        profile: profile,
+        index: index,
+        durationMs: durationMs,
+        audioStreamIndex: tok.transcodeAudioStreamIndex,
+      ),
+    );
+    if (segment == null) {
+      return shelf.Response(503, body: 'Transcoder unavailable');
+    }
+    return _transcodedBytesResponse(segment);
+  }
+
+  /// 蓝光标题的第 n 个码流。token 绑定视频与集（与 `/stream` 同一张 token），段号
+  /// 只能落在这条标题自己的段表里——URL 持有者拿不到盘上别的文件。
+  Future<shelf.Response> _handleBlurayClip(
+    FushiLibraryHostService svc,
+    shelf.Request request,
+    String videoId,
+  ) async {
+    _pruneVideoTokens();
+    final String? tokenValue = request.url.queryParameters['token'];
+    if (tokenValue == null || tokenValue.isEmpty) {
+      return shelf.Response(401,
+          body: 'Missing token',
+          headers: <String, String>{'Content-Type': 'text/plain'});
+    }
+    final _VideoStreamToken? tok = _videoStreamTokens[tokenValue];
+    if (tok == null || tok.videoId != videoId) {
+      return shelf.Response(403,
+          body: 'Invalid or expired token',
+          headers: <String, String>{'Content-Type': 'text/plain'});
+    }
+    final File? file =
+        await svc.resolveVideoFile(videoId, episodeIndex: tok.episodeIndex);
+    if (file == null) return shelf.Response.notFound('Video not found');
+    final BlurayTitleStreams? disc = await readBlurayTitleStreams(file.path);
+    if (disc == null) return shelf.Response.notFound('Not a Blu-ray title');
+    final int? index = int.tryParse(request.url.queryParameters['n'] ?? '');
+    if (index == null || index < 0 || index >= disc.streamPaths.length) {
+      return shelf.Response.notFound('Clip out of range');
+    }
+    final File stream = File(disc.streamPaths[index]);
+    if (!stream.existsSync()) return shelf.Response.notFound('Clip missing');
+
+    final BlurayClipLease lease;
+    try {
+      lease = await _blurayClipRelays.acquire(tokenValue, stream.path);
+    } on Object catch (e) {
+      // 加密但缺密钥 / 盘型不支持 / iOS 不装配解密：如实报，不发密文。
+      engineLog.logDiagnostic('FushiSyncServer.blurayClip', e);
+      return shelf.Response(409, body: 'Blu-ray clip cannot be decrypted');
+    }
+    if (lease.source == stream.path) {
+      lease.release();
+      return serveFileWithRange(
+        stream,
+        request,
+        etag: videoFileEtag(stream),
+        ifRangeRequired: false,
+      );
+    }
+    return _proxyDecryptedClip(lease, request);
+  }
+
+  /// 把分段请求转给本次播放的解密回环（Range 原样透传），响应体结束或播放器断开时
+  /// 释放 [lease]。回环在本机，一律直连，不走应用代理。
+  Future<shelf.Response> _proxyDecryptedClip(
+    BlurayClipLease lease,
+    shelf.Request request,
+  ) async {
+    final HttpClient client = HttpClient()
+      ..findProxy = ((_) => 'DIRECT')
+      ..connectionTimeout = const Duration(seconds: 30);
+    void finish() {
+      client.close(force: true);
+      lease.release();
+    }
+
+    final HttpClientResponse upstream;
+    try {
+      final HttpClientRequest forward = await client.getUrl(
+        Uri.parse(lease.source),
+      );
+      final String? range = request.headers['range'];
+      if (range != null) forward.headers.set(HttpHeaders.rangeHeader, range);
+      upstream = await forward.close();
+    } on Object catch (e) {
+      finish();
+      engineLog.logDiagnostic('FushiSyncServer.blurayClipProxy', e);
+      return shelf.Response(502, body: 'Blu-ray clip relay unavailable');
+    }
+    // 回环读盘卡死（光驱停转、盘坏道）时截断这次响应，别让它永远占着本次播放的解密
+    // 会话。播放器背压暂停读取时 `timeout` 会停表，不会误截正在播的流。
+    Stream<List<int>> body() async* {
+      try {
+        yield* upstream.timeout(
+          _kBlurayClipStallTimeout,
+          onTimeout: (EventSink<List<int>> sink) => sink.close(),
+        );
+      } finally {
+        finish();
+      }
+    }
+
+    return shelf.Response(
+      upstream.statusCode,
+      body: body(),
+      headers: <String, String>{
+        'Content-Type': 'video/mp2t',
+        'Accept-Ranges': 'bytes',
+        'Cache-Control': 'no-store',
+        for (final String name in const <String>[
+          HttpHeaders.contentLengthHeader,
+          HttpHeaders.contentRangeHeader,
+        ])
+          if (upstream.headers.value(name) case final String value)
+            name: value,
+      },
+    );
+  }
+
+  /// 跑一次转码，把「转码器自身出问题」收敛成 null（由调用方回 503）。
+  ///
+  /// 分成两类如实处理：[ProcessException] 是 ffmpeg 根本起不来（被删了 / 覆盖路径指
+  /// 错），[TranscodeFailure] 是它起来了但退出码非 0（源文件装不进解码器之类）。两者
+  /// 都不该把整个 host 请求处理拖垮，但也都不能装作成功返回空字节——空段在播放器那头
+  /// 表现为黑屏转圈，没人能从中看出 host 缺 ffmpeg。
+  Future<Uint8List?> _runTranscode(Future<Uint8List?> Function() body) async {
+    try {
+      return await body();
+    } on ProcessException catch (e) {
+      fushiDebugPrint('transcode: ffmpeg not launchable: ${e.message}');
+      return null;
+    } on TranscodeFailure catch (e) {
+      fushiDebugPrint('transcode: $e');
+      return null;
+    }
+  }
+
+  shelf.Response _transcodedBytesResponse(Uint8List bytes) => shelf.Response.ok(
+        bytes,
+        headers: <String, String>{
+          'Content-Type': 'video/mp2t',
+          'Content-Length': '${bytes.length}',
+          // 转码产物不落盘也不复用：同一段再请求一次就再转一次。给 no-store 是为了
+          // 别让中间层缓存下一份「按某个画质档转出来的字节」再回给另一个档。
+          'Cache-Control': 'no-store',
+        },
+      );
 }
 
 // ── 本域私有的顶层 helper（原 FushiSyncServer 的 private static；extension 体内看不到
@@ -529,6 +1071,13 @@ extension _FushiSyncServerVideo on FushiSyncServer {
 /// GET /stream 消费侧——只 GET /streamurl 却从不取流的调用者会让
 /// [_videoStreamTokens] 无界堆积（6 小时 TTL 内每次签发都是净增长）。
 const int _maxVideoStreamTokens = 128;
+
+/// 蓝光加密段转发：解密回环在这么久里一个字节都没给出就截断本次响应。
+const Duration _kBlurayClipStallTimeout = Duration(seconds: 60);
+
+/// 光盘标题制卡抽帧用的低清转码档（制卡 GIF / 截图只要小图，见 `miningVideoUrl`）。
+const VideoTranscodeProfile _kDiscMiningTranscodeProfile =
+    VideoTranscodeProfile(maxWidth: 640, maxBitrate: 1000000);
 
 // ── 视频端点（P4-2）──────────────────────────────────────────────────────────
 

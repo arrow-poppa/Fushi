@@ -9,6 +9,7 @@ import 'package:meta/meta.dart';
 
 import 'lapis_blocks.dart';
 import 'card_source_link.dart';
+import 'mining_request_overrides.dart';
 
 class AnkiDeck {
   const AnkiDeck({required this.id, required this.name});
@@ -74,9 +75,9 @@ AnkiOverwriteScope ankiOverwriteScopeFromName(String? name) {
 /// 查重（以及据同一条件反查已存在卡）的**搜索范围**。
 ///
 /// 用户痛点：Anki 的 `deck:X` 搜索包含 X 的子卡组，但**不包含**它的父卡组与兄弟
-/// 子卡组。所以把制卡目标选成 `Lapis::Vocab` 时，Hibiki 只能查到这个子卡组里的卡；
+/// 子卡组。所以把制卡目标选成 `Lapis::Vocab` 时，Fushi 只能查到这个子卡组里的卡；
 /// 同一个词早先制在 `Lapis::Sentences` 或 `Lapis` 本身，就查不到、被当成新词。
-/// Yomitan 对此有 duplicate scope 设置，Hibiki 之前恒等于 [deck]。
+/// Yomitan 对此有 duplicate scope 设置，Fushi 之前恒等于 [deck]。
 ///
 /// - [deck]（默认，等于旧行为）：只查当前选中的卡组（含其子卡组）。
 /// - [deckRoot]：查当前卡组的**根卡组**及其全部子卡组（`Lapis::Vocab` → `Lapis`），
@@ -223,6 +224,10 @@ class AnkiSettings {
     this.repositionAggregate = 'harmonic',
     this.repositionRareFirst = false,
     this.autoRepositionEnabled = false,
+    this.batchMiningEnabled = false,
+    this.useAnkiSyncClient = false,
+    this.autoLaunchAnkiDesktop = false,
+    this.ankiDesktopExecutable = '',
   });
 
   factory AnkiSettings.fromJson(Map<String, dynamic> json) => AnkiSettings(
@@ -288,6 +293,12 @@ class AnkiSettings {
     // 缺键 = 老装置升级上来：自动重排默认关，升级不会凭空获得
     // 一条会动 Anki 新卡队列位置的自动路径。
     autoRepositionEnabled: json['autoRepositionEnabled'] as bool? ?? false,
+    // 缺键 = 老装置：制卡照旧直接送 Anki。
+    batchMiningEnabled: json['batchMiningEnabled'] as bool? ?? false,
+    useAnkiSyncClient: json['useAnkiSyncClient'] as bool? ?? false,
+    // 缺键 = 老装置：启动 Fushi 不会凭空多拉起一个程序。
+    autoLaunchAnkiDesktop: json['autoLaunchAnkiDesktop'] as bool? ?? false,
+    ankiDesktopExecutable: json['ankiDesktopExecutable'] as String? ?? '',
   );
   final int? selectedDeckId;
   final String? selectedDeckName;
@@ -298,7 +309,7 @@ class AnkiSettings {
   final Map<String, String> fieldMappings;
   final String tags;
 
-  /// 是否给每张 Hibiki 制出的卡片追加固定的 `hibiki` 默认标签（TODO-117 开关）。
+  /// 是否给每张 Fushi 制出的卡片追加固定的 `fushi` 默认标签（TODO-117 开关）。
   /// 默认 `true`（保持 TODO-115/062 现状）。
   final bool tagIncludeHibiki;
 
@@ -340,19 +351,19 @@ class AnkiSettings {
   bool get ankiConnectUsableOnMobile =>
       useAnkiConnectOnMobile && ankiConnectApiKey.trim().isNotEmpty;
 
-  /// Lapis 卡片字号整体缩放百分比（100 = 原样）。只影响 Hibiki 推送的
+  /// Lapis 卡片字号整体缩放百分比（100 = 原样）。只影响 Fushi 推送的
   /// styling 用户区段，不写卡片数据。
   final int lapisFontScalePercent;
 
   /// 追加到 Lapis styling 用户区段的自由 CSS（客制化显示效果）。
   final String lapisCustomCss;
 
-  /// Hibiki 上次成功推送到 Anki 的 Lapis styling 指纹（sha256）。null =
+  /// Fushi 上次成功推送到 Anki 的 Lapis styling 指纹（sha256）。null =
   /// 本机从未推送。自动迁移用它区分「Anki 端还是我们写的内容（可安全更新）」
   /// 与「被用户手改（不得静默覆盖）」。
   final String? lapisAppliedCssSha;
 
-  /// Hibiki 上次把**出厂基线**（`LapisNoteType.template.css`）迁移到 Anki 时，
+  /// Fushi 上次把**出厂基线**（`LapisNoteType.template.css`）迁移到 Anki 时，
   /// 那份基线的指纹（sha256）。null = 本机从未记录过。
   ///
   /// 启动自动迁移的闸门（PR#457 审查 §10-3，用户拍板方案甲）：只有基线**真的
@@ -370,7 +381,7 @@ class AnkiSettings {
   /// 永远不会删掉卡片数据。
   final List<LapisCustomBlock> lapisCustomBlocks;
 
-  /// Hibiki 上次成功推送到 Anki 的**卡模板**指纹（sha256）。null = 本机从未推过
+  /// Fushi 上次成功推送到 Anki 的**卡模板**指纹（sha256）。null = 本机从未推过
   /// 模板。与 [lapisAppliedCssSha] 同一套语义、各管一边：模板写坏是「卡片内容
   /// 不显示」，比 CSS 写坏严重一个量级，必须有自己的「是不是我们写的」判据，
   /// 不能借用 CSS 的指纹。
@@ -384,7 +395,7 @@ class AnkiSettings {
   final int? lastMediaDedupScanAtMs;
 
   /// 是否启用媒体去重的自动处理。**默认 false**（用户拍板方案 A 的核心：
-  /// Hibiki 不会主动帮你省空间）；用户可以在设置页主动打开。
+  /// Fushi 不会主动帮你省空间）；用户可以在设置页主动打开。
   ///
   /// 打开之后的行为仍然保守：自动路径只做**干跑**并把清单提示给用户，
   /// 必须用户确认才真删——除非用户另外显式打开 [mediaDedupAutoDelete]。
@@ -416,6 +427,23 @@ class AnkiSettings {
   /// 必须是显式选择而不是升级送的。仅 AnkiConnect 后端真正生效
   /// （[BaseAnkiRepository.supportsDeckReposition]）。
   final bool autoRepositionEnabled;
+
+  /// 批量制卡：制卡时不直接送 Anki，一律先存进设备端待发队列，之后一次性发送。
+  /// 给「每张卡都要切到 AnkiMobile」的 iOS、切 app 很慢的墨水屏准备。默认关。
+  final bool batchMiningEnabled;
+
+  /// 用「Anki 同步客户端」后端：不经 AnkiConnect，由 Fushi 写本地库再同步到
+  /// AnkiWeb / 自建 Anki 同步服务器（本机要带 `fushi-anki-sync`，目前只有桌面）。
+  /// 默认关。
+  final bool useAnkiSyncClient;
+
+  /// 启动 Fushi 时若本机 AnkiConnect 没在监听，就把 Anki 桌面版拉起来（issue #1949）。
+  /// 默认关。判据与启动逻辑见 `AnkiDesktopLauncher.autoLaunchOnStartup`。
+  final bool autoLaunchAnkiDesktop;
+
+  /// Anki 桌面版的入口程序路径（Windows 的 `anki.exe`、macOS 的 `Anki.app`）。
+  /// 空 = 未配置：macOS / Linux 回退到系统标准入口，Windows 无法启动。
+  final String ankiDesktopExecutable;
 
   bool get isConfigured => selectedDeckId != null && selectedNoteTypeId != null;
 
@@ -498,6 +526,10 @@ class AnkiSettings {
     String? repositionAggregate,
     bool? repositionRareFirst,
     bool? autoRepositionEnabled,
+    bool? batchMiningEnabled,
+    bool? useAnkiSyncClient,
+    bool? autoLaunchAnkiDesktop,
+    String? ankiDesktopExecutable,
   }) => AnkiSettings(
     selectedDeckId: clearSelectedDeck
         ? null
@@ -552,6 +584,10 @@ class AnkiSettings {
     repositionAggregate: repositionAggregate ?? this.repositionAggregate,
     repositionRareFirst: repositionRareFirst ?? this.repositionRareFirst,
     autoRepositionEnabled: autoRepositionEnabled ?? this.autoRepositionEnabled,
+    batchMiningEnabled: batchMiningEnabled ?? this.batchMiningEnabled,
+    useAnkiSyncClient: useAnkiSyncClient ?? this.useAnkiSyncClient,
+    autoLaunchAnkiDesktop: autoLaunchAnkiDesktop ?? this.autoLaunchAnkiDesktop,
+    ankiDesktopExecutable: ankiDesktopExecutable ?? this.ankiDesktopExecutable,
   );
 
   Map<String, dynamic> toJson() => {
@@ -592,6 +628,10 @@ class AnkiSettings {
     'repositionAggregate': repositionAggregate,
     'repositionRareFirst': repositionRareFirst,
     'autoRepositionEnabled': autoRepositionEnabled,
+    'batchMiningEnabled': batchMiningEnabled,
+    'useAnkiSyncClient': useAnkiSyncClient,
+    'autoLaunchAnkiDesktop': autoLaunchAnkiDesktop,
+    'ankiDesktopExecutable': ankiDesktopExecutable,
   };
 }
 
@@ -612,10 +652,27 @@ class AnkiMiningPayload {
     this.popupSelectionText = '',
     this.glossarySelectionHighlighted = false,
     this.aiExplanation = '',
+    this.allowDuplicate = false,
     this.audio = '',
     this.selectedDictionary = '',
     this.dictionaryMedia = const [],
+    this.overrides,
   });
+
+  /// [allowDuplicate] 在 wire 上的键名（应用内桥的 `Map<String, String>` 与远端
+  /// `/api/mine/forward` 的 `rawPayloadJson` 都用它）。
+  static const String allowDuplicateKey = 'allowDuplicate';
+
+  /// 给一份弹窗字段拍上「用户已裁决：就是要再加一张」的标记（BUG-2605）。
+  ///
+  /// 「卡已在 Anki」对话框的「新增为重复卡」按钮此前直接复用普通制卡回调，而两后端的
+  /// `addNote` 只看 [AnkiSettings.allowDupes]（默认关）——用户明明选了「新增」，
+  /// AnkiConnect 仍回 `cannot create note because it is a duplicate`、AnkiDroid 仍在
+  /// `checkForDuplicates` 处拦掉，按钮等于没有。标记走 payload 而不是改 `mineEntry`
+  /// 签名：制卡请求本来就以这份 map 为唯一载体，互联「制卡到服务端」转发的也是它，
+  /// 主机侧 `fromJson` 原样认得，不需要另铺一条 wire 字段。
+  static Map<String, String> withAllowDuplicate(Map<String, String> fields) =>
+      <String, String>{...fields, allowDuplicateKey: 'true'};
 
   /// 本 payload 走**两条**线，编码不同，`fromJson` 必须对两条都成立：
   ///
@@ -687,9 +744,11 @@ class AnkiMiningPayload {
         json['glossarySelectionHighlighted'],
       ),
       aiExplanation: json['aiExplanation'] as String? ?? '',
+      allowDuplicate: _boolFromPayloadWire(json[allowDuplicateKey]),
       audio: json['audio'] as String? ?? '',
       selectedDictionary: json['selectedDictionary'] as String? ?? '',
       dictionaryMedia: dictionaryMedia,
+      overrides: MiningRequestOverrides.readFrom(json),
     );
   }
   final String expression;
@@ -725,9 +784,24 @@ class AnkiMiningPayload {
   /// 文案进了卡片就是永久污染，而且制卡当时没人会发现。旧 payload 没有这个键 →
   /// 空串 → 行为逐字节不变。
   final String aiExplanation;
+  /// 用户在「卡已在 Anki」对话框里明确选了「新增为重复卡」（BUG-2605）。
+  ///
+  /// 三个后端的 `addNote` 都以 `settings.allowDupes || allowDuplicate` 决定是否放行
+  /// 重复：这是**单次请求**的裁决，不改用户的全局「允许重复」偏好。旧 payload 没有
+  /// 这个键 → `false` → 行为逐字节不变。见 [withAllowDuplicate]。
+  final bool allowDuplicate;
   final String audio;
   final String selectedDictionary;
   final List<DictionaryMedia> dictionaryMedia;
+
+  /// 「高级制卡」对话框里用户为**这一张卡**做的调整（卡组 / 音频 / 卡图等）。
+  ///
+  /// 与 [allowDuplicate] 同一先例：这是**单次请求**的裁决，随 fields map 走
+  /// （键 [MiningRequestOverrides.wireKey]），所以待发队列、互联转发、暂存都不必另铺
+  /// 字段；不改用户的任何全局设置。旧 payload 没有这个键（或解析失败 / 什么都没改）
+  /// → `null` → 行为逐字节不变。后端只在这里读卡组覆盖，见
+  /// `AnkiNoteComposer.resolveTargetDeck`。
+  final MiningRequestOverrides? overrides;
 }
 
 class DictionaryMedia {
@@ -751,9 +825,9 @@ class DictionaryMedia {
 /// 制卡来源类别：用于给卡片追加分类标签（书籍 vs 视频）。
 ///
 /// 与 `kStatSourceBook`/`kStatSourceVideo`（主 app 的统计/收藏来源标识）一一对应，
-/// 但 hibiki_anki 是独立包不能依赖主 app，故在此重新声明一个无关枚举；调用方
+/// 但 fushi_anki 是独立包不能依赖主 app，故在此重新声明一个无关枚举；调用方
 /// （reader/video/mixin）在构造 [AnkiMiningContext] 时按各自的 `dictionarySourceType`
-/// 映射进来。`null`（未指定）时不追加任何分类标签，只保留固定的 `hibiki` 标签。
+/// 映射进来。`null`（未指定）时不追加任何分类标签，只保留固定的 `fushi` 标签。
 enum AnkiMiningSource {
   /// 书籍/EPUB 阅读、独立查词页、有声书 —— 归「书籍」分类标签。
   book,
@@ -804,7 +878,7 @@ class AnkiMiningContext {
   /// 或无标题时为 `null`，[BaseAnkiRepository.buildNoteTags] 不追加。
   ///
   /// 为什么放 context 而非 [AnkiSettings]：开关真值源是主 app 的
-  /// `PreferencesRepository.autoAddBookNameToTags`，而 hibiki_anki 是独立包不能依赖主
+  /// `PreferencesRepository.autoAddBookNameToTags`，而 fushi_anki 是独立包不能依赖主
   /// app；标题来源也按来源不同（书=书名 / 视频=番名）。故由调用方读开关 + 取标题 + 清洗后
   /// 注入，本包只负责按既有 [buildNoteTags] 去重规则追加，与 `book`/`video` 分类标签同构。
   final String? bookTitleTag;
@@ -825,7 +899,7 @@ class AnkiMiningContext {
   /// 不追加——宁可不打标签，也不打一个 `chars_0` 冒充书首。
   ///
   /// 与 [bookTitleTag] / [collectionTag] 同构：真值源（`countStudyChars` 口径的章内锚 +
-  /// 每章累计前缀）都在主 app 的阅读器 state 里，hibiki_anki 是独立包拿不到，故由调用方
+  /// 每章累计前缀）都在主 app 的阅读器 state 里，fushi_anki 是独立包拿不到，故由调用方
   /// 算好字面量后注入，本包只负责按既有去重规则追加。
   final String? charPositionTag;
 
@@ -900,6 +974,11 @@ class AnkiHandlebarRenderer {
   static final _handlebarRegex = RegExp(r'\{[^}]*\}');
   static const _singleGlossaryPrefix = '{single-glossary-';
 
+  /// `{glossary-first-<n>}`：前 n 本词典的释义（`{glossary-first}` 的多本版）。
+  static final RegExp _glossaryFirstNPattern = RegExp(
+    r'^\{glossary-first-(\d+)\}$',
+  );
+
   static String render(
     String template,
     AnkiMiningPayload payload,
@@ -927,6 +1006,13 @@ class AnkiHandlebarRenderer {
         handlebar.length - 1,
       );
       return _singleGlossaryForDictionary(payload, dictionary);
+    }
+    final RegExpMatch? firstN = _glossaryFirstNPattern.firstMatch(handlebar);
+    if (firstN != null) {
+      // 用户手写模板里的超长数字（溢出 int64）不能让整张卡制卡失败：
+      // 解析不了就当作无效 handlebar，与未知 handlebar 同样给空串。
+      final int? count = int.tryParse(firstN.group(1)!);
+      return count == null ? '' : _firstGlossaries(payload, count);
     }
     switch (handlebar) {
       case '{expression}':
@@ -997,6 +1083,7 @@ class AnkiHandlebarRenderer {
       // {card-image} 是通用图片键（书籍封面 / 视频 GIF 共用，语义中性、名副其实）：
       // 阅读器场景 coverPath 是书籍封面，视频场景 coverPath 是 GIF/降级帧（见 video
       // lookup_mining）。这是 Lapis Picture 字段的默认映射（TODO-1298）。
+      case '{card-video}':
       case '{card-image}':
         return context.coverPath ?? '';
       // {book-cover} / {video-clip} 是 {card-image} 的旧别名（历史命名），保留以兼容
@@ -1062,14 +1149,42 @@ class AnkiHandlebarRenderer {
     AnkiMiningPayload payload,
     String dictionary,
   ) {
-    if (dictionary.isEmpty) return '';
-    final direct = payload.singleGlossaries[dictionary];
-    if (direct != null) return direct;
+    final String? key = _singleGlossaryKeyForDictionary(payload, dictionary);
+    return key == null ? '' : payload.singleGlossaries[key]!;
+  }
+
+  /// [dictionary] 在 [AnkiMiningPayload.singleGlossaries] 里对应的键：先精确命中，
+  /// 再按去掉 `[n]` 后缀的归一化名命中；查不到返回 null。
+  static String? _singleGlossaryKeyForDictionary(
+    AnkiMiningPayload payload,
+    String dictionary,
+  ) {
+    if (dictionary.isEmpty) return null;
+    if (payload.singleGlossaries.containsKey(dictionary)) return dictionary;
     final normalized = _normalizeDictionaryName(dictionary);
-    for (final entry in payload.singleGlossaries.entries) {
-      if (_normalizeDictionaryName(entry.key) == normalized) return entry.value;
+    for (final String key in payload.singleGlossaries.keys) {
+      if (_normalizeDictionaryName(key) == normalized) return key;
     }
-    return '';
+    return null;
+  }
+
+  /// `{glossary-first-<n>}`：前 [count] 本词典的释义，按弹窗里的词典顺序拼接。
+  ///
+  /// 与 `{glossary-first}` 同一套「选中优先」（BUG-1035）：长按选中的那本排第一，
+  /// 其余按原顺序补足到 [count] 本；没选中就是纯粹的前 [count] 本。词典不足
+  /// [count] 本时有几本给几本。`singleGlossaries` 为空（只带 glossaryFirst 的旧
+  /// 发送端）时退回 glossaryFirst，不产出空字段。每本已是独立的
+  /// `.yomitan-glossary` 块（各自带 `<ol>` 与词典样式），直接相接即可。
+  static String _firstGlossaries(AnkiMiningPayload payload, int count) {
+    if (payload.singleGlossaries.isEmpty) return payload.glossaryFirst;
+    final String? selectedKey = _singleGlossaryKeyForDictionary(
+      payload,
+      payload.selectedDictionary,
+    );
+    return <String>[
+      if (selectedKey != null) selectedKey,
+      ...payload.singleGlossaries.keys.where((String k) => k != selectedKey),
+    ].take(count).map((String k) => payload.singleGlossaries[k]!).join();
   }
 
   static String _normalizeDictionaryName(String name) =>
@@ -1114,6 +1229,8 @@ class AnkiHandlebarOptions {
     '{audio}',
     '{glossary}',
     '{glossary-first}',
+    '{glossary-first-2}',
+    '{glossary-first-3}',
     '{selected-glossary}',
     '{popup-selection-text}',
     '{ai-explanation}',
@@ -1128,6 +1245,7 @@ class AnkiHandlebarOptions {
     '{source-link}',
     '{clip-timestamp}',
     '{card-image}',
+    '{card-video}',
     '{book-cover}',
     '{video-clip}',
     '{sentence-audio}',
@@ -1194,20 +1312,47 @@ class AnkiHandlebarOptions {
     Map<String, String> fieldMappings,
   ) => anyFieldConsumesToken(fieldMappings, '{sentence-audio}');
 
+  /// A single native sentence-audio reference is required for managed video.
+  /// Returns null for absent consumers, repeated tokens, or multiple fields.
+  static String? singleSentenceAudioField(Map<String, String> fieldMappings) {
+    const String token = '{sentence-audio}';
+    String? field;
+    for (final MapEntry<String, String> entry in fieldMappings.entries) {
+      final int count = token.allMatches(entry.value).length;
+      if (count == 0) continue;
+      if (count != 1 || field != null) return null;
+      field = entry.key;
+    }
+    return field;
+  }
+
   /// 是否有字段消费卡片图片（`{card-image}` 或语义等价的旧别名 `{book-cover}` /
   /// `{video-clip}`）。三者任一被引用即视为「卡片图片有去处」，避免把 TODO-1298
   /// 改名前建的、Picture 仍映射到旧别名 `{book-cover}` 的老配置误报成未映射（与
   /// [AnkiHandlebarRenderer.render] 同一套别名语义：三者都渲染 context.coverPath）。
   static bool anyFieldConsumesCardImage(Map<String, String> fieldMappings) =>
-      anyFieldConsumesToken(fieldMappings, '{card-image}') ||
-      anyFieldConsumesToken(fieldMappings, '{book-cover}') ||
-      anyFieldConsumesToken(fieldMappings, '{video-clip}');
+      cardImageFieldNames(fieldMappings).isNotEmpty;
+
+  /// 卡片图片 token 及其旧别名（见 [anyFieldConsumesCardImage]）。
+  static const List<String> cardImageTokens = <String>[
+    '{card-image}',
+    '{card-video}',
+    '{book-cover}',
+    '{video-clip}',
+  ];
+
+  /// 映射里消费卡片图片的**字段名**（按 [fieldMappings] 原有顺序）。
+  static List<String> cardImageFieldNames(Map<String, String> fieldMappings) =>
+      <String>[
+        for (final MapEntry<String, String> e in fieldMappings.entries)
+          if (cardImageTokens.any(e.value.contains)) e.key,
+      ];
 }
 
 /// 扩展名（小写、不含点）→ MIME（**镜像副本**，命名统一轮 G8）。
 ///
-/// 真相源是 hibiki_core `kMimeTypeByExtension`（单一 MIME 映射表）。hibiki_anki
-/// 是刻意无 hibiki_core 依赖的独立模块，无法直接查那张表，故持有此逐项镜像；
+/// 真相源是 fushi_core `kMimeTypeByExtension`（单一 MIME 映射表）。fushi_anki
+/// 是刻意无 fushi_core 依赖的独立模块，无法直接查那张表，故持有此逐项镜像；
 /// `fushi/test/sync/mime_types_test.dart` 的守卫测试锁定两表完全一致——改动任一侧
 /// 必须同步另一侧，否则该测试红。
 const Map<String, String> kAnkiMimeTypeByExtension = <String, String>{
@@ -1226,7 +1371,7 @@ const Map<String, String> kAnkiMimeTypeByExtension = <String, String>{
   'png': 'image/png',
   'gif': 'image/gif',
   'webp': 'image/webp',
-  // 制卡封面动图的默认格式（`MiningAnimatedFormat.avif`），见 hibiki_core 侧同项注释。
+  // 制卡封面动图的默认格式（`MiningAnimatedFormat.avif`），见 fushi_core 侧同项注释。
   'avif': 'image/avif',
   'svg': 'image/svg+xml',
   // ── 字体 ──
@@ -1267,7 +1412,7 @@ const Map<String, String> kAnkiMimeTypeByExtension = <String, String>{
 };
 
 /// 按 [path] 的扩展名推断 Anki 媒体上传的 MIME；无扩展名或未知扩展名回退
-/// application/octet-stream。查 [kAnkiMimeTypeByExtension]（hibiki_core 单一
+/// application/octet-stream。查 [kAnkiMimeTypeByExtension]（fushi_core 单一
 /// MIME 表的镜像，见其 doc）。
 String mimeTypeForPath(String path) {
   int slash = -1;
@@ -1435,6 +1580,13 @@ String ankiInlineMediaReference(String addMediaResult) {
   return addMediaResult;
 }
 
+/// 旧格式释义 HTML 的外字中和兜底（BUG-2825 起只剩兼容职责）。
+///
+/// 现行 popup.js 导出已按 Yomitan 形态内联 structured-content 样式并剥掉
+/// `structured-content` / `gloss-*` class，新导出不含 `gloss-image`，门控不会命中，
+/// 字段原样返回。保留它只为旧版对端（互联制卡里尚未升级的 popup.js）发来的
+/// 仍带 `gloss-*` class 的 HTML：那种 HTML 会让词典自带 CSS 在卡片上生效，
+/// 需要这层中和样式压住外字框。旧版对端全部升级后可删。
 String normalizeAnkiDictionaryHtml(String value) {
   if (!value.contains('data-sc-img') || !value.contains('gloss-image')) {
     return value;
@@ -1581,6 +1733,13 @@ class AnkiErrorCode {
   /// 牌组/笔记类型」：那会把用户自己的牌组当成 Lapis 选中、套上 Lapis 的字段映射，
   /// 还照样报「创建成功」。用户看到的就是「点了创建，选中的却是我自己的牌组」。
   static const String lapisSetupMissing = 'ANKI_LAPIS_SETUP_MISSING';
+
+  /// 「Anki 同步客户端」后端（Fushi 自己写本地库再同步到 AnkiWeb / 自建服务器）
+  /// 还没登录同步服务器。
+  static const String syncClientSignedOut = 'ANKI_SYNC_SIGNED_OUT';
+
+  /// 本机找不到 `fushi-anki-sync`（这个平台 / 安装包没带它）。
+  static const String syncClientUnavailable = 'ANKI_SYNC_UNAVAILABLE';
 }
 
 sealed class AnkiFetchResult {
@@ -1608,7 +1767,9 @@ class AnkiFetchError extends AnkiFetchResult {
   final String? code;
 }
 
-enum MineResult { success, duplicate, notConfigured, error }
+/// [queued]：卡没有送到 Anki，而是存进了设备端的待发制卡队列（后端不可达，或
+/// 用户开了批量模式），稍后补发。它不是失败——卡没丢；也不是成功——Anki 里还没有。
+enum MineResult { success, duplicate, notConfigured, error, queued }
 
 /// 制卡（mineEntry）的结果。
 ///
@@ -1619,7 +1780,7 @@ enum MineResult { success, duplicate, notConfigured, error }
 ///
 /// BUG-089：旧实现 `mineEntry` 返回裸 `MineResult.error`，把真实失败原因丢在
 /// 各后端的 `debugPrint`（默认不落 ErrorLogService），用户既看不到 toast 原因、
-/// 错误日志页也查不到。hibiki_anki 是独立包、不能直接引用主 app 的
+/// 错误日志页也查不到。fushi_anki 是独立包、不能直接引用主 app 的
 /// `ErrorLogService`，故把原因作为返回值带出，由主 app 负责记日志 + 展示。
 class MineOutcome {
   const MineOutcome(
@@ -1659,6 +1820,17 @@ class MineOutcome {
 
   const MineOutcome.duplicate()
     : result = MineResult.duplicate,
+      noteId = null,
+      deckName = null,
+      audioWarning = null,
+      errorDetail = null,
+      errorCode = null,
+      error = null,
+      stackTrace = null;
+
+  /// 已存入待发制卡队列（见 [MineResult.queued]）。
+  const MineOutcome.queued()
+    : result = MineResult.queued,
       noteId = null,
       deckName = null,
       audioWarning = null,

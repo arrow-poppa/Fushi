@@ -28,6 +28,8 @@ void main() {
         'buildMediaTrackingDestination()',
         'buildLookupDestination()',
         'buildCardCreationDestination()',
+        // 「模型」紧随制卡：LLM / OCR / 语音模型服务于查词与制卡（2026-10-13）。
+        'buildModelsDestination()',
         'buildDownloadsDestination()',
         'buildServicesDestination()',
         'buildProfilesDestination()',

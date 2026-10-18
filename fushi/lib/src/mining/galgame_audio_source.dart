@@ -248,6 +248,25 @@ GalHookLaunchObservation? parseInjectorLaunchObservation(String stdout) {
   return result;
 }
 
+/// helper 在加载器初始化门里报告「目标正停在等用户操作的 UI 上」（`WAIT pid=<n>
+/// reason=user`）或该等待结束（`reason=none`）。返回最后一条的状态：true = 正在等用户，
+/// false = 等待结束，null = 这段输出里没有 WAIT 记录。
+///
+/// 典型现场是汉化补丁 / 壳在 TLS 回调里弹出的「确定」对话框（《千恋＊万花》光盘版
+/// SenrenBankaCHS.exe），它发生在游戏入口点之前：用户读多久都不该算注入超时。
+bool? parseInjectorUserWait(String stdout) {
+  bool? waiting;
+  for (final RegExpMatch match in RegExp(
+    r'^WAIT pid=(\d+) reason=(user|none)\r?$',
+    multiLine: true,
+  ).allMatches(stdout)) {
+    final int? pid = int.tryParse(match.group(1)!);
+    if (pid == null || pid <= 0) continue;
+    waiting = match.group(2) == 'user';
+  }
+  return waiting;
+}
+
 // One helper lifetime owns one wait. The user-controlled menu phase does not
 // consume the machine's injection budget. No duplicate record can renew the
 // game deadline or return from game injection to launcher waiting.
@@ -276,6 +295,20 @@ class _InjectorReadyWait {
     } else if (observation.launcherWait) {
       _waitingLauncher = true;
       _timer?.cancel();
+    }
+  }
+
+  bool _waitingUser = false;
+
+  /// 目标在初始化阶段等用户操作（helper 的 `WAIT reason=user`）期间不消耗就绪预算；
+  /// 等待结束后重新给满一整段预算，而不是接着用暂停前剩下的那点。
+  void userInteraction({required bool waiting}) {
+    if (result.isCompleted || waiting == _waitingUser) return;
+    _waitingUser = waiting;
+    if (waiting) {
+      _timer?.cancel();
+    } else if (!_waitingLauncher) {
+      _armDeadline();
     }
   }
 
@@ -366,7 +399,7 @@ enum GalHookInjectorFailure {
   /// injector 已宣告 hooked，但共享内存打不开（native 通道不可用）。
   sharedMemoryUnavailable,
 
-  /// 共享内存打开了，但契约版本与本体不一致：捕获组件与 Hibiki 本体漂开。
+  /// 共享内存打开了，但契约版本与本体不一致：捕获组件与 Fushi 本体漂开。
   ///
   /// 与 [sharedMemoryUnavailable] 分开是因为**处置相反**：后者重试/重开游戏有可能好，
   /// 前者重启多少次都不会好（BUG-1216）。
@@ -376,7 +409,7 @@ enum GalHookInjectorFailure {
   /// app 的更新通道**，所以旧文案里的「重新安装捕获组件」是个不存在的动作。真能落到这里
   /// 只剩两种局面：① 本包没随附归档（开发构建 / 早于随包发布的旧包），用的是历史遗留的
   /// 组件目录；② 随附了但仍不匹配 = 本体与组件不同源构建，属发布包缺陷。两者用户能做的
-  /// 都是「换一个新版本的 Hibiki」，具体是哪一种由诊断行里的双方版本号（`shm=11/want 12`）
+  /// 都是「换一个新版本的 Fushi」，具体是哪一种由诊断行里的双方版本号（`shm=11/want 12`）
   /// 和安装器日志分辨。
   protocolMismatch,
 
@@ -627,8 +660,8 @@ String galHookDiagnosticsDetail(GalHookInjectorDiagnostics diagnostics) {
 /// `test/mining/gal_shm_open_error_test.dart` 扫源码守卫。
 ///
 /// 分开归类的理由是**处置完全不同**，而旧实现把它们全压成一句「捕获通道无法打开，请重启
-/// Hibiki」（BUG-1216）：
-///   - `access_denied`：游戏跑在更高完整性级别 → 要以管理员身份运行 Hibiki，重启没用；
+/// Fushi」（BUG-1216）：
+///   - `access_denied`：游戏跑在更高完整性级别 → 要以管理员身份运行 Fushi，重启没用；
 ///   - `protocol_mismatch`：捕获组件与本体版本漂开 → 组件随本体内置更新，只能更新本体，重启更没用；
 ///   - 其余（映射不存在 / MapView 失败 / pid 非法）→ native 只知道「映射不在那儿」，
 ///     **不知道为什么**，此处返回 null。
@@ -1064,6 +1097,46 @@ Future<void> awaitStableVoiceDumpFile(
   }
 }
 
+/// `Scene<后缀>.pck` 的语言后缀：空（原版）或至多 8 个 ASCII 字母数字（Steam 语言包）。
+final RegExp _siglusScenePackPattern = RegExp(
+  r'^scene([a-z0-9]{0,8})\.pck$',
+  caseSensitive: false,
+);
+
+/// Siglus 文件夹签名，与 native `include/siglus_launch.h` 的
+/// `DirectoryLooksLikeSiglus` 同一判据：配置 `Gameexe<后缀>.dat` 与剧本
+/// `Scene<后缀>.pck` 共享同一个后缀、成对出现。CLANNAD Steam 版选简体中文时只有
+/// `GameexeZH.dat` + `SceneZH.pck`，只认无后缀那一对会把它当成非 Siglus。
+bool directoryLooksLikeSiglus(Directory directory) {
+  final String separator = Platform.pathSeparator;
+  bool exists(String name) =>
+      File('${directory.path}$separator$name').existsSync();
+  if (exists('Gameexe.dat') && exists('Scene.pck')) {
+    return true;
+  }
+  final List<FileSystemEntity> entries;
+  try {
+    entries = directory.listSync(followLinks: false);
+  } on FileSystemException {
+    return false;
+  }
+  for (final FileSystemEntity entry in entries) {
+    if (entry is! File) {
+      continue;
+    }
+    final String name = entry.uri.pathSegments.last;
+    final RegExpMatch? match = _siglusScenePackPattern.firstMatch(name);
+    final String? suffix = match?.group(1);
+    if (suffix == null || suffix.isEmpty) {
+      continue;
+    }
+    if (exists('Gameexe$suffix.dat')) {
+      return true;
+    }
+  }
+  return false;
+}
+
 /// Unity/Mono/IL2CPP 游戏的文本通常不走 GDI 渲染；Siglus 的 GDI 输出则会包含描边
 /// 重画伪影。两类目标都显式补装 LunaHook 通用 PC hooks，让 UI 能选择干净文本线程。
 bool shouldUseLunaPcHooksForExecutable(String executablePath) {
@@ -1071,16 +1144,15 @@ bool shouldUseLunaPcHooksForExecutable(String executablePath) {
     executablePath,
   );
   final String lowerBasename = basename.toLowerCase();
-  if (lowerBasename == 'manosaba.exe' || lowerBasename == 'siglusengine.exe') {
+  // SiglusEngine.exe 是引擎本体的发行名（不是某一款游戏），按名认可；Unity 一律走下面的
+  // 目录结构判据，不按单个游戏 exe 名开。
+  if (lowerBasename == 'siglusengine.exe') {
     return true;
   }
 
   final Directory directory = File(executablePath).parent;
   final String separator = Platform.pathSeparator;
-  final bool hasSiglusLayout =
-      File('${directory.path}${separator}Gameexe.dat').existsSync() &&
-      File('${directory.path}${separator}Scene.pck').existsSync();
-  if (hasSiglusLayout) {
+  if (directoryLooksLikeSiglus(directory)) {
     return true;
   }
   final bool hasUnityPlayer = File(
@@ -1306,10 +1378,10 @@ void _logGalHookProcessOutput(bool isStderr, String chunk) {
 /// C 阶段实现：引擎级 voice hook 的**干净语音**源（混音前抓，无 BGM/SE）。
 ///
 /// 隔离红线（docs/specs/galgame-mining）：注入进游戏、装 XAudio2/DirectSound hook 的代码在
-/// **独立 helper 组件** `hibiki_voice_injector.exe` + `hibiki_voice_hook.dll`（注入必被杀软启发式
-/// 报毒，绝不进 hibiki.exe）。本实现只做两件被视为无害的事：
+/// **独立 helper 组件** `fushi_voice_injector.exe` + `fushi_voice_hook.dll`（注入必被杀软启发式
+/// 报毒，绝不进 fushi.exe）。本实现只做两件被视为无害的事：
 ///   ① 把 injector **当子进程拉起**（`--pid <PID> --hold`）——注入那步的报毒代码只待在子进程；
-///   ② 经 `app.fushi.reader/voice_hook` MethodChannel 让 hibiki.exe 自己的 native **读**注入
+///   ② 经 `app.fushi.reader/voice_hook` MethodChannel 让 fushi.exe 自己的 native **读**注入
 ///      组件建好的共享内存（读共享内存不是注入、不被杀软标记，见 voice_hook_reader.cpp）。
 /// 和 [LoopbackGalAudioSource] **同接口**——波形选区/制卡出口零改动；不可用（无 injector /
 /// 未注入 / 无该引擎 / 超时）时 [start] 返回 null，调用方自动回退 loopback（Never break）。
@@ -1317,7 +1389,7 @@ void _logGalHookProcessOutput(bool isStderr, String chunk) {
 /// **两种模式**（二选一）：
 ///   - **attach**（给 [targetPid]）：附着**已运行**的游戏进程（`injector --pid`）。适合已在跑、
 ///     且引擎在注入时刻**之后**才建音频对象的场景。
-///   - **launch**（给 [launchExe]）：由 Hibiki **拉起游戏** exe（`injector --launch <exe>`）。
+///   - **launch**（给 [launchExe]）：由 Fushi **拉起游戏** exe（`injector --launch <exe>`）。
 ///     通常 CREATE_SUSPENDED 早注入，在游戏 WinMain 前把 hook 装好——**KiriKiriZ 等「启动即建
 ///     DirectSound 设备」的引擎必须走这条**（attach 会漏掉启动时创建的设备）。子进程 PID 由
 ///     injector stdout 的 `OK hooked pid=<N>` 回报（[parseInjectorHookedPid] 解析）。Siglus 的
@@ -1456,7 +1528,12 @@ class EngineHookGalAudioSource implements GalAudioSource {
   /// 最近一次 [start] 失败的结构化诊断；成功后为 [GalHookInjectorFailure.none]。
   GalHookInjectorDiagnostics get lastFailure => _lastFailure;
 
-  bool _japaneseLocaleApplied = false;
+  bool _japaneseLocaleRequested = false;
+
+  /// 本局命令行是否带了 `--japanese-locale`——这是**请求**，不是结果。injector 拿不到
+  /// Locale Emulator 运行时（x64 helper 不随包）或 `LeCreateProcess` 失败时会退回普通
+  /// CreateProcess，游戏照样起来，只是没转区。
+  bool get japaneseLocaleRequested => _japaneseLocaleRequested;
 
   /// 本局**实际**是否给游戏套了日文区域（CP932），而不是用户选了哪个档位。
   ///
@@ -1468,13 +1545,22 @@ class EngineHookGalAudioSource implements GalAudioSource {
   /// [resolveJapaneseLocale] 的注释已经论证过 `auto` 不可能总判对、真正兜底的是用户
   /// 手动选 [GalJapaneseLocaleMode.off]。可兜底的前提是用户够得着：先得知道本局到底
   /// 转没转。所以这个事实必须离开本类，一路走到会话状态与诊断里。
-  bool get japaneseLocaleApplied => _japaneseLocaleApplied;
+  ///
+  /// 所以它只认 injector 的回报（`LAUNCH … locale=1`），不认命令行（BUG-2891）：
+  /// 请求了却退回普通启动时，把请求当事实报「已转区」，用户看着乱码的界面会被引向
+  /// 别处排查。还没收到 LAUNCH 行（含进程根本没建起来）时同样为 false。
+  bool get japaneseLocaleApplied =>
+      _japaneseLocaleRequested && _launchObservation?.localeLaunch == true;
+
+  /// 请求了转区、injector 已回报进程建好、却没走 Locale Emulator。
+  bool get _japaneseLocaleFellBack =>
+      _japaneseLocaleRequested && _launchObservation?.localeLaunch == false;
 
   GalJapaneseLocaleVerdict? _japaneseLocaleVerdict;
 
   /// `auto` 档本局的判定结论与证据；attach / `on` / `off` 不判定，为 null。
   ///
-  /// 与 [japaneseLocaleApplied] 在 [start] 的同一处赋值：命令行里的 `--japanese-locale`
+  /// 与 [japaneseLocaleRequested] 在 [start] 的同一处赋值：命令行里的 `--japanese-locale`
   /// 是按这个结论算出来的，会话卡上列的「判据」必须就是它，不能另算一份。
   GalJapaneseLocaleVerdict? get japaneseLocaleVerdict => _japaneseLocaleVerdict;
 
@@ -1482,8 +1568,11 @@ class EngineHookGalAudioSource implements GalAudioSource {
 
   /// `auto` 档判定后没转区的原因（语义门 / 工程门）；转了、或不是 `auto`，为 null。
   /// 与 [japaneseLocaleVerdict] 同处赋值、同处复位。
+  /// 请求了却落空时（任何档位）为 [GalJapaneseLocaleSkipReason.runtimeUnavailable]。
   GalJapaneseLocaleSkipReason? get japaneseLocaleSkipReason =>
-      _japaneseLocaleSkipReason;
+      _japaneseLocaleFellBack
+      ? GalJapaneseLocaleSkipReason.runtimeUnavailable
+      : _japaneseLocaleSkipReason;
 
   /// 探测器抛了也只是「没答上来」：结论 unknown ⇒ 不转区，启动照常。
   Future<GalJapaneseLocaleVerdict> _judgeJapaneseLocaleNeed(String exe) async {
@@ -1576,7 +1665,7 @@ class EngineHookGalAudioSource implements GalAudioSource {
   int _xaudioDiagnostics2 = 0;
   PcmFormat? _readyFormat;
 
-  /// 查目标进程 [pid] 是否 32 位（WOW64）。hibiki.exe 是 64 位，故 native `IsWow64Process`
+  /// 查目标进程 [pid] 是否 32 位（WOW64）。fushi.exe 是 64 位，故 native `IsWow64Process`
   /// 为 true 即目标为 32 位（多数 KiriKiri galgame），调用方据此选 x86 注入器（DLL 位数必须
   /// 匹配目标进程，否则注入失败）。native 缺失 / 查询失败 / pid<=0 返回 null（调用方降级）。
   static Future<bool?> targetIsWow64(int pid, {MethodChannel? channel}) async {
@@ -1780,7 +1869,7 @@ class EngineHookGalAudioSource implements GalAudioSource {
     _readyFormat = null;
     _launchedPid = 0;
     _launchObservation = null;
-    _japaneseLocaleApplied = false;
+    _japaneseLocaleRequested = false;
     _japaneseLocaleVerdict = null;
     _japaneseLocaleSkipReason = null;
     _diagnosticsBuffer.clear();
@@ -1847,7 +1936,7 @@ class EngineHookGalAudioSource implements GalAudioSource {
     );
     // 在传给 injector 的同一处记账：命令行里的 `--japanese-locale` 与这三个字段必须同源，
     // 否则「诊断说没转区、进程其实转了」这种分叉比不诊断更糟。
-    _japaneseLocaleApplied = japaneseLocale;
+    _japaneseLocaleRequested = japaneseLocale;
     _japaneseLocaleVerdict = verdict;
     _japaneseLocaleSkipReason = verdict == null || japaneseLocale
         ? null
@@ -2086,6 +2175,10 @@ class EngineHookGalAudioSource implements GalAudioSource {
                   _launchObservation = launched;
                   waiting.observe(launched);
                 }
+                final bool? userWait = parseInjectorUserWait(line);
+                if (userWait != null) {
+                  waiting.userInteraction(waiting: userWait);
+                }
               }
               if (pidCompleter.isCompleted) return;
               final int? pid = parseInjectorHookedPid(stdoutBuffer.toString());
@@ -2207,7 +2300,7 @@ class EngineHookGalAudioSource implements GalAudioSource {
     }
   }
 
-  /// v7 文本 hook：取序号在 `(fromSeq, count]` 的新台词/线程发现事件，供喂 Hibiki
+  /// v7 文本 hook：取序号在 `(fromSeq, count]` 的新台词/线程发现事件，供喂 Fushi
   /// texthooker 与线程选择器。native 缺失 / 失败返回 null。
   Future<GalTextPoll?> pollText(int fromSeq) async {
     try {
@@ -2587,6 +2680,7 @@ class EngineHookGalAudioSource implements GalAudioSource {
     }
     final String lower = resourceId.toLowerCase();
     if (!lower.endsWith('.ogg') &&
+        !lower.endsWith('.opus') &&
         !lower.endsWith('.wav') &&
         !lower.endsWith('.xwma')) {
       return null;
@@ -2912,6 +3006,13 @@ class GalHookedLine {
       4 => 'siglus',
       5 => 'sgre',
       6 => 'smash',
+      7 => 'bgi',
+      8 => 'artemis',
+      9 => 'yuris',
+      10 => 'fvp',
+      11 => 'kogado',
+      12 => 'luca',
+      15 => 'malie',
       _ => 'hook',
     };
     return '$source:${threadId.toUnsigned(64).toRadixString(16)}';
@@ -2928,6 +3029,13 @@ class GalHookedLine {
             4 => 'Siglus exact',
             5 => 'SGRE exact',
             6 => 'smash exact',
+            7 => 'BGI exact',
+            8 => 'Artemis exact',
+            9 => 'YU-RIS exact',
+            10 => 'FVP exact',
+            11 => 'Kogado Hy exact',
+            12 => 'LucaSystem exact',
+            15 => 'Malie exact',
             _ => 'Text hook',
           };
     if (threadAddress == 0) return source;

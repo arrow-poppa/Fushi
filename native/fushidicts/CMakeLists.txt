@@ -83,6 +83,7 @@ add_library(fushidicts STATIC
     fushidicts_src/text_processor/text_processor.cpp
     fushidicts_src/text_processor/kanji_standardization_data.cpp
     fushidicts_src/scan/word_scan.cpp
+    fushidicts_src/scan/mixed_orthography.cpp
     fushidicts_src/deinflector.cpp
     fushidicts_src/query.cpp
     fushidicts_src/lookup.cpp
@@ -136,6 +137,9 @@ target_include_directories(fushidicts_ffi PRIVATE
 
 target_link_libraries(fushidicts_ffi PRIVATE
     fushidicts
+    # fushidicts_zstd_decompress_file（Anki 备份的 collection.anki21b）直接调
+    # zstd 流式 API；fushidicts 对它是 PRIVATE 链接，头文件路径不会传过来。
+    libzstd_static
     ${FUSHIDICTS_PLATFORM_LIBS}
 )
 
@@ -194,4 +198,12 @@ if(ANDROID)
       fushidicts
       log
   )
+endif()
+
+# The Android app has a single externalNativeBuild entry (this file). The
+# Blu-ray libaacs ABI module (native/fushi_aacs) rides along so every ABI
+# split ships libfushi_aacs.so, whose soname libbluray opens as libaacs.so.0.
+if(ANDROID)
+  add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/../fushi_aacs"
+      "${CMAKE_CURRENT_BINARY_DIR}/fushi_aacs")
 endif()

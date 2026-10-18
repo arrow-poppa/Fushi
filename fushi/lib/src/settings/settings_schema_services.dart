@@ -1,10 +1,14 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:fushi_engine/media/torrent/torznab_client.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/media/video/dandanplay_client.dart';
+import 'package:fushi_engine/media/video/metadata/video_metadata_languages.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_config.dart';
 import 'package:fushi/src/media/video/scraper/tmdb_default_key.dart';
 import 'package:fushi/src/media/video/video_settings_actions.dart';
 import 'package:fushi/src/pages/implementations/discovery_source_settings_section.dart';
+import 'package:fushi/src/pages/implementations/alist_site_settings_section.dart';
+import 'package:fushi/src/pages/implementations/audiobookshelf_server_settings_section.dart';
 import 'package:fushi/src/pages/implementations/opds_server_settings_section.dart';
 import 'package:fushi/src/pages/implementations/video_external_provider_settings_section.dart';
 import 'package:fushi/src/models/module_registry.dart';
@@ -13,12 +17,19 @@ import 'package:fushi/src/settings/settings_actions.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/settings/settings_detail_page.dart';
+import 'package:fushi/src/settings/settings_page_reset.dart'
+    show settingsSectionModifiedSummary;
 import 'package:fushi/src/sync/jellyfin_settings_widget.dart';
+import 'package:fushi/src/sync/plex_settings_widget.dart';
+import 'package:fushi/src/sync/plex_video_client.dart' show PlexServerConfig;
+import 'package:fushi/src/media/video/media_server/media_server_config.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/sync/jellyfin_video_client.dart'
     show JellyfinServerConfig;
 import 'package:fushi/utils.dart';
 import 'package:fushi_engine/media/video/subtitle/open_subtitles_client.dart';
+import 'package:fushi_engine/media/video/jimaku_client.dart'
+    show jimakuLanguageLabel, kJimakuLanguageCodes;
 
 /// 「在线服务」一级设置分类：第三方 API / 索引器 / 媒体服务器的凭据与端点。
 ///
@@ -45,11 +56,17 @@ SettingsDestination buildServicesDestination() {
     ),
     title: t.settings_destination_services,
     summary: t.settings_destination_services_summary,
-    icon: Icons.cloud_outlined,
+    icon: FushiIcons.cloud,
     sections: <SettingsSection>[
       SettingsSection(
         id: 'services.subtitles',
         title: t.section_services_subtitles,
+        // 2026-10-09 所有者：沿用 AI 页（#2042）的折叠形态。字幕来源是本页最常用
+        // 的一组，默认展开；其余两组默认收起。分组头报「N 项已配置」（与行上状态
+        // 同一份判据）+「N 项已修改」。顺序保持原样，见 [_servicesSectionSummary]。
+        presentation: SettingsSectionPresentation.expanded,
+        summaryBuilder: (SettingsContext c) =>
+            _servicesSectionSummary('services.subtitles', c),
         items: <SettingsItem>[
           _externalServicePage(
             id: 'services.jimaku',
@@ -115,13 +132,58 @@ SettingsDestination buildServicesDestination() {
               ),
             ],
           ),
-          SettingsCustomItem(
+          _externalServicePage(
+            id: 'services.subdl',
+            title: 'SubDL',
+            scope: VideoExternalProviderScope.subdl,
+            status: (SettingsContext c) => !c.appModel.videoSubtitleSubdlEnabled
+                ? t.settings_service_disabled
+                : c.appModel.videoSubtitleSubdlApiKey.trim().isEmpty
+                ? t.settings_service_not_configured
+                : t.settings_service_configured,
+            entries: <SettingsBodySearchEntry>[
+              SettingsBodySearchEntry(
+                id: 'services.subdl.api_key',
+                title: t.video_external_api_key,
+                hasRevealTarget: true,
+              ),
+            ],
+          ),
+          // AJATT 与默认字幕语言：此前是一张自绘卡（开关 + 下拉内嵌、字号层级
+          // 自成一套），现在拆成两条标准分段行，与上面的来源行同一视觉语言。
+          // 读写走与旧卡完全相同的 AppModel 入口，持久化键不变。
+          SettingsSwitchItem(
             id: 'services.subtitle_preferences',
-            searchTitle: 'AJATT · ${t.video_setting_jimaku_default_language}',
-            builder: (SettingsContext c) =>
-                const VideoExternalProviderSettingsSection(
-                  scope: VideoExternalProviderScope.subtitlePreferences,
+            // 品牌名，不进 i18n（同 Jimaku / SubDL）。
+            title: 'AJATT',
+            subtitle: t.video_ajatt_enabled_hint,
+            icon: FushiIcons.subtitles,
+            value: (SettingsContext c) => c.appModel.videoSubtitleAjattEnabled,
+            onChanged: (SettingsContext c, bool value) =>
+                c.appModel.setVideoSubtitleAjattEnabled(value),
+            defaultValue: true,
+          ),
+          SettingsSegmentedItem<String>(
+            id: 'services.subtitle_default_language',
+            title: t.video_setting_jimaku_default_language,
+            subtitle: t.video_setting_jimaku_default_language_hint,
+            icon: FushiIcons.language,
+            dropdown: true,
+            options: <SettingsSegmentOption<String>>[
+              SettingsSegmentOption<String>(
+                value: '',
+                label: t.video_jimaku_language_follow_video,
+              ),
+              for (final String language in kJimakuLanguageCodes)
+                SettingsSegmentOption<String>(
+                  value: language,
+                  label: jimakuLanguageLabel(language),
                 ),
+            ],
+            selected: (SettingsContext c) => c.appModel.jimakuDefaultLanguage,
+            onChanged: (SettingsContext c, String value) =>
+                c.appModel.setJimakuDefaultLanguage(value),
+            defaultValue: '',
           ),
         ],
       ),
@@ -134,6 +196,9 @@ SettingsDestination buildServicesDestination() {
         // 不会生效的字段。用 section 级 `visible` 而不是逐项加判据：三条渲染路径
         // （分类正文 / 主从详情 / 设置搜索索引）共用它，逐项写会漏掉搜索索引。
         visible: (_) => StoreRestrictedCapability.externalDiscovery.isAvailable,
+        presentation: SettingsSectionPresentation.collapsed,
+        summaryBuilder: (SettingsContext c) =>
+            _servicesSectionSummary('services.resources', c),
         items: <SettingsItem>[
           _externalServicePage(
             id: 'services.builtin_sources',
@@ -169,42 +234,57 @@ SettingsDestination buildServicesDestination() {
                 : t.settings_service_configured,
             body: (SettingsContext c) => const OpdsServerSettingsSection(),
           ),
+          _servicePage(
+            id: 'services.alist_sites',
+            title: t.discovery_alist_settings_title,
+            status: (SettingsContext c) =>
+                c.appModel.prefsRepo.discoveryAListSites.isEmpty
+                ? t.settings_service_not_configured
+                : t.settings_service_configured,
+            body: (SettingsContext c) => const AListSiteSettingsSection(),
+          ),
+          _servicePage(
+            id: 'services.audiobookshelf_servers',
+            title: t.discovery_audiobookshelf_settings_title,
+            status: (SettingsContext c) =>
+                c.appModel.prefsRepo.discoveryAudiobookshelfServers.isEmpty
+                ? t.settings_service_not_configured
+                : t.settings_service_configured,
+            body: (SettingsContext c) =>
+                const AudiobookshelfServerSettingsSection(),
+          ),
         ],
       ),
       SettingsSection(
         id: 'services.metadata',
         title: t.section_services_metadata,
+        presentation: SettingsSectionPresentation.collapsed,
+        summaryBuilder: (SettingsContext c) =>
+            _servicesSectionSummary('services.metadata', c),
         items: <SettingsItem>[
           SettingsNavigationItem(
             id: 'services.metadata.configure',
             title: 'AniDB',
+            // 状态与「测试登录」/ 协调器共用同一份配置快照判「配齐」：客户端名
+            // 留空走内置身份也算配齐，别按四个偏好键各自判空（BUG-2586）。
             subtitleBuilder: (SettingsContext c) {
-              if (!(c.appModel.prefsRepo.getPref(
-                    kVideoAniDbHashEnabledPref,
-                    defaultValue: false,
-                  )
-                  as bool)) {
+              final VideoSourceScrapeGlobalConfig config =
+                  VideoSourceScrapeGlobalConfig.fromPreferences(
+                    c.appModel.prefsRepo,
+                    resolvedTmdbApiKey: '',
+                    uiLocaleTag: kFallbackVideoMetadataLocale,
+                  );
+              if (!config.hashEnabled) {
                 return t.settings_service_disabled;
               }
-              return <String>[
-                    kVideoAniDbUsernamePref,
-                    kVideoAniDbPasswordPref,
-                    kVideoMetadataAniDbClientNamePref,
-                    kVideoMetadataAniDbClientVersionPref,
-                  ].every(
-                    (String key) =>
-                        (c.appModel.prefsRepo.getPref(key, defaultValue: '')
-                                as String)
-                            .trim()
-                            .isNotEmpty,
-                  )
+              return config.anidbHashReady
                   ? t.settings_service_configured
                   : t.settings_service_not_configured;
             },
             child: () => SettingsDestination(
               id: SettingsDestinationId.services,
               title: t.section_services_metadata,
-              icon: Icons.fingerprint,
+              icon: FushiIcons.fingerprint,
               sections: <SettingsSection>[
                 SettingsSection(
                   id: 'services.metadata.credentials',
@@ -213,7 +293,7 @@ SettingsDestination buildServicesDestination() {
                       id: 'services.metadata.anidb_hash_enabled',
                       title: t.video_anidb_hash_enabled,
                       subtitle: t.video_anidb_hash_hint,
-                      icon: Icons.fingerprint,
+                      icon: FushiIcons.fingerprint,
                       value: (SettingsContext settingsContext) =>
                           settingsContext.appModel.prefsRepo.getPref(
                                 kVideoAniDbHashEnabledPref,
@@ -233,7 +313,7 @@ SettingsDestination buildServicesDestination() {
                     SettingsTextItem(
                       id: 'services.metadata.anidb_username',
                       title: t.video_anidb_username,
-                      icon: Icons.person_outline,
+                      icon: FushiIcons.person,
                       value: (SettingsContext settingsContext) =>
                           settingsContext.appModel.prefsRepo.getPref(
                                 kVideoAniDbUsernamePref,
@@ -251,7 +331,7 @@ SettingsDestination buildServicesDestination() {
                     SettingsTextItem(
                       id: 'services.metadata.anidb_password',
                       title: t.video_anidb_password,
-                      icon: Icons.lock_outline,
+                      icon: FushiIcons.lock,
                       secret: true,
                       value: (SettingsContext settingsContext) =>
                           settingsContext.appModel.prefsRepo.getPref(
@@ -315,6 +395,44 @@ SettingsDestination buildServicesDestination() {
                             );
                           },
                     ),
+                    // 填完账号能当场验证登录（BUG-2581）：以前只有跑一次刮削、翻报告才知道。
+                    SettingsActionItem(
+                      id: 'services.metadata.anidb_login_test',
+                      title: t.video_anidb_login_test,
+                      subtitle: t.video_anidb_login_test_hint,
+                      icon: Icons.login_outlined,
+                      onTap: testAniDbLogin,
+                      cli: SettingsCliAction(
+                        run:
+                            (
+                              SettingsContext c,
+                              Map<String, String> args,
+                            ) async {
+                              final ({bool ok, String message}) result =
+                                  await verifyAniDbLogin(c.appModel.prefsRepo);
+                              if (!result.ok) throw StateError(result.message);
+                              return <String, Object?>{
+                                'ok': result.ok,
+                                'message': result.message,
+                              };
+                            },
+                      ),
+                    ),
+                    // HTTP 资料接口与 UDP 是 AniDB 上两条登记（BUG-2623）：随包
+                    // 身份只登记了 UDP，让用户看得到 anime XML 资料链此时不会请求。
+                    SettingsStatusItem(
+                      id: 'services.metadata.anidb_http_api',
+                      title: t.video_anidb_http_api,
+                      icon: FushiIcons.cloud,
+                      subtitleBuilder: (SettingsContext c) =>
+                          anidbHttpApiStatusLabel(
+                            VideoSourceScrapeGlobalConfig.fromPreferences(
+                              c.appModel.prefsRepo,
+                              resolvedTmdbApiKey: '',
+                              uiLocaleTag: kFallbackVideoMetadataLocale,
+                            ),
+                          ),
+                    ),
                   ],
                 ),
               ],
@@ -336,7 +454,7 @@ SettingsDestination buildServicesDestination() {
             child: () => SettingsDestination(
               id: SettingsDestinationId.services,
               title: 'TMDB',
-              icon: Icons.key_outlined,
+              icon: FushiIcons.key,
               sections: <SettingsSection>[
                 SettingsSection(
                   id: 'services.tmdb.credentials',
@@ -352,7 +470,7 @@ SettingsDestination buildServicesDestination() {
                       id: 'services.metadata.tmdb_api_key',
                       title: t.video_setting_tmdb_key,
                       subtitle: t.video_setting_tmdb_key_hint,
-                      icon: Icons.key_outlined,
+                      icon: FushiIcons.key,
                       secret: true,
                       value: (SettingsContext settingsContext) =>
                           settingsContext.appModel.prefsRepo.getPref(
@@ -375,15 +493,26 @@ SettingsDestination buildServicesDestination() {
           ),
         ],
       ),
+      // 媒体服务器保持常显不折叠：Jellyfin / Plex 两行的「已配置」要异步读数据库
+      // （_JellyfinSettingsLink / _PlexSettingsLink），同步的分组摘要数不到它们，
+      // 收起后摘要只会少报；三行本身已各带状态，常显即可。
       SettingsSection(
         id: 'services.media',
-        title: t.jellyfin_settings_title,
+        title: t.video_library_media_servers,
         items: <SettingsItem>[
           SettingsCustomItem(
             id: 'services.media_server.jellyfin',
             searchTitle: 'Jellyfin · Emby · ${t.jellyfin_settings_title}',
+            cliList: buildJellyfinCliList(),
             builder: (SettingsContext c) =>
                 _JellyfinSettingsLink(settingsContext: c),
+          ),
+          SettingsCustomItem(
+            id: 'services.media_server.plex',
+            searchTitle: 'Plex · ${t.video_library_media_servers}',
+            cliList: buildPlexCliList(),
+            builder: (SettingsContext c) =>
+                _PlexSettingsLink(settingsContext: c),
           ),
           SettingsNavigationItem(
             id: 'services.danmaku.configure',
@@ -395,7 +524,7 @@ SettingsDestination buildServicesDestination() {
             child: () => SettingsDestination(
               id: SettingsDestinationId.services,
               title: 'Dandanplay',
-              icon: Icons.dns_outlined,
+              icon: FushiIcons.server,
               sections: <SettingsSection>[
                 SettingsSection(
                   id: 'services.danmaku.endpoint',
@@ -403,7 +532,7 @@ SettingsDestination buildServicesDestination() {
                     SettingsTextItem(
                       id: 'services.danmaku.server_url',
                       title: t.video_setting_danmaku_server_url,
-                      icon: Icons.dns_outlined,
+                      icon: FushiIcons.server,
                       keyboardType: TextInputType.url,
                       value: (SettingsContext settingsContext) =>
                           settingsContext.appModel.videoDanmakuConfig.baseUrl,
@@ -430,6 +559,37 @@ SettingsDestination buildServicesDestination() {
       ),
     ],
   );
+}
+
+/// 在线服务分组头的摘要：「N 项已配置」+「N 项已修改」，都为零就不显示。
+///
+/// 「已配置」直接数本组可见服务行**当前显示的状态文案**是否为
+/// [t.settings_service_configured]——与行上状态同一份判据、逐字一致，不另写一套
+/// 「配齐」规则（AniDB 的判据见 BUG-2586，必须走配置快照）。「使用内置配置」
+/// 不算：那是用户什么都没填。「已修改」数的是 AJATT / 默认字幕语言这类有默认值的
+/// 声明式行（与页级「恢复本页默认」同一判据）。
+///
+/// 分组顺序**保持原样**、不把已配置的组挪到前面：位置稳定才有肌肉记忆、顶部
+/// 分区跳转条与焦点遍历顺序也不随配置变化跳动；状态已由摘要在收起时报出。
+String? _servicesSectionSummary(String sectionId, SettingsContext context) {
+  if (!context.appModel.isPreferencesReady) return null;
+  final SettingsSection section = buildServicesDestination().sections
+      .firstWhere((SettingsSection s) => s.id == sectionId);
+  final String configuredLabel = t.settings_service_configured;
+  final int configured = section.items
+      .where(
+        (SettingsItem item) =>
+            item is SettingsNavigationItem &&
+            item.isVisible(context) &&
+            item.resolveSubtitle(context) == configuredLabel,
+      )
+      .length;
+  final String? modified = settingsSectionModifiedSummary(section, context);
+  final List<String> parts = <String>[
+    if (configured > 0) t.settings_services_configured_count(n: configured),
+    if (modified != null) modified,
+  ];
+  return parts.isEmpty ? null : parts.join(' · ');
 }
 
 SettingsNavigationItem _externalServicePage({
@@ -460,7 +620,7 @@ SettingsNavigationItem _servicePage({
   child: () => SettingsDestination(
     id: SettingsDestinationId.services,
     title: title,
-    icon: Icons.cloud_outlined,
+    icon: FushiIcons.cloud,
     sections: const <SettingsSection>[],
     body: body,
     bodySearchEntries: entries,
@@ -477,7 +637,7 @@ SettingsNavigationItem buildOpenServicesItem(String id) {
     id: id,
     title: t.settings_destination_services,
     subtitle: t.settings_services_link_subtitle,
-    icon: Icons.cloud_outlined,
+    icon: FushiIcons.cloud,
     showIcon: true,
     // 与它指向的分类同门控：services 模块关掉时整行不渲染。留着就是一条通往已关
     // 模块的暗门（宿主分类——视频 / 下载——可能仍开着，所以宿主的 destination 级
@@ -529,7 +689,7 @@ class _JellyfinSettingsLinkState extends State<_JellyfinSettingsLink> {
         () => SettingsDestination(
           id: SettingsDestinationId.services,
           title: 'Jellyfin · Emby',
-          icon: Icons.cloud_outlined,
+          icon: FushiIcons.cloud,
           sections: const <SettingsSection>[],
           body: (SettingsContext c) => JellyfinConfigWidget(settingsContext: c),
         ),
@@ -556,3 +716,75 @@ class _JellyfinSettingsLinkState extends State<_JellyfinSettingsLink> {
             ),
   );
 }
+
+/// Plex 入口行：与 [_JellyfinSettingsLink] 同形，只读本地配置判「已配置」。
+class _PlexSettingsLink extends StatefulWidget {
+  const _PlexSettingsLink({required this.settingsContext});
+  final SettingsContext settingsContext;
+
+  @override
+  State<_PlexSettingsLink> createState() => _PlexSettingsLinkState();
+}
+
+class _PlexSettingsLinkState extends State<_PlexSettingsLink> {
+  late Future<bool> _configured;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  void _load() {
+    _configured = SyncRepository(widget.settingsContext.appModel.database)
+        .getMediaServers()
+        .then(
+          (List<MediaServerConfig> servers) =>
+              servers.any((MediaServerConfig s) => s is PlexServerConfig),
+        );
+  }
+
+  Future<void> _open() async {
+    // 与 Jellyfin 入口同理必须走 `.subPage`（BUG-2485）。
+    await pushSettingsPage(
+      widget.settingsContext,
+      (_) => SettingsDetailPage.subPage(
+        () => SettingsDestination(
+          id: SettingsDestinationId.services,
+          title: 'Plex',
+          icon: FushiIcons.cloud,
+          sections: const <SettingsSection>[],
+          body: (SettingsContext c) => PlexConfigWidget(settingsContext: c),
+        ),
+      ),
+    );
+    if (mounted) {
+      setState(_load);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => FutureBuilder<bool>(
+    future: _configured,
+    builder: (BuildContext context, AsyncSnapshot<bool> snapshot) =>
+        AdaptiveSettingsNavigationRow(
+          title: 'Plex',
+          subtitle: snapshot.connectionState != ConnectionState.done
+              ? t.video_library_media_servers
+              : snapshot.data == true
+              ? t.settings_service_configured
+              : t.settings_service_not_configured,
+          onTap: _open,
+        ),
+  );
+}
+
+/// AniDB HTTP 资料接口的静态状态：只看配置快照里的 **HTTP** 身份（与 UDP 分开，
+/// BUG-2623）。运行期被 AniDB 拒绝（302 闩）/ 封禁不在这里体现。
+String anidbHttpApiStatusLabel(VideoSourceScrapeGlobalConfig config) =>
+    config.anidbHttpClientConfigured
+    ? t.video_anidb_http_api_available(
+        client: config.anidbHttpClientName,
+        version: '${config.anidbHttpClientVersion}',
+      )
+    : t.video_anidb_http_api_unregistered;

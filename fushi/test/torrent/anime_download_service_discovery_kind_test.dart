@@ -6,7 +6,12 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:path/path.dart' as p;
 
+import 'package:fushi_engine/media/discovery/discovery_download_queue.dart'
+    show DiscoveryImportOutcome;
+import 'package:fushi_engine/media/discovery/import/discovery_import_plan.dart';
 import 'package:fushi_engine/media/torrent/anime_download_config.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/media/torrent/anime_download_fail_reason.dart';
 import 'package:fushi/src/media/torrent/anime_download_plan.dart';
 import 'package:fushi/src/media/torrent/anime_download_service.dart';
 import 'package:fushi_engine/media/torrent/qb_torrent_backend.dart';
@@ -138,7 +143,8 @@ void main() {
     });
 
     AnimeDownloadService buildService({
-      Future<int?> Function(AnimeDownloadPlan, List<String>)? discoveryImporter,
+      Future<DiscoveryImportOutcome?> Function(AnimeDownloadPlan, List<String>)?
+          discoveryImporter,
     }) {
       return AnimeDownloadService(
         store: store,
@@ -168,7 +174,7 @@ void main() {
       await buildService(
         discoveryImporter: (AnimeDownloadPlan plan, List<String> paths) async {
           calls.add((plan.contentKind, paths));
-          return 1;
+          return const DiscoveryImportOutcome(importedCount: 1);
         },
       ).tick();
 
@@ -185,12 +191,52 @@ void main() {
       qb.torrents = <Map<String, dynamic>>[_completedTorrent()];
       await buildService(
         discoveryImporter: (AnimeDownloadPlan plan, List<String> paths) async =>
-            0,
+            const DiscoveryImportOutcome(),
       ).tick();
 
       final AnimeDownloadPlan plan = await singlePlan();
       expect(plan.status, AnimeDownloadPlan.statusFailed);
       expect(plan.failReason, isNotNull);
+    });
+
+    // 只有音频的有声书：入库移交给转录队列（0 条新增 + deferred）。下载本身
+    // 成功，不能落成 import failed。
+    test('kindAudiobook 入库移交转录(deferred) → imported,不是 failed', () async {
+      await store.save(_plan(AnimeDownloadPlan.kindAudiobook));
+      qb.torrents = <Map<String, dynamic>>[_completedTorrent()];
+      await buildService(
+        discoveryImporter: (AnimeDownloadPlan plan, List<String> paths) async =>
+            const DiscoveryImportOutcome(summary: 'Book', deferred: true),
+      ).tick();
+
+      final AnimeDownloadPlan plan = await singlePlan();
+      expect(plan.status, AnimeDownloadPlan.statusImported);
+      expect(plan.failReason, isNull);
+    });
+
+    // BUG-2775：导入被挡下（这里是同名书已在库、音频没法自动附着）不能再落
+    // 一句没头没脑的 import failed——落稳定原因码，任务行翻译成补救说明。
+    test('discoveryImporter 被挡下 → failReason 是可翻译的原因码', () async {
+      await store.save(_plan(AnimeDownloadPlan.kindAudiobook));
+      qb.torrents = <Map<String, dynamic>>[_completedTorrent()];
+      await buildService(
+        discoveryImporter: (AnimeDownloadPlan plan, List<String> paths) async =>
+            throw const DiscoveryImportBlockedException(
+          DiscoveryImportBlocker.audiobookBookAlreadyInLibrary,
+          'book.epub',
+        ),
+      ).tick();
+
+      final AnimeDownloadPlan plan = await singlePlan();
+      expect(plan.status, AnimeDownloadPlan.statusFailed);
+      expect(
+        parseAnimeDownloadBlockedFailReason(plan.failReason),
+        DiscoveryImportBlocker.audiobookBookAlreadyInLibrary,
+      );
+      expect(
+        describeAnimeDownloadFailReason(plan.failReason!),
+        t.download_task_import_blocked_audiobook_book_exists,
+      );
     });
 
     test('discoveryImporter 抛异常 → failed 收进 failReason', () async {
@@ -214,6 +260,26 @@ void main() {
       final AnimeDownloadPlan plan = await singlePlan();
       expect(plan.status, AnimeDownloadPlan.statusFailed);
       expect(plan.failReason, contains('unsupported'));
+    });
+  });
+
+  group('describeAnimeDownloadFailReason', () {
+    test('每个原因码都翻译成专门文案', () {
+      for (final DiscoveryImportBlocker blocker
+          in DiscoveryImportBlocker.values) {
+        final String reason = animeDownloadBlockedFailReason(blocker);
+        expect(parseAnimeDownloadBlockedFailReason(reason), blocker);
+        final String text = describeAnimeDownloadFailReason(reason);
+        expect(text, isNot(reason), reason: blocker.name);
+        expect(text, isNotEmpty, reason: blocker.name);
+      }
+    });
+
+    test('非原因码（旧任务/诊断文本）原样显示', () {
+      expect(describeAnimeDownloadFailReason('torrent missing'),
+          'torrent missing');
+      expect(describeAnimeDownloadFailReason('blocked:noSuchBlocker'),
+          'blocked:noSuchBlocker');
     });
   });
 }

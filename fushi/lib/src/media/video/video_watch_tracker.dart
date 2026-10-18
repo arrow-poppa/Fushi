@@ -8,12 +8,35 @@ import 'package:fushi_engine/stats/study_char_count.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 
-/// 完成判定纯函数：进度 ≥ 90% 且尚未完成、且时长已知。
+/// 单集看完判定纯函数：进度 ≥ 90% 且尚未报告过、且时长已知。
+///
+/// 只驱动「单集看完」的外部上报（[VideoWatchTracker] 的 `onEpisodeCompleted`，媒体
+/// 追踪同步）。**播放不再给库里的视频打「已看」勾**（BUG-3491，所有者 2026-10-17
+/// 拍板）：列表一律显示时间进度 + 百分比，续播推进 / 已看计数改认「手动标记或进度
+/// 到片尾区」（`CollectionMemberProgress.isFinished`）。
+///
+/// **何时判**：播放中每次位置采样（1 秒一次 + 播放源每次通知）各判一次，离开本集
+/// （退出播放页 / 换集 / 页面销毁）时按离开那一刻的位置再判一次；暂停态拖进度条
+/// 预览不算。此前只在 [StudyClock] 每 60 秒一次的 tick 上判、离开时那一次又因为
+/// 播放源先被摘掉而永远判不到。
 bool shouldMarkCompleted(int? positionMs, int? durationMs, bool already) {
   if (already) return false;
   if (positionMs == null || durationMs == null || durationMs <= 0) return false;
   return positionMs / durationMs >= 0.9;
 }
+
+/// 远端播放断点是否值得写。只有**直播频道**（[isLiveChannel]：IPTV 频道列表导入的
+/// 频道行，由条目来源判定）才看时长：总时长未知或为 0 的直播，position 只是
+/// 「开播至今」，写进断点后下次起播会带 `start=<旧位置>` 落到直播窗口之外
+/// （黑屏 / 卡住），「继续观看」也会把频道当成看了一半的片子。
+///
+/// 其它远端（互联转码、Jellyfin 渐进式、普通直链……）即使 mpv 暂时报不出时长也
+/// 照常写——那是点播，断点是真的；按时长一刀切会让它们整段丢进度与上报。
+bool shouldPersistStreamPosition({
+  required bool isLiveChannel,
+  required int? durationMs,
+}) =>
+    !isLiveChannel || (durationMs != null && durationMs > 0);
 
 /// 一句 cue 计入字幕字数所需的最低真实播放停留（媒体时间，毫秒）。
 /// 短 cue 取自身时长为门（日语字幕大量 cue 短于该值，固定阈值会让它们永远不计）。
@@ -92,7 +115,6 @@ class VideoWatchTracker {
   VideoWatchTracker({
     required this.bookUid,
     required StudyClock clock,
-    required Future<void> Function(String bookUid) markCompleted,
     FutureOr<void> Function()? onEpisodeCompleted,
     Future<String?> Function()? loadCoverage,
     Future<void> Function(String json)? saveCoverage,
@@ -101,26 +123,24 @@ class VideoWatchTracker {
           '视频面时钟必须是显式记账：时长由 tracker 按首次覆盖推入',
         ),
         _clock = clock,
-        _markCompleted = markCompleted,
         _onEpisodeCompleted = onEpisodeCompleted,
         _loadCoverage = loadCoverage,
         _saveCoverage = saveCoverage {
+    // 完成判定不挂在 60 秒 tick 上（BUG-3491）：tick 落在哪一刻是随机的，
+    // 判定改由位置采样（[_sample]）与离开时（[stop]）负责。
     _clock.onTick = (DateTime _) {
-      unawaited(_checkCompletion());
       unawaited(_persistCoverage());
     };
   }
 
   final String bookUid;
   final StudyClock _clock;
-  final Future<void> Function(String bookUid) _markCompleted;
   final FutureOr<void> Function()? _onEpisodeCompleted;
   final Future<String?> Function()? _loadCoverage;
   final Future<void> Function(String json)? _saveCoverage;
 
   VideoPlaybackSource? _source;
   final Set<int> _countedIndices = <int>{};
-  bool _completed = false;
   bool _episodeCompletionReported = false;
 
   @visibleForTesting
@@ -148,8 +168,14 @@ class VideoWatchTracker {
     _sampler = null;
     _sample();
     _lastSample = null;
+    // 离开那一刻的位置必须**同步**取下：[dispose] 调完本方法会立刻摘掉播放源，
+    // 等到下面的 await 回来时 [_source] 已是 null——此前离开时这一次完成判定
+    // 永远落空（BUG-3491：跳到 ED 再点下一集 / 在片尾退出都不打勾）。
+    final VideoPlaybackSource? s = _source;
+    final int? positionMs = s?.positionMs;
+    final int? durationMs = s?.durationMs;
     await _clock.stop();
-    await _checkCompletion();
+    await _checkCompletionAt(positionMs, durationMs);
     await _persistCoverage();
   }
 
@@ -192,6 +218,11 @@ class VideoWatchTracker {
   @visibleForTesting
   Future<void> get debugCoverageLoaded => _coverageLoad ?? Future<void>.value();
 
+  /// 模拟一次定时器采样（测试用：真定时器不在受控墙钟里，要验证「定时 tick 与
+  /// 播放源通知交错」的记账只能手动触发）。
+  @visibleForTesting
+  void debugSampleNow() => _sample();
+
   Future<void> _initCoverage() async {
     String? json;
     try {
@@ -216,6 +247,9 @@ class VideoWatchTracker {
     final DateTime now = debugNowForTesting();
     final int? pos = s.positionMs;
     final bool playing = s.isPlaying;
+    // 播放中每个采样点都判一次完成（BUG-3491）；暂停态拖条预览不判，离开时
+    // 由 [stop] 按离开那一刻的位置补判。
+    if (playing) unawaited(_checkCompletionAt(pos, s.durationMs));
     final ({int? posMs, DateTime at, bool playing})? prev = _lastSample;
     _lastSample = (posMs: pos, at: now, playing: playing);
     if (prev == null || !_coverageReady) return;
@@ -405,18 +439,13 @@ class VideoWatchTracker {
     }
   }
 
-  /// 完成判定（每 tick + stop 各查一次）。
-  Future<void> _checkCompletion() async {
-    final VideoPlaybackSource? s = _source;
-    if (s == null) return;
+  /// 完成判定（播放中每个采样点 + 离开时各判一次，见 [shouldMarkCompleted]）。
+  /// 位置 / 时长由调用方当场取好传入：离开时播放源可能已经摘掉。
+  Future<void> _checkCompletionAt(int? positionMs, int? durationMs) async {
     try {
-      if (shouldMarkCompleted(s.positionMs, s.durationMs, _completed)) {
-        _completed = true;
-        await _markCompleted(bookUid);
-      }
       if (shouldMarkCompleted(
-        s.positionMs,
-        s.durationMs,
+        positionMs,
+        durationMs,
         _episodeCompletionReported,
       )) {
         _episodeCompletionReported = true;

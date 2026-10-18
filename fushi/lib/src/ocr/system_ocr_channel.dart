@@ -29,6 +29,7 @@ class SystemOcrTextLine {
     required this.text,
     required this.rect,
     required this.isVertical,
+    this.tile,
   });
 
   final String text;
@@ -39,8 +40,13 @@ class SystemOcrTextLine {
   /// 平台判定的竖排。平台不给这个信息时由 Dart 侧按包围盒长宽比推断。
   final bool isVertical;
 
+  /// 产出该行的切片下标（对应 [SystemOcrPlatform.recognize] 的 `tiles`）。
+  /// 整页识别（没切、或平台忽略了切片请求）时为 null。
+  final int? tile;
+
   @override
-  String toString() => 'SystemOcrTextLine($text, $rect, vertical: $isVertical)';
+  String toString() =>
+      'SystemOcrTextLine($text, $rect, vertical: $isVertical, tile: $tile)';
 }
 
 /// 一次识别的结果。
@@ -59,6 +65,14 @@ class SystemOcrPageResult {
 
   bool get isEmpty => lines.isEmpty;
 }
+
+/// [SystemOcrUnavailableException.reason]：模型没就绪（Android 的 ML Kit 模型还没由
+/// Play 服务取下）。只有这一种该带用户去下载模型（BUG-2906）。
+const String kSystemOcrModelUnavailableReason = 'model_unavailable';
+
+/// [SystemOcrUnavailableException.reason]：系统没装这门语言的识别器（Windows OCR
+/// 按语言随语言包安装，没装日语就识别不了日文）。用户要去系统设置里装语言。
+const String kSystemOcrLanguageUnavailableReason = 'language_unavailable';
 
 /// 系统 OCR 不可用时的原因（直接抛给上层做人话提示）。
 class SystemOcrUnavailableException implements Exception {
@@ -79,14 +93,60 @@ abstract interface class SystemOcrPlatform {
   Future<bool> isAvailable();
 
   /// 识别一张图。[language] 是 BCP-47 主子标签（`ja`/`en`/`zh`…）。
+  ///
+  /// [tiles] 是可选的切片（整页像素坐标，见 `ocr_page_tiling.dart`）：平台逐片
+  /// 识别，回传的行仍是整页坐标，并用 [SystemOcrTextLine.tile] 标明出自哪片。
+  /// 平台可以忽略它（整页识别、行不带下标）——调用方的跨片合并对这种结果是
+  /// 恒等的。
   Future<SystemOcrPageResult> recognize(
     Uint8List imageBytes, {
     required String language,
+    List<Rect> tiles = const <Rect>[],
   });
 }
 
+/// 系统 OCR 模型的就绪状态（BUG-2906）。
+///
+/// 只有 Android 会出现「未就绪」：ML Kit 模型由 Google Play 服务保管，安装时的
+/// 顺手下载不保证真取到。其它平台的系统 OCR 是系统组件，恒 [ready]。
+enum SystemOcrModelStatus {
+  /// 模型在，可以识别。
+  ready,
+
+  /// Play 服务在，但还没取下这门语言的模型：可以立即请它下载。
+  missing,
+
+  /// Play 服务缺失 / 停用 / 过旧，但系统能引导用户修好。
+  playServicesResolvable,
+
+  /// 本机没有可用的 Play 服务：系统 OCR 在这台设备上用不了。
+  playServicesUnavailable;
+
+  /// 平台回答的线上值（与 Android `SystemOcrChannel.STATUS_*` 一一对应）。
+  static SystemOcrModelStatus? fromWire(Object? raw) => switch (raw) {
+        'ready' => ready,
+        'missing' => missing,
+        'play_services_resolvable' => playServicesResolvable,
+        'play_services_unavailable' => playServicesUnavailable,
+        _ => null,
+      };
+}
+
+/// 系统 OCR 模型的查询与下载——识别报 [SystemOcrUnavailableException] 后，带用户
+/// 去把模型配好，而不是只丢一句「没就绪」（BUG-2906）。测试注 fake。
+abstract interface class SystemOcrModelSetup {
+  /// 查 [language] 的模型是否在本机。只查询，不触发下载。
+  Future<SystemOcrModelStatus> modelStatus(String language);
+
+  /// 请系统立即下载 [language] 的模型，下完才返回；失败抛 [PlatformException]。
+  Future<void> installModel(String language);
+
+  /// 让系统引导用户修复 Play 服务（安装 / 启用 / 更新）。修好返回 true。
+  Future<bool> resolvePlayServices();
+}
+
 /// 生产实现：走平台通道。
-class MethodChannelSystemOcr implements SystemOcrPlatform {
+class MethodChannelSystemOcr implements SystemOcrPlatform, SystemOcrModelSetup {
   const MethodChannelSystemOcr({MethodChannel? channel})
       : _channel = channel ?? kSystemOcrChannel;
 
@@ -109,6 +169,7 @@ class MethodChannelSystemOcr implements SystemOcrPlatform {
   Future<SystemOcrPageResult> recognize(
     Uint8List imageBytes, {
     required String language,
+    List<Rect> tiles = const <Rect>[],
   }) async {
     final Map<Object?, Object?>? raw;
     try {
@@ -117,6 +178,11 @@ class MethodChannelSystemOcr implements SystemOcrPlatform {
         <String, Object?>{
           'bytes': imageBytes,
           'language': language,
+          if (tiles.isNotEmpty)
+            'tiles': <List<double>>[
+              for (final Rect tile in tiles)
+                <double>[tile.left, tile.top, tile.right, tile.bottom],
+            ],
         },
       );
     } on PlatformException catch (error) {
@@ -124,7 +190,13 @@ class MethodChannelSystemOcr implements SystemOcrPlatform {
       // 或本机压根没有 GMS）不是「这张图识别失败」：调用方据此该提示等待或换引擎，
       // 而不是让用户去怀疑图片。原生侧用 MODEL_UNAVAILABLE 把它单独标出来。
       if (error.code == 'MODEL_UNAVAILABLE') {
-        throw const SystemOcrUnavailableException('model_unavailable');
+        throw const SystemOcrUnavailableException(
+            kSystemOcrModelUnavailableReason);
+      }
+      // Windows：该语言的识别器没装（随系统语言包安装），同样不是图片的问题。
+      if (error.code == 'LANGUAGE_UNAVAILABLE') {
+        throw const SystemOcrUnavailableException(
+            kSystemOcrLanguageUnavailableReason);
       }
       rethrow;
     }
@@ -132,6 +204,49 @@ class MethodChannelSystemOcr implements SystemOcrPlatform {
       throw const SystemOcrUnavailableException('empty_response');
     }
     return parseSystemOcrPayload(raw);
+  }
+
+  @override
+  Future<SystemOcrModelStatus> modelStatus(String language) async {
+    final String? raw;
+    try {
+      raw = await _channel.invokeMethod<String>(
+        'modelStatus',
+        <String, Object?>{'language': language},
+      );
+    } on MissingPluginException {
+      // 只有 Android 实现了它：其它平台的系统 OCR 是系统组件，没有模型可缺。
+      return SystemOcrModelStatus.ready;
+    }
+    final SystemOcrModelStatus? status = SystemOcrModelStatus.fromWire(raw);
+    if (status == null) {
+      throw PlatformException(
+        code: 'INVALID_STATUS',
+        message: 'unknown system OCR model status: $raw',
+      );
+    }
+    return status;
+  }
+
+  @override
+  Future<void> installModel(String language) async {
+    try {
+      await _channel.invokeMethod<String>(
+        'installModel',
+        <String, Object?>{'language': language},
+      );
+    } on MissingPluginException {
+      return;
+    }
+  }
+
+  @override
+  Future<bool> resolvePlayServices() async {
+    try {
+      return await _channel.invokeMethod<bool>('resolvePlayServices') ?? false;
+    } on MissingPluginException {
+      return false;
+    }
   }
 }
 
@@ -164,12 +279,12 @@ SystemOcrPageResult parseSystemOcrPayload(Map<Object?, Object?> raw) {
       if (right <= left || bottom <= top) continue;
       final Rect rect = Rect.fromLTRB(left, top, right, bottom);
       final Object? vertical = entry['vertical'];
+      final Object? tile = entry['tile'];
       lines.add(SystemOcrTextLine(
         text: text,
         rect: rect,
-        // 平台不表态时按包围盒推断：高远大于宽的行就是竖排。漫画气泡里这条
-        // 启发式足够准，而且错了也只影响 writing-mode，不影响能不能查词。
-        isVertical: vertical is bool ? vertical : rect.height > rect.width * 1.6,
+        isVertical: vertical is bool ? vertical : inferSystemOcrVertical(rect),
+        tile: tile is num ? tile.toInt() : null,
       ));
     }
   }
@@ -179,6 +294,12 @@ SystemOcrPageResult parseSystemOcrPayload(Map<Object?, Object?> raw) {
     imageHeight: height,
   );
 }
+
+/// 平台不表态时按包围盒推断竖排：高远大于宽的行就是竖排。漫画气泡里这条
+/// 启发式足够准，而且错了也只影响 writing-mode，不影响能不能查词。
+///
+/// 跨片拼接后的行也走这一条，所以单独抽出来——两处各写一遍就是两套判据。
+bool inferSystemOcrVertical(Rect rect) => rect.height > rect.width * 1.6;
 
 int _asInt(Object? value) {
   if (value is int) return value;

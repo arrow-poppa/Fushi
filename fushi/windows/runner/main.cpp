@@ -8,8 +8,10 @@
 #include "crash_dump.h"
 #include "external_video_handoff.h"
 #include "flutter_window.h"
+#include "hang_watchdog.h"
 #include "single_instance_mutex.h"
 #include "utils.h"
+#include "window_capture.h"
 
 namespace {
 
@@ -75,6 +77,19 @@ bool HasRestartMarker() {
 // exe 的多进程仍指向同一目录，守卫职责不变。
 bool IsTestRunnerMode() {
   return ::GetEnvironmentVariableW(L"FUSHI_TEST_HIDDEN", nullptr, 0) > 0;
+}
+
+// 开发期与已安装的 Fushi 并存（`flutter run` 热重载时用户还开着自己的 Fushi 在看书）。
+// 只在 debug 构建、且显式设了 FUSHI_DEV_SIDE_BY_SIDE 时生效，release 包恒为 false。
+// 跳过单实例守卫同样安全，理由与 IsTestRunnerMode 相同：debug exe 在构建目录里，
+// 默认 WebView2 userDataFolder（<exe>.WebView2）与已安装实例不是同一个目录。数据根
+// 由调用方用 FUSHI_TEST_ROOT 隔离（见 docs/agent/build.md「与已安装版并存的热重载」）。
+bool IsDevSideBySideMode() {
+#ifdef NDEBUG
+  return false;
+#else
+  return ::GetEnvironmentVariableW(L"FUSHI_DEV_SIDE_BY_SIDE", nullptr, 0) > 0;
+#endif
 }
 
 // BUG-1483: [dir] 下能否创建文件（进而创建 WebView2 数据目录）。用一次性探针文件
@@ -148,7 +163,17 @@ void EnsureWritableWebView2UserDataFolder() {
 
 int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
                       _In_ wchar_t *command_line, _In_ int show_command) {
-  // Inno Setup 静默更新靠这个命名互斥量检测并关闭运行中的实例（见 hibiki.iss AppMutex）。
+  // PrintWindow can synchronously enter an unresponsive target window. Keep
+  // that call in a killable helper process before any Flutter, WebView2, or
+  // single-instance initialization so a timeout cannot strand the app's
+  // runner thread or its global capture gate.
+  const int print_window_helper_exit =
+      ::fushi::RunPrintWindowCaptureHelperIfRequested();
+  if (print_window_helper_exit >= 0) {
+    return print_window_helper_exit;
+  }
+
+  // Inno Setup 静默更新靠这个命名互斥量检测并关闭运行中的实例（见 fushi.iss AppMutex）。
   // TODO-904 / BUG-437: 真单实例守卫。第二个 fushi.exe 与首实例共享同一 WebView2
   // 默认 userDataFolder（基于 exe 名），而 WebView2 契约不允许多进程并发同一
   // userDataFolder → 第二实例 env 创建锁冲突失败 → `Cannot create the InAppWebView
@@ -156,7 +181,8 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
   // 此处检测已有实例则把首实例窗口前置并退出本进程，消除双实例锁冲突放大器。
   // 集成测试 runner（FUSHI_TEST_HIDDEN 非空）跳过整套单实例守卫——见 IsTestRunnerMode
   // 注释：否则撞用户实例的互斥量会在引擎初始化前退出，itest 无法 attach。
-  const bool test_runner = IsTestRunnerMode();
+  const bool dev_side_by_side = IsDevSideBySideMode();
+  const bool test_runner = IsTestRunnerMode() || dev_side_by_side;
   ::fushi::SingleInstanceMutex single_instance_mutex(
       L"FushiSingleInstanceMutex", !test_runner);
   if (!test_runner && !single_instance_mutex.valid()) {
@@ -252,6 +278,11 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
   ::CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
 
   flutter::DartProject project(L"data");
+  // Flutter 3.47 起 Windows 默认 Impeller；合成器内 HDR 的引擎补丁
+  // （ci/patches/flutter-engine/<版本>/）只实现了 Skia 路径，Impeller 下
+  // FlutterDesktopViewSetHdrOutput 恒返回 false、HDR 视频静默退回宿主窗。
+  // 3.44 及以前 Windows 默认就是 Skia，这里保持同一渲染器。
+  project.set_impeller_switch(flutter::ImpellerSwitch::Disabled);
 
   std::vector<std::string> command_line_arguments =
       GetCommandLineArguments();
@@ -261,10 +292,18 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
   FlutterWindow window(project);
   Win32Window::Point origin(10, 10);
   Win32Window::Size size(1280, 720);
-  if (!window.CreateAndShow(L"Fushi", origin, size)) {
+  // 并存模式下换标题：已安装实例的二次启动（文件关联转交）按标题 FindWindow 找主窗，
+  // 不能把用户双击的视频转交给开发实例。
+  if (!window.CreateAndShow(dev_side_by_side ? L"Fushi Dev" : L"Fushi", origin,
+                            size)) {
     return EXIT_FAILURE;
   }
   window.SetQuitOnClose(true);
+
+  // BUG-2588：主线程停泵看门狗——卡死（非崩溃）时从旁路线程抓一份全线程栈
+  // minidump 到 crashdumps 目录，让「查词后整机卡死、只能强杀」的报告有可分析
+  // 的二进制证据。消息循环退出后先停掉，退出期不泵消息不算卡死。
+  ::fushi::StartHangWatchdog(window.GetHandle());
 
   ::MSG msg;
   while (::GetMessage(&msg, nullptr, 0, 0)) {
@@ -272,6 +311,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
     ::DispatchMessage(&msg);
   }
 
+  ::fushi::StopHangWatchdog();
   ::CoUninitialize();
   return EXIT_SUCCESS;
 }

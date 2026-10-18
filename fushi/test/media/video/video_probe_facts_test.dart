@@ -1,6 +1,28 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi_engine/media/video/ffmpeg_backend.dart';
 import 'package:fushi_engine/media/video/video_duration_probe.dart';
 import 'package:fushi_engine/media/video/video_dynamic_range.dart';
+
+/// 固定退出码 / 输出的 ffprobe 替身。
+class _StubBackend implements FfmpegBackend {
+  /// 查询类命令（BUG-2938 新增原语）：本假件不区分，交给 [run]。
+  @override
+  Future<FfmpegRunResult> runQuery(List<String> args, Duration timeout) =>
+      run(args, timeout);
+
+  _StubBackend({required this.returnCode, this.output = ''});
+
+  final int? returnCode;
+  final String output;
+
+  @override
+  Future<FfmpegRunResult> run(List<String> args, Duration timeout) async =>
+      FfmpegRunResult(returnCode: returnCode, output: output);
+
+  @override
+  Future<FfmpegRunResult> runProbe(List<String> args, Duration timeout) async =>
+      FfmpegRunResult(returnCode: returnCode, output: output);
+}
 
 /// ffprobe JSON 的解析。
 ///
@@ -101,6 +123,45 @@ void main() {
 
       expect(tracks[2].isCommentary, isTrue, reason: 'disposition.comment=1');
       expect(tracks[2].title, 'Commentary');
+    });
+
+    test('Atmos 来自 ffprobe profile，落库往返不丢', () {
+      const String atmosJson = '''
+{"streams":[{"index":1,"codec_name":"truehd","codec_type":"audio",
+"profile":"Dolby TrueHD + Dolby Atmos","channels":8,"channel_layout":"7.1"}]}
+''';
+      final AudioTrackFacts track =
+          parseFfprobeFacts(atmosJson).audioTracks.single;
+      expect(track.profile, 'Dolby TrueHD + Dolby Atmos');
+      expect(track.isAtmos, isTrue);
+      final AudioTrackFacts back = AudioTrackFacts.fromJson(track.toJson());
+      expect(back.profile, track.profile);
+      expect(back.isAtmos, isTrue);
+    });
+
+    test('老 ffmpeg 不报 profile 时退到轨道名；只认 TrueHD / E-AC-3', () {
+      expect(
+        const AudioTrackFacts(
+                index: 1, codec: 'eac3', title: 'English DDP 5.1 Atmos')
+            .isAtmos,
+        isTrue,
+      );
+      expect(
+        const AudioTrackFacts(index: 1, codec: 'aac', title: 'Atmos remix')
+            .isAtmos,
+        isFalse,
+        reason: 'AAC 承载不了 Atmos，标题写了也不信',
+      );
+      expect(
+        const AudioTrackFacts(index: 1, codec: 'truehd', channels: 8).isAtmos,
+        isFalse,
+        reason: '什么都没说就按否处理',
+      );
+    });
+
+    test('字段集要了 profile（v4 起），改字段集必须 bump 版本', () {
+      expect(kVideoProbeShowEntries, contains('profile'));
+      expect(kVideoProbeFieldSetVersion, greaterThanOrEqualTo(4));
     });
 
     test('两条字幕轨', () {
@@ -467,6 +528,49 @@ void main() {
       expect(label(null, 8), '7.1');
       expect(label(null, 2), '2.0');
       expect(label(null, null), isNull);
+    });
+  });
+
+  group('BUG-2571 没探成 vs 探完了没东西', () {
+    test('超时（returnCode == null）判为 unavailable，不是 empty', () async {
+      // 移动端 ffmpeg-kit 超时返回的就是这个形状（见 KitFfmpegBackend 文档）。
+      final VideoProbeFacts facts = await probeVideoFacts(
+        '/any/path.mkv',
+        backend: _StubBackend(returnCode: null),
+      );
+      expect(
+        facts.isUnavailable,
+        isTrue,
+        reason: '超时可自愈，缓存层据此保留重试权',
+      );
+      expect(facts.isEmpty, isTrue, reason: '事实确实一条都没探到');
+    });
+
+    test('非零退出判为 unavailable', () async {
+      final VideoProbeFacts facts = await probeVideoFacts(
+        '/any/path.mkv',
+        backend: _StubBackend(returnCode: 1, output: 'not found'),
+      );
+      expect(facts.isUnavailable, isTrue);
+    });
+
+    test('跑成功但容器里确实没东西 → empty（终局），isUnavailable 为 false', () async {
+      final VideoProbeFacts facts = await probeVideoFacts(
+        '/any/path.mkv',
+        backend: _StubBackend(returnCode: 0, output: '{"streams":[]}'),
+      );
+      expect(facts.isEmpty, isTrue);
+      expect(
+        facts.isUnavailable,
+        isFalse,
+        reason: '这是结论：再探一百次也是这个结果，允许永久记账',
+      );
+    });
+
+    test('两个哨兵常量的身份不能混', () {
+      expect(VideoProbeFacts.empty.isUnavailable, isFalse);
+      expect(VideoProbeFacts.unavailable.isUnavailable, isTrue);
+      expect(VideoProbeFacts.unavailable.isEmpty, isTrue);
     });
   });
 }

@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -87,7 +87,6 @@ void main() {
       window.hiddenDictionaryNames = [];
       window.dictionaryStyles = {};
       window.compactGlossaries = false;
-      window.compactGlossariesAnki = false;
       window.useAnkiConnect = false;
       window.embedMedia = false;
       window.audioSources = [];

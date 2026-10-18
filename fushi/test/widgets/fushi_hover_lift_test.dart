@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/gestures.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
@@ -214,7 +214,7 @@ void main() {
         src.contains(banned),
         isFalse,
         reason: '$banned 不保证配对；压制只能认 ScrollUpdateNotification '
-            '（它同时覆盖滚轮、拖拽与 FushiScrollController 的补间）',
+            '（它同时覆盖滚轮、拖拽与 SmoothWheelScrollScope 的补间）',
       );
     }
     expect(

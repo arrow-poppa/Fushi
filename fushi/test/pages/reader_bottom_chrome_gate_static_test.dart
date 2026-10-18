@@ -41,8 +41,15 @@ void main() {
     );
     expect(
       shouldPaint,
-      contains('chromeExpanded: _showChrome'),
-      reason: '底栏可见性仍须随 _showChrome。',
+      contains('chromeExpanded: _chromeBarsExpanded'),
+      reason: '底栏可见性仍须随 _showChrome（经栏关掉闸门 _chromeBarsExpanded）。',
+    );
+    expect(
+      src,
+      contains(
+          'bool get _chromeBarsExpanded => _showChrome && !_toolbarsHidden;'),
+      reason: '布局判据 = 用户意图 _showChrome 且栏没被关掉；关栏不得去翻 '
+          '_showChrome（它还是 JS 点词门控的镜像）。',
     );
     final String pureGate = _functionSource(
       File('lib/src/reader/reader_chrome_floating.dart')
@@ -68,16 +75,20 @@ void main() {
       '  Widget _buildBottomChrome()',
       '  Widget _buildAudiobookBar()',
     );
+    // 歌词覆盖层在场时底栏额外停画（`_lyricsMode || ...`），但收敛门控本身必须
+    // 仍是不画分支的判据之一。
     expect(
-      buildChrome,
-      contains('if (!_bottomBarShouldPaint)'),
+      RegExp(r'if \((?:_lyricsMode \|\| )?!_bottomBarShouldPaint\) \{\s*'
+              r'return const SizedBox\.shrink\(\);')
+          .hasMatch(buildChrome),
+      isTrue,
       reason: '_buildBottomChrome 必须经收敛后的 _bottomBarShouldPaint 门控可见性。',
     );
     // popupBottomReserve 经 _bottomChromeReserve（含 _hasEverLoaded && _showChrome
     // 占位判据 + 悬浮归零），不得退回 _readerContentReady。
     expect(
       src,
-      contains('barOccupiesLayout: _hasEverLoaded && _showChrome'),
+      contains('barOccupiesLayout: _hasEverLoaded && _chromeBarsExpanded'),
       reason: 'popupBottomReserve / _bottomChromeReserve 必须与底栏同门控在 '
           '_hasEverLoaded，不得用 _readerContentReady。',
     );

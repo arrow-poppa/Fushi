@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 // ignore: depend_on_referenced_packages  — 测试桩需直接实现该平台接口（flutter_inappwebview 的传递依赖）
 import 'package:flutter_inappwebview_platform_interface/flutter_inappwebview_platform_interface.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -9,10 +9,12 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/models.dart';
 import 'package:fushi/pages.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';
+import 'package:fushi/src/utils/components/fushi_deferred_loading.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 
 import '../helpers/fake_inappwebview_platform.dart';
 import '../helpers/test_platform_services.dart';
+import '../helpers/popup_mining_target_overrides.dart';
 
 /// BUG-712 P1 守卫：每次查词只把结果推进弹窗 WebView 一次。
 ///
@@ -205,6 +207,195 @@ void main() {
     });
   });
 
+  group('popup document reload', () {
+    testWidgets('late loadStop from a replaced controller is ignored', (
+      WidgetTester tester,
+    ) async {
+      await tester.pumpWidget(
+        wrapPopup(
+          appModel: PushDedupAppModel(),
+          popup: DictionaryPopupWebView(result: makeResult('語')),
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+      expect(
+        harness.hasDistinctControllerWrappers,
+        isTrue,
+        reason: 'Windows creates distinct wrappers around one platform',
+      );
+      expect(harness.pushCount, 1);
+      await harness.firePopupRendered();
+      final VoidCallback oldLoadStop = harness.captureLoadStop();
+
+      harness.replaceController();
+      harness.fireLoadStart();
+      oldLoadStop();
+      await tester.pump();
+      await tester.pump();
+      expect(
+        harness.pushCount,
+        1,
+        reason: 'an old native view cannot complete the replacement load',
+      );
+
+      harness.fireLoadStop();
+      await tester.pump();
+      await tester.pump();
+      expect(harness.pushCount, 2);
+      await harness.firePopupRendered();
+      oldLoadStop();
+      await tester.pump();
+      await tester.pump();
+      expect(
+        harness.pushCount,
+        2,
+        reason: 'a late old loadStop cannot invalidate the current document',
+      );
+      final DictionaryPopupWebViewState state = tester
+          .state<DictionaryPopupWebViewState>(
+            find.byType(DictionaryPopupWebView),
+          );
+      expect(state.refreshCurrentResult(), isFalse);
+    });
+
+    testWidgets(
+      'rendered result reload sends full entries, static and extras',
+      (WidgetTester tester) async {
+        await tester.pumpWidget(
+          wrapPopup(
+            appModel: PushDedupAppModel(),
+            popup: DictionaryPopupWebView(result: makeResult('語')),
+          ),
+        );
+        await tester.pump();
+        await tester.pump();
+        await harness.firePopupRendered();
+        expect(harness.pushCount, 1);
+        final int? oldToken = harness.lastRenderToken;
+
+        harness.fireLoadStart();
+        harness.fireLoadStop();
+        await tester.pump();
+        await tester.pump();
+
+        expect(
+          harness.pushCount,
+          2,
+          reason: 'the same Dart result belongs to a new, empty document',
+        );
+        final String script = harness.scripts.lastWhere(
+          (String s) => s.contains('window.lookupEntries'),
+        );
+        for (final String marker in <String>[
+          '語',
+          'window.dictionaryStyles',
+          'window.i18nCtx',
+          'window.__fushiResetPopupScroll =',
+          'window.renderPopup();',
+        ]) {
+          expect(script, contains(marker));
+        }
+        final DictionaryPopupWebViewState state = tester
+            .state<DictionaryPopupWebViewState>(
+              find.byType(DictionaryPopupWebView),
+            );
+        await harness.firePopupRendered(token: oldToken);
+        expect(
+          state.refreshCurrentResult(),
+          isTrue,
+          reason:
+              'the old document render callback cannot complete the new one',
+        );
+        await harness.firePopupRendered();
+        expect(state.refreshCurrentResult(), isFalse);
+        expect(harness.pushCount, 2);
+      },
+    );
+
+    testWidgets('result changes during navigation wait for the new document', (
+      WidgetTester tester,
+    ) async {
+      final GlobalKey<ReorderProbeState> probe = GlobalKey<ReorderProbeState>();
+      await tester.pumpWidget(
+        wrapPopup(
+          appModel: PushDedupAppModel(),
+          popup: ReorderProbe(key: probe, initial: makeResult('語')),
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+      await harness.firePopupRendered();
+      expect(harness.pushCount, 1);
+
+      harness.fireLoadStart();
+      probe.currentState!.show(makeResult('途中'));
+      await tester.pump();
+      probe.currentState!.show(makeResult('最新'));
+      await tester.pump();
+      expect(
+        harness.pushCount,
+        1,
+        reason: 'no result may be injected into a document being replaced',
+      );
+
+      harness.fireLoadStop();
+      await tester.pump();
+      await tester.pump();
+      expect(harness.pushCount, 2);
+      final String script = harness.scripts.lastWhere(
+        (String s) => s.contains('window.lookupEntries'),
+      );
+      expect(script, contains('最新'));
+      expect(script, isNot(contains('途中')));
+      expect(script, contains('window.renderPopup();'));
+    });
+
+    for (final bool replaceController in <bool>[false, true]) {
+      testWidgets(
+        'stale bootstrap after ${replaceController ? "controller replacement" : "navigation"} '
+        'cannot ready the new document',
+        (WidgetTester tester) async {
+          harness.blockViewportInjection = true;
+          await tester.pumpWidget(
+            wrapPopup(
+              appModel: PushDedupAppModel(),
+              popup: DictionaryPopupWebView(result: makeResult('語')),
+            ),
+          );
+          await tester.pump();
+          await tester.pump();
+          final Completer<dynamic>? pending = harness.pendingViewportInjection;
+          expect(pending, isNotNull);
+          expect(harness.pushCount, 0);
+
+          if (replaceController) harness.replaceController();
+          harness.fireLoadStart();
+          harness.blockViewportInjection = false;
+          pending!.complete();
+          await tester.pump();
+          expect(
+            harness.pushCount,
+            0,
+            reason: 'a prior bootstrap completion is not the new loadStop',
+          );
+
+          harness.fireLoadStop();
+          await tester.pump();
+          await tester.pump();
+          expect(harness.pushCount, 1);
+          expect(
+            harness.scripts.lastWhere(
+              (String s) => s.contains('window.lookupEntries'),
+            ),
+            contains('window.renderPopup();'),
+          );
+          expect(tester.takeException(), isNull);
+        },
+      );
+    }
+  });
+
   group('BUG-712 ③ static settings payload dedup', () {
     testWidgets(
         'a repeat push with unchanged settings omits the static payload '
@@ -358,14 +549,14 @@ void main() {
       hostKey.currentState!.showDeferredPopup();
       await tester.pump();
       // 本帧确实架过盖板（渲染进树），post-frame 已拿到 false 并清态……
-      expect(find.byType(LinearProgressIndicator), findsOneWidget,
+      expect(_activeLoadingCover(), findsOneWidget,
           reason: '盖板在探询帧内确实架起过（结构没被绕开）');
       await tester.pump();
 
       // ……下一帧（零时长）盖板必须已撤，弹窗可见——不等 1.8s failsafe。
       final stack = hostKey.currentState!.debugPopupStack;
       expect(stack.single.visible, isTrue);
-      expect(find.byType(LinearProgressIndicator), findsNothing,
+      expect(_activeLoadingCover(), findsNothing,
           reason: 'refreshCurrentResult 返回 false（已渲染完成、信号不会再来）时，'
               '宿主必须立即走 rendered 路径撤盖板，而不是空等 failsafe 超时');
       expect(harness.pushCount, seedPushes + 1, reason: '兜底探询对已渲染结果零重推');
@@ -373,6 +564,26 @@ void main() {
       // pending timer 失败——测试干净结束本身就是「不等 failsafe」的证据。
     });
   });
+}
+
+/// 可换 result 的宿主（重建 widget，真走 didUpdateWidget）。
+class ReorderProbe extends StatefulWidget {
+  const ReorderProbe({super.key, required this.initial});
+  final DictionarySearchResult initial;
+
+  @override
+  State<ReorderProbe> createState() => ReorderProbeState();
+}
+
+class ReorderProbeState extends State<ReorderProbe> {
+  late DictionarySearchResult _result = widget.initial;
+
+  void show(DictionarySearchResult result) {
+    setState(() => _result = result);
+  }
+
+  @override
+  Widget build(BuildContext context) => DictionaryPopupWebView(result: _result);
 }
 
 // ───────────────────────── 记录桩（可数注入的假 WebView 平台） ─────────────────────────
@@ -386,6 +597,44 @@ class RecordingWebViewHarness {
   bool blockViewportInjection = false;
   bool failViewportInjection = false;
   Completer<dynamic>? pendingViewportInjection;
+
+  late PlatformInAppWebViewWidgetCreationParams _params;
+  dynamic _createdController;
+  dynamic _controller;
+
+  bool get hasDistinctControllerWrappers =>
+      !identical(_createdController, _controller);
+
+  /// Keep the same platform view while replaying document navigation events.
+  void attach(PlatformInAppWebViewWidgetCreationParams params) {
+    _params = params;
+    replaceController();
+    fireLoadStart();
+    fireLoadStop();
+  }
+
+  void replaceController() {
+    final _RecordingPlatformController platformController =
+        _RecordingPlatformController(this);
+    // Windows caches a wrapper for events in the platform controller, then
+    // creates another wrapper for onWebViewCreated. Both own the same platform.
+    _controller =
+        _params.controllerFromPlatform?.call(platformController) ??
+        platformController;
+    _createdController =
+        _params.controllerFromPlatform?.call(platformController) ??
+        platformController;
+    _params.onWebViewCreated?.call(_createdController);
+  }
+
+  void fireLoadStart() => _params.onLoadStart?.call(_controller, null);
+
+  void fireLoadStop() => _params.onLoadStop?.call(_controller, null);
+
+  VoidCallback captureLoadStop() {
+    final dynamic controller = _controller;
+    return () => _params.onLoadStop?.call(controller, null);
+  }
 
   static final RegExp _tokenPattern =
       RegExp(r'window\.__fushiRenderToken = (\d+);');
@@ -479,14 +728,7 @@ class _RecordingWebViewLifecycleState
   void _fireLifecycle() {
     if (!mounted || _fired) return;
     _fired = true;
-    final _RecordingPlatformController platformController =
-        _RecordingPlatformController(widget.harness);
-    // 与真实平台实现一致：经 controllerFromPlatform 包成 app 侧 controller 再回调。
-    final dynamic controller =
-        widget.params.controllerFromPlatform?.call(platformController) ??
-            platformController;
-    widget.params.onWebViewCreated?.call(controller);
-    widget.params.onLoadStop?.call(controller, null);
+    widget.harness.attach(widget.params);
   }
 
   @override
@@ -567,10 +809,16 @@ class PushDedupAppModel extends AppModel {
   double get popupWheelSpeed => 1.0;
   @override
   bool get popupInstantScroll => false;
+  @override
+  double get popupInstantScrollWheelStep => 0.5;
+  @override
+  double get popupInstantScrollTouchStep => 0.25;
   // BUG-2284：与 popupInstantScroll 同批新增的注入项；本 fake 的 prefsRepo 为 null，
   // 不覆写就会在 _pushResults 里抛 null check，pushCount 归零。
   @override
   bool get compactGlossaries => false;
+  @override
+  bool get dictionaryUnifiedStyle => true;
   @override
   int get popupDictionaryColumns => 1;
   @override
@@ -635,7 +883,10 @@ DictionarySearchResult makeResult(String term) => DictionarySearchResult(
 
 Widget wrapPopup({required AppModel appModel, required Widget popup}) {
   return ProviderScope(
-    overrides: <Override>[appProvider.overrideWith((ref) => appModel)],
+    overrides: <Override>[
+      appProvider.overrideWith((ref) => appModel),
+      ...popupMiningTargetTestOverrides(),
+    ],
     child: TranslationProvider(
       child: MaterialApp(
         home: Scaffold(
@@ -681,7 +932,10 @@ Widget buildDedupHostApp({
   required GlobalKey<DedupHostPageState> hostKey,
 }) {
   return ProviderScope(
-    overrides: <Override>[appProvider.overrideWith((ref) => appModel)],
+    overrides: <Override>[
+      appProvider.overrideWith((ref) => appModel),
+      ...popupMiningTargetTestOverrides(),
+    ],
     child: TranslationProvider(
       child: MaterialApp(
         builder: (context, child) => child ?? const SizedBox.shrink(),
@@ -690,3 +944,8 @@ Widget buildDedupHostApp({
     ),
   );
 }
+
+/// 查词浮层的加载盖板（[FushiDeferredLoading]）当前是否在盖。
+Finder _activeLoadingCover() => find.byWidgetPredicate(
+  (Widget w) => w is FushiDeferredLoading && w.active,
+);

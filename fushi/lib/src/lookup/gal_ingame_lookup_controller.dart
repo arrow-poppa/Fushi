@@ -160,6 +160,7 @@ class GalIngameLookupController {
   GalLookupGeometryAdmissionMode _geometryAdmissionMode =
       GalLookupGeometryAdmissionMode.disabled;
   bool _geometryAttachedReady = false;
+
   /// 服务层缓存的「已被注入侧 ack 的」允许位。它与 mode/attachedReady 一起
   /// 构成完整 admission 字，使本类可以在不劳烦调用方的情况下独立重发。
   bool _geometryNativeInputAllowed = false;
@@ -196,6 +197,7 @@ class GalIngameLookupController {
   /// epoch。两者共同构成不可复用的 [GlobalLookupRoute]，使旧 Future / Timer / JS
   /// bridge 即便迟到也只能落回自己的离屏卡片代数，不能串到下一次点击或桌面浮窗。
   int _sessionRouteEpoch = 0;
+  String? _lastGeometryDiagnostic;
   int _lookupRouteEpoch = 0;
   GlobalLookupRoute? _activeRoute;
 
@@ -306,6 +308,7 @@ class GalIngameLookupController {
     // replacement mapping.
     if (_sessionActive) {
       _sessionRouteEpoch++;
+      _lastGeometryDiagnostic = null;
       _lookupRouteEpoch = 0;
     }
     _providerAdmission = false;
@@ -475,6 +478,7 @@ class GalIngameLookupController {
     _admission.value = GalLookupAdmission.unknown;
     if (active) {
       _sessionRouteEpoch++;
+      _lastGeometryDiagnostic = null;
       _lookupRouteEpoch = 0;
     }
     _sessionActive = active;
@@ -647,12 +651,18 @@ class GalIngameLookupController {
       _geometryAttachedReady = attachedReady;
       _geometryNativeInputAllowed = nativeInputAllowed;
     }
-    glog(
-      'gal-ingame: geometryAdmission=${mode.name} '
-      'attachedReady=$attachedReady nativeInputAllowed=$nativeInputAllowed '
-      'request=${result.requestSeq} '
-      'applied=${result.appliedSeq} -> ${result.error ?? "ok"}',
-    );
+    final String diagnosticState =
+        '${mode.name}:$attachedReady:$nativeInputAllowed:${result.ok}:'
+        '${result.error}:${result.requestSeq == result.appliedSeq}';
+    final String diagnostic =
+        'gal-ingame: geometryAdmission=${mode.name} '
+        'attachedReady=$attachedReady nativeInputAllowed=$nativeInputAllowed '
+        'request=${result.requestSeq} '
+        'applied=${result.appliedSeq} -> ${result.error ?? "ok"}';
+    if (_lastGeometryDiagnostic != diagnosticState) {
+      _lastGeometryDiagnostic = diagnosticState;
+      glog(diagnostic);
+    }
     return result;
   }
 
@@ -918,20 +928,16 @@ class GalIngameLookupController {
           '${result.error ?? "malformed_reply"}',
         );
       }
-      // Direct composition is outside the injected game Layer, so the native
-      // lookup-suppress acknowledgement alone cannot hide it from WGC/window
-      // capture. Hide the same routed WebView HWND synchronously before granting
-      // the lease; release keeps the DOM alive and _drainRecapture reveals it at
-      // the latest anchor. Bitmap fallback remains covered by the hook ack above.
-      // The suppress call may have yielded while a newer lookup replaced this
-      // route. Hide the currently-owned physical galCard surface; using the
-      // stale token would be silently dropped at the channel boundary.
-      final GlobalLookupRoute hideRoute = _activeRoute ?? route;
-      await GlobalLookupChannel.runWithRoute(
-        hideRoute,
-        () => GlobalLookupChannel.hide(notify: false),
-      );
-      _directSurfaceActive = false;
+      // BUG-2922 — the direct composition card is NOT hidden here. It is a
+      // separate top-level HWND (owned by the game, never the game's child),
+      // and every game-window capture path is per-window: WGC CreateForWindow
+      // and the PrintWindow fallback render only the target window's own
+      // visual, never another top-level window stacked above it (probed: an
+      // owned topmost popup over the window stays out of the WGC frame while
+      // it is on screen). Hiding it only made the card blink off and back on
+      // for every mining click. The hook ack above still hides what really
+      // lives in the game render tree: the bitmap-fallback card and the term
+      // highlight.
       return _GalIngameCaptureLease(
         () => _releaseMiningCaptureLease(leaseEpoch),
       );
@@ -1161,14 +1167,8 @@ class GalIngameLookupController {
     // 查词立刻跟上，不存在读到上一次 present 旧值的窗口。量不到（0）时退回画布口径。
     final int clientW = hit.clientW > 0 ? hit.clientW : hit.viewW;
     final int clientH = hit.clientH > 0 ? hit.clientH : hit.viewH;
-    double w = math.min(
-      clientW * _kCardViewportFraction,
-      hit.viewW.toDouble(),
-    );
-    double h = math.min(
-      clientH * _kCardViewportFraction,
-      hit.viewH.toDouble(),
-    );
+    double w = math.min(clientW * _kCardViewportFraction, hit.viewW.toDouble());
+    double h = math.min(clientH * _kCardViewportFraction, hit.viewH.toDouble());
     const int budgetPixels = _kCardBitmapBytes ~/ 4;
     final double area = w * h;
     if (area > budgetPixels) {
@@ -1224,11 +1224,7 @@ class GalIngameLookupController {
   /// `[0, viewH - capH]`），而 cap 高度又常常远超锚侧空间：卡片明明放在下方，夹子
   /// 却把 top 拽到 `viewH - capH` 之上，反推出来就是「above」，edgeY 随之变成视口
   /// 底边——与字形完全脱钩，正是 BUG-2082 要消灭的那段空隙的镜像形态。
-  GalRootPlacement _resolveRootPlacement(
-    GalLookupHit hit,
-    int capW,
-    int capH,
-  ) {
+  GalRootPlacement _resolveRootPlacement(GalLookupHit hit, int capW, int capH) {
     final ({({int x, int y}) anchor, bool showBelow}) solution = _solveAnchor(
       hit,
       capW,
@@ -1450,6 +1446,23 @@ class GalIngameLookupController {
     if (_directSurfaceActive) {
       _recaptureDirty = false;
       glog('gal-ingame: direct WebView surface active seq=${hit.seq}');
+      // BUG-2921 — nested child cards must be laid out in the domain the card
+      // actually lives in: the game client area around the runner-placed root.
+      final int? rootClientX = result.rootClientX;
+      final int? rootClientY = result.rootClientY;
+      if (rootClientX != null && rootClientY != null) {
+        GlobalLookupController.instance.adoptGalDirectLayoutViewport(
+          route: route,
+          clientWidth: result.clientWidth > 0
+              ? result.clientWidth
+              : hit.clientW,
+          clientHeight: result.clientHeight > 0
+              ? result.clientHeight
+              : hit.clientH,
+          rootClientX: rootClientX,
+          rootClientY: rootClientY,
+        );
+      }
       // BUG-2087 — the direct route hands the card to the host-owned surface
       // and only writes a dismiss frame to the hook, so the looked-up term's
       // highlight range never reached the engine side. Send the pixel-free

@@ -64,7 +64,7 @@ void main() {
           MiningAnimatedFormat format = MiningAnimatedFormat.gif,
           bool diagnosticOnly = false,
           FfmpegFailureReporter? onFailure,
-          String? tlsPinSha256}) async =>
+          String? tlsPinSha256, Map<String, String> httpHeaders = const {}}) async =>
       outputPath;
   Future<String?> nullGif(
           {required String inputPath,
@@ -76,7 +76,7 @@ void main() {
           MiningAnimatedFormat format = MiningAnimatedFormat.gif,
           bool diagnosticOnly = false,
           FfmpegFailureReporter? onFailure,
-          String? tlsPinSha256}) async =>
+          String? tlsPinSha256, Map<String, String> httpHeaders = const {}}) async =>
       null;
   Future<String?> okAudio(
           {required String inputPath,
@@ -88,7 +88,7 @@ void main() {
           FfmpegFailureReporter? onFailure,
           int audioChannels = 1,
           String audioBitrate = '64k',
-          String? tlsPinSha256}) async =>
+          String? tlsPinSha256, Map<String, String> httpHeaders = const {}}) async =>
       outputPath;
   Future<String?> nullAudio(
           {required String inputPath,
@@ -100,7 +100,7 @@ void main() {
           FfmpegFailureReporter? onFailure,
           int audioChannels = 1,
           String audioBitrate = '64k',
-          String? tlsPinSha256}) async =>
+          String? tlsPinSha256, Map<String, String> httpHeaders = const {}}) async =>
       null;
   Future<String?> okFrame(
           {required String inputPath,
@@ -108,6 +108,7 @@ void main() {
           double atSeconds = 10.0,
           FfmpegFailureReporter? onFailure,
           String? tlsPinSha256,
+          Map<String, String> httpHeaders = const {},
           bool diagnosticOnly = false}) async =>
       outputPath;
   Future<String?> nullFrame(
@@ -116,6 +117,7 @@ void main() {
           double atSeconds = 10.0,
           FfmpegFailureReporter? onFailure,
           String? tlsPinSha256,
+          Map<String, String> httpHeaders = const {},
           bool diagnosticOnly = false}) async =>
       null;
 
@@ -224,7 +226,7 @@ void main() {
         FfmpegFailureReporter? onFailure,
         int audioChannels = 1,
         String audioBitrate = '64k',
-        String? tlsPinSha256}) async {
+        String? tlsPinSha256, Map<String, String> httpHeaders = const {}}) async {
       audioCalled = true;
       return outputPath;
     }
@@ -274,7 +276,7 @@ void main() {
         FfmpegFailureReporter? onFailure,
         int audioChannels = 1,
         String audioBitrate = '64k',
-        String? tlsPinSha256}) async {
+        String? tlsPinSha256, Map<String, String> httpHeaders = const {}}) async {
       audioCalled = true;
       return outputPath;
     }
@@ -357,6 +359,7 @@ void main() {
       bool diagnosticOnly = false,
       FfmpegFailureReporter? onFailure,
       String? tlsPinSha256,
+      Map<String, String> httpHeaders = const {},
     }) async {
       calls.add((fps: fps, width: width));
       await File(outputPath).writeAsBytes(List<int>.filled(5 * 1024 * 1024, 0));
@@ -447,7 +450,7 @@ void main() {
         MiningAnimatedFormat format = MiningAnimatedFormat.gif,
         bool diagnosticOnly = false,
         FfmpegFailureReporter? onFailure,
-        String? tlsPinSha256}) async {
+        String? tlsPinSha256, Map<String, String> httpHeaders = const {}}) async {
       gifInput = inputPath;
       return outputPath;
     }
@@ -462,7 +465,7 @@ void main() {
         FfmpegFailureReporter? onFailure,
         int audioChannels = 1,
         String audioBitrate = '64k',
-        String? tlsPinSha256}) async {
+        String? tlsPinSha256, Map<String, String> httpHeaders = const {}}) async {
       audioInput = inputPath;
       return outputPath;
     }
@@ -521,7 +524,7 @@ void main() {
         FfmpegFailureReporter? onFailure,
         int audioChannels = 1,
         String audioBitrate = '64k',
-        String? tlsPinSha256}) async {
+        String? tlsPinSha256, Map<String, String> httpHeaders = const {}}) async {
       audioInput = inputPath;
       return outputPath;
     }
@@ -666,7 +669,7 @@ void main() {
       FfmpegFailureReporter? onFailure,
       int audioChannels = 1,
       String audioBitrate = '64k',
-      String? tlsPinSha256}) async {
+      String? tlsPinSha256, Map<String, String> httpHeaders = const {}}) async {
     onFailure?.call('ffmpeg launch failed: executable=ffmpeg; '
         'errorCode=2; message=No such file or directory');
     return null;
@@ -735,7 +738,7 @@ void main() {
         FfmpegFailureReporter? onFailure,
         int audioChannels = 1,
         String audioBitrate = '64k',
-        String? tlsPinSha256}) async {
+        String? tlsPinSha256, Map<String, String> httpHeaders = const {}}) async {
       onFailure?.call(longCause);
       return null;
     }
@@ -779,7 +782,7 @@ void main() {
         MiningAnimatedFormat format = MiningAnimatedFormat.gif,
         bool diagnosticOnly = false,
         FfmpegFailureReporter? onFailure,
-        String? tlsPinSha256}) async {
+        String? tlsPinSha256, Map<String, String> httpHeaders = const {}}) async {
       gifCalled = true;
       return outputPath;
     }
@@ -818,7 +821,7 @@ void main() {
         MiningAnimatedFormat format = MiningAnimatedFormat.gif,
         bool diagnosticOnly = false,
         FfmpegFailureReporter? onFailure,
-        String? tlsPinSha256}) async {
+        String? tlsPinSha256, Map<String, String> httpHeaders = const {}}) async {
       gifCalled = true;
       return outputPath;
     }
@@ -884,14 +887,18 @@ void main() {
     expect(repo.minedContext!.coverPath, endsWith('immersion_shot.jpg'));
   });
 
-  // wireName 往返 + 未知值回退 gif（持久化契约，向后兼容）。
-  test('VideoMiningImageMode.fromWireName round-trips and defaults to gif', () {
+  // wireName 往返 + 未设/未知值回退默认 videoClip（用户拍板：所有能拿到画面的来源默认
+  // 出音画一体片段；显式选过的值原样保留）。
+  test('VideoMiningImageMode.fromWireName round-trips and defaults to videoClip',
+      () {
     for (final VideoMiningImageMode mode in VideoMiningImageMode.values) {
       expect(VideoMiningImageMode.fromWireName(mode.wireName), mode);
     }
-    expect(VideoMiningImageMode.fromWireName(null), VideoMiningImageMode.gif);
+    expect(VideoMiningImageMode.fromWireName(null),
+        VideoMiningImageMode.videoClip);
     expect(VideoMiningImageMode.fromWireName('nonsense'),
-        VideoMiningImageMode.gif);
+        VideoMiningImageMode.videoClip);
+    expect(VideoMiningImageMode.fromWireName('gif'), VideoMiningImageMode.gif);
     expect(VideoMiningImageMode.gif.isStill, false);
     expect(VideoMiningImageMode.currentFrame.isStill, true);
     expect(VideoMiningImageMode.subtitleStart.isStill, true);
@@ -900,5 +907,210 @@ void main() {
     expect(VideoMiningImageMode.videoClip.isVideoClip, true);
     expect(VideoMiningImageMode.videoClip.wireName, 'video_clip');
     expect(VideoMiningImageMode.gif.isVideoClip, false);
+  });
+
+  // ── 高级制卡：用户为这一张卡省略音频 / 图片（omitAudio / omitCover）────────
+  group('高级制卡 omitAudio / omitCover', () {
+    late List<String> calls;
+    Future<String?> gifT(
+            {required String inputPath,
+            required int startMs,
+            required int endMs,
+            required String outputPath,
+            int fps = 8,
+            int width = 320,
+            MiningAnimatedFormat format = MiningAnimatedFormat.gif,
+            bool diagnosticOnly = false,
+            FfmpegFailureReporter? onFailure,
+            String? tlsPinSha256,
+            Map<String, String> httpHeaders = const {}}) async {
+      calls.add('gif');
+      return outputPath;
+    }
+
+    Future<String?> audioT(
+            {required String inputPath,
+            required int startMs,
+            required int endMs,
+            required String outputPath,
+            int? audioStreamIndex,
+            int? audioStreamCount,
+            FfmpegFailureReporter? onFailure,
+            int audioChannels = 1,
+            String audioBitrate = '64k',
+            String? tlsPinSha256,
+            Map<String, String> httpHeaders = const {}}) async {
+      calls.add('audio');
+      return outputPath;
+    }
+
+    Future<String?> frameT(
+            {required String inputPath,
+            required String outputPath,
+            double atSeconds = 10.0,
+            FfmpegFailureReporter? onFailure,
+            String? tlsPinSha256,
+            Map<String, String> httpHeaders = const {},
+            bool diagnosticOnly = false}) async {
+      calls.add('frame');
+      return outputPath;
+    }
+
+    setUp(() => calls = <String>[]);
+
+    test('omitAudio：不启动音频抽取、不因缺音频中止，封面照常', () async {
+      final repo = _FakeRepo();
+      final res = await build(gif: gifT, audio: audioT, frame: frameT).mine(
+          const ImmersionMiningRequest(
+              source: AnkiMiningSource.video,
+              fields: {'expression': 'x'},
+              mediaSource: '/v.mp4',
+              clipStartMs: 1000,
+              clipEndMs: 3000,
+              sentence: 's',
+              omitAudio: true),
+          compression: MiningMediaCompression.compressed,
+          tempDir: tmp.path,
+          repo: repo);
+      expect(res.aborted, isFalse);
+      expect(calls, <String>['gif'], reason: '音频抽取一次都不该跑');
+      expect(repo.minedContext!.sentenceAudioPath, isNull);
+      expect(repo.minedContext!.coverPath, endsWith('.gif'));
+    });
+
+    test('omitAudio 但封面全部失败：用户要的那份媒体没出来，仍按空壳卡中止', () async {
+      final repo = _FakeRepo();
+      final res =
+          await build(gif: nullGif, audio: audioT, frame: nullFrame).mine(
+              const ImmersionMiningRequest(
+                  source: AnkiMiningSource.video,
+                  fields: {'expression': 'x'},
+                  mediaSource: '/v.mp4',
+                  clipStartMs: 1000,
+                  clipEndMs: 3000,
+                  sentence: 's',
+                  omitAudio: true),
+              compression: MiningMediaCompression.compressed,
+              tempDir: tmp.path,
+              repo: repo);
+      expect(res.aborted, isTrue);
+      expect(res.abortReason, startsWith('no cover and no audio produced'));
+      expect(calls, isEmpty);
+      expect(repo.minedContext, isNull);
+    });
+
+    test('omitCover：封面阶梯与当前帧截图都不跑，音频照常', () async {
+      final repo = _FakeRepo();
+      bool screenshotTaken = false;
+      final res = await build(gif: gifT, audio: audioT, frame: frameT).mine(
+          ImmersionMiningRequest(
+              source: AnkiMiningSource.video,
+              fields: const {'expression': 'x'},
+              mediaSource: '/v.mp4',
+              clipStartMs: 1000,
+              clipEndMs: 3000,
+              sentence: 's',
+              imageMode: VideoMiningImageMode.currentFrame,
+              stillFallback: () async {
+                screenshotTaken = true;
+                return Uint8List.fromList(<int>[1, 2, 3]);
+              },
+              omitCover: true),
+          compression: MiningMediaCompression.compressed,
+          tempDir: tmp.path,
+          repo: repo);
+      expect(res.aborted, isFalse);
+      expect(calls, <String>['audio']);
+      expect(screenshotTaken, isFalse);
+      expect(repo.minedContext!.coverPath, isNull);
+      expect(repo.minedContext!.sentenceAudioPath, isNotNull);
+    });
+
+    test('omitCover：外部给好的封面字节也不落盘', () async {
+      final repo = _FakeRepo();
+      final res = await build(gif: gifT, audio: audioT, frame: frameT).mine(
+          ImmersionMiningRequest(
+              source: AnkiMiningSource.video,
+              fields: const {'expression': 'x'},
+              clipStartMs: 0,
+              clipEndMs: 0,
+              sentence: 's',
+              providedCoverBytes: Uint8List.fromList(<int>[1, 2, 3]),
+              providedAudioBytes: Uint8List.fromList(<int>[4, 5, 6]),
+              requireAudio: false,
+              omitCover: true),
+          compression: MiningMediaCompression.compressed,
+          tempDir: tmp.path,
+          repo: repo);
+      expect(res.aborted, isFalse);
+      expect(repo.minedContext!.coverPath, isNull);
+      expect(repo.minedContext!.sentenceAudioPath, isNotNull);
+    });
+
+    test('两者都省略：纯文本卡照常落卡，不当空壳卡中止，任何抽取都不跑', () async {
+      final repo = _FakeRepo();
+      final res = await build(gif: gifT, audio: audioT, frame: frameT).mine(
+          ImmersionMiningRequest(
+              source: AnkiMiningSource.video,
+              fields: const {'expression': 'x'},
+              mediaSource: '/v.mp4',
+              clipStartMs: 1000,
+              clipEndMs: 3000,
+              sentence: 's',
+              stillFallback: () async => Uint8List.fromList(<int>[1]),
+              omitAudio: true,
+              omitCover: true),
+          compression: MiningMediaCompression.compressed,
+          tempDir: tmp.path,
+          repo: repo);
+      expect(res.aborted, isFalse);
+      expect(calls, isEmpty);
+      expect(repo.minedContext!.coverPath, isNull);
+      expect(repo.minedContext!.sentenceAudioPath, isNull);
+      expect(repo.minedContext!.sentence, 's');
+    });
+
+    test('videoClip + omitAudio：降级成动图（不探测模板、不出无声片段）', () async {
+      // _FakeRepo 没实现 rendersSynchronizedClip：若引擎仍去探测模板，这里直接抛。
+      final repo = _FakeRepo();
+      final res = await build(gif: gifT, audio: audioT, frame: frameT).mine(
+          const ImmersionMiningRequest(
+              source: AnkiMiningSource.video,
+              fields: {'expression': 'x'},
+              mediaSource: '/v.mp4',
+              clipStartMs: 1000,
+              clipEndMs: 3000,
+              sentence: 's',
+              imageMode: VideoMiningImageMode.videoClip,
+              omitAudio: true),
+          compression: MiningMediaCompression.compressed,
+          tempDir: tmp.path,
+          repo: repo);
+      expect(res.aborted, isFalse);
+      expect(calls, <String>['gif']);
+      expect(repo.minedContext!.synchronizedVideo, isFalse);
+      expect(repo.minedContext!.coverPath, endsWith('.gif'));
+      expect(repo.minedContext!.sentenceAudioPath, isNull);
+    });
+
+    test('frozen / withCachedSnapshot 保留两个省略标记', () {
+      const ImmersionMiningRequest req = ImmersionMiningRequest(
+          source: AnkiMiningSource.video,
+          fields: {'expression': 'x'},
+          mediaSource: 'https://example.com/v.m3u8',
+          clipStartMs: 1000,
+          clipEndMs: 3000,
+          sentence: 's',
+          omitAudio: true,
+          omitCover: true);
+      for (final ImmersionMiningRequest copy in <ImmersionMiningRequest>[
+        req.frozen(),
+        req.withCachedSnapshot(
+            const CachedMediaSnapshot(path: '/tmp/x.mkv', zeroMs: 500)),
+      ]) {
+        expect(copy.omitAudio, isTrue);
+        expect(copy.omitCover, isTrue);
+      }
+    });
   });
 }

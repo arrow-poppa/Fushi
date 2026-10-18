@@ -1,11 +1,10 @@
-import 'dart:async' show unawaited;
 import 'dart:io' show Platform;
 
 import 'package:flutter/gestures.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter/scheduler.dart' show SchedulerBinding;
 import 'package:fushi/src/utils/app_ui_scale.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
 
 // Architecture decision: platform branching uses runtime Platform.is* checks
 // centralized in this file, not Dart conditional imports.
@@ -32,33 +31,66 @@ bool get isWindowsPlatform => Platform.isWindows;
 
 bool get isMacOSPlatform => Platform.isMacOS;
 
+/// WebView 本地资源（EPUB / 漫画页 / 字体）走自定义 scheme 投递的平台。
+///
+/// WKWebView（iOS / macOS）与 WPE WebKit（Linux，`flutter_inappwebview_linux`）
+/// 都没有能拦截 `https://` 的 `shouldInterceptRequest`，只能注册自定义 scheme
+/// （`WKURLSchemeHandler` / `webkit_web_context_register_uri_scheme`）；Android 与
+/// Windows 则拦截 `https://fushi.local/...`。资源 URL 的构造与 WebView 的
+/// `resourceCustomSchemes` 必须问同一个判据，否则页面请求的 scheme 没人接。
+bool get webViewUsesCustomSchemeTransport =>
+    Platform.isMacOS || Platform.isIOS || Platform.isLinux;
+
 /// Sets the system-UI mode for the **home/menu shell** (book shelf, video,
 /// dictionary search, settings -- everything that is NOT an open media session).
 ///
-/// Android phones in portrait have a permanently-visible status bar (the OS
-/// clock/battery strip) that sits directly above Hibiki's top-right action
-/// icons. Even though the home page already wraps its body in a [SafeArea]
-/// (so the icons are not literally clipped), the always-on status bar crowds
-/// the top-right controls and makes them awkward to tap (TODO-097). We hide the
-/// status bar on Android while keeping the navigation/gesture bar, so the top
-/// action row reclaims the strip the OS bar was occupying.
+/// Every platform, Android included, shows both the status bar and the
+/// navigation bar (the user reversed TODO-097 on 2026-10-04: the Android home
+/// shell shows the status bar again). Show every overlay first, then
+/// edge-to-edge: Flutter 3.44's edgeToEdge only changes decor fitting and does
+/// not clear the FULLSCREEN / IMMERSIVE_STICKY a video page leaves behind, so
+/// visibility must be restored explicitly through `manual` (BUG-2925).
 ///
-/// Android: [SystemUiMode.manual] with only [SystemUiOverlay.bottom] enabled --
-/// status bar hidden, navigation/gesture bar kept. Other platforms (iOS keeps
-/// the status bar -- it is expected there and handled via SafeArea; desktop has
-/// no system bars) keep the prior edge-to-edge behaviour. An open book/video
-/// still uses `immersiveSticky` (both bars hidden) on open and the reader
-/// restores its own mode on exit via `AppModel.closeMedia`, which calls back here.
+/// Readers restore this mode through AppModel.closeMedia; video pages restore
+/// it when the last display owner exits.
 Future<void> setHomeShellSystemUiMode() async {
-  if (Platform.isAndroid) {
-    await SystemChrome.setEnabledSystemUIMode(
-      SystemUiMode.manual,
-      overlays: <SystemUiOverlay>[SystemUiOverlay.bottom],
-    );
-    return;
-  }
+  await SystemChrome.setEnabledSystemUIMode(
+    SystemUiMode.manual,
+    overlays: SystemUiOverlay.values,
+  );
   await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
 }
+
+/// The system-UI mode the **novel reader body** declares once its content is
+/// ready (BUG-3077).
+///
+/// Android keeps both system bars hidden ([SystemUiMode.immersiveSticky], the
+/// mode `AppModel.openMedia` already entered): the reader draws its own
+/// chrome, and its top / bottom text inset is `viewPadding` plus the reader's
+/// own reserves, so any visible bar pushes the page body away from the edge.
+/// iOS and desktop keep [SystemUiMode.edgeToEdge] (iOS shows the status bar in
+/// the reader, as it always has; desktop has no system bars).
+///
+/// Android must not send edgeToEdge here. Up to Flutter 3.44 the Android
+/// `PlatformPlugin.enableEdgeToEdge()` only changed decor fitting and left the
+/// IMMERSIVE_STICKY flags from `openMedia` in place, so the bars stayed hidden
+/// and `viewPadding.top` stayed at the cutout inset. Flutter 3.47 first calls
+/// `decorView.setSystemUiVisibility(0)`, which clears those flags: the status
+/// and navigation bars came back as soon as a book finished loading, and the
+/// status-bar height went straight into the text's top padding (the "top
+/// margin got bigger" report). Declaring the wanted mode directly does not
+/// depend on that engine detail.
+///
+/// [android] defaults to the running platform; tests pass it explicitly.
+Future<void> setReaderSystemUiMode({bool? android}) async {
+  await SystemChrome.setEnabledSystemUIMode(
+    readerSystemUiMode(android: android ?? Platform.isAndroid),
+  );
+}
+
+/// The mode [setReaderSystemUiMode] sends (see there).
+SystemUiMode readerSystemUiMode({required bool android}) =>
+    android ? SystemUiMode.immersiveSticky : SystemUiMode.edgeToEdge;
 
 /// Windows/Linux 桌面用 MD3 的钳制滚动（去掉 iOS 风格回弹）；macOS（Cupertino
 /// 平台，刻意不动）与移动端保持原有可回弹物理。始终保留 AlwaysScrollable 外层，
@@ -68,166 +100,6 @@ ScrollPhysics desktopAwareScrollPhysics() {
   return md3Desktop
       ? const AlwaysScrollableScrollPhysics(parent: ClampingScrollPhysics())
       : const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics());
-}
-
-/// Windows/Linux 的传统鼠标滚轮一档上报约 100–120 logical px；Flutter 默认的
-/// [ScrollPositionWithSingleContext.pointerScroll] 把这个 delta 单帧
-/// `forcePixels` 过去，视觉上就是「一滚跳一整段」。
-///
-/// 🔴 不流畅的根因是**缺插值**，不是**距离太大**。一档该走多远由系统「每次滚动
-/// 行数」决定，那是用户自己的设置，app 无权打折。BUG-1960 首版把粗滚轮 delta
-/// 减半、再把单事件封顶 120px 当平滑手段，于是滚动速度直接砍半（BUG-2009 用户
-/// 实报「不掉帧了但是速度慢了」）；平滑那一半本来就由 [_FushiScrollPosition] 的
-/// [kDesktopWheelScrollDuration] 动画负责，减半是叠在上面的第二重手段，只扣速度
-/// 不加流畅。现在距离一律 1:1，平滑只由动画给。
-///
-/// 分类本身仍然要保留：粗滚轮一档一个大 delta，需要补间；触控板 / 高精度滚轮本来
-/// 就连续上报小 delta，再套一层动画只会拖尾，必须走原生同步路径。
-bool isCoarseDesktopPointerScrollDelta(double delta) =>
-    (Platform.isWindows || Platform.isLinux) && delta.abs() >= 80;
-
-const Duration kDesktopWheelScrollDuration = Duration(milliseconds: 140);
-
-/// 给 app 主纵向滚动区的粗鼠标滚轮补上补间动画（距离不变，1:1）。
-///
-/// 通过自定义 [ScrollPosition] 改写真正消费 pointer delta 的边界；仅换
-/// [ScrollPhysics] 无效，因为 Flutter 的 pointerScroll 会直接 forcePixels。
-class FushiScrollController extends ScrollController {
-  FushiScrollController({super.initialScrollOffset, super.keepScrollOffset});
-
-  @override
-  ScrollPosition createScrollPosition(
-    ScrollPhysics physics,
-    ScrollContext context,
-    ScrollPosition? oldPosition,
-  ) => _FushiScrollPosition(
-    physics: physics,
-    context: context,
-    initialPixels: initialScrollOffset,
-    keepScrollOffset: keepScrollOffset,
-    oldPosition: oldPosition,
-    debugLabel: debugLabel,
-  );
-}
-
-class _FushiScrollPosition extends ScrollPositionWithSingleContext {
-  _FushiScrollPosition({
-    required super.physics,
-    required super.context,
-    required super.initialPixels,
-    required super.keepScrollOffset,
-    super.oldPosition,
-    super.debugLabel,
-  });
-
-  double? _wheelTarget;
-  double? _lastCoarseDelta;
-
-  /// 本次手势被判成粗滚轮还是细指针；null = 还没有正在进行的手势。
-  ///
-  /// 为什么要按**手势**锁而不是逐事件判：滚轮一档并不总是同一个 delta——同一次拨动
-  /// 的尾帧可能小于阈值，逐事件判会让那几帧突然按 1:1 走，于是一次拨动里前段减半、
-  /// 尾段全量，滚动距离对不上手感。分类在手势首帧定下，整段沿用。
-  bool? _gestureIsCoarse;
-
-  /// 上一次 pointerScroll 的时刻。距上次超过 [_kWheelGestureIdle] 视为新手势，
-  /// 重新分类——否则第一次用滚轮之后，后面用触控板也会一直被当成粗滚轮。
-  Duration? _lastWheelStamp;
-
-  static const Duration _kWheelGestureIdle = Duration(milliseconds: 200);
-
-  /// 手势节流用的时钟。取调度器的帧时间戳而不是 `DateTime.now()`：widget 测试里
-  /// `pump(d)` 会推进它，于是「隔了多久算新手势」在测试里可控；真机上它就是真实
-  /// 帧时钟，精度远高于 200ms 的判据需要。
-  Duration _wheelClock() =>
-      SchedulerBinding.instance.currentSystemFrameTimeStamp;
-
-  @override
-  void pointerScroll(double delta) {
-    // delta == 0 是 Flutter 的惯性取消信号（换设备/手势结束），不是一次滚动：
-    // 清掉分类与目标，让下一次输入重新起判。漏掉这一步，触控板接在滚轮之后会
-    // 继承「粗滚轮」的分类。
-    if (delta == 0) {
-      final double? pending = _wheelTarget;
-      _gestureIsCoarse = null;
-      _lastWheelStamp = null;
-      _resetWheelTarget();
-      // 取消要停的是**动画**，不是用户已经拨出去的距离。裸 `super.pointerScroll(0)`
-      // 会 goIdle 把飞行中的 DrivenScrollActivity 掐断在半路，于是一次已经发生的
-      // 拨动只走了十几 px 就没了。这里直接落到既定目标：动画停了，距离不丢。
-      if (pending != null && pending != pixels) {
-        jumpTo(pending);
-        return;
-      }
-      super.pointerScroll(delta);
-      return;
-    }
-
-    final Duration now = _wheelClock();
-    final Duration? last = _lastWheelStamp;
-    if (last == null || now - last > _kWheelGestureIdle) {
-      _gestureIsCoarse = null;
-    }
-    _lastWheelStamp = now;
-    final bool coarse = _gestureIsCoarse ??= isCoarseDesktopPointerScrollDelta(
-      delta,
-    );
-
-    // 分类按**手势**锁定，动画与否也照分类走：粗滚轮手势里的小尾帧同样走动画。
-    // 尾帧若改走同步路径，会在动画飞行途中 forcePixels 把 DrivenScrollActivity
-    // 掐断在半路，一次拨动的距离反而被吃掉。细指针手势整段同步。
-    if (!coarse ||
-        MediaQuery.maybeDisableAnimationsOf(context.storageContext) == true) {
-      _resetWheelTarget();
-      super.pointerScroll(delta);
-      return;
-    }
-
-    // 连续同向滚轮事件必须向尚未到达的目标继续累积；若每次都从当前 pixels
-    // 重启动画，快速滚轮会不断取消前一段、实际滚动距离反而被吃掉。反向输入则从
-    // 当前视觉位置重新起步，保证用户一反拨就立即响应，而不是先偿还旧方向目标。
-    final bool continuesDrivenScroll =
-        activity is DrivenScrollActivity &&
-        _wheelTarget != null &&
-        _lastCoarseDelta != null &&
-        _lastCoarseDelta!.isNegative == delta.isNegative;
-    final double base = continuesDrivenScroll ? _wheelTarget! : pixels;
-    final double target = (base + delta)
-        .clamp(minScrollExtent, maxScrollExtent)
-        .toDouble();
-    _wheelTarget = target;
-    _lastCoarseDelta = delta;
-    if (target == pixels) return;
-
-    unawaited(
-      super.animateTo(
-        target,
-        duration: kDesktopWheelScrollDuration,
-        curve: Curves.easeOutCubic,
-      ),
-    );
-  }
-
-  void _resetWheelTarget() {
-    _wheelTarget = null;
-    _lastCoarseDelta = null;
-  }
-
-  @override
-  void jumpTo(double value) {
-    _resetWheelTarget();
-    super.jumpTo(value);
-  }
-
-  @override
-  Future<void> animateTo(
-    double to, {
-    required Duration duration,
-    required Curve curve,
-  }) {
-    _resetWheelTarget();
-    return super.animateTo(to, duration: duration, curve: curve);
-  }
 }
 
 /// 让**横向**滚动区接受鼠标 / 触控板 / 触笔的拖动滚动。
@@ -408,12 +280,20 @@ double? desktopContentMaxWidth(
 /// [DesktopContentLayout] 的侧向留白。媒体墙类页面（[DesktopContentKind.readerShelf]：
 /// 书架/视频/游戏/漫画目录/来源页）恒为零——卡片自带内边距，宽屏上再叠 16/24px
 /// 强制侧向留白只是在侧栏与内容间挤出一条空带（用户实报「首页左右强制的间距」）。
-/// 查词/设置是文字流正文，贴边可读性差，宽屏保留 16/24px。
+/// 设置是文字流正文，贴边可读性差，宽屏保留 16/24px。
+///
+/// 查词页（[DesktopContentKind.dictionary]）同样为零（2026-10-06 用户截图「查词
+/// 顶部这块左边还是没对齐」）：页内搜索框、结果卡、历史列表各自已按页边
+/// （[FushiSpacingTokens.page]）内缩，再叠 16/24 会让整块比外壳大标题 / 右上
+/// 按钮组多缩进一截，与库页同一条页边对不齐。
 EdgeInsets desktopContentPadding(
   WindowSizeClass sizeClass,
   DesktopContentKind kind,
 ) {
-  if (kind == DesktopContentKind.readerShelf) return EdgeInsets.zero;
+  if (kind == DesktopContentKind.readerShelf ||
+      kind == DesktopContentKind.dictionary) {
+    return EdgeInsets.zero;
+  }
   return switch (sizeClass) {
     WindowSizeClass.compact => EdgeInsets.zero,
     WindowSizeClass.medium => const EdgeInsets.symmetric(horizontal: 16),
@@ -528,6 +408,7 @@ class MaterialSupportingPaneLayout extends StatelessWidget {
     this.minSplitWidth = 840,
     this.supportingWidth,
     this.dividerColor,
+    this.showDivider = true,
   });
 
   final Widget primary;
@@ -536,6 +417,10 @@ class MaterialSupportingPaneLayout extends StatelessWidget {
   final double minSplitWidth;
   final double? supportingWidth;
   final Color? dividerColor;
+
+  /// 为 false 时两个窗格之间不画 1px 分隔线（也不占那 1px），窗格边界只由各自
+  /// 的内容表达。设置主页的宽屏主从用它：用户实报窗格之间那条竖线多余。
+  final bool showDivider;
 
   @override
   Widget build(BuildContext context) {
@@ -548,11 +433,13 @@ class MaterialSupportingPaneLayout extends StatelessWidget {
             supportingPaneWidthForLayout(constraints.maxWidth);
         final Color resolvedDividerColor =
             dividerColor ?? Theme.of(context).dividerColor;
-        final Widget divider = VerticalDivider(
-          width: 1,
-          thickness: 1,
-          color: resolvedDividerColor,
-        );
+        final Widget? divider = showDivider
+            ? FushiVerticalDivider(
+                width: 1,
+                thickness: 1,
+                color: resolvedDividerColor,
+              )
+            : null;
         final Widget fixedSupporting = SizedBox(
           width: resolvedSupportingWidth,
           child: supporting,
@@ -570,8 +457,16 @@ class MaterialSupportingPaneLayout extends StatelessWidget {
           // scroll view fill the pane, so its content stays top-aligned.
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: supportingSide == SupportingPaneSide.start
-              ? <Widget>[fixedSupporting, divider, flexiblePrimary]
-              : <Widget>[flexiblePrimary, divider, fixedSupporting],
+              ? <Widget>[
+                  fixedSupporting,
+                  if (divider != null) divider,
+                  flexiblePrimary,
+                ]
+              : <Widget>[
+                  flexiblePrimary,
+                  if (divider != null) divider,
+                  fixedSupporting,
+                ],
         );
       },
     );

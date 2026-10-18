@@ -203,6 +203,117 @@ void main() {
     });
   });
 
+  // 有声书倍速制卡：句子音频按播放倍速变速不变调（`-af atempo`）。
+  group('buildFfmpegAtempoFilter', () {
+    test('null / 1.0 / 浮点噪声 / 非法值 → 不加滤镜（现状逐字节不变）', () {
+      expect(buildFfmpegAtempoFilter(null), isNull);
+      expect(buildFfmpegAtempoFilter(1.0), isNull);
+      expect(buildFfmpegAtempoFilter(1.0004), isNull,
+          reason: '播放器回报的 1.0 附近浮点噪声不是用户选择');
+      expect(buildFfmpegAtempoFilter(0.0), isNull);
+      expect(buildFfmpegAtempoFilter(-1.5), isNull);
+      expect(buildFfmpegAtempoFilter(double.nan), isNull);
+      expect(buildFfmpegAtempoFilter(double.infinity), isNull);
+    });
+
+    test('单段：常用倍速三位小数', () {
+      expect(buildFfmpegAtempoFilter(1.5), 'atempo=1.500');
+      expect(buildFfmpegAtempoFilter(0.75), 'atempo=0.750');
+      expect(buildFfmpegAtempoFilter(2.0), 'atempo=2.000');
+      expect(buildFfmpegAtempoFilter(0.5), 'atempo=0.500',
+          reason: '0.5 是单段下限，不该被拆');
+    });
+
+    test('越过单段 [0.5, 100] 范围时链式拆分', () {
+      expect(buildFfmpegAtempoFilter(0.25), 'atempo=0.500,atempo=0.500');
+      expect(buildFfmpegAtempoFilter(0.4), 'atempo=0.500,atempo=0.800');
+      expect(buildFfmpegAtempoFilter(150.0), 'atempo=100.000,atempo=1.500');
+    });
+  });
+
+  group('buildFfmpegClipArgs tempo', () {
+    test('tempo 非 1 时在编码器前插 -af atempo，其余参数不变', () {
+      final List<String> args = buildFfmpegClipArgs(
+        inputPath: '/a/in.m4b',
+        startMs: 1000,
+        endMs: 2500,
+        outputPath: '/a/out.aac',
+        tempo: 1.5,
+      );
+      expect(args, <String>[
+        '-y',
+        '-ss',
+        '1.000',
+        // -t 在 -i 之前 = 输入时长：按源时间裁 1.5s，输出再由 atempo 缩到 1.0s。
+        '-t',
+        '1.500',
+        '-i',
+        '/a/in.m4b',
+        '-vn',
+        '-map_chapters',
+        '-1',
+        '-af',
+        'atempo=1.500',
+        '-c:a',
+        'aac',
+        '-ac',
+        '1',
+        '-b:a',
+        '64k',
+        '/a/out.aac',
+      ]);
+    });
+
+    test('tempo null / 1.0 → 与不传完全相同（现状逐字节不变）', () {
+      final List<String> base = buildFfmpegClipArgs(
+        inputPath: '/a/in.m4b',
+        startMs: 1000,
+        endMs: 2500,
+        outputPath: '/a/out.aac',
+      );
+      expect(
+        buildFfmpegClipArgs(
+          inputPath: '/a/in.m4b',
+          startMs: 1000,
+          endMs: 2500,
+          outputPath: '/a/out.aac',
+          tempo: 1.0,
+        ),
+        base,
+      );
+      expect(
+        buildFfmpegClipArgs(
+          inputPath: '/a/in.m4b',
+          startMs: 1000,
+          endMs: 2500,
+          outputPath: '/a/out.aac',
+          tempo: null,
+        ),
+        base,
+      );
+      expect(base, isNot(contains('-af')));
+    });
+
+    test('-af 在 -map 之后、-c:a 之前（滤镜作用于被选中的轨）', () {
+      final List<String> args = buildFfmpegClipArgs(
+        inputPath: '/a/in.mkv',
+        startMs: 0,
+        endMs: 1000,
+        outputPath: '/a/out.aac',
+        audioStreamIndex: 1,
+        audioStreamCount: 2,
+        tempo: 2.0,
+      );
+      final int map = args.indexOf('-map');
+      final int af = args.indexOf('-af');
+      final int codec = args.indexOf('-c:a');
+      expect(map, greaterThan(-1));
+      expect(af, greaterThan(map));
+      expect(codec, greaterThan(af));
+      expect(args[af + 1], 'atempo=2.000');
+    });
+  });
+
   group('extractAudioSegmentViaFfmpeg', () {
     tearDown(() {
       ffmpeg.setFfmpegBackendForTesting(null);
@@ -280,7 +391,7 @@ void main() {
       }
 
       final Directory dir =
-          Directory.systemTemp.createTempSync('hibiki_clip_test');
+          Directory.systemTemp.createTempSync('fushi_clip_test');
       addTearDown(() => dir.deleteSync(recursive: true));
       final String input = '${dir.path}/in.m4a';
       final String output = '${dir.path}/out.aac';
@@ -311,10 +422,89 @@ void main() {
       expect(File(output).lengthSync(), greaterThan(0));
     });
 
+    test('tempo 2.0 真裁：输出时长约为源区间的一半', () async {
+      if (!await ffmpegAvailable()) {
+        // ignore: avoid_print
+        print('ffmpeg not present; skipping real tempo clip test');
+        return;
+      }
+      final ProcessResult filters = await Process.run(
+        resolveFfmpegExecutable(),
+        <String>['-hide_banner', '-filters'],
+      );
+      if (!filters.stdout.toString().contains(' atempo ')) {
+        // ignore: avoid_print
+        print('ffmpeg lacks atempo; skipping real tempo clip test');
+        return;
+      }
+
+      final Directory dir =
+          Directory.systemTemp.createTempSync('fushi_clip_tempo_test');
+      addTearDown(() => dir.deleteSync(recursive: true));
+      final String input = '${dir.path}/in.m4a';
+      final String normal = '${dir.path}/normal.aac';
+      final String fast = '${dir.path}/fast.aac';
+
+      final ProcessResult gen =
+          await Process.run(resolveFfmpegExecutable(), <String>[
+        '-y',
+        '-f',
+        'lavfi',
+        '-i',
+        'sine=frequency=440:duration=4',
+        '-c:a',
+        'aac',
+        input,
+      ]);
+      expect(gen.exitCode, 0, reason: gen.stderr.toString());
+
+      expect(
+        await extractAudioSegmentViaFfmpeg(
+          inputPath: input,
+          startMs: 0,
+          endMs: 3000,
+          outputPath: normal,
+        ),
+        normal,
+      );
+      expect(
+        await extractAudioSegmentViaFfmpeg(
+          inputPath: input,
+          startMs: 0,
+          endMs: 3000,
+          outputPath: fast,
+          tempo: 2.0,
+        ),
+        fast,
+      );
+
+      // 裸 ADTS 无容器头，时长只能靠解码统计：用 ffmpeg -f null - 解一遍，从
+      // stderr 的 `time=HH:MM:SS.xx` 读出输出总时长。
+      Future<double> decodedSeconds(String path) async {
+        final ProcessResult probe = await Process.run(
+          resolveFfmpegExecutable(),
+          <String>['-hide_banner', '-i', path, '-f', 'null', '-'],
+        );
+        final RegExp timeRe = RegExp(r'time=(\d+):(\d+):(\d+\.\d+)');
+        final Iterable<RegExpMatch> found =
+            timeRe.allMatches(probe.stderr.toString());
+        expect(found, isNotEmpty, reason: probe.stderr.toString());
+        final RegExpMatch last = found.last;
+        return int.parse(last.group(1)!) * 3600 +
+            int.parse(last.group(2)!) * 60 +
+            double.parse(last.group(3)!);
+      }
+
+      final double normalSec = await decodedSeconds(normal);
+      final double fastSec = await decodedSeconds(fast);
+      expect(normalSec, closeTo(3.0, 0.25));
+      expect(fastSec, closeTo(1.5, 0.25), reason: '2× 变速后 3s 区间应缩到约 1.5s');
+    });
+
     test('reports invalid-image diagnostics when audio clipping fails',
         () async {
       final Directory dir =
-          Directory.systemTemp.createTempSync('hibiki_clip_fail_test');
+          Directory.systemTemp.createTempSync('fushi_clip_fail_test');
       addTearDown(() => dir.deleteSync(recursive: true));
       final String input = '${dir.path}/in.mkv';
       final String output = '${dir.path}/out.aac';
@@ -359,7 +549,7 @@ void main() {
       }
 
       final Directory dir =
-          Directory.systemTemp.createTempSync('hibiki_clip_fallback_test');
+          Directory.systemTemp.createTempSync('fushi_clip_fallback_test');
       addTearDown(() => dir.deleteSync(recursive: true));
       final String input = '${dir.path}/in.m4a';
       final String output = '${dir.path}/sentence.aac';
@@ -413,7 +603,7 @@ void main() {
 
     test('reports invalid-image diagnostics when GIF clipping fails', () async {
       final Directory dir =
-          Directory.systemTemp.createTempSync('hibiki_gif_fail_test');
+          Directory.systemTemp.createTempSync('fushi_gif_fail_test');
       addTearDown(() => dir.deleteSync(recursive: true));
       final String input = '${dir.path}/in.mkv';
       final String output = '${dir.path}/out.gif';
@@ -456,7 +646,7 @@ void main() {
       }
 
       final Directory dir =
-          Directory.systemTemp.createTempSync('hibiki_gif_fallback_test');
+          Directory.systemTemp.createTempSync('fushi_gif_fallback_test');
       addTearDown(() => dir.deleteSync(recursive: true));
       final String input = '${dir.path}/in.mp4';
       final String output = '${dir.path}/clip.gif';
@@ -593,7 +783,7 @@ void main() {
       // 旧 extractVideoFrameViaFfmpeg 只往 ErrorLogService 记日志、不回调 onFailure，
       // 调用方无从向用户解释「为什么降级成静态图」。本守卫钉住失败摘要经 onFailure 回传。
       final Directory dir =
-          Directory.systemTemp.createTempSync('hibiki_frame_fail_test');
+          Directory.systemTemp.createTempSync('fushi_frame_fail_test');
       addTearDown(() => dir.deleteSync(recursive: true));
       final String input = '${dir.path}/in.mkv';
       final String output = '${dir.path}/frame.jpg';
@@ -643,7 +833,7 @@ void main() {
       }
 
       final Directory dir =
-          Directory.systemTemp.createTempSync('hibiki_frame_test');
+          Directory.systemTemp.createTempSync('fushi_frame_test');
       addTearDown(() => dir.deleteSync(recursive: true));
       final String video = '${dir.path}/clip.mp4';
       final String out = '${dir.path}/thumb.jpg';
@@ -727,7 +917,7 @@ void main() {
       }
 
       final Directory dir =
-          Directory.systemTemp.createTempSync('hibiki_sub_test');
+          Directory.systemTemp.createTempSync('fushi_sub_test');
       addTearDown(() => dir.deleteSync(recursive: true));
       final String srt = '${dir.path}/src.srt';
       final String video = '${dir.path}/withsub.mkv';
@@ -846,7 +1036,7 @@ void main() {
       }
 
       final Directory dir =
-          Directory.systemTemp.createTempSync('hibiki_multisub_test');
+          Directory.systemTemp.createTempSync('fushi_multisub_test');
       addTearDown(() => dir.deleteSync(recursive: true));
       final String srtA = '${dir.path}/a.srt';
       final String srtB = '${dir.path}/b.srt';
@@ -905,7 +1095,7 @@ void main() {
 
     test('单遍被一条 output-open 毒轨整批击穿时，逐轨回退保住其余好轨', () async {
       final Directory dir =
-          Directory.systemTemp.createTempSync('hibiki_poison_test');
+          Directory.systemTemp.createTempSync('fushi_poison_test');
       addTearDown(() => dir.deleteSync(recursive: true));
       final String video = '${dir.path}/in.mkv';
       // 只需存在（extractEmbeddedSubtitlesViaFfmpeg 用 existsSync 门控输入）。
@@ -941,7 +1131,7 @@ void main() {
 
     test('单遍全部成功时不触发逐轨回退（common path 零开销）', () async {
       final Directory dir =
-          Directory.systemTemp.createTempSync('hibiki_clean_test');
+          Directory.systemTemp.createTempSync('fushi_clean_test');
       addTearDown(() => dir.deleteSync(recursive: true));
       final String video = '${dir.path}/in.mkv';
       File(video).writeAsStringSync('fake-container');
@@ -966,7 +1156,7 @@ void main() {
     late String video;
 
     setUp(() {
-      dir = Directory.systemTemp.createTempSync('hibiki_bug818');
+      dir = Directory.systemTemp.createTempSync('fushi_bug818');
       video = '${dir.path}/in.mkv';
       File(video).writeAsStringSync('fake container');
     });
@@ -1068,7 +1258,7 @@ void main() {
       }
 
       final Directory dir =
-          Directory.systemTemp.createTempSync('hibiki_cover_test');
+          Directory.systemTemp.createTempSync('fushi_cover_test');
       addTearDown(() => dir.deleteSync(recursive: true));
       final String cover = '${dir.path}/cover.png';
       final String audio = '${dir.path}/withcover.m4a';
@@ -1265,6 +1455,14 @@ void main() {
 }
 
 class _FakeFfmpegBackend implements ffmpeg.FfmpegBackend {
+  /// 查询类命令（BUG-2938 新增原语）：本假件不区分，交给 [run]。
+  @override
+  Future<ffmpeg.FfmpegRunResult> runQuery(
+    List<String> args,
+    Duration timeout,
+  ) =>
+      run(args, timeout);
+
   const _FakeFfmpegBackend(this.result);
 
   final ffmpeg.FfmpegRunResult result;
@@ -1284,7 +1482,7 @@ class _FakeFfmpegBackend implements ffmpeg.FfmpegBackend {
       result;
 }
 
-/// Simulates Hibiki's bundled `--disable-everything` min-ffmpeg for BUG-863.
+/// Simulates Fushi's bundled `--disable-everything` min-ffmpeg for BUG-863.
 ///
 /// Any `-map 0:s:N out` whose subtitle index N is not in [decodableIndices]
 /// makes the WHOLE command abort with AVERROR(EINVAL) and write NOTHING —
@@ -1293,6 +1491,14 @@ class _FakeFfmpegBackend implements ffmpeg.FfmpegBackend {
 /// Invalid argument", exit -22) sinks the entire batch. A command whose every
 /// mapped index is decodable writes each output file and exits 0.
 class _MinBuildFakeFfmpegBackend implements ffmpeg.FfmpegBackend {
+  /// 查询类命令（BUG-2938 新增原语）：本假件不区分，交给 [run]。
+  @override
+  Future<ffmpeg.FfmpegRunResult> runQuery(
+    List<String> args,
+    Duration timeout,
+  ) =>
+      run(args, timeout);
+
   _MinBuildFakeFfmpegBackend({required this.decodableIndices});
 
   final Set<int> decodableIndices;
@@ -1333,6 +1539,14 @@ class _MinBuildFakeFfmpegBackend implements ffmpeg.FfmpegBackend {
 }
 
 class _InvalidBundledThenPathFfmpegBackend implements ffmpeg.FfmpegBackend {
+  /// 查询类命令（BUG-2938 新增原语）：本假件不区分，交给 [run]。
+  @override
+  Future<ffmpeg.FfmpegRunResult> runQuery(
+    List<String> args,
+    Duration timeout,
+  ) =>
+      run(args, timeout);
+
   _InvalidBundledThenPathFfmpegBackend({required this.pathExecutable});
 
   static const String bundledPath = r'C:\App\Hibiki\ffmpeg.exe';
@@ -1384,6 +1598,14 @@ class _InvalidBundledThenPathFfmpegBackend implements ffmpeg.FfmpegBackend {
 /// map of each invocation so a test can assert the single pass ran first, then
 /// per-track fallback for the still-missing tracks.
 class _FakePoisonFfmpegBackend implements ffmpeg.FfmpegBackend {
+  /// 查询类命令（BUG-2938 新增原语）：本假件不区分，交给 [run]。
+  @override
+  Future<ffmpeg.FfmpegRunResult> runQuery(
+    List<String> args,
+    Duration timeout,
+  ) =>
+      run(args, timeout);
+
   _FakePoisonFfmpegBackend({required this.poisonIndex});
 
   final int poisonIndex;

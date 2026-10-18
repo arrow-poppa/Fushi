@@ -8,10 +8,11 @@
 // 必须**真的打开看**：空白帧 = 启动失败，不是「跑过了」。
 import 'package:drift/drift.dart' show Value;
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/mining/galgame_library.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/pages/implementations/leaderboard/leaderboard_tab.dart';
 import 'package:fushi/src/pages/implementations/statistics_center_page.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:integration_test/integration_test.dart';
@@ -165,7 +166,7 @@ Future<void> _seedThreeDomains(AppModel appModel) async {
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
-  testWidgets('统计中心四个 tab：布局统一、指标齐平、会话可改可清', (WidgetTester tester) async {
+  testWidgets('统计中心五个 tab：统计 tab 布局统一、排行 tab 显示说明卡', (WidgetTester tester) async {
     // 启动期 FlutterError（离线更新检查的 Socket 异常等）先收着，否则 pending error
     // 会撞上后面的 expect()。范式同 observe_offscreen_test。
     final List<FlutterErrorDetails> errors = <FlutterErrorDetails>[];
@@ -275,7 +276,33 @@ void main() {
         nav.pop();
         await tester.pump(const Duration(seconds: 1));
       }
-      debugPrint('[stats-layout] 四个 tab 各抓一帧完成，启动期错误 ${errors.length} 条');
+      // 排行榜（2026-10-01 从统计中心第 5 个 tab 抽成首页的独立页）：不是统计页，没有
+      // 目标 / 刷新 / 清空三颗按钮与会话区，所以不进上面的循环；隔离库里没有排行榜
+      // 账户，必须落在未开启的说明卡上（且此时零网络请求）。
+      final NavigatorState nav = appModel.navigatorKey.currentState!;
+      nav.push(
+        MaterialPageRoute<void>(
+          builder: (BuildContext _) => const LeaderboardPage(),
+        ),
+      );
+      for (int f = 0; f < 20; f++) {
+        await tester.pump(const Duration(milliseconds: 500));
+      }
+      final ObserveShot board = await captureFlutterFrame(
+        tester,
+        'stats-${StatsCenterTab.values.length + 1}-leaderboard',
+      );
+      expect(board.saved, isTrue, reason: '排行榜页的帧应落盘');
+      expect(board.nonBlank, isTrue, reason: '排行榜页不应是白屏');
+      expect(
+        find.byKey(const ValueKey<String>('leaderboard-intro')),
+        findsOneWidget,
+        reason: '未开启排行榜时应显示同意说明卡',
+      );
+      nav.pop();
+      await tester.pump(const Duration(seconds: 1));
+      debugPrint('[stats-layout] ${StatsCenterTab.values.length} 个 tab + 排行榜页各抓一帧完成，'
+          '启动期错误 ${errors.length} 条');
     } finally {
       FlutterError.onError = oldHandler;
     }

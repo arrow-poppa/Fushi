@@ -1,6 +1,7 @@
 #ifndef RUNNER_FLUTTER_WINDOW_H_
 #define RUNNER_FLUTTER_WINDOW_H_
 
+#include "caption_snap_button.h"
 #include <flutter/dart_project.h>
 #include <flutter/flutter_view_controller.h>
 #include <flutter/method_channel.h>
@@ -10,11 +11,17 @@
 #include <string>
 
 #include "attached_text_surface_window.h"
+#include "floating_ball_window.h"
 #include "floating_lyric_window.h"
 #include "global_lookup_window.h"
+#include "game_stream_input.h"
 #include "hdr_video_host_window.h"
 #include "ime_association_guard.h"
+#include "ime_language_switch.h"
+#include "screen_ocr_overlay.h"
+#include "system_ocr_channel_host.h"
 #include "win32_window.h"
+#include "window_capture_reply_queue.h"
 
 // A window that does nothing but host a Flutter view.
 class FlutterWindow : public Win32Window {
@@ -41,6 +48,11 @@ class FlutterWindow : public Win32Window {
   // Receives title-bar colors pushed from Dart (app.fushi/window channel).
   std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>>
       caption_channel_;
+
+  // Windows 11 Snap Layouts on the app-drawn maximize button: HTMAXBUTTON hit
+  // testing over the rect Dart reports (setCaptionMaxButtonRect), hover /
+  // press / click relayed back as onCaptionMaxButton.
+  CaptionSnapButton caption_snap_button_;
 
   // Copies decoded reader images to the Windows clipboard as CF_DIB.
   std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>>
@@ -75,6 +87,18 @@ class FlutterWindow : public Win32Window {
   // Wires the ime_guard MethodChannel to ime_association_guard_.
   void RegisterImeGuardChannel();
 
+  // 查词输入框的输入法语言：Dart 说「现在期望日语」，我们在已安装的键盘布局里找
+  // 日语那个并切过去，离开查词时切回用户原来的。见 ime_language_switch.h。
+  std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>>
+      lookup_ime_channel_;
+  ImeLanguageSwitcher ime_language_switcher_;
+  // Dart 最后一次表达的期望语言。窗口失活时我们会还原用户原来的输入法，重新激活
+  // 时按这个值再切回去——否则用户 Alt-Tab 出去一趟回来，查词页面还开着但输入法
+  // 已经不是他选的那个了。
+  std::wstring desired_lookup_ime_tag_;
+
+  void RegisterLookupImeChannel();
+
   // Drives the standalone always-on-top desktop lyric strip (the Windows
   // counterpart of Android's FloatingLyricService). See floating_lyric_window.h.
   std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>>
@@ -83,6 +107,25 @@ class FlutterWindow : public Win32Window {
 
   // Wires the floating_lyric MethodChannel to floating_lyric_window_.
   void RegisterFloatingLyricChannel();
+
+  // 桌面应用外悬浮球（app.fushi.reader/floating_ball，与 Android / iOS 同名通道）。
+  // 原生只画球、拖动、吸附、展开动画，并把点了哪颗 / 球在哪报回 Dart；动作全在
+  // Dart 执行。契约见 docs/specs/2026-09-30-desktop-system-floating-ball.md。
+  std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>>
+      floating_ball_channel_;
+  std::unique_ptr<FloatingBallWindow> floating_ball_window_;
+  void RegisterFloatingBallChannel();
+  // 应用外球「截屏识字」的冻结层（spec「截屏识字」）。回调经 floating_ball_channel_。
+  std::unique_ptr<ScreenOcrOverlay> screen_ocr_overlay_;
+  // startScreenOcrCapture：藏球 → 截球所在显示器 → 显示冻结层 → 回 {png, screen}。
+  flutter::EncodableValue StartScreenOcrCapture(const flutter::EncodableMap* args);
+  // 关冻结层（不回调）并恢复球。
+  void StopScreenOcr();
+
+  // app.fushi.reader/system_ocr 的宿主（实现与工作线程都在
+  // system_ocr_channel_host.cpp；这里只持有并转发它的计时器消息）。
+  std::unique_ptr<fushi::SystemOcrChannelHost> system_ocr_host_;
+  void RegisterSystemOcrChannel();
 
   // Dedicated galgame Hook text box: a SECOND FloatingLyricWindow instance in
   // rich text-only mode, independent of the audiobook lyric strip.
@@ -126,6 +169,7 @@ class FlutterWindow : public Win32Window {
   // frame (PNG) off a worker thread. See window_capture.cpp / .h.
   std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>>
       window_capture_channel_;
+  std::unique_ptr<fushi::WindowCaptureReplyQueue> window_capture_replies_;
   void RegisterWindowCaptureChannel();
 
   // Windows HDR passthrough (docs/plans/2026-08-30-video-hdr-passthrough.md):
@@ -138,6 +182,13 @@ class FlutterWindow : public Win32Window {
   std::unique_ptr<fushi::HdrVideoHostWindow> hdr_video_host_;
   void RegisterHdrVideoHostChannel();
 
+  // HDR inside Flutter's own swap chain: the patched engine's
+  // FlutterDesktopViewSetHdrOutput, or null on a stock engine.
+  using ViewSetHdrOutputFn = bool (*)(FlutterDesktopViewRef, bool, float);
+  static ViewSetHdrOutputFn ResolveViewSetHdrOutput();
+  // Returns whether the view's HDR output is on afterwards.
+  bool SetCompositorHdrOutput(bool enabled, float sdr_white_nits);
+
   // Magpie 缩放状态监听（仅 Windows）：Magpie 通过
   // RegisterWindowMessage(L"MagpieScalingChanged") 向所有顶层窗口广播缩放状态。
   // runner 收到后经此 channel 把 onScalingChanged 单向推给 Dart（见
@@ -146,6 +197,12 @@ class FlutterWindow : public Win32Window {
   std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>>
       magpie_channel_;
   void RegisterMagpieChannel();
+
+  // Delivers game-stream input only to the explicitly bound foreground HWND.
+  std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>>
+      game_stream_input_channel_;
+  std::unique_ptr<fushi::GameStreamInput> game_stream_input_;
+  void RegisterGameStreamInputChannel();
 
   // RegisterWindowMessageW(L"MagpieScalingChanged") 拿到的运行时消息号。
   // 0 = 尚未注册 / 注册失败，MessageHandler 据此永不误匹配。
@@ -173,6 +230,23 @@ class FlutterWindow : public Win32Window {
   // Applies DWM caption/text colors to the top-level window. Persists across
   // focus changes, so the unfocused title bar keeps following the app theme.
   void ApplyCaptionColors(uint32_t caption_argb, uint32_t text_argb);
+
+  // Glass material: turns the Windows 11 Mica system backdrop on / off behind
+  // the (translucent) Flutter view. Returns whether Mica is actually active,
+  // so Dart only makes its shell background translucent when DWM really draws
+  // something behind it (Windows 10 / older Windows 11 builds return false).
+  bool ApplySystemBackdrop(bool mica, bool dark);
+
+  // BUG-2964: the single writer of the main window's DWM composition
+  // (DwmExtendFrameIntoClientArea margins + non-client rendering policy),
+  // derived from a MainSurfaceState (see main_surface_composition.h). Mica,
+  // the HDR passthrough and fullscreen all go through here instead of each
+  // writing DWM state of their own.
+  void ApplyMainSurfaceComposition(const fushi::MainSurfaceState& state);
+  void ApplyMainSurfaceComposition();
+
+  // Called by HdrVideoHostWindow when the passthrough host goes live / away.
+  void SetMainVideoPassthrough(bool enabled);
 
   // TODO-1092: notify Dart (system_theme_channel_) that the OS accent/theme
   // color changed so ThemeNotifier.refreshSystemPalette() re-reads it live.

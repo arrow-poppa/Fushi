@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -6,9 +7,10 @@ import 'package:fushi_engine/media/torrent/nyaa_client.dart';
 import 'package:fushi_engine/media/torrent/nyaa_resource_provider.dart';
 import 'package:fushi_engine/media/torrent/video_resource_provider.dart';
 import 'package:fushi_engine/media/video/download/video_resource_registry.dart';
-import 'package:fushi/src/media/video/discovery/video_discovery_adapters.dart';
+import 'package:fushi_engine/media/video/discovery/video_discovery_adapters.dart';
 import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart';
-import 'package:fushi/src/media/video/discovery/video_discovery_service.dart';
+import 'package:fushi_engine/media/video/discovery/video_discovery_service.dart';
+import 'package:fushi_engine/media/video/metadata/video_airing_status.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_transport.dart';
@@ -206,6 +208,89 @@ void main() {
         }
       }
     }
+
+    // BUG-2805：TMDB 新建的动画条目（实测「BLEACH 千年血戦篇 -禍進譚-」）genre 为空，
+    // 旧判定把它当真人剧 → 资源搜索整个排除 Nyaa，页面只剩 apibay 一家。
+    test('untagged Japanese TMDB entries stay in the anime resource domain',
+        () async {
+      final List<Uri> nyaaRequests = <Uri>[];
+      final TmdbVideoDiscoveryProvider provider = TmdbVideoDiscoveryProvider(
+        apiKey: 'test-key',
+        client: MockClient((http.Request request) async {
+          final bool tv = request.url.path.endsWith('/search/tv');
+          return http.Response.bytes(
+            utf8.encode(
+              jsonEncode(<String, Object?>{
+                'page': 1,
+                'total_pages': 1,
+                'results': <Object?>[
+                  if (tv) ...<Object?>[
+                    <String, Object?>{
+                      'id': 1,
+                      'name': 'BLEACH 千年血戦篇 -禍進譚-',
+                      'original_language': 'ja',
+                      'genre_ids': <int>[],
+                    },
+                    <String, Object?>{
+                      'id': 2,
+                      'name': 'Untagged English Show',
+                      'original_language': 'en',
+                      'genre_ids': <int>[],
+                    },
+                    <String, Object?>{
+                      'id': 3,
+                      'name': 'その着せ替え人形は恋をする',
+                      'original_language': 'ja',
+                      'genre_ids': <int>[18, 35],
+                    },
+                  ],
+                ],
+              }),
+            ),
+            200,
+          );
+        }),
+      );
+      addTearDown(provider.close);
+      final ProviderBatchResult<VideoDiscoveryPage> page =
+          await provider.search(const VideoDiscoveryRequest(query: 'q'));
+      final Map<String, VideoDiscoveryItem> byId = <String, VideoDiscoveryItem>{
+        for (final VideoDiscoveryItem item in page.items.single.items)
+          item.reference.mediaId: item,
+      };
+      expect(
+        byId['1']!.reference.discoveryCategory,
+        VideoDiscoveryCategory.anime,
+      );
+      expect(byId['2']!.reference.discoveryCategory, VideoDiscoveryCategory.tv);
+      // genre 明确给了且没有 Animation = TMDB 认定的真人作品，语言不改判。
+      expect(byId['3']!.reference.discoveryCategory, VideoDiscoveryCategory.tv);
+
+      final VideoResourceRegistry registry =
+          VideoResourceRegistry(<VideoResourceProvider>[
+        NyaaVideoResourceProvider(
+          closesClient: true,
+          client: NyaaClient(
+            minRequestInterval: Duration.zero,
+            client: MockClient((http.Request request) async {
+              nyaaRequests.add(request.url);
+              return http.Response.bytes(
+                utf8.encode(nyaaSearchHtml(const <NyaaHtmlRow>[])),
+                200,
+              );
+            }),
+          ),
+        ),
+      ]);
+      addTearDown(registry.close);
+      for (final String id in <String>['1', '2', '3']) {
+        await registry.search(
+          VideoResourceSearchRequest(media: byId[id]!.reference, query: 'q'),
+        );
+      }
+      expect(nyaaRequests, hasLength(1));
+      expect(nyaaRequests.single.queryParameters['c'], '1_0');
+    });
 
     test('interleaves movies and series in the all category', () async {
       final TmdbVideoDiscoveryProvider provider = TmdbVideoDiscoveryProvider(
@@ -528,6 +613,68 @@ void main() {
       expect(item.score, 8.0);
     });
 
+    test('requests status and endDate and maps RELEASING to airing', () async {
+      late String query;
+      final AniListVideoDiscoveryProvider provider =
+          AniListVideoDiscoveryProvider(
+        client: MockClient((http.Request request) async {
+          final Map<String, Object?> body =
+              jsonDecode(request.body) as Map<String, Object?>;
+          query = body['query']! as String;
+          return http.Response(
+            jsonEncode(<String, Object?>{
+              'data': <String, Object?>{
+                'Page': <String, Object?>{
+                  'pageInfo': <String, Object?>{'hasNextPage': false},
+                  'media': <Object?>[
+                    <String, Object?>{
+                      'id': 9,
+                      'format': 'TV',
+                      'status': 'RELEASING',
+                      'title': <String, Object?>{'native': '放送中テスト'},
+                      'startDate': <String, Object?>{
+                        'year': 2026,
+                        'month': 7,
+                        'day': 4,
+                      },
+                      'endDate': <String, Object?>{
+                        'year': 2026,
+                        'month': 9,
+                        'day': 26,
+                      },
+                    },
+                  ],
+                },
+              },
+            }),
+            200,
+            headers: const <String, String>{
+              'content-type': 'application/json; charset=utf-8',
+            },
+          );
+        }),
+      );
+      addTearDown(provider.close);
+
+      final ProviderBatchResult<VideoDiscoveryPage> result =
+          await provider.search(
+        const VideoDiscoveryRequest(
+          category: VideoDiscoveryCategory.anime,
+          query: 'テスト',
+        ),
+      );
+
+      expect(query, contains('status'));
+      expect(query, contains('endDate { year month day }'));
+      expect(result.failures, isEmpty, reason: '${result.failures}');
+      final VideoDiscoveryItem item = result.items.single.items.single;
+      final VideoMetadataWork work = item.metadataWork!;
+      expect(work.status, 'RELEASING', reason: '原串不改写');
+      expect(work.airingStatus, VideoAiringStatus.airing);
+      expect(work.premiered, '2026-07-04');
+      expect(work.endDate, '2026-09-26');
+    });
+
     test('maps the provider-neutral Science Fiction genre to Sci-Fi', () async {
       late Map<String, Object?> variables;
       final AniListVideoDiscoveryProvider provider =
@@ -622,6 +769,63 @@ void main() {
       expect(anilist.searchCalls, 0);
       await service.load(const VideoDiscoveryRequest());
       expect(anilist.discoverCalls, 1);
+    });
+
+    test('onProgress reports the fast provider before the slow one returns',
+        () async {
+      ProviderBatchResult<VideoDiscoveryPage> only(String id, String title) =>
+          ProviderBatchResult<VideoDiscoveryPage>.success(
+            <VideoDiscoveryPage>[
+              VideoDiscoveryPage(
+                items: <VideoDiscoveryItem>[
+                  _item(provider: id, id: id, title: title, year: 2026),
+                ],
+                page: 1,
+                hasMore: false,
+              ),
+            ],
+          );
+      final Completer<void> slowGate = Completer<void>();
+      final VideoDiscoveryService service = VideoDiscoveryService(
+        providers: <VideoDiscoveryProvider>[
+          _FakeProvider(
+            id: 'slow',
+            priority: 1,
+            response: only('mal', 'Slow Title'),
+            gate: slowGate.future,
+          ),
+          _FakeProvider(
+            id: 'fast',
+            priority: 2,
+            response: only('tmdb', 'Fast Title'),
+          ),
+        ],
+      );
+      addTearDown(service.close);
+      final List<List<String>> progress = <List<String>>[];
+      final Future<ProviderBatchResult<VideoDiscoveryPage>> done = service.load(
+        const VideoDiscoveryRequest(query: 'x'),
+        onProgress: (ProviderBatchResult<VideoDiscoveryPage> partial) =>
+            progress.add(<String>[
+          for (final VideoDiscoveryPage page in partial.items)
+            for (final VideoDiscoveryItem item in page.items)
+              item.reference.title,
+        ]),
+      );
+      await Future<void>.delayed(Duration.zero);
+      expect(progress, <List<String>>[
+        <String>['Fast Title'],
+      ]);
+      slowGate.complete();
+      final ProviderBatchResult<VideoDiscoveryPage> result = await done;
+      expect(progress, hasLength(1), reason: '最后一个来源到齐走返回值，不再回调');
+      expect(
+        <String>[
+          for (final VideoDiscoveryItem item in result.items.single.items)
+            item.reference.title,
+        ],
+        unorderedEquals(<String>['Slow Title', 'Fast Title']),
+      );
     });
 
     test('preserves successful items when another provider fails', () async {
@@ -801,6 +1005,229 @@ void main() {
       expect(result?.provider, VideoMetadataProviderKind.mal);
       expect(result?.title, 'MAL title');
       expect(result?.plot, 'MAL synopsis');
+    });
+
+    // anime：MAL → AniList → TMDB；tv：TMDB → AniList → MAL。后者主条目的
+    // name / originalName 都是汉字，AniList 只能补空、罗马字写法进不了主条目，
+    // MAL 那条只能靠合并前收齐的写法桥认出来。
+    for (final (
+          VideoDiscoveryCategory category,
+          VideoMetadataProviderKind primary,
+          String primaryName,
+        )
+        in <(VideoDiscoveryCategory, VideoMetadataProviderKind, String)>[
+          (
+            VideoDiscoveryCategory.anime,
+            VideoMetadataProviderKind.mal,
+            'Suzuki, Aina',
+          ),
+          (VideoDiscoveryCategory.tv, VideoMetadataProviderKind.tmdb, '鈴木愛奈'),
+        ]) {
+      test('BUG-2797 AniList bridges MAL romaji and TMDB kanji cast into one '
+          'entry with every photo and id (${category.name})', () async {
+        VideoMetadataCredit voice(
+          String provider,
+          VideoMetadataCreditKind kind,
+          String name,
+          String role, {
+          required String id,
+          String? originalName,
+          String? roleOriginal,
+          String? photo,
+        }) => VideoMetadataCredit(
+          kind: kind,
+          person: VideoMetadataPerson(
+            id: id,
+            name: name,
+            originalName: originalName,
+            profileUrl: photo,
+            ids: <VideoMetadataId>[VideoMetadataId(type: provider, value: id)],
+          ),
+          character: VideoMetadataCharacter(
+            name: role,
+            originalName: roleOriginal,
+          ),
+          roleName: role,
+        );
+        VideoMetadataWork work(
+          VideoMetadataProviderKind provider,
+          List<VideoMetadataCredit> credits,
+        ) => VideoMetadataWork(
+          provider: provider,
+          kind: VideoMetadataMediaKind.tv,
+          title: '${provider.name} title',
+          credits: credits,
+        );
+        final VideoDiscoveryService service = VideoDiscoveryService(
+          providers: const <VideoDiscoveryProvider>[],
+          metadataLocale: 'zh-CN',
+          metadataProviders: <VideoMetadataProvider>[
+            _FakeMetadataProvider(
+              kind: VideoMetadataProviderKind.tmdb,
+              work: work(VideoMetadataProviderKind.tmdb, <VideoMetadataCredit>[
+                voice(
+                  'tmdb',
+                  VideoMetadataCreditKind.actor,
+                  '鈴木愛奈',
+                  '福賀くるみ',
+                  id: '10',
+                  originalName: '鈴木愛奈',
+                  photo: 'tmdb-suzuki',
+                ),
+              ]),
+            ),
+            _FakeMetadataProvider(
+              kind: VideoMetadataProviderKind.anilist,
+              work:
+                  work(VideoMetadataProviderKind.anilist, <VideoMetadataCredit>[
+                    voice(
+                      'anilist',
+                      VideoMetadataCreditKind.voiceActor,
+                      'Aina Suzuki',
+                      'Kurumi Fukuga',
+                      id: '100',
+                      originalName: '鈴木愛奈',
+                      roleOriginal: '福賀くるみ',
+                    ),
+                  ]),
+            ),
+            _FakeMetadataProvider(
+              kind: VideoMetadataProviderKind.mal,
+              work: work(VideoMetadataProviderKind.mal, <VideoMetadataCredit>[
+                voice(
+                  'mal',
+                  VideoMetadataCreditKind.voiceActor,
+                  'Suzuki, Aina',
+                  'Fukuga, Kurumi',
+                  id: '1',
+                ),
+              ]),
+            ),
+          ],
+        );
+
+        final VideoMetadataWork? result = await service.loadDetails(
+          VideoDiscoveryItem(
+            reference: VideoMediaReference(
+              providerId: 'mal',
+              mediaId: '42',
+              mediaKind: VideoMetadataMediaKind.tv,
+              discoveryCategory: category,
+              title: 'mal title',
+              tmdbId: 7,
+              anilistId: 5,
+              externalIds: const <String, String>{'mal': '42'},
+            ),
+          ),
+        );
+
+        expect(result?.provider, primary);
+        final VideoMetadataCredit suzuki = result!.credits.single;
+        expect(suzuki.person.name, primaryName, reason: '主源条目保留');
+        expect(suzuki.person.originalName, '鈴木愛奈');
+        expect(suzuki.person.profileUrl, 'tmdb-suzuki');
+        expect(
+          suzuki.person.ids.map(
+            (VideoMetadataId id) => '${id.type}:${id.value}',
+          ),
+          containsAll(<String>['mal:1', 'anilist:100', 'tmdb:10']),
+        );
+      });
+    }
+
+    test(
+        'BUG-2795 details follow the metadata language: TMDB zh plot, '
+        'single-language genres, no duplicate cast', () async {
+      VideoMetadataCredit voice(
+        VideoMetadataCreditKind kind,
+        String name,
+        String role, {
+        String? originalName,
+      }) =>
+          VideoMetadataCredit(
+            kind: kind,
+            person: VideoMetadataPerson(name: name, originalName: originalName),
+            character: VideoMetadataCharacter(name: role),
+            roleName: role,
+          );
+      final VideoDiscoveryService service = VideoDiscoveryService(
+        providers: const <VideoDiscoveryProvider>[],
+        metadataLocale: 'zh-CN',
+        metadataProviders: <VideoMetadataProvider>[
+          _FakeMetadataProvider(
+            kind: VideoMetadataProviderKind.mal,
+            work: VideoMetadataWork(
+              provider: VideoMetadataProviderKind.mal,
+              kind: VideoMetadataMediaKind.tv,
+              title: 'FX Senshi Kurumi-chan',
+              plot: 'Kurumi is a girl... (Source: Crunchyroll)',
+              genres: const <String>['Drama', 'Slice of Life'],
+              credits: <VideoMetadataCredit>[
+                voice(
+                  VideoMetadataCreditKind.voiceActor,
+                  'Suzuki, Aina',
+                  'Fukuga, Kurumi',
+                ),
+                voice(
+                  VideoMetadataCreditKind.voiceActor,
+                  'Tomita, Miyu',
+                  'Someone, Else',
+                ),
+              ],
+            ),
+          ),
+          _FakeMetadataProvider(
+            kind: VideoMetadataProviderKind.tmdb,
+            work: VideoMetadataWork(
+              provider: VideoMetadataProviderKind.tmdb,
+              kind: VideoMetadataMediaKind.tv,
+              title: 'FX战士久留美',
+              plot: '中文简介',
+              genres: const <String>['动画', '喜剧'],
+              credits: <VideoMetadataCredit>[
+                voice(
+                  VideoMetadataCreditKind.actor,
+                  '鈴木愛奈',
+                  '福賀くるみ',
+                  originalName: '鈴木愛奈',
+                ),
+                voice(
+                  VideoMetadataCreditKind.actor,
+                  '富田美憂',
+                  '誰か',
+                  originalName: '富田美憂',
+                ),
+              ],
+            ),
+          ),
+        ],
+      );
+
+      final VideoMetadataWork? result = await service.loadDetails(
+        VideoDiscoveryItem(
+          reference: VideoMediaReference(
+            providerId: 'mal',
+            mediaId: '42',
+            mediaKind: VideoMetadataMediaKind.tv,
+            discoveryCategory: VideoDiscoveryCategory.anime,
+            title: 'FX Senshi Kurumi-chan',
+            tmdbId: 7,
+            externalIds: const <String, String>{'mal': '42'},
+          ),
+        ),
+      );
+
+      expect(result?.provider, VideoMetadataProviderKind.mal);
+      expect(result?.plot, '中文简介');
+      expect(result?.genres, <String>['动画', '喜剧']);
+      expect(
+        result?.credits.map((VideoMetadataCredit c) => c.person.name).toList(),
+        <String>['Suzuki, Aina', 'Tomita, Miyu'],
+        reason: 'MAL 罗马字与 TMDB 汉字名无法互证，不得把同一批声优追加第二遍',
+      );
+      expect(result?.title, 'FX战士久留美', reason: '标题与简介同一种资料语言');
+      expect(result?.aliases, contains('FX Senshi Kurumi-chan'),
+          reason: '被换下的 MAL 标题仍进别名池，下载搜索不能丢');
     });
 
     test('hydrates AniList details without probing a legacy Bangumi id',
@@ -1004,6 +1431,55 @@ void main() {
       );
 
       expect(result, hasLength(2));
+    });
+
+    test(
+        'an airing anime without an episode count is not absorbed by a '
+        'same-title movie identity (BUG-2760)', () {
+      // 放送中的 TV 动画搜索摘要常常没有集数；修前集数未知 = 聚合类型未知，
+      // 同名同年的 TMDB 电影弱匹配把它并成一张「电影」卡，AI 下载按电影下整包。
+      VideoDiscoveryItem anime({String? status}) =>
+          VideoDiscoveryItem.fromMetadataWork(
+            work: VideoMetadataWork(
+              provider: VideoMetadataProviderKind.anilist,
+              kind: VideoMetadataMediaKind.tv,
+              title: 'Same title',
+              year: 2026,
+              status: status,
+              ids: const <VideoMetadataId>[
+                VideoMetadataId(type: 'anilist', value: '99', isDefault: true),
+              ],
+            ),
+            discoveryCategory: VideoDiscoveryCategory.anime,
+          );
+      final VideoDiscoveryItem movie = _item(
+        provider: 'tmdb',
+        id: '100',
+        title: 'Same title',
+        year: 2026,
+      );
+
+      final List<VideoDiscoveryItem> airing = mergeVideoDiscoveryItems(
+        <VideoDiscoveryItem>[anime(status: 'RELEASING'), movie],
+        request: const VideoDiscoveryRequest(query: 'Same title'),
+      );
+      expect(airing, hasLength(2));
+      expect(
+        airing
+            .singleWhere(
+              (VideoDiscoveryItem item) => item.reference.anilistId == 99,
+            )
+            .reference
+            .mediaKind,
+        VideoMetadataMediaKind.tv,
+      );
+
+      // 状态也未知时仍按 BUG-1531 口径弱合并（单集 ONA 与电影身份是同一作品）。
+      final List<VideoDiscoveryItem> unknown = mergeVideoDiscoveryItems(
+        <VideoDiscoveryItem>[anime(), movie],
+        request: const VideoDiscoveryRequest(query: 'Same title'),
+      );
+      expect(unknown, hasLength(1));
     });
 
     test('a shared strong id merges even when one side omits the episode count',
@@ -1220,6 +1696,7 @@ class _FakeProvider implements VideoDiscoveryProvider {
     required this.priority,
     required this.response,
     this.supportsPaging = true,
+    this.gate,
   });
 
   @override
@@ -1233,6 +1710,9 @@ class _FakeProvider implements VideoDiscoveryProvider {
 
   final ProviderBatchResult<VideoDiscoveryPage> response;
   final bool supportsPaging;
+
+  /// 设了就等它完成才返回（模拟慢来源）。
+  final Future<void>? gate;
   int searchCalls = 0;
   int discoverCalls = 0;
 
@@ -1255,6 +1735,7 @@ class _FakeProvider implements VideoDiscoveryProvider {
     VideoDiscoveryRequest request,
   ) async {
     searchCalls++;
+    await gate;
     return response;
   }
 

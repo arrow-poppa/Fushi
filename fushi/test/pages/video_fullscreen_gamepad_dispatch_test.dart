@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/video/video_player_shortcuts.dart';
 import 'package:fushi/src/shortcuts/gamepad_service.dart';
@@ -210,7 +210,10 @@ class _Rig {
       previousFrame: _noop,
       nextFrame: _noop,
       screenshot: _noop,
+      screenshotSubtitled: _noop,
       toggleFullscreen: _noop,
+      toggleMiniWindow: _noop,
+      toggleMiniChrome: _noop,
       toggleSubtitleList: _noop,
       searchSubtitleList: _noop,
       toggleImmersiveLock: _noop,

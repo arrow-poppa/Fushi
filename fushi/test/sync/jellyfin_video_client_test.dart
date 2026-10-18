@@ -70,6 +70,16 @@ void main() {
       expect(r.serverName, 'NAS');
     });
 
+    test('parseAuthResult：Emby 只在 User.ServerName 给服务器名时回落', () {
+      final JellyfinAuthResult r =
+          JellyfinApi.parseAuthResult(<String, Object?>{
+        'AccessToken': 'tok',
+        'ServerId': 'UHD',
+        'User': <String, Object?>{'Id': 'u1', 'ServerName': 'UHD'},
+      });
+      expect(r.serverName, 'UHD');
+    });
+
     test('parseViews 保留 collectionType；isVideoish 滤掉音乐/图书', () {
       final List<JellyfinLibraryView> views =
           JellyfinApi.parseViews(<String, Object?>{
@@ -119,6 +129,43 @@ void main() {
   });
 
   group('JellyfinApi HTTP（MockClient）', () {
+    test('非 2xx 带出服务器纯文本说明；HTML 错误页不带（BUG-2848）', () async {
+      Future<JellyfinApiException> failWith(http.Response res) async {
+        final JellyfinApi api = JellyfinApi(
+          serverUrl: 'https://emby.example.com',
+          client: MockClient((http.Request req) async => res),
+        );
+        try {
+          await api.publicSystemInfo();
+        } on JellyfinApiException catch (e) {
+          return e;
+        }
+        fail('expected JellyfinApiException');
+      }
+
+      final JellyfinApiException denied = await failWith(http.Response.bytes(
+          utf8.encode('请使用群公告中允许的客户端进行访问'), 403));
+      expect(denied.statusCode, 403);
+      expect(denied.isAccessDenied, isTrue);
+      expect(denied.serverMessage, '请使用群公告中允许的客户端进行访问');
+      expect(denied.toString(), contains('请使用群公告中允许的客户端进行访问'));
+
+      final JellyfinApiException json = await failWith(http.Response(
+          jsonEncode(<String, Object?>{'message': 'Forbidden client'}), 403));
+      expect(json.serverMessage, 'Forbidden client');
+
+      final JellyfinApiException html = await failWith(
+          http.Response('<html><body>Cloudflare</body></html>', 403));
+      expect(html.serverMessage, isNull);
+      expect(html.toString(), 'JellyfinApiException(403, /System/Info/Public)');
+
+      final JellyfinApiException long =
+          await failWith(http.Response('x' * 500, 500));
+      expect(long.isAccessDenied, isFalse);
+      expect(long.serverMessage!.length,
+          JellyfinApiException.kMaxServerMessageLength + 1);
+    });
+
     test('authenticateByName 带 MediaBrowser 头并回填令牌', () async {
       late http.Request seen;
       final JellyfinApi api = JellyfinApi(
@@ -285,8 +332,13 @@ void main() {
       expect(info.durationMs, 90 * 60 * 1000);
       expect(info.positionMs, 60000);
       expect(info.hasCover, isTrue);
-      expect(info.coverUrl,
-          'http://nas:8096/Items/ep1/Images/Primary?api_key=tok');
+      // 清单封面走服务器侧缩放（maxWidth=720）：iOS 上解几十张原图海报是
+      // 内存闪退候选之一；api_key 仍在 URL 里自带认证。
+      expect(
+        info.coverUrl,
+        'http://nas:8096/Items/ep1/Images/Primary'
+        '?maxWidth=720&quality=90&api_key=tok',
+      );
       // 「显示视频库」结构表达：单集按剧名折叠成 playlist 合集卡。
       expect(info.collection?.collectionName, 'Show A');
       expect(info.collection?.collectionType, 'playlist');
@@ -297,6 +349,11 @@ void main() {
     test('remoteVideoStreamUrls：直连流自带 api_key，外挂文本字幕优先', () async {
       final JellyfinVideoClient c =
           clientWith(MockClient((http.Request req) async {
+        // 兼容层没有 PlaybackInfo 端点 → 回落手拼直出 URL（协商路径见
+        // jellyfin_playback_negotiation_test.dart）。
+        if (req.url.path == '/Items/ep1/PlaybackInfo') {
+          return http.Response('', 404);
+        }
         expect(req.url.path, '/Users/u1/Items/ep1');
         return http.Response(
           jsonEncode(_episodeJson(

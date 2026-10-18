@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -23,6 +23,12 @@ class PopupTestAppModel extends AppModel {
 
   @override
   double get popupMaxWidth => 400;
+
+  @override
+  double get dictionaryFontSize => 16;
+
+  @override
+  double get appUiScale => 1.0;
 
   @override
   List<String> get enabledAudioSources => const <String>[];
@@ -124,7 +130,7 @@ void main() {
     expect(closed, isTrue);
   });
 
-  testWidgets('desktop lookup opens in-app instead of launching hibiki url', (
+  testWidgets('desktop lookup opens in-app instead of launching fushi url', (
     WidgetTester tester,
   ) async {
     final AppModel appModel = AppModel(testPlatformServices());
@@ -348,7 +354,7 @@ void main() {
       buildTestApp(
         appModel: appModel,
         home: PopupDictionaryPage(
-          searchTerm: 'abcdef',
+          searchTerm: 'あいうえおか',
           closeInApp: () {},
           autoSearchOnOpen: false,
         ),
@@ -359,21 +365,21 @@ void main() {
     expect(find.textContaining('Clipboard'), findsNothing);
     expect(find.textContaining('剪贴板'), findsNothing);
 
-    await tester.tap(find.text('c'));
+    await tester.tap(find.text('う'));
     await tester.pump();
 
-    // Yomitan 式扫描：点第 3 个字查的是后缀 'cdef'，但条上的整句与搜索框里的整句都
-    // 留着不动，只有高亮跨度挪到被点的那个字上。此前这里两处都会被换成 'cdef'——
-    // 被点字左边的 'ab' 就此从条上消失，用户再想点回去已经没得点。
+    // Yomitan 式扫描：点第 3 个字查的是后缀 'うえおか'，但条上的整句与搜索框里的整句都
+    // 留着不动，只有高亮跨度挪到被点的那个字上。此前这里两处都会被换成 'うえおか'——
+    // 被点字左边的 'あい' 就此从条上消失，用户再想点回去已经没得点。
     final PopupDictionarySearchBar searchBar = tester.widget(
       find.byType(PopupDictionarySearchBar),
     );
-    expect(searchBar.controller.text, 'abcdef');
+    expect(searchBar.controller.text, 'あいうえおか');
 
     final SourceLookupTextPanel panel = tester.widget(
       find.byType(SourceLookupTextPanel),
     );
-    expect(panel.text, 'abcdef');
+    expect(panel.text, 'あいうえおか');
     expect(panel.highlight?.start, 2,
         reason: '高亮锚在被点的那个字素簇上，不再恒归零。');
   });
@@ -481,6 +487,49 @@ void main() {
     );
     expect(closeButton, findsOneWidget);
     await tester.tap(closeButton);
+    await tester.pump();
+    expect(closed, isTrue);
+  });
+
+  testWidgets(
+      'anchored point-lookup renders the card beside the anchor, not a bare '
+      'scrim', (WidgetTester tester) async {
+    // 截屏识字 / 悬浮字幕点字都带 anchorRect。LayoutBuilder 里直接返回 Positioned
+    // 会抛 StackParentData 类型错，卡片整张画不出来，只剩一层透明关闭层（真机上是
+    // 一层灰、点什么都没反应）。这里真渲染这条分支，而不只扫源码。
+    tester.view.physicalSize = const Size(1280, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    bool closed = false;
+    final AppModel appModel = AppModel(testPlatformServices());
+    const Rect anchor = Rect.fromLTWH(600, 80, 24, 24);
+
+    await tester.pumpWidget(
+      buildTestApp(
+        appModel: appModel,
+        home: PopupDictionaryPage(
+          searchTerm: 'search',
+          closeInApp: () => closed = true,
+          autoSearchOnOpen: false,
+          showSearchBar: false,
+          anchorRect: anchor,
+          subtitleWindowRect: const Rect.fromLTWH(200, 76, 900, 32),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(tester.takeException(), isNull);
+    final Finder card = find.byType(FushiPopupSurface);
+    expect(card, findsOneWidget);
+    final Rect cardRect = tester.getRect(card);
+    expect(cardRect.width, greaterThan(0));
+    expect(cardRect.height, greaterThan(0));
+    // 避让整条字幕窗：卡片落在字幕窗下方，不盖住被点的那一行。
+    expect(cardRect.top, greaterThanOrEqualTo(108));
+
+    // 卡片外仍是透明关闭层：点空白处关闭。
+    await tester.tapAt(const Offset(20, 780));
     await tester.pump();
     expect(closed, isTrue);
   });

@@ -85,6 +85,8 @@ class MokuroBlock {
     required this.lines,
     this.linesCoords,
     this.regions,
+    this.confidence,
+    this.aiRecognized = false,
   });
 
   /// Coordinates for this block (the `box` = `[x1, y1, x2, y2]`).
@@ -106,9 +108,11 @@ class MokuroBlock {
 
   /// Optional per-line polygon coordinates (`lines_coords`), when the producer
   /// provides them. Each line is a list of `[x, y]` points. mokuro emits these
-  /// via ctd; the app's own detector does not, so this is `null` for internal
-  /// OCR. Preserved verbatim through parse → serialise round-trips but not
-  /// required for overlay rendering (which only needs the block `box`).
+  /// via ctd; local OCR writes one clockwise quad per line (rotated by the
+  /// block's tilt for slanted text). Preserved verbatim through parse →
+  /// serialise round-trips. The overlay lays character hit cells out along
+  /// each line: 4-point rectangles keep their rotation
+  /// ([mokuroOrientedRectFromQuad]), other polygons use their bounding box.
   final List<List<List<double>>>? linesCoords;
 
   /// Optional character-level hit regions.
@@ -118,6 +122,14 @@ class MokuroBlock {
   /// retaining UTF-16 offsets into [lines] joined without separators. Other
   /// OCR producers may omit this field and keep using the block-level overlay.
   final List<MangaOcrTextRegion>? regions;
+
+  /// 本地识别器的置信度（0–1），见 `OcrRecognition.confidence`；null = 引擎不出分
+  /// （Lens / 系统 OCR / 外部 mokuro / 旧结果）。只有「AI 只补低置信度块」用它。
+  final double? confidence;
+
+  /// 文字已由视觉大模型改写过（`manga_ai_ocr_refiner.dart`）。只是记账：再跑一遍
+  /// AI 识别时跳过它，不重复花钱。
+  final bool aiRecognized;
 
   @override
   String toString() {
@@ -138,11 +150,27 @@ class MangaOcrTextRegion {
     required this.rectangle,
     required this.utf16Start,
     required this.utf16End,
+    this.rotation = 0,
   });
 
+  /// 摆正时的字格；[rotation] ≠ 0 时绕它的中心旋转才是真实位置。
   final MokuroRect rectangle;
   final int utf16Start;
   final int utf16End;
+
+  /// 字格绕 [rectangle] 中心的旋转（弧度，正值顺时针）。只有沿倾斜的
+  /// `lines_coords` 切出来的字格才非 0；不序列化（由行几何现算）。
+  final double rotation;
+
+  /// 字格的轴对齐外接框（命中测试 / 与旧轴对齐几何比较时用）。
+  MokuroRect get bounds => rotation == 0
+      ? rectangle
+      : MokuroOrientedRect(
+          center: rectangle.center,
+          width: rectangle.width,
+          height: rectangle.height,
+          rotation: rotation,
+        ).bounds;
 }
 
 /// Normalise a relative path into a forward-slash `manga.json` URL.
@@ -349,6 +377,8 @@ Map<String, Object?> mangaPayloadToJson(MokuroPayload payload) {
                 'lines': block.lines,
                 if (block.linesCoords != null)
                   'lines_coords': block.linesCoords,
+                if (block.confidence != null) 'confidence': block.confidence,
+                if (block.aiRecognized) 'ai_recognized': true,
                 if (block.regions != null)
                   'regions': <Map<String, Object?>>[
                     for (final MangaOcrTextRegion region in block.regions!)
@@ -426,6 +456,9 @@ MokuroBlock _parseBlock(
     lines: lines,
     linesCoords: _parseLinesCoords(raw['lines_coords']),
     regions: _parseRegions(raw['regions']),
+    confidence:
+        raw['confidence'] is num ? (raw['confidence'] as num).toDouble() : null,
+    aiRecognized: raw['ai_recognized'] == true,
   );
 }
 

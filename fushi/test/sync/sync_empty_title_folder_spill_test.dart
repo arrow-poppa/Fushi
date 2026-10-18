@@ -5,6 +5,7 @@ import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_engine/sync/sync_asset_store.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
+import 'package:fushi/src/anki/pending_mining/pending_mine_relay.dart';
 import 'package:fushi/src/sync/sync_manager.dart';
 import 'package:fushi/src/sync/sync_orchestrator.dart'
     show isReservedSyncFolderName;
@@ -17,7 +18,7 @@ import 'package:fushi_core/fushi_core.dart';
 // BUG-619 / TODO-1329: an EPUB row with an empty title made every backend's
 // `ensureBookFolder('')` resolve `<root>/<''>/` == the sync root, scattering the
 // book's progress_/statistics_/audioBook_ JSON (plus cover/epub/.fushiaudio)
-// straight into `hibiki-data/` next to real book folders. These tests pin the
+// straight into `fushi-data/` next to real book folders. These tests pin the
 // path contract: an empty sanitized title is never turned into a folder, and the
 // per-book sync loop skips such a row entirely (no write ever targets the root).
 
@@ -206,6 +207,12 @@ void main() {
 
     test('a real book folder name is not reserved', () {
       expect(isReservedSyncFolderName('屍人荘の殺人'), isFalse);
+    });
+
+    // 待发制卡跨设备中转的命名空间不是书：列成书会被用户在对比弹窗里当书删掉，
+    // 连认领带待落的卡一起没了。
+    test('the pending-mine relay namespace is reserved', () {
+      expect(isReservedSyncFolderName(PendingMineRelay.namespace), isTrue);
     });
   });
 

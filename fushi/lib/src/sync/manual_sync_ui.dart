@@ -1,10 +1,14 @@
 import 'dart:io';
 
 import 'package:flutter/widgets.dart';
+import 'package:fushi/src/models/app_font_sync_local.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/storage/storage_usage_service.dart'
+    show formatStorageBytes;
 import 'package:fushi/src/sync/sync_activity.dart';
 import 'package:fushi/src/sync/sync_auto_trigger.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
+import 'package:fushi/src/sync/sync_compare_dialog.dart';
 import 'package:fushi/src/sync/sync_conflict_prompter.dart';
 import 'package:fushi/src/sync/sync_error_messages.dart';
 import 'package:fushi/src/sync/sync_message_dialog.dart';
@@ -31,6 +35,8 @@ String summarizeSyncReport(SyncRunReport r) {
       t.sync_now_local_audio_in(count: r.localAudioImported),
     if (r.localAudioExported > 0)
       t.sync_now_local_audio_out(count: r.localAudioExported),
+    if (r.fontsImported > 0) t.sync_now_fonts_in(count: r.fontsImported),
+    if (r.fontsExported > 0) t.sync_now_fonts_out(count: r.fontsExported),
   ];
   final String head = parts.isEmpty ? t.sync_now_no_changes : parts.join(' · ');
   final String done = t.sync_now_done(detail: head);
@@ -77,6 +83,8 @@ bool shouldSignOutOnAuthError(SyncAuthError error) => switch (error.kind) {
       SyncAuthFailureKind.pairingRejected => false,
       // 压根没有凭据可丢，登出无事可做。
       SyncAuthFailureKind.pairingNotConfigured => false,
+      // BUG-2631：服务端回的是网页，凭据根本没被评估过；要改的是地址，不是会话。
+      SyncAuthFailureKind.htmlPage => false,
     };
 
 /// 一条**具名通道**的鉴权失败之后，该不该对这条通道执行登出（BUG-1578）。
@@ -113,16 +121,22 @@ String syncPhaseLabel(SyncPhase phase) {
       return t.sync_progress_audiobooks;
     case SyncPhase.videos:
       return t.sync_progress_videos;
+    case SyncPhase.fonts:
+      return t.sync_progress_fonts;
   }
 }
 
-/// "阶段 (k/N) 标题" —— 阶段没有条目总数时省略计数。
+/// "阶段 (k/N) 标题 · 速率" —— 阶段没有条目总数时省略计数，没在走字节时省略速率。
 String syncProgressLine(SyncProgress p) {
   final String phase = syncPhaseLabel(p.phase);
   if (p.itemTotal <= 0) return phase;
-  final String head = '$phase (${p.itemIndex + 1}/${p.itemTotal})';
   final String? title = p.title;
-  return (title == null || title.isEmpty) ? head : '$head $title';
+  final double? rate = p.bytesPerSecond;
+  return <String>[
+    '$phase (${p.itemIndex + 1}/${p.itemTotal})',
+    if (title != null && title.isNotEmpty) title,
+    if (rate != null) '· ${formatStorageBytes(rate.round())}/s',
+  ].join(' ');
 }
 
 /// 没有阶段 tick 可显示时的兜底行 —— 说清这轮同步**是谁**。
@@ -181,12 +195,15 @@ String syncOutcomeLine(SyncRunOutcome o) {
 ///
 /// 返回实际发生的 outcome，调用方可据此决定后续（下拉刷新据此不重复刷列表）。
 /// 全程不抛：错误都转成用户可读的 SnackBar。
+///
+/// [onlyChannels] 透传给 [runManualFullSync]：缺省 null = 全部已启用通道。
 Future<ManualSyncOutcome> runManualSyncWithFeedback({
   required BuildContext context,
   required AppModel appModel,
   bool announceNotConfigured = true,
   bool announceBusy = true,
   bool announceCompleted = true,
+  Set<SyncAssetChannelScope>? onlyChannels,
 }) =>
     _runWithSyncFeedback(
       context: context,
@@ -195,6 +212,7 @@ Future<ManualSyncOutcome> runManualSyncWithFeedback({
       announceBusy: announceBusy,
       announceCompleted: announceCompleted,
       run: () => runManualFullSync(
+        onlyChannels: onlyChannels,
         db: appModel.database,
         dictionaryResourceRoot: appModel.dictionaryResourceDirectory,
         audioDatabaseRoot:
@@ -235,6 +253,7 @@ Future<ManualSyncOutcome> runAssetTransferWithFeedback({
         tempDir: appModel.temporaryDirectory,
         localAudioEntries: appModel.localAudioDbs,
         onLocalAudioImported: appModel.importSyncedLocalAudioDb,
+        fontSync: AppFontSyncLocal(appModel),
         onPostRun: appModel.refreshAfterSyncRun,
       ),
     );
@@ -278,7 +297,10 @@ Future<ManualSyncOutcome> _runWithSyncFeedback({
         // 手动同步是用户的显式动作：立刻解冲突，不受 in-book/snooze 约束
         // （ConflictSource.manual）。option B 双通道：逐通道用**各自的**后端呈现
         // 该通道的冲突 —— 合并报告的冲突可能来自互联通道，用云后端去 apply 会
-        // 写错端。
+        // 写错端。两条通道共用一本裁决簿：同一本书在两条通道上都分叉时用户只
+        // 裁决一次，第二条通道直接按同一裁决应用、不再弹（用户报告 2026-09-22
+        // 「点了立即同步还会继续弹」）。
+        final Map<String, SyncChoice> decisions = <String, SyncChoice>{};
         for (final ManualSyncChannelReport channel in result.channelReports) {
           if (channel.report.conflicts.isEmpty) continue;
           if (!context.mounted) return result.outcome;
@@ -289,6 +311,7 @@ Future<ManualSyncOutcome> _runWithSyncFeedback({
             conflicts: channel.report.conflicts,
             source: ConflictSource.manual,
             inBook: appModel.isMediaOpen,
+            decisions: decisions,
           );
         }
     }

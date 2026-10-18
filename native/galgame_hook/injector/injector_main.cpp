@@ -19,7 +19,7 @@
 #include <vector>
 
 #include "voice_hook_ipc.h"
-#include "siglus_text_owner.h"
+#include "native_text_owner.h"
 #include "voice_hook_session.h"
 #include "hook_module_identity.h"
 #include "child_process_policy.h"
@@ -28,19 +28,24 @@
 #include "launch_failure_policy.h"
 #include "locale_emulator_launch.h"
 #include "kirikiri_launch_profile.h"
+#include "kirikiri_launch_signature.h"
+#include "loader_init_gate.h"
+#include "launch_engine_signature.h"
 #include "launcher_layout.h"
 #include "launcher_wait.h"
-#include "siglus_launch.h"
+#include "siglus_launch_win32.h"
 #include "unreal_launch.h"
 #include "steam_launch.h"
 #include "luna_bridge.h"
 #include "luna_hook_config.h"
 #include "luna_text_selector.h"
+#include "sgre_family.h"
 #include "text_thread_identity.h"
+#include "unity_voice_bundles.h"
 
 // galgame 一键制卡 C 阶段注入器（C.1）。把 hook DLL 注入目标游戏进程，建立共享内存 + 就绪
-// 事件，确认注入成功后读回语音格式。Hibiki 主进程把它当子进程拉起（部署红线：注入代码只在
-// 这个隔离组件里，不进 hibiki.exe）。
+// 事件，确认注入成功后读回语音格式。Fushi 主进程把它当子进程拉起（部署红线：注入代码只在
+// 这个隔离组件里，不进 fushi.exe）。
 //
 // 两种进入方式（二选一）：
 //   attach（--pid）：注入已运行进程。适合引擎在游戏运行中才建声音设备的情形。
@@ -50,8 +55,8 @@
 //     正常启动，等保护壳退出且游戏主窗口出现后再附着。
 //
 // 用法：
-//   hibiki_voice_injector.exe --pid <PID> [--dll <hook.dll>] [--wait-ms N] [--hold]
-//   hibiki_voice_injector.exe --launch <exe> [--workdir <dir>] [--arg <a>]...
+//   fushi_voice_injector.exe --pid <PID> [--dll <hook.dll>] [--wait-ms N] [--hold]
+//   fushi_voice_injector.exe --launch <exe> [--workdir <dir>] [--arg <a>]...
 //                             [--japanese-locale]
 //                             [--dll <hook.dll>] [--wait-ms N] [--hold]
 //     --pid     目标进程 ID（attach 模式；与 --launch 二选一）
@@ -59,7 +64,7 @@
 //     --workdir 子进程工作目录（launch 缺省=exe 所在目录）
 //     --arg     追加一个传给子进程的命令行参数（可重复；launch 专用）
 //     --japanese-locale  用 injector 同目录的 Locale Emulator 运行库建立日语 CP932
-//               环境，再在同一个挂起进程里完成 Hibiki 早注入。运行库不可用时告警并安全
+//               环境，再在同一个挂起进程里完成 Fushi 早注入。运行库不可用时告警并安全
 //               回退普通启动（launch 专用；Steam 协议启动会明确告警且不伪装已转区）。
 //     --dll     hook DLL 路径（默认取同目录 arch 匹配的 fushi_voice_hook.dll）
 //     --unity-runtime  Unity 资源提取运行时目录（含 fushi_unity_audio_extract.exe /
@@ -124,27 +129,21 @@ bool BitnessMatches(HANDLE target, bool* target_is_wow64) {
   return (self_wow != FALSE) == (tgt_wow != FALSE);
 }
 
-// 默认 DLL 路径：跟随注入器 basename。旧 Hibiki host 启动
-// hibiki_voice_injector.exe 时必须继续加载 hibiki_voice_hook.dll，使两侧共同选择旧 IPC 名；
-// 正常 Fushi 分发保持 fushi_voice_hook.dll。
+// 默认 DLL 路径：注入器同目录的 fushi_voice_hook.dll（两者同一次构建产出、同目录落地）。
 std::wstring DefaultDllPath() {
   wchar_t exe[MAX_PATH] = {0};
   const DWORD n = GetModuleFileNameW(nullptr, exe, MAX_PATH);
   if (n == 0 || n >= MAX_PATH) {
     return L"fushi_voice_hook.dll";
   }
-  const std::wstring executable_path(exe, n);
-  const bool legacy_hibiki =
-      fushi_voice_hook::ComponentUsesLegacyHibikiIpc(executable_path);
-  std::wstring path = executable_path;
+  std::wstring path(exe, n);
   const size_t slash = path.find_last_of(L"\\/");
   if (slash != std::wstring::npos) {
     path.resize(slash + 1);
   } else {
     path.clear();
   }
-  return path +
-         (legacy_hibiki ? L"hibiki_voice_hook.dll" : L"fushi_voice_hook.dll");
+  return path + L"fushi_voice_hook.dll";
 }
 
 // 目标进程里某个模块的加载基址；找不到（含模块尚未映射）返回 nullptr。
@@ -254,7 +253,7 @@ int Fail(const char* msg) {
 }
 
 // 把结构化失败原因打成 host 可解析的一行。人类可读诊断保持原样（诊断包/日志仍要它），
-// 这一行只是让 Hibiki 不必去猜中文串，从而能对「需要管理员 / 位数不符 / 被杀软拦下 /
+// 这一行只是让 Fushi 不必去猜中文串，从而能对「需要管理员 / 位数不符 / 被杀软拦下 /
 // DLL 加载慢」给出各自不同的处置与重试策略。
 void ReportFailureReason(fushi_voice_hook::LaunchFailureReason reason,
                          int exit_code) {
@@ -297,7 +296,14 @@ struct LunaCtx {
   PFN_Luna_InsertHookCode insert_hook = nullptr;
   PFN_Luna_RemoveHook remove_hook = nullptr;
   bool use_pc_hooks = false;       // 连接后是否补装通用 PC hooks（默认否，避免与 GDI 重复）
+  // 注入前已确定的 MAGES 控制符归一化：用户 profile 显式打开（TSV option
+  // `normalize-mages-controls`），或注入器在注入前用与 SGRE adapter 同一结构判据
+  // （sgre_family.h：exe 旁的 wind3d11 语音归档）认出了引擎——见 ApplyLunaProfiles。
   bool normalize_mages_controls = false;
+  // 注入后才能确定的同一归一化：没有语音归档、只靠进程内文本锚点认出 SGRE 时，游戏内
+  // adapter 的 probe() 成立后锁存为 1，本会话不再回落（身份不会撤销）。不按 exe 哈希 /
+  // 文件名判，见 LunaMagesNormalizationActive。
+  volatile LONG mages_engine_claimed = 0;
   std::vector<std::wstring> hook_codes;
   std::vector<std::wstring> blocked_hook_codes;
   std::vector<std::wstring> blocked_hook_names;
@@ -610,6 +616,59 @@ bool CommitUnityWavePcm(SharedHeader* header, const UnityVoiceEvent& event,
   return true;
 }
 
+// One extractor run: `input_flag` is `--bundle` or `--data-dir`.
+bool RunUnityExtractor(const UnityExtractorRuntime& runtime,
+                       const wchar_t* input_flag, const std::wstring& input,
+                       const wchar_t* clip_name, const std::wstring& output) {
+  std::wstring command = QuoteWindowsArgument(runtime.executable) + L" " +
+      input_flag + L" " + QuoteWindowsArgument(input) +
+      L" --clip " + QuoteWindowsArgument(clip_name) +
+      L" --output " + QuoteWindowsArgument(output) +
+      L" --classdata " + QuoteWindowsArgument(runtime.classdata) +
+      L" --decoder " + QuoteWindowsArgument(runtime.decoder);
+  std::vector<wchar_t> command_buffer(command.begin(), command.end());
+  command_buffer.push_back(0);
+  STARTUPINFOW startup = {0};
+  startup.cb = sizeof(startup);
+  PROCESS_INFORMATION process = {0};
+  if (!CreateProcessW(runtime.executable.c_str(), command_buffer.data(),
+                      nullptr, nullptr, FALSE, CREATE_NO_WINDOW, nullptr,
+                      InjectorDir().c_str(), &startup, &process)) {
+    fprintf(stderr, "[unity-audio] extractor launch failed=%lu clip=%ls\n",
+            GetLastError(), clip_name);
+    return false;
+  }
+  CloseHandle(process.hThread);
+  const DWORD wait = WaitForSingleObject(process.hProcess, 30000);
+  DWORD exit_code = 2;
+  if (wait == WAIT_OBJECT_0) GetExitCodeProcess(process.hProcess, &exit_code);
+  if (wait != WAIT_OBJECT_0) TerminateProcess(process.hProcess, 2);
+  CloseHandle(process.hProcess);
+  return wait == WAIT_OBJECT_0 && exit_code == 0 && RegularFileExists(output);
+}
+
+// File names (no directory) of the `*.bundle` entries next to a bundle the
+// game opened; the voice-bundle filter is applied by the candidate ordering.
+std::vector<std::wstring> ListUnityBundleSiblings(const std::wstring& directory) {
+  std::vector<std::wstring> names;
+  if (directory.empty()) return names;
+  WIN32_FIND_DATAW data = {};
+  HANDLE find = FindFirstFileW((directory + L"\\*.bundle").c_str(), &data);
+  if (find == INVALID_HANDLE_VALUE) return names;
+  do {
+    if ((data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) == 0) {
+      names.emplace_back(data.cFileName);
+    }
+  } while (names.size() < 256 && FindNextFileW(find, &data));
+  FindClose(find);
+  return names;
+}
+
+// Per injector session: the voice bundle the last clip was found in (tried
+// first), and clip names found in none of them (BGM / SE / typing sounds).
+std::wstring g_unity_voice_last_bundle;
+fushi_voice_injector::UnityVoiceNegativeCache g_unity_voice_negative;
+
 bool ExtractUnityVoice(const UnityExtractorRuntime& runtime,
                        const std::wstring& data_directory,
                        const UnityVoiceEvent& event, SharedHeader* header) {
@@ -626,40 +685,46 @@ bool ExtractUnityVoice(const UnityExtractorRuntime& runtime,
       dir + L"\\" + std::to_wstring(event.timestamp_ms) + L"_" +
       SafeVoiceFileName(event.clip_name) + L".wav";
 
-  std::wstring command = QuoteWindowsArgument(runtime.executable) +
-      (event.bundle_path[0] == 0
-           ? L" --data-dir " + QuoteWindowsArgument(data_directory)
-           : L" --bundle " + QuoteWindowsArgument(event.bundle_path)) +
-      L" --clip " + QuoteWindowsArgument(event.clip_name) +
-      L" --output " + QuoteWindowsArgument(output) +
-      L" --classdata " + QuoteWindowsArgument(runtime.classdata) +
-      L" --decoder " + QuoteWindowsArgument(runtime.decoder);
-  std::vector<wchar_t> command_buffer(command.begin(), command.end());
-  command_buffer.push_back(0);
-  STARTUPINFOW startup = {0};
-  startup.cb = sizeof(startup);
-  PROCESS_INFORMATION process = {0};
-  if (!CreateProcessW(runtime.executable.c_str(), command_buffer.data(),
-                      nullptr, nullptr, FALSE, CREATE_NO_WINDOW, nullptr,
-                      InjectorDir().c_str(), &startup, &process)) {
-    fprintf(stderr, "[unity-audio] extractor launch failed=%lu clip=%ls\n",
-            GetLastError(), event.clip_name);
-    return false;
+  if (event.bundle_path[0] == 0) {
+    const bool extracted = RunUnityExtractor(runtime, L"--data-dir",
+                                             data_directory, event.clip_name,
+                                             output);
+    const bool ok = extracted && CommitUnityWavePcm(header, event, output);
+    fprintf(stderr, "[unity-audio] %s clip=%ls input=%ls output=%ls\n",
+            ok ? "extracted-and-committed" : "failed", event.clip_name,
+            data_directory.c_str(), output.c_str());
+    return ok;
   }
-  CloseHandle(process.hThread);
-  const DWORD wait = WaitForSingleObject(process.hProcess, 30000);
-  DWORD exit_code = 2;
-  if (wait == WAIT_OBJECT_0) GetExitCodeProcess(process.hProcess, &exit_code);
-  CloseHandle(process.hProcess);
-  const bool extracted = wait == WAIT_OBJECT_0 && exit_code == 0 &&
-                         RegularFileExists(output);
-  const bool ok = extracted && CommitUnityWavePcm(header, event, output);
-  fprintf(stderr, "[unity-audio] %s clip=%ls input=%ls output=%ls\n",
-          ok ? "extracted-and-committed" : "failed", event.clip_name,
-          event.bundle_path[0] == 0 ? data_directory.c_str()
-                                    : event.bundle_path,
-          output.c_str());
-  return ok;
+
+  const std::wstring opened(event.bundle_path);
+  const std::wstring bundle_directory =
+      fushi_voice_injector::UnityBundleDirectory(opened);
+  if (g_unity_voice_negative.Contains(bundle_directory, event.clip_name)) {
+    return false;  // already proven not to be in any voice bundle
+  }
+  std::vector<std::wstring> candidates =
+      fushi_voice_injector::OrderUnityVoiceBundleCandidates(
+          opened, ListUnityBundleSiblings(bundle_directory),
+          g_unity_voice_last_bundle);
+  if (candidates.empty()) candidates.push_back(opened);
+  for (const std::wstring& bundle : candidates) {
+    if (!RunUnityExtractor(runtime, L"--bundle", bundle, event.clip_name,
+                           output)) {
+      continue;
+    }
+    g_unity_voice_last_bundle = bundle;
+    const bool ok = CommitUnityWavePcm(header, event, output);
+    fprintf(stderr, "[unity-audio] %s clip=%ls input=%ls output=%ls\n",
+            ok ? "extracted-and-committed" : "failed", event.clip_name,
+            bundle.c_str(), output.c_str());
+    return ok;
+  }
+  g_unity_voice_negative.Add(bundle_directory, event.clip_name);
+  fprintf(stderr,
+          "[unity-audio] clip=%ls not in any of %zu voice bundle(s) under %ls; "
+          "not a voice (cached)\n",
+          event.clip_name, candidates.size(), bundle_directory.c_str());
+  return false;
 }
 
 void ProcessUnityVoiceEvents(SharedHeader* header,
@@ -746,6 +811,11 @@ uint64_t LunaTextFaceId(const wchar_t* hookcode, const char* hookname,
 // Luna 侧写者状态。**必须定义在所有写路径之前**：v13 起写文本道也要在这把锁下认领，
 // 与预览槽认领共用同一把锁、同一套下标分区。
 fushi_voice_hook::LunaTextSelector g_lunaTextSelector;
+// 成对折叠 hook 面的粘性尾巴（BUG-2705），与选择器共用 g_lunaSelectCs。
+fushi_voice_hook::LunaPairedTailTracker g_lunaPairedTails;
+// EmbedCS2 re-emits every message once more when the window starts showing it
+// (luna_text_selector.h LunaImmediateRepeatFilter); guarded by g_lunaSelectCs.
+fushi_voice_hook::LunaImmediateRepeatFilter g_lunaRepeats;
 CRITICAL_SECTION g_lunaSelectCs;
 bool g_lunaSelectCsInit = false;
 alignas(8) volatile uint64_t g_lunaPreviewGeneration = 0;
@@ -917,6 +987,27 @@ int LunaWideToUtf8(const wchar_t* text, int wlen, char* out, int out_cap) {
   return written;
 }
 
+// MAGES 控制符归一化是否生效：注入前已确定（用户 profile，或 exe 旁的 wind3d11 语音
+// 归档——与 adapter probe() 同一判据，从第一行起生效），或游戏内引擎 adapter 已确认本进程
+// 是 MAGES/SGRE（wind3d11）引擎。后者只覆盖「无语音归档、靠文本锚点认出」的构建：读共享头
+// 里的 adapter 报告（有界栈拷贝），确认后锁存，之后每行只看一个原子量。hook 尚未上报时
+// 保持原样输出——那是「还不知道」，不猜。
+bool LunaMagesNormalizationActive() {
+  if (g_luna.normalize_mages_controls) return true;
+  if (InterlockedCompareExchange(&g_luna.mages_engine_claimed, 0, 0) != 0) {
+    return true;
+  }
+  if (!fushi_voice_hook::AdapterReportsClaimEngine(
+          g_luna.header, fushi_voice_hook::kLunaMagesControlEngineAdapterId)) {
+    return false;
+  }
+  if (InterlockedExchange(&g_luna.mages_engine_claimed, 1) == 0) {
+    fprintf(stderr, "[luna] engine %s claimed: MAGES control normalization on\n",
+            fushi_voice_hook::kLunaMagesControlEngineAdapterId);
+  }
+  return true;
+}
+
 // ── Luna_Start 的 8 个回调实现（__cdecl 默认约定）─────────────────────────────
 // Output：全引擎精确台词入口。过滤 + 写文本环。返回值在本 vendored 版恒 true（不作门控）。
 void LunaOutput(const wchar_t* hookcode, const char* hookname,
@@ -926,12 +1017,21 @@ void LunaOutput(const wchar_t* hookcode, const char* hookname,
     const int raw_len = static_cast<int>(wcslen(text));
     const std::wstring normalized_storage =
         fushi_voice_hook::LunaNormalizeMagesControls(
-            text, raw_len, g_luna.normalize_mages_controls);
+            text, raw_len, LunaMagesNormalizationActive());
     const wchar_t* normalized_text = normalized_storage.c_str();
     const int escaped_len = static_cast<int>(normalized_storage.size());
-    const int normalized_len =
-        fushi_voice_hook::LunaNormalizedTextLengthForHook(
-            hookname, normalized_text, escaped_len);
+    // thread_id 只依赖 hook 身份与 ThreadParam，不依赖文本；折叠要按线程记状态，所以先算。
+    const uint64_t thread_id = LunaTextThreadId(hookcode, hookname, tp);
+    int normalized_len = escaped_len;
+    if (g_lunaSelectCsInit) {
+      EnterCriticalSection(&g_lunaSelectCs);
+      normalized_len = g_lunaPairedTails.NormalizedLength(
+          thread_id, hookname, normalized_text, escaped_len);
+      LeaveCriticalSection(&g_lunaSelectCs);
+    } else {
+      normalized_len = fushi_voice_hook::LunaNormalizedTextLengthForHook(
+          hookname, normalized_text, escaped_len);
+    }
     if (LunaDiagEnabled()) {
       char u8[1024];
       LunaWideToUtf8(text, raw_len, u8, sizeof(u8));
@@ -953,7 +1053,6 @@ void LunaOutput(const wchar_t* hookcode, const char* hookname,
       // 先判伪影，再决定本行是否写入文本环。
       const bool artifact =
           fushi_voice_hook::LunaTextIsArtifact(normalized_text, normalized_len);
-      const uint64_t thread_id = LunaTextThreadId(hookcode, hookname, tp);
       const uint64_t face_id = LunaTextFaceId(hookcode, hookname, tp);
       // v12：预览必须写在门控**之前**且无条件（含伪影行）。预览区的全部意义就是让用户
       // 看见未被发布的线程；放到门控之后就只剩已选中的那条，等于没做。
@@ -970,7 +1069,15 @@ void LunaOutput(const wchar_t* hookcode, const char* hookname,
       if (!artifact) {
         g_luna.header->luna_active = 1;
       }
-      if (LunaShouldWriteLine(thread_id, artifact, face_id)) {
+      // The preview above still shows the repeat; only the lane skips it.
+      bool repeat = false;
+      if (!artifact && g_lunaSelectCsInit) {
+        EnterCriticalSection(&g_lunaSelectCs);
+        repeat = g_lunaRepeats.IsRepeat(thread_id, hookname, normalized_text,
+                                        normalized_len, GetTickCount64());
+        LeaveCriticalSection(&g_lunaSelectCs);
+      }
+      if (!repeat && LunaShouldWriteLine(thread_id, artifact, face_id)) {
         WriteLunaTextLine(g_luna.header, hookcode, hookname, tp, thread_id,
                           face_id, normalized_text, normalized_len);
       }
@@ -1154,6 +1261,7 @@ bool InitLunaHook(SharedHeader* header, HANDLE target, DWORD pid, int codepage,
   g_luna.remove_hook = bridge.remove_hook;
   g_luna.use_pc_hooks = use_pc_hooks && (bridge.insert_pc != nullptr);
   g_luna.normalize_mages_controls = normalize_mages_controls;
+  InterlockedExchange(&g_luna.mages_engine_claimed, 0);
   g_luna.hook_codes = hook_codes;
   g_luna.blocked_hook_codes = blocked_hook_codes;
   g_luna.blocked_hook_names = blocked_hook_names;
@@ -1176,6 +1284,8 @@ bool InitLunaHook(SharedHeader* header, HANDLE target, DWORD pid, int codepage,
     g_lunaSelectCsInit = true;
   }
   g_lunaTextSelector.Reset();
+  g_lunaPairedTails.Reset();
+  g_lunaRepeats.Reset();
 
   // 注册回调，顺序严格对齐 texthook.py：Connect, Disconnect, ThreadCreate, ThreadRemove,
   // Output, HostInfo, HookInsert, Embed, I18NQuery, EmuGameInfo。后两项本组件不用，传空让
@@ -1230,6 +1340,7 @@ void ShutdownLunaHook() {
     g_luna.confirmed_blocked_hook_names.clear();
     g_luna.preferred_hook_codes.clear();
     g_luna.normalize_mages_controls = false;
+    InterlockedExchange(&g_luna.mages_engine_claimed, 0);
     InterlockedExchange(&g_luna.blocked_hook_remove_requests, 0);
     InterlockedExchange(&g_luna.blocked_hook_remove_confirmations, 0);
     g_luna.pid = 0;
@@ -1259,6 +1370,17 @@ void ApplyLunaProfiles(const std::wstring& executable, DWORD pid,
                        const std::wstring& user_profile,
                        LunaOptions* options) {
   if (options == nullptr || executable.empty()) return;
+  // 引擎身份（结构判据，不是哈希 / 文件名）：SGRE adapter 的语音归档判据在注入前就能在
+  // 磁盘上判定，这里用同一个函数（sgre_family.h）先判，MAGES 控制符归一化从 Luna 的
+  // 第一行起就生效，不必等 hook DLL 的 adapter 报告（每秒最多一次、DLL 未注入时永不到）。
+  if (!options->normalize_mages_controls &&
+      fushi_voice_hook::SgreVoiceArchiveExistsBesideExecutable(executable)) {
+    options->normalize_mages_controls = true;
+    fprintf(stderr,
+            "[luna] engine %s identified before injection (wind3d11 voice "
+            "archive): MAGES control normalization on\n",
+            fushi_voice_hook::kLunaMagesControlEngineAdapterId);
+  }
   const auto identity = BuildTargetIdentity(executable, pid);
   auto apply = [&](const std::string& tsv, const char* source) {
     const auto match = fushi_voice_hook::MatchLunaHookProfiles(tsv, identity);
@@ -1396,6 +1518,253 @@ bool ResumeLaunchedGame(HANDLE process, HANDLE thread, const char* stage) {
   }
   fprintf(stderr, "[resume] %s NtResumeProcess failed\n", stage);
   return false;
+}
+
+// 读 exe 文件的 PE 头与 TLS 目录（判据见 loader_init_gate.h）。只读前 16 MiB：TLS 目录与
+// 回调数组都在头部附近的节里，超大资源尾部不必读。
+fushi_voice_hook::PeLaunchLayout ReadPeLaunchLayout(const std::wstring& exe) {
+  std::ifstream in(exe, std::ios::binary);
+  if (!in) return {};
+  std::vector<uint8_t> bytes(16u << 20);
+  in.read(reinterpret_cast<char*>(bytes.data()),
+          static_cast<std::streamsize>(bytes.size()));
+  bytes.resize(static_cast<size_t>(in.gcount()));
+  return fushi_voice_hook::ParsePeLaunchLayout(bytes.data(), bytes.size());
+}
+
+// 目标进程（同位数）的映像基址：PEB->ImageBaseAddress。挂起创建后 PEB 已就绪。
+uintptr_t RemoteImageBase(HANDLE process) {
+  struct BasicInfo {
+    void* reserved1;
+    void* peb_base;
+    void* reserved2[2];
+    ULONG_PTR unique_pid;
+    void* reserved3;
+  } info = {};
+  using NtQueryInformationProcess_t =
+      LONG(NTAPI*)(HANDLE, ULONG, PVOID, ULONG, PULONG);
+  const auto query = reinterpret_cast<NtQueryInformationProcess_t>(
+      reinterpret_cast<void*>(GetProcAddress(GetModuleHandleW(L"ntdll.dll"),
+                                             "NtQueryInformationProcess")));
+  if (query == nullptr ||
+      query(process, 0 /* ProcessBasicInformation */, &info, sizeof(info),
+            nullptr) < 0 ||
+      info.peb_base == nullptr) {
+    return 0;
+  }
+  // PEB.ImageBaseAddress：32 位 +0x08，64 位 +0x10（注入器与目标同位数）。
+  const uintptr_t field =
+      reinterpret_cast<uintptr_t>(info.peb_base) + sizeof(void*) * 2;
+  uintptr_t base = 0;
+  SIZE_T read = 0;
+  if (!ReadProcessMemory(process, reinterpret_cast<const void*>(field), &base,
+                         sizeof(base), &read) ||
+      read != sizeof(base)) {
+    return 0;
+  }
+  return base;
+}
+
+// 目标进程是否有任何可见的顶层窗口（对话框、壳的启动画面等）：有就说明它正在展示 UI、
+// 可能在等用户操作，而不是卡死。
+bool ProcessHasVisibleTopLevelWindow(DWORD pid) {
+  struct Search {
+    DWORD pid;
+    bool found;
+  } search = {pid, false};
+  EnumWindows(
+      [](HWND window, LPARAM param) -> BOOL {
+        auto* s = reinterpret_cast<Search*>(param);
+        DWORD owner = 0;
+        GetWindowThreadProcessId(window, &owner);
+        if (owner == s->pid && IsWindowVisible(window)) {
+          s->found = true;
+          return FALSE;
+        }
+        return TRUE;
+      },
+      reinterpret_cast<LPARAM>(&search));
+  return search.found;
+}
+
+// 加载器初始化门（判据与来由见 loader_init_gate.h；只由引擎 launch profile 声明启用）：
+// 入口点写 `EB FE`，恢复主线程让它自己完成进程初始化（静态导入 DllMain + TLS 回调），停在
+// 入口点后挂起、还原原字节。结果见 LoaderInitGateOutcome：
+//   kParkedAtEntry：主线程挂起（计数 1）停在入口，调用方照常早注入并由既有路径恢复；
+//   kNotStarted：门没开始（主线程从未被恢复），调用方照常早注入；
+//   kLeftRunning：主线程已在跑进程初始化却没停到入口（入口被映像自己改写 / 无 UI 超时），
+//     保持运行、不挂回去，调用方按已运行进程附着——挂回去再远程 LoadLibraryW 会在 loader
+//     lock 上互等死锁。门是生命周期修正，不是新的失败面。
+fushi_voice_hook::LoaderInitGateOutcome RunLoaderInitGate(HANDLE process,
+                                                          HANDLE thread,
+                                                          uint32_t entry_rva) {
+  using Outcome = fushi_voice_hook::LoaderInitGateOutcome;
+  if (thread == nullptr) {
+    fprintf(stderr,
+            "[loader-gate] no primary thread handle; skipping gate (legacy "
+            "early injection)\n");
+    return Outcome::kNotStarted;
+  }
+  const uintptr_t image_base = RemoteImageBase(process);
+  if (image_base == 0) {
+    fprintf(stderr, "[loader-gate] cannot read image base; skipping gate\n");
+    return Outcome::kNotStarted;
+  }
+  void* const entry = reinterpret_cast<void*>(image_base + entry_rva);
+  uint8_t original[2] = {};
+  SIZE_T io = 0;
+  if (!ReadProcessMemory(process, entry, original, sizeof(original), &io) ||
+      io != sizeof(original)) {
+    fprintf(stderr, "[loader-gate] cannot read entry bytes at %p: %lu\n", entry,
+            GetLastError());
+    return Outcome::kNotStarted;
+  }
+  DWORD old_protect = 0;
+  if (!VirtualProtectEx(process, entry, sizeof(original), PAGE_EXECUTE_READWRITE,
+                        &old_protect)) {
+    fprintf(stderr, "[loader-gate] VirtualProtectEx failed: %lu\n",
+            GetLastError());
+    return Outcome::kNotStarted;
+  }
+  const uint8_t spin[2] = {0xEB, 0xFE};  // jmp $
+  const auto restore = [&]() {
+    SIZE_T written = 0;
+    WriteProcessMemory(process, entry, original, sizeof(original), &written);
+    FlushInstructionCache(process, entry, sizeof(original));
+    DWORD ignored = 0;
+    VirtualProtectEx(process, entry, sizeof(original), old_protect, &ignored);
+  };
+  // 入口处是否仍是我们写的 `EB FE`。不是就说明映像自己改写了入口（壳原地解密代码段）。
+  const auto entry_still_spinning = [&]() {
+    uint8_t current[2] = {};
+    SIZE_T got = 0;
+    return ReadProcessMemory(process, entry, current, sizeof(current), &got) &&
+           got == sizeof(current) && current[0] == spin[0] &&
+           current[1] == spin[1];
+  };
+  // 主线程当前是否停在入口点（调用方须已挂起它）。
+  const auto thread_at_entry = [&]() {
+    CONTEXT ctx = {};
+    ctx.ContextFlags = CONTEXT_CONTROL;
+    if (!GetThreadContext(thread, &ctx)) return false;
+#if defined(_M_X64)
+    const uintptr_t ip = static_cast<uintptr_t>(ctx.Rip);
+#else
+    const uintptr_t ip = static_cast<uintptr_t>(ctx.Eip);
+#endif
+    return ip == reinterpret_cast<uintptr_t>(entry);
+  };
+  if (!WriteProcessMemory(process, entry, spin, sizeof(spin), &io) ||
+      io != sizeof(spin)) {
+    fprintf(stderr, "[loader-gate] cannot patch entry: %lu\n", GetLastError());
+    restore();
+    return Outcome::kNotStarted;
+  }
+  FlushInstructionCache(process, entry, sizeof(spin));
+
+  const uint64_t started = GetTickCount64();
+  // 恢复到挂起计数归零（Locale Emulator 路径下初始计数可能是 2，见 ResumeLaunchedGame）。
+  for (int attempt = 0; attempt < 8; ++attempt) {
+    const DWORD previous = ResumeThread(thread);
+    if (previous == static_cast<DWORD>(-1) || previous <= 1) break;
+  }
+  // 超时只计「进程没有任何可见 UI」的时间：TLS 回调里的壳 / 汉化补丁常先弹一个等用户点
+  // 「确定」的对话框（《千恋＊万花》光盘版 SenrenBankaCHS.exe：「重要信息」声明框），那段
+  // 时间主线程合法地停在 TLS 回调里，用户读多久都不算卡死。等待期间向宿主报 WAIT，
+  // 让宿主暂停自己的就绪计时（galgame_audio_source.dart `_InjectorReadyWait`）。
+  constexpr DWORD kGateTimeoutMs = 20000;
+  const DWORD pid = GetProcessId(process);
+  uint64_t idle_since = started;
+  uint64_t next_ui_probe = 0;
+  bool waiting_user = false;
+  bool reached = false;
+  bool entry_rewritten = false;
+  while (GetTickCount64() - idle_since < kGateTimeoutMs) {
+    if (WaitForSingleObject(process, 0) != WAIT_TIMEOUT) break;  // 进程已退出
+    const uint64_t now = GetTickCount64();
+    if (now >= next_ui_probe) {
+      next_ui_probe = now + 100;
+      // 壳在 TLS 回调里解密代码段时会覆盖入口处的 `EB FE`：主线程不会再停在这里，
+      // 且此后绝不能再写回原字节（那是解密前的密文）。此时主线程正在运行（本轮还没挂起它）。
+      if (!entry_still_spinning()) {
+        entry_rewritten = true;
+        break;
+      }
+      const bool ui_visible = ProcessHasVisibleTopLevelWindow(pid);
+      if (ui_visible) idle_since = now;
+      if (ui_visible != waiting_user) {
+        waiting_user = ui_visible;
+        printf("WAIT pid=%lu reason=%s\n", pid, waiting_user ? "user" : "none");
+        fflush(stdout);
+      }
+    }
+    if (SuspendThread(thread) == static_cast<DWORD>(-1)) break;
+    if (thread_at_entry()) {
+      reached = true;
+      break;  // 保持挂起
+    }
+    ResumeThread(thread);
+    Sleep(2);
+  }
+  if (waiting_user) {
+    printf("WAIT pid=%lu reason=none\n", pid);
+    fflush(stdout);
+  }
+  if (entry_rewritten) {
+    // 入口已被映像自己改写（壳原地解密）：主线程此刻在进程初始化中途运行，可能持有 loader
+    // lock。不挂起它、不写回入口字节、也不动页保护（壳可能还在写这一页），让进程照常跑完初始化；
+    // 调用方改按已运行进程附着（kLeftRunning）。
+    fprintf(stderr,
+            "[loader-gate] entry %p was rewritten by the image itself (in-place "
+            "unpacker) after %llu ms; process initialisation is still in "
+            "progress, so the primary thread is left running untouched (no "
+            "suspend, no entry restore) and the game will be attached as an "
+            "already running process\n",
+            entry, static_cast<unsigned long long>(GetTickCount64() - started));
+    return Outcome::kLeftRunning;
+  }
+  if (reached) {
+    restore();
+    fprintf(stderr,
+            "[loader-gate] primary thread initialised the process and parked at "
+            "entry %p after %llu ms\n",
+            entry, static_cast<unsigned long long>(GetTickCount64() - started));
+    return Outcome::kParkedAtEntry;
+  }
+  const bool alive = WaitForSingleObject(process, 0) == WAIT_TIMEOUT;
+  if (alive && SuspendThread(thread) != static_cast<DWORD>(-1)) {
+    // 无 UI 超时：先停住主线程再核对，避免它恰好踩到入口时我们在改字节。
+    if (!entry_still_spinning()) {
+      ResumeThread(thread);
+      fprintf(stderr,
+              "[loader-gate] entry %p was rewritten by the image itself while "
+              "timing out; primary thread left running untouched, attaching as "
+              "an already running process\n",
+              entry);
+      return Outcome::kLeftRunning;
+    }
+    if (thread_at_entry()) {
+      restore();
+      fprintf(stderr,
+              "[loader-gate] primary thread parked at entry %p at the timeout "
+              "edge after %llu ms\n",
+              entry,
+              static_cast<unsigned long long>(GetTickCount64() - started));
+      return Outcome::kParkedAtEntry;
+    }
+    restore();
+    ResumeThread(thread);
+  } else {
+    restore();
+  }
+  // 主线程已经跑进了进程初始化却没到入口：挂回去只会让远程 LoadLibraryW 在 loader lock 上
+  // 互等，所以放它继续跑，按已运行进程附着。
+  fprintf(stderr,
+          "[loader-gate] primary thread did not reach entry %p within %lu ms "
+          "without visible UI (alive=%d); entry restored, primary thread left "
+          "running, attaching as an already running process\n",
+          entry, kGateTimeoutMs, alive ? 1 : 0);
+  return Outcome::kLeftRunning;
 }
 
 bool NativeLoopbackPolicyApplied(SharedHeader* header, uint32_t requested,
@@ -1626,9 +1995,7 @@ int RunInjection(HANDLE target, DWORD pid, const std::wstring& dll_path,
                               text_region_bytes + clip_region_bytes +
                               loopback_capacity + loopback_marker_bytes +
                               thread_preview_bytes + lookup_region_bytes;
-  const bool legacy_hibiki_ipc =
-      fushi_voice_hook::ComponentUsesLegacyHibikiIpc(dll_path);
-  const std::wstring shm = SharedMemoryName(pid, legacy_hibiki_ipc);
+  const std::wstring shm = SharedMemoryName(pid);
   SetLastError(ERROR_SUCCESS);
   HANDLE mapping = CreateFileMappingW(
       INVALID_HANDLE_VALUE, nullptr, PAGE_READWRITE,
@@ -1823,7 +2190,7 @@ int RunInjection(HANDLE target, DWORD pid, const std::wstring& dll_path,
             "[unity-audio] resource extractor runtime missing; Unity audio will use normal fallback\n");
   }
   // 就绪事件（auto-reset，初始未触发）；hook DLL 装好后 SetEvent。
-  const std::wstring evt = ReadyEventName(pid, legacy_hibiki_ipc);
+  const std::wstring evt = ReadyEventName(pid);
   HANDLE ready = CreateEventW(nullptr, FALSE, FALSE, evt.c_str());
   if (ready == nullptr) {
     revoke_loopback_before_failure();
@@ -1906,14 +2273,14 @@ int RunInjection(HANDLE target, DWORD pid, const std::wstring& dll_path,
   // CREATE_SUSPENDED launch 必须等游戏内 DLL 完成首次 XAudio2/DirectSound 导出 hook，
   // 再恢复主线程。否则 Unity 可能先创建全部 source voice，之后晚 attach 只能拿到混音。
   bool luna_initialized = false;
-  fushi_voice_hook::SiglusLunaStartupGate luna_startup_gate;
-  uint32_t last_siglus_text_owner = UINT32_MAX;
+  fushi_voice_hook::NativeTextLunaStartupGate luna_startup_gate;
+  uint32_t last_native_text_owner = UINT32_MAX;
   auto maybe_start_luna = [&]() {
     if (!hold || !luna.enabled || luna_initialized) return;
-    const auto text_owner = fushi_voice_hook::ReadSiglusTextOwner(header);
-    if (last_siglus_text_owner != static_cast<uint32_t>(text_owner)) {
-      last_siglus_text_owner = static_cast<uint32_t>(text_owner);
-      fprintf(stderr, "[siglus] text_owner=%u\n", last_siglus_text_owner);
+    const auto text_owner = fushi_voice_hook::ReadNativeTextOwner(header);
+    if (last_native_text_owner != static_cast<uint32_t>(text_owner)) {
+      last_native_text_owner = static_cast<uint32_t>(text_owner);
+      fprintf(stderr, "[native-text] owner=%u\n", last_native_text_owner);
     }
     if (!luna_startup_gate.ShouldAttempt(text_owner)) return;
     luna_initialized =
@@ -1925,8 +2292,8 @@ int RunInjection(HANDLE target, DWORD pid, const std::wstring& dll_path,
   auto init_guarded_luna = [&]() -> bool {
     // Native ownership inserts no Luna hooks, so there is nothing to remove.
     // An undecided Siglus cannot bypass its ownership gate via a guarded call.
-    if (fushi_voice_hook::ReadSiglusTextOwner(header) ==
-        fushi_voice_hook::SiglusTextOwner::kNativeOwned) return true;
+    if (fushi_voice_hook::ReadNativeTextOwner(header) ==
+        fushi_voice_hook::NativeTextOwner::kNativeOwned) return true;
     if (luna.blocked_hook_names.size() != luna.blocked_hook_codes.size()) {
       fprintf(stderr,
               "[luna] blocked-hook profile is missing removal confirmation "
@@ -2079,7 +2446,7 @@ int RunInjection(HANDLE target, DWORD pid, const std::wstring& dll_path,
   maybe_start_luna();
 
   if (hold) {
-    // host 模式：常驻维持共享内存存活，供 Hibiki 消费（C.2 起真正读 PCM）。
+    // host 模式：常驻维持共享内存存活，供 Fushi 消费（C.2 起真正读 PCM）。
     // 同时消费 Unity Streaming AudioClip 资源事件；重解析/解码在 injector 子进程完成，
     // 游戏内 hook 回调始终只写固定大小共享内存事件。
     uint64_t next_unity_event = 0;
@@ -2151,7 +2518,7 @@ using LeCreateProcessFunction = LONG(WINAPI*)(
     LPSECURITY_ATTRIBUTES, PVOID, HANDLE);
 
 // Locale Emulator 的 LoaderDll 负责在 kernel32 初始化前装入 LocaleEmulator.dll。这里始终
-// 把调用结果保持在 CREATE_SUSPENDED；普通引擎交回 RunInjection 完成 Hibiki 早注入后恢复，
+// 把调用结果保持在 CREATE_SUSPENDED；普通引擎交回 RunInjection 完成 Fushi 早注入后恢复，
 // 需要发现窗口/子进程的策略则由 RunLaunch 先恢复再等待，避免挂起启动器与发现逻辑死锁。
 bool CreateJapaneseLocaleProcess(
     const std::wstring& executable,
@@ -2251,18 +2618,6 @@ bool LooksLikeRenpyRuntime(const std::wstring& exe) {
          FileExists(JoinPath(dir, L"pythonw.exe"));
 }
 
-// 目录是否带引擎数据签名。Siglus（Gameexe.dat + Scene.pck）与 UE IoStore
-// （Content\Paks\*.utoc 的 16 字节 TOC 魔数）各出一条；再加引擎时在这里多写一个 ||
-// 即可，判据本身不用动。两条都要求数据文件真实存在/魔数成立，不认裸目录名。
-bool DirectoryHasEngineSignature(const std::wstring& dir) {
-  return fushi_voice_hook::DirectoryLooksLikeSiglus(
-             dir,
-             [](const std::wstring& d, const wchar_t* name) {
-               return FileExists(JoinPath(d, name));
-             }) ||
-         fushi_voice_hook::DirectoryLooksLikeUnrealIostore(dir);
-}
-
 // 直接子目录全路径。不跟 reparse point：符号链接/联接点能把搜索绕成环。
 std::vector<std::wstring> ListSubdirectories(const std::wstring& dir) {
   std::vector<std::wstring> result;
@@ -2287,7 +2642,7 @@ std::vector<std::wstring> ListSubdirectories(const std::wstring& dir) {
 bool LooksLikeLauncherForEngine(const std::wstring& exe) {
   return fushi_voice_hook::LooksLikeLauncherLayout(
       ExecutableDirectory(exe), fushi_voice_hook::kLauncherLayoutMaxDepth,
-      DirectoryHasEngineSignature, ListSubdirectories);
+      fushi_voice_hook::DirectoryHasEngineSignature, ListSubdirectories);
 }
 
 // 子进程镜像所在目录带引擎签名 -> 它就是真游戏。启动器链里的游戏进程一个 ffmpeg 模块
@@ -2301,7 +2656,7 @@ void InspectEngineSignature(DWORD pid,
   CloseHandle(process);
   if (image.empty()) return;
   candidate->has_engine_signature =
-      DirectoryHasEngineSignature(ExecutableDirectory(image));
+      fushi_voice_hook::DirectoryHasEngineSignature(ExecutableDirectory(image));
 }
 
 void InspectFfmpegModules(DWORD pid,
@@ -2619,10 +2974,38 @@ bool LooksLikeUnrealRuntime(const std::wstring& exe) {
 // Siglus 游戏（含改名 exe）：exe 名严格匹配，或 exe 同目录具备 Siglus 文件夹签名。用于把 launch
 // 的早注入改为延迟附着，绕过 Enigma 保护壳拒绝挂起态注入导致的 launch_or_inject_failed。
 bool LooksLikeSiglusRuntime(const std::wstring& exe) {
-  const std::wstring dir = ExecutableDirectory(exe);
-  return fushi_voice_hook::DirectoryLooksLikeSiglus(
-      dir, [](const std::wstring& d, const wchar_t* name) {
-        return FileExists(JoinPath(d, name));
+  return fushi_voice_hook::DirectoryLooksLikeSiglusOnDisk(ExecutableDirectory(exe));
+}
+
+// KiriKiri（2 / Z）：exe 同目录至少一个 `*.xp3` 以 XP3 归档魔数开头（判据本体与来由见
+// include/kirikiri_launch_signature.h）。exe 本身可能被 Enigma 整体加壳、不导出任何 TVP 符号，
+// 所以不看 exe，只看引擎数据归档的结构。这里只提供 Win32 的目录枚举与读文件头。
+bool LooksLikeKirikiriRuntime(const std::wstring& exe) {
+  return fushi_voice_hook::DirectoryLooksLikeKirikiri(
+      ExecutableDirectory(exe),
+      [](const std::wstring& dir, auto visit) {
+        WIN32_FIND_DATAW data = {};
+        HANDLE find = FindFirstFileExW(JoinPath(dir, L"*.xp3").c_str(),
+                                       FindExInfoBasic, &data,
+                                       FindExSearchNameMatch, nullptr, 0);
+        if (find == INVALID_HANDLE_VALUE) return;
+        do {
+          if ((data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0) continue;
+          if (!visit(JoinPath(dir, data.cFileName))) break;
+        } while (FindNextFileW(find, &data));
+        FindClose(find);
+      },
+      [](const std::wstring& path, uint8_t* out, size_t capacity) -> size_t {
+        HANDLE file = CreateFileW(
+            path.c_str(), GENERIC_READ,
+            FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
+            OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+        if (file == INVALID_HANDLE_VALUE) return 0;
+        DWORD read = 0;
+        const BOOL ok =
+            ReadFile(file, out, static_cast<DWORD>(capacity), &read, nullptr);
+        CloseHandle(file);
+        return ok ? static_cast<size_t>(read) : 0;
       });
 }
 
@@ -2632,8 +3015,9 @@ bool IsSiglusGame(const std::wstring& exe) {
 
 bool ShouldAutoUseLunaPcHooks(const std::wstring& exe) {
   const std::wstring base = ExecutableBaseName(exe);
-  if (_wcsicmp(base.c_str(), L"manosaba.exe") == 0 ||
-      _wcsicmp(base.c_str(), L"SiglusEngine.exe") == 0) {
+  // SiglusEngine.exe 是引擎本体的发行名，不是某一款游戏；Unity 只认 LooksLikeUnityRuntime
+  // 的目录结构（UnityPlayer.dll + IL2CPP/Mono 布局），不按单个游戏 exe 名开。
+  if (_wcsicmp(base.c_str(), L"SiglusEngine.exe") == 0) {
     return true;
   }
   return LooksLikeUnityRuntime(exe) || LooksLikeSiglusRuntime(exe) ||
@@ -2854,6 +3238,12 @@ int RunSteamLaunch(const std::wstring& exe, const std::wstring& app_id,
             expected_exe.c_str());
   }
 
+  // Steam 客户端拉起的进程在这里被发现时还处于启动早期（15ms 轮询），而 Siglus 的进程
+  // 策略是「主窗口就绪后再附着」（engine-support.yaml process_strategy；Enigma 壳拒绝
+  // 早注入）。launch 与 PID 附着都守这条，只有 Steam 路径绕开了它（BUG-2653 排查中发现）。
+  // 与 PID 附着共用同一个就绪门，不另写一份等待逻辑。
+  const std::wstring& target_exe = expected_exe;
+#include "attached_siglus_readiness.inc"
   ApplyLunaProfiles(expected_exe, pid, luna.profile_path, &luna);
   // Steam 路径的游戏由客户端启动、始终处于运行态，没有可恢复的挂起主线程；但失败原因
   // 同样必须回报，否则 host 只能看到一个没有原因的非零退出。
@@ -2950,6 +3340,21 @@ int RunLaunch(const std::wstring& exe, const std::wstring& workdir_in,
     return RunSteamLaunch(exe, steam_app_id, dll_path, wait_ms, hold,
                           effective_luna, native_loopback_requested);
   }
+  const fushi_voice_hook::PeLaunchLayout pe_layout = ReadPeLaunchLayout(exe);
+  // 引擎 launch profile（结构判据，不按标题 / exe 名 / 哈希）：决定是否需要加载器初始化门。
+  const fushi_voice_hook::KirikiriLaunchProfile kirikiri_profile =
+      fushi_voice_hook::SelectKirikiriLaunchProfile(LooksLikeKirikiriRuntime(exe));
+  if (pe_layout.steam_stub) {
+    // BUG-1192：SteamStub 包壳 exe 却没从 appmanifest 发现 AppID，只能直接启动。以前这里完全
+    // 静默，用户只看到游戏自己弹的 `Application load error`，无从判断是启动方式不对。
+    fprintf(stderr,
+            "[steam] exe is SteamStub-wrapped (.bind) but no Steam AppID was "
+            "discovered for its install path (steam_app_id=%ls, "
+            "force_direct=%d); launching directly — the DRM may refuse to "
+            "start outside the Steam client\n",
+            steam_app_id.empty() ? L"<none>" : steam_app_id.c_str(),
+            force_direct_launch ? 1 : 0);
+  }
   const DWORD creation_flags =
       (delayed_attach || follow_children) ? 0 : CREATE_SUSPENDED;
   wchar_t previous_steam_app_id[64] = {0};
@@ -2996,7 +3401,7 @@ int RunLaunch(const std::wstring& exe, const std::wstring& workdir_in,
     const DWORD create_error = GetLastError();
     fprintf(stderr, "CreateProcessW failed: %lu\n", create_error);
     // 740 = ERROR_ELEVATION_REQUIRED：游戏 manifest 要求管理员，非提权 injector 拉不起来。
-    // host 据此提示「以管理员身份启动 Hibiki」，而不是笼统的启动失败。
+    // host 据此提示「以管理员身份启动 Fushi」，而不是笼统的启动失败。
     if (create_error == ERROR_ELEVATION_REQUIRED) {
       fprintf(stderr, "ERR reason=elevationRequired exit=1\n");
     } else {
@@ -3038,6 +3443,35 @@ int RunLaunch(const std::wstring& exe, const std::wstring& workdir_in,
       return 1;
     }
     resumed_before_discovery = true;
+  }
+
+  // 加载器初始化门（loader_init_gate.h）：只有引擎 launch profile 声明需要（目前只有
+  // KiriKiri）且 exe 带 TLS 回调时，才不让注入线程替进程跑初始化。其余 exe 不进这里。
+  bool loader_gate_left_running = false;
+  if (launched_suspended && !resumed_before_discovery && !delayed_attach &&
+      !follow_children) {
+    if (fushi_voice_hook::ShouldUseLoaderInitGate(
+            pe_layout, true, kirikiri_profile.loader_init_gate)) {
+      fprintf(stderr,
+              "[loader-gate] KiriKiri launch profile (XP3 archive signature) and "
+              "exe declares %u TLS callback(s); letting the primary thread "
+              "initialise the process before injection\n",
+              pe_layout.tls_callback_count);
+      loader_gate_left_running =
+          fushi_voice_hook::LoaderInitGateLeftProcessRunning(RunLoaderInitGate(
+              pi.hProcess, pi.hThread, pe_layout.entry_point_rva));
+    }
+  }
+  if (loader_gate_left_running) {
+    // 门没能把主线程停在入口（入口被壳改写 / 超时）：主线程已在运行，游戏按已运行进程附着
+    // ——与 --pid 同一套编排（注入器不再负责恢复游戏，失败也不按挂起态处置）。先等游戏
+    // 窗口就绪（与延迟附着同一个就绪门），让进程初始化跑完；等不到也不杀游戏，照常附着。
+    resumed_before_discovery = true;
+    if (!WaitForReadyGameWindow(pi.hProcess, pi.dwProcessId, 20000)) {
+      fprintf(stderr,
+              "[loader-gate] no ready game window within 20000 ms after the "
+              "gate; attaching to the running process anyway\n");
+    }
   }
 
   const wchar_t* readiness_module =
@@ -3348,7 +3782,7 @@ int main() {
     fprintf(stderr, "OpenProcess(%lu) failed: %lu (需管理员/相同完整性级别?)\n",
             pid, GetLastError());
     // 附着失败最常见的真实原因：游戏以更高完整性级别（管理员）运行。host 据此提示
-    // 「以管理员身份启动 Hibiki」，并且不做无意义的重试。
+    // 「以管理员身份启动 Fushi」，并且不做无意义的重试。
     fprintf(stderr, "ERR reason=accessDenied exit=1\n");
     return 1;
   }

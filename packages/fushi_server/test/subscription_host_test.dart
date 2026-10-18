@@ -9,7 +9,7 @@ import 'package:fushi_engine/media/video/download/video_download_subscription_se
 import 'package:fushi_engine/media/video/download/video_resource_registry.dart';
 import 'package:fushi_engine/sync/subscriptions/host_subscription_host.dart';
 import 'package:fushi_engine/sync/subscriptions/host_subscription_routes.dart';
-import 'package:fushi_server/src/subscription_host.dart';
+import 'package:fushi_engine/sync/subscriptions/pipeline_subscription_host.dart';
 import 'package:http/http.dart' as http;
 import 'package:test/test.dart';
 
@@ -18,7 +18,7 @@ void main() {
   late FushiDatabase db;
   late VideoResourceRegistry registry;
   late VideoDownloadBackendTarget target;
-  late ServerSubscriptionHost host;
+  late PipelineSubscriptionHost host;
   late VideoDownloadSubscriptionService service;
 
   setUp(() async {
@@ -44,7 +44,7 @@ void main() {
       enqueue: (_) async => throw StateError('not expected in this test'),
       workerId: 'test-worker',
     );
-    host = ServerSubscriptionHost(
+    host = PipelineSubscriptionHost(
       db: db,
       registry: registry,
       backendTarget: () => target,
@@ -136,7 +136,7 @@ void main() {
         client: http.Client(),
       ),
     ].cast());
-    final ServerSubscriptionHost h = ServerSubscriptionHost(
+    final PipelineSubscriptionHost h = PipelineSubscriptionHost(
       db: db,
       registry: withTorznab,
       backendTarget: () => target,
@@ -146,6 +146,36 @@ void main() {
     );
     expect((await h.capability())['providers'],
         <String>['nyaa', 'torznab:jackett']);
+  });
+
+  test('capability：停用的 Torznab indexer 不公布，其它 provider 照报（BUG-2818）', () async {
+    TorznabIndexerConfig indexer(String id, {required bool enabled}) =>
+        TorznabIndexerConfig(
+          id: id,
+          name: id,
+          endpoint: Uri.parse('https://$id/api'),
+          apiKey: 'k',
+          enabled: enabled,
+        );
+    final VideoResourceRegistry withTorznab = VideoResourceRegistry(<Object>[
+      ...registry.providers,
+      TorznabClient(
+        indexers: <TorznabIndexerConfig>[
+          indexer('on', enabled: true),
+          indexer('off', enabled: false),
+        ],
+        client: http.Client(),
+      ),
+    ].cast());
+    final PipelineSubscriptionHost h = PipelineSubscriptionHost(
+      db: db,
+      registry: withTorznab,
+      backendTarget: () => target,
+      targetSourceId: () => 7,
+      backendName: 'embedded',
+      service: service,
+    );
+    expect((await h.capability())['providers'], <String>['nyaa', 'torznab:on']);
   });
 
   test('setEnabled / delete：未知 id 404；停用清租约、启用重排期', () async {
@@ -174,7 +204,7 @@ void main() {
   });
 
   test('没有下载后端：能力位 supported=false，create / checkNow 拒 409', () async {
-    final ServerSubscriptionHost off = ServerSubscriptionHost(
+    final PipelineSubscriptionHost off = PipelineSubscriptionHost(
       db: db,
       registry: registry,
       backendTarget: () => target,

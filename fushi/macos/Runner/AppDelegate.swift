@@ -1,5 +1,6 @@
 import ApplicationServices
 import Cocoa
+import CoreText
 import FlutterMacOS
 import macos_window_utils
 
@@ -9,8 +10,31 @@ class AppDelegate: FlutterAppDelegate, FlutterStreamHandler {
   private var challengeBrowser: FushiChallengeBrowser?
   private var pendingSourceUrls: [String] = []
   private var sourceUrlEventSink: FlutterEventSink?
+  private var globalLookupOverlay: GlobalLookupOverlayController?
+  private var desktopFloatingBall: DesktopFloatingBallController?
+  /// Dart 最后一次表达的查词输入法语言。app 重新回到前台时按它再切回去——否则
+  /// 用户 Cmd-Tab 出去一趟回来，查词页面还开着但输入法已经不是他选的那个了。
+  private var desiredLookupImeTag: String?
+  /// 系统「降低透明度」订阅（`app.fushi/system_transparency`）。强引用 channel 与
+  /// observer token，进程内只装一次。
+  private var systemTransparencyChannel: FlutterMethodChannel?
+  private var systemTransparencyObserver: NSObjectProtocol?
+
+  override func applicationDidResignActive(_ notification: Notification) {
+    // 离开前台就把用户的输入法放回去：切的是系统全局输入源，留着会漏到别的 app。
+    LookupImeLanguage.restore()
+    super.applicationDidResignActive(notification)
+  }
+
+  override func applicationDidBecomeActive(_ notification: Notification) {
+    super.applicationDidBecomeActive(notification)
+    if let tag = desiredLookupImeTag {
+      LookupImeLanguage.setLanguage(tag)
+    }
+  }
 
   override func applicationDidFinishLaunching(_ notification: Notification) {
+    (mainFlutterWindow as? MainFlutterWindow)?.hideForStartupPresentation()
     if let windowController =
         mainFlutterWindow?.contentViewController as? MacOSWindowUtilsViewController {
       let controller = windowController.flutterViewController
@@ -19,6 +43,36 @@ class AppDelegate: FlutterAppDelegate, FlutterStreamHandler {
       // 系统语音转录（macOS 26 的 SpeechAnalyzer）；与 iOS 同一份实现。
       FushiSpeechTranscriber.register(
         binaryMessenger: controller.engine.binaryMessenger)
+      // 复制图片到剪贴板（视频截图 / 阅读器内联图）。与 iOS 同一份实现，
+      // 方法名与入参逐字对齐 Windows 那份 CF_DIB 实现。
+      FushiClipboardImage.register(
+        binaryMessenger: controller.engine.binaryMessenger)
+      // 查词浮层的真模糊背衬：WebView 下方的 NSVisualEffectView 平台视图
+      // （apple/FushiNativeMaterialView.swift，Dart 侧 fushi_native_material.dart）。
+      FushiNativeMaterial.register(
+        with: controller.registrar(forPlugin: "FushiNativeMaterial"))
+      let startupWindowChannel = FlutterMethodChannel(
+        name: "app.fushi/window",
+        binaryMessenger: controller.engine.binaryMessenger)
+      startupWindowChannel.setMethodCallHandler { [weak self] call, result in
+        guard call.method == "showStartupWindow" else {
+          result(FlutterMethodNotImplemented)
+          return
+        }
+        guard let window = self?.mainFlutterWindow else {
+          result(FlutterError(code: "window_unavailable", message: nil, details: nil))
+          return
+        }
+        if !fushiHiddenTestMode() {
+          window.orderOut(nil)
+          window.alphaValue = 1
+          window.animationBehavior = .documentWindow
+          window.makeKeyAndOrderFront(nil)
+          NSApp.activate(ignoringOtherApps: true)
+        }
+        result(nil)
+      }
+
       let sourceUrlChannel = FlutterEventChannel(
         name: "app.fushi.reader/source_urls/stream",
         binaryMessenger: controller.engine.binaryMessenger)
@@ -63,10 +117,91 @@ class AppDelegate: FlutterAppDelegate, FlutterStreamHandler {
           self?.handleTestInput(call, result: result)
         }
       }
+      // App-external global lookup overlay (macOS counterpart of the Windows
+      // GlobalLookupWindow + RegisterGlobalLookupChannel): same
+      // `app.fushi.reader/global_lookup` MethodChannel contract, hosted by a
+      // non-activating NSPanel + WKWebView. See GlobalLookupOverlay.swift.
+      globalLookupOverlay = GlobalLookupOverlayController(
+        binaryMessenger: controller.engine.binaryMessenger
+      ) { [weak self] in self?.mainFlutterWindow }
+
+      // 应用外悬浮球（与 Android / iOS 同名通道 app.fushi.reader/floating_ball）：
+      // 原生只画球与按钮列、报点击与位置，动作全在 Dart 执行。见
+      // FushiDesktopFloatingBall.swift 与 docs/specs/2026-09-30-desktop-system-floating-ball.md。
+      desktopFloatingBall = DesktopFloatingBallController(
+        binaryMessenger: controller.engine.binaryMessenger)
+
+      // 查词输入框的输入法语言。macOS 的输入源是系统全局状态，所以除了「切过去」
+      // 还必须「切回来」——页面走掉时 Dart 发 null，app 失去前台时我们自己还原
+      // （见 applicationDidResignActive）。
+      let lookupImeChannel = FlutterMethodChannel(
+        name: "app.fushi.reader/lookup_ime",
+        binaryMessenger: controller.engine.binaryMessenger)
+      lookupImeChannel.setMethodCallHandler { [weak self] call, result in
+        switch call.method {
+        case "setLanguage":
+          let tag = call.arguments as? String
+          self?.desiredLookupImeTag = (tag?.isEmpty ?? true) ? nil : tag
+          result(LookupImeLanguage.setLanguage(tag))
+        case "probe":
+          result(LookupImeLanguage.probeInfo())
+        default:
+          result(FlutterMethodNotImplemented)
+        }
+      }
+
+      // 字体库「浏览系统字体」（四端同一契约，见 Windows system_font_list.cpp /
+      // Android MainActivity / iOS AppDelegate）：返回 [{family, supportsJapanese?}]。
+      let fontsChannel = FlutterMethodChannel(
+        name: "app.fushi.reader/fonts",
+        binaryMessenger: controller.engine.binaryMessenger)
+      fontsChannel.setMethodCallHandler { call, result in
+        switch call.method {
+        case "listSystemFonts":
+          // NSFontManager 是 AppKit，族名列表在主线程取；逐族 CoreText 探测放后台。
+          AppDelegate.listSystemFonts(
+            families: NSFontManager.shared.availableFontFamilies, result: result)
+        default:
+          result(FlutterMethodNotImplemented)
+        }
+      }
+
+      installSystemTransparencyChannel(binaryMessenger: controller.engine.binaryMessenger)
     } else {
       NSLog("[Fushi] macOS Flutter controller unavailable; custom channels were not registered")
     }
     super.applicationDidFinishLaunching(notification)
+  }
+
+  /// 系统设置「辅助功能 → 显示 → 降低透明度」：Dart 侧 `SystemTransparency`
+  /// 经 `getReduceTransparency` 读一次，之后由这里在辅助显示选项变化时推
+  /// `reduceTransparencyChanged`（与 Windows / iOS 同一契约）。
+  private func installSystemTransparencyChannel(binaryMessenger: FlutterBinaryMessenger) {
+    guard systemTransparencyChannel == nil else { return }
+    let channel = FlutterMethodChannel(
+      name: "app.fushi/system_transparency",
+      binaryMessenger: binaryMessenger)
+    channel.setMethodCallHandler { call, result in
+      switch call.method {
+      case "getReduceTransparency":
+        result(NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency)
+      default:
+        result(FlutterMethodNotImplemented)
+      }
+    }
+    systemTransparencyChannel = channel
+    var lastValue = NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency
+    systemTransparencyObserver = NSWorkspace.shared.notificationCenter.addObserver(
+      forName: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification,
+      object: nil,
+      queue: .main
+    ) { [weak self] _ in
+      // 该通知覆盖对比度 / 减少动态效果等全部辅助显示选项，按值去重只推透明度变化。
+      let value = NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency
+      guard value != lastValue else { return }
+      lastValue = value
+      self?.systemTransparencyChannel?.invokeMethod("reduceTransparencyChanged", arguments: value)
+    }
   }
 
   // BUG-2508 真机取证钩子（FUSHI_TEST_INPUT 门控）。坐标口径：Flutter 逻辑坐标
@@ -84,6 +219,34 @@ class AppDelegate: FlutterAppDelegate, FlutterStreamHandler {
     let flags = NSEvent.ModifierFlags(rawValue: shift ? 0x20002 : 0)
     let now = ProcessInfo.processInfo.systemUptime
     switch call.method {
+    case "resize":
+      let w = (args["w"] as? Double) ?? 600
+      let h = (args["h"] as? Double) ?? 800
+      var frame = window.frame
+      frame.size = NSSize(width: w, height: h)
+      window.setFrame(frame, display: true)
+      result(["w": window.contentView?.bounds.width ?? 0])
+    case "imeMarked", "imeCommit", "imeUnmark":
+      // 模拟 IMK 输入法对「当前输入上下文的 client」的调用（输入法只认第一响应者
+      // 的 inputContext）。first responder 不是文本 client 时如实回报。
+      let responder = window.firstResponder
+      guard let client = (responder as? NSView)?.inputContext?.client else {
+        result(["ok": false, "firstResponder": AppDelegate.responderName(responder)])
+        return
+      }
+      let text = (args["text"] as? String) ?? ""
+      switch call.method {
+      case "imeMarked":
+        let len = (text as NSString).length
+        client.setMarkedText(text, selectedRange: NSRange(location: len, length: 0),
+          replacementRange: NSRange(location: NSNotFound, length: 0))
+      case "imeCommit":
+        client.insertText(text, replacementRange: NSRange(location: NSNotFound, length: 0))
+      default:
+        client.unmarkText()
+      }
+      result(["ok": true, "firstResponder": AppDelegate.responderName(responder),
+              "markedRange": NSStringFromRange(client.markedRange())])
     case "activate":
       NSApp.setActivationPolicy(.regular)
       NSApp.activate(ignoringOtherApps: true)
@@ -153,7 +316,7 @@ class AppDelegate: FlutterAppDelegate, FlutterStreamHandler {
         lines.append(String(repeating: "  ", count: depth)
           + "\(type(of: v)) frame=(\(Int(f.origin.x)),\(Int(f.origin.y)) \(Int(f.width))x\(Int(f.height)))"
           + (v.isHidden ? " hidden" : ""))
-        if depth < 4 { for c in v.subviews { walk(c, depth + 1) } }
+        if depth < 9 { for c in v.subviews { walk(c, depth + 1) } }
       }
       if let content = window.contentView { walk(content, 0) }
       result(["views": lines.joined(separator: "\n")])
@@ -175,6 +338,40 @@ class AppDelegate: FlutterAppDelegate, FlutterStreamHandler {
         "firstResponder": AppDelegate.responderName(window.firstResponder),
         "flags": event.modifierFlags.rawValue,
         "keyCode": event.keyCode,
+      ])
+    case "key":
+      // 真 NSEvent 键盘按下/抬起（经 NSApp.postEvent，走 sendEvent → key equivalent /
+      // 菜单 → first responder 的真实派发链），供快捷键在 macOS 上的可达性取证。
+      // flags 带设备位（同 flagsChanged 的口径）：cmd 0x100008 / shift 0x20002 /
+      // alt 0x80020 / ctrl 0x40001。
+      let keyCode = UInt16((args["keyCode"] as? Int) ?? 0)
+      let chars = (args["chars"] as? String) ?? ""
+      let ignoring = (args["ignoring"] as? String) ?? chars
+      var raw: UInt = 0
+      if (args["cmd"] as? Bool) ?? false { raw |= 0x100008 }
+      if shift { raw |= 0x20002 }
+      if (args["alt"] as? Bool) ?? false { raw |= 0x80020 }
+      if (args["ctrl"] as? Bool) ?? false { raw |= 0x40001 }
+      let keyFlags = NSEvent.ModifierFlags(rawValue: raw)
+      guard let down = NSEvent.keyEvent(
+        with: .keyDown, location: .zero, modifierFlags: keyFlags, timestamp: now,
+        windowNumber: window.windowNumber, context: nil, characters: chars,
+        charactersIgnoringModifiers: ignoring, isARepeat: false, keyCode: keyCode),
+        let up = NSEvent.keyEvent(
+        with: .keyUp, location: .zero, modifierFlags: keyFlags, timestamp: now + 0.03,
+        windowNumber: window.windowNumber, context: nil, characters: chars,
+        charactersIgnoringModifiers: ignoring, isARepeat: false, keyCode: keyCode)
+      else {
+        result(FlutterError(code: "event", message: "key construction failed", details: nil))
+        return
+      }
+      let mode = (args["mode"] as? String) ?? "post"
+      let before = AppDelegate.responderName(window.firstResponder)
+      deliverTestEvent(down, mode: mode)
+      deliverTestEvent(up, mode: mode)
+      result([
+        "firstResponderBefore": before,
+        "firstResponder": AppDelegate.responderName(window.firstResponder),
       ])
     default:
       result(FlutterMethodNotImplemented)
@@ -203,6 +400,8 @@ class AppDelegate: FlutterAppDelegate, FlutterStreamHandler {
       case .flagsChanged: vc.flagsChanged(with: event)
       case .leftMouseDown: vc.mouseDown(with: event)
       case .leftMouseUp: vc.mouseUp(with: event)
+      case .keyDown: vc.keyDown(with: event)
+      case .keyUp: vc.keyUp(with: event)
       default: NSApp.sendEvent(event)
       }
     default: NSApp.postEvent(event, atStart: false)
@@ -261,6 +460,9 @@ class AppDelegate: FlutterAppDelegate, FlutterStreamHandler {
       url.stopAccessingSecurityScopedResource()
     }
     activeSecurityScopedURLs.removeAll()
+    // 应用外悬浮球的面板随进程收掉。
+    desktopFloatingBall?.destroy()
+    desktopFloatingBall = nil
     super.applicationWillTerminate(notification)
   }
 
@@ -337,6 +539,46 @@ class AppDelegate: FlutterAppDelegate, FlutterStreamHandler {
     }
   }
 
+  /// `listSystemFonts`：过滤 `.` 开头的私有族，按族名大小写不敏感去重、排序，
+  /// 后台逐族判日文覆盖，回主线程交结果。判不出覆盖的族省略 `supportsJapanese`。
+  private static func listSystemFonts(
+    families: [String], result: @escaping FlutterResult
+  ) {
+    DispatchQueue.global(qos: .userInitiated).async {
+      let sorted = families
+        .filter { !$0.isEmpty && !$0.hasPrefix(".") }
+        .sorted { $0.caseInsensitiveCompare($1) == .orderedAscending }
+      var seen = Set<String>()
+      var entries: [[String: Any]] = []
+      for family in sorted {
+        guard seen.insert(family.lowercased()).inserted else { continue }
+        var entry: [String: Any] = ["family": family]
+        if let japanese = AppDelegate.fontFamilySupportsJapanese(family) {
+          entry["supportsJapanese"] = japanese
+        }
+        entries.append(entry)
+      }
+      DispatchQueue.main.async { result(entries) }
+    }
+  }
+
+  /// 该族的常规字形自身（不含系统回退）是否同时覆盖 U+3042「あ」与 U+6F22「漢」。
+  /// 按族名描述符解析；若 CoreText 解析到的不是这个族（回退到了默认字体），返回 nil
+  /// 表示「判不出」，而不是把回退字体的覆盖冒充成它的。
+  private static func fontFamilySupportsJapanese(_ family: String) -> Bool? {
+    let descriptor = CTFontDescriptorCreateWithAttributes(
+      [kCTFontFamilyNameAttribute as String: family] as CFDictionary)
+    let font = CTFontCreateWithFontDescriptor(descriptor, 12, nil)
+    let resolvedFamily = CTFontCopyFamilyName(font) as String
+    guard resolvedFamily.caseInsensitiveCompare(family) == .orderedSame else {
+      return nil
+    }
+    let charset = CTFontCopyCharacterSet(font) as CharacterSet
+    let kana: Unicode.Scalar = "\u{3042}"
+    let kanji: Unicode.Scalar = "\u{6F22}"
+    return charset.contains(kana) && charset.contains(kanji)
+  }
+
   // TODO-1030 M1 -- macOS AX foreground-selection context capture handler.
   // The cross-process Accessibility read can block, so it runs off the main
   // thread and the FlutterResult is completed back on the main (platform)
@@ -346,6 +588,12 @@ class AppDelegate: FlutterAppDelegate, FlutterStreamHandler {
     _ call: FlutterMethodCall, result: @escaping FlutterResult
   ) {
     guard call.method == "captureContext" else {
+      // captureSelection / isAccessibilityTrusted / requestAccessibilityTrust
+      // (the clipboard-style fallback + the settings-page permission action)
+      // live in SelectionCaptureMac.swift on this same channel.
+      if MacSelectionCapture.handle(call, result: result) {
+        return
+      }
       result(FlutterMethodNotImplemented)
       return
     }
@@ -386,17 +634,18 @@ class AppDelegate: FlutterAppDelegate, FlutterStreamHandler {
 //
 // FAIL-OPEN CONTRACT: every failure path returns nil (never throws, never
 // prompts). Without Accessibility trust (AXIsProcessTrusted() == false) we
-// cannot read other apps, so we bail immediately -- no nagging permission
-// dialog on every hotkey, no crash; the caller silently falls back to the
-// clipboard capture. Offsets are UTF-16 code units (NSString length), the unit
+// cannot read other apps, so we bail immediately -- no permission dialog from
+// this context-only probe, no crash; the caller can use the shared selection
+// capture path. Offsets are UTF-16 code units (NSString length), the unit
 // Dart String indexing uses.
 //
-// SANDBOX NOTE: the app ships sandboxed (see Runner/*.entitlements). The App
-// Sandbox blocks cross-process AX reads even after the user grants
-// Accessibility trust, so under the current entitlements this returns nil at
-// runtime (fail-open). Enabling it needs a sandbox decision (drop the sandbox
-// or a non-sandboxed helper) -- tracked separately; the capture logic itself
-// is correct and ready.
+// SANDBOX NOTE (updated 2026-09-14): the app is NOT sandboxed any more (both
+// Runner/*.entitlements dropped com.apple.security.app-sandbox for the
+// all-platform auto-update, docs/specs/2026-06-04-all-platform-auto-update-
+// design.md §5), so cross-process AX reads work as soon as the user grants
+// Accessibility trust in System Settings > Privacy & Security. The settings
+// page offers that grant via `requestAccessibilityTrust` (SelectionCaptureMac
+// .swift); this context-only probe itself still never prompts.
 enum ForegroundSelectionCapture {
   // Mirrors kForegroundContextExpand in foreground_selection.h (Windows): the
   // max characters to grab PAST the selection on EACH side. Bounded for privacy

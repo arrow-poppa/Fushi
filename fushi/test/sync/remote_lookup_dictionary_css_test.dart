@@ -91,6 +91,34 @@ void main() {
       expect(r['customDictCSS'], css.customDictCss);
     });
 
+    test('词典字体随同一条 revision 门控下发，换字体即换指纹', () async {
+      RemotePopupDictionaryCss withFont(String family) =>
+          RemotePopupDictionaryCss(
+            dictionaryStyles: const <String, String>{},
+            globalDictCss: '',
+            customDictCss: const <String, String>{},
+            dictionaryFontFaces: <Map<String, String>>[
+              <String, String>{
+                'family': family,
+                'src': '/api/extension/fonts/dictionary?path=x',
+                'format': 'truetype',
+              },
+            ],
+            dictionaryFontCss: '#entries-container { font-family: "$family"; }',
+            dictionaryLanguages: const <String, String>{'明鏡': 'ja'},
+          );
+      final RemotePopupDictionaryCss klee = withFont('Klee One');
+      final Map<String, dynamic> r = await _lookup(
+        <String, dynamic>{'term': '猫', 'stylesRevision': null},
+        css: klee,
+      );
+      expect(r['dictionaryFontFaces'], klee.dictionaryFontFaces);
+      expect(r['dictionaryFontCss'], klee.dictionaryFontCss);
+      expect(r['dictionaryLanguages'], <String, String>{'明鏡': 'ja'});
+      expect(withFont('Noto Sans JP').revision, isNot(klee.revision),
+          reason: '换词典字体不换指纹，扩展会一直用旧字体');
+    });
+
     test('指纹一致 ⇒ 只回指纹（命中客户端缓存）', () async {
       final RemotePopupDictionaryCss css = _css();
       final Map<String, dynamic> r = await _lookup(
@@ -131,19 +159,19 @@ void main() {
           File('lib/src/models/app_model.dart').readAsStringSync();
       expect(appModel, contains('popupDictionaryCssProvider:'),
           reason:
-              'app_model 没把 popupDictionaryCssProvider 交给 YomitanApiServerManager');
+              'app_model 没把 popupDictionaryCssProvider 交给 FushiApiServerManager');
       expect(appModel, contains('browserExtensionPopupDictionaryCss'),
           reason: 'app_model 缺 CSS 尾段供给器实现');
       final String manager =
-          File('lib/src/sync/yomitan_api_server_manager.dart')
+          File('lib/src/sync/fushi_api_server_manager.dart')
               .readAsStringSync();
       expect(manager, contains('popupDictionaryCssProvider'),
-          reason: 'manager 没把供给器透传给 YomitanApiServer');
+          reason: 'manager 没把供给器透传给 FushiApiServer');
       final String server =
-          File('lib/src/sync/yomitan_api_server.dart').readAsStringSync();
+          File('lib/src/sync/fushi_api_server.dart').readAsStringSync();
       expect(server,
           contains('popupDictionaryCssProvider: _popupDictionaryCssProvider'),
-          reason: 'YomitanApiServer 没把供给器交给共享 handler');
+          reason: 'FushiApiServer 没把供给器交给共享 handler');
     });
 
     test('扩展两镜像都接上了 CSS 尾段与词条资源占位的兑现方', () {

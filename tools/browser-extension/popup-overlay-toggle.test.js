@@ -9,6 +9,7 @@
 //  ③ 点击顺手 window.close() → 用户看不到状态翻过去，以为没点上再点一次，又翻回去了。
 const { test } = require('node:test');
 const assert = require('node:assert');
+const FUSHI_T = require('./scripts/i18n-fixture.js').makeFushiT(); // 文案走 i18n：壳里装 zh-CN 字典
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
@@ -85,6 +86,7 @@ function loadPopup(stored) {
     },
   });
   const sandbox = {
+    fushiT: FUSHI_T,
     document: {
       getElementById(id) {
         if (!els.has(id)) { const el = makeEl(); el.id = id; els.set(id, el); }
@@ -131,10 +133,22 @@ test('action-popup.html 真有「Fushi 字幕」开关按钮，且挂在字幕�
   assert.ok(panelAt > toggleAt, '开关应排在「打开字幕侧边栏」之前（页脚第一项）');
 });
 
-test('初始渲染按 storage 真值：缺省=开', () => {
-  const h = loadPopup({});
+test('初始渲染按 storage 真值：总门已开、覆盖层缺省=开', () => {
+  const h = loadPopup({ netflixSubtitlePanel: true });
   assert.strictEqual(h.button().dataset.on, '1');
   assert.strictEqual(h.button().getAttribute('aria-pressed'), 'true');
+  assert.strictEqual(h.stateEl().textContent, '开');
+});
+
+test('BUG-3145：字幕能力总门没开时显示「关」，点一下写开覆盖层 + 总门', () => {
+  // 此前缺省显示「开」，但总门关着时 subtitle-panel.js 整体 teardown、一个字都不画——
+  // 用户导入字幕看不到，只能拨关再拨开。
+  const h = loadPopup({});
+  assert.strictEqual(h.button().dataset.on, '');
+  assert.strictEqual(h.stateEl().textContent, '关');
+  h.click();
+  assert.deepStrictEqual(h.sets[h.sets.length - 1],
+      { subtitleOverlayEnabled: true, netflixSubtitlePanel: true });
   assert.strictEqual(h.stateEl().textContent, '开');
 });
 
@@ -168,7 +182,7 @@ test('开→关：只写 subtitleOverlayEnabled:false，不动总门；再点一
 });
 
 test('别处改了同一个键，popup 开着时跟着翻（options 页 / 视频页）', () => {
-  const h = loadPopup({});
+  const h = loadPopup({ netflixSubtitlePanel: true });
   assert.strictEqual(h.stateEl().textContent, '开');
   h.externalChange(false);
   assert.strictEqual(h.stateEl().textContent, '关');

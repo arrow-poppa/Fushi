@@ -14,6 +14,7 @@
 //                 =查词、点行内空白（取不到词）=让这一击冒泡成「跳转到这句」。
 const { test } = require('node:test');
 const assert = require('node:assert');
+const FUSHI_T = require('./scripts/i18n-fixture.js').makeFushiT(); // 文案走 i18n：壳里装 zh-CN 字典
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
@@ -185,6 +186,7 @@ function loadContent(lookupExtras, respondOverride) {
     storage: { local: { get: async () => ({}), set: async () => {} }, onChanged: { addListener() {} } },
   };
   sandbox.window = {
+    fushiT: FUSHI_T,
     addEventListener() {},
     innerWidth: 1200,
     innerHeight: 800,
@@ -210,8 +212,8 @@ function loadContent(lookupExtras, respondOverride) {
     sandbox, docListeners, sent, body, selection, rafs, bridgeCalls, played,
     // 量出真实尺寸后跑落点（rAF 里的 place）。
     runPlacement(width, height) {
-      const host = findById(body, 'hibiki-popup-host');
-      assert.ok(host, '未建出页面弹窗宿主 #hibiki-popup-host');
+      const host = findById(body, 'fushi-popup-host');
+      assert.ok(host, '未建出页面弹窗宿主 #fushi-popup-host');
       host._rect = {
         x: 0, y: 0, left: 0, top: 0, right: width, bottom: height, width, height,
       };
@@ -228,7 +230,7 @@ test('侧栏查词交给宿主页：发出查词请求并建出页面弹窗（�
   const lookups = h.sent.filter((m) => m && m.type === 'lookup');
   assert.strictEqual(lookups.length, 1, '必须真的发出 lookup 请求');
   assert.strictEqual(lookups[0].term, '世界', '发出的词必须是侧栏点的那个');
-  assert.ok(findById(h.body, 'hibiki-popup-host'), '必须在宿主页上建出页面弹窗');
+  assert.ok(findById(h.body, 'fushi-popup-host'), '必须在宿主页上建出页面弹窗');
 });
 
 test('页面弹窗建立时绑定 ShadowRoot 交互，点击不泄漏给站点播放器', () => {
@@ -236,7 +238,7 @@ test('页面弹窗建立时绑定 ShadowRoot 交互，点击不泄漏给站点�
   const bound = [];
   h.sandbox.window.__fushiBindPopupInteractions = (root) => bound.push(root);
   h.sandbox.window.fushiShowLookupFromSidePanel('世界', null);
-  const host = findById(h.body, 'hibiki-popup-host');
+  const host = findById(h.body, 'fushi-popup-host');
   assert.deepStrictEqual(bound, [host.shadowRoot]);
   for (const type of ['mousedown', 'mouseup', 'click', 'dblclick', 'mousemove',
     'pointerdown', 'pointerup', 'touchstart', 'touchend']) {
@@ -244,7 +246,7 @@ test('页面弹窗建立时绑定 ShadowRoot 交互，点击不泄漏给站点�
     for (const handler of host.handlers[type] || []) handler(event);
     assert.strictEqual(event.stopped, true, type + ' 不应触发站点播放/关闭');
   }
-  assert.strictEqual(findById(h.body, 'hibiki-popup-host'), host);
+  assert.strictEqual(findById(h.body, 'fushi-popup-host'), host);
 });
 
 test('正文 textSelected 经真实桥打开子层，保留父层字幕来源与弹窗几何', async () => {
@@ -254,15 +256,36 @@ test('正文 textSelected 经真实桥打开子层，保留父层字幕来源与
   const left = host.style.left, top = host.style.top;
   const root = h.sandbox.window.__fushiRoot;
   vm.runInContext(fs.readFileSync(path.join(__dirname, 'bridge-shim.js'), 'utf8'), h.sandbox);
+  // 真实 selection.js 先把选区存进 fushiSelection.selection 再发 textSelected：这次选的是弹窗
+  // ShadowRoot 里释义正文的字。
+  h.selection.selection = { startNode: { nodeType: 3, textContent: '計画', parentNode: root }, ranges: [], text: '計画' };
   await h.sandbox.window.flutter_inappwebview.callHandler('textSelected', '計画', { x: 20, y: 20 });
   assert.strictEqual(h.sent.filter((m) => m.type === 'lookup').at(-1).term, '計画');
-  assert.strictEqual(findById(h.body, 'hibiki-popup-host'), host);
+  assert.strictEqual(findById(h.body, 'fushi-popup-host'), host);
   assert.strictEqual(h.sandbox.window.__fushiRoot, root);
-  assert.strictEqual(h.body.children.filter(node => node.tagName === 'IFRAME').length, 1);
+  assert.strictEqual(h.body.children.filter(node => node.className === 'fushi-nested-layer' && (node.children || []).some(k => k.tagName === 'IFRAME')).length, 1);
   assert.strictEqual(host.style.left, left);
   assert.strictEqual(host.style.top, top);
   assert.strictEqual(vm.runInContext('fushiPendingCueWindow.text', h.sandbox), '世界です');
   assert.strictEqual(h.sent.some((m) => m.type === 'fushiSidePanelLookupGone'), false);
+});
+
+test('页面正文上的选词（Shift 悬停扫描 / 悬浮字幕自动查词）发出的 textSelected 不开子层', async () => {
+  // 扩展里页面与弹窗共用同一个 window.fushiSelection：页面扫描调 selectFromPosition 同样会发
+  // textSelected。根弹窗在场时若照开子层，按住 Shift 在同一个词上挪几像素就叠出一层同词子层，
+  // 悬停离开判定被「子层在场」永远否决，视频一直停着。
+  const h = loadContent();
+  h.sandbox.window.fushiShowLookupFromSidePanel('世界', null);
+  h.runPlacement(400, 300);
+  vm.runInContext(fs.readFileSync(path.join(__dirname, 'bridge-shim.js'), 'utf8'), h.sandbox);
+  const lookupsBefore = h.sent.filter((m) => m.type === 'lookup').length;
+  const pageParagraph = { tagName: 'P', parentNode: h.body };
+  h.selection.selection = { startNode: { nodeType: 3, textContent: '世界です', parentNode: pageParagraph }, ranges: [], text: '世界' };
+  await h.sandbox.window.flutter_inappwebview.callHandler('textSelected', '世界', { x: 20, y: 20 });
+  assert.strictEqual(h.sent.filter((m) => m.type === 'lookup').length, lookupsBefore,
+    '页面选词不是弹窗内选词：不得为子层再发一笔查词请求');
+  assert.strictEqual(h.body.children.filter(node => node.className === 'fushi-nested-layer' && (node.children || []).some(k => k.tagName === 'IFRAME')).length, 0,
+    '页面选词不得叠出子层');
 });
 
 test('没带位置信息时弹窗贴视口右上（紧邻侧栏那侧，不压底部字幕）', () => {
@@ -295,7 +318,7 @@ test('页面弹窗关闭时回 fushiSidePanelLookupGone；页面自身 Shift 查
   // 定向性：页面自己的 Shift 悬停查词关窗，不该给侧栏发这条（侧栏那份弹窗与它无关）。
   const p = loadContent();
   for (const fn of (p.docListeners.mousemove || [])) fn({ shiftKey: true, clientX: 300, clientY: 400 });
-  assert.ok(findById(p.body, 'hibiki-popup-host'), '前置：Shift 悬停应建出页面弹窗');
+  assert.ok(findById(p.body, 'fushi-popup-host'), '前置：Shift 悬停应建出页面弹窗');
   p.sent.length = 0;
   const outside = makeEl('div');
   for (const fn of (p.docListeners.mousedown || [])) fn({ target: outside });
@@ -322,7 +345,7 @@ test('弹窗纵向跟随侧栏里被点的那一行（固定糊在右上角会�
 test('点扩展自绘的在页字幕覆盖层：关旧弹窗，但那一击不得被吞（否则每个词要点两次）', () => {
   const h = loadContent();
   h.sandbox.window.fushiShowLookupFromSidePanel('世界', null, 0.2);
-  assert.ok(findById(h.body, 'hibiki-popup-host'), '前置：页面弹窗应在场');
+  assert.ok(findById(h.body, 'fushi-popup-host'), '前置：页面弹窗应在场');
 
   // 扩展自绘的在页字幕覆盖层。它的 click 走 subtitle-panel.js 的 fushiLookupAtPoint；
   // document capture 阶段的 stopImmediatePropagation 会连它自己的 target-phase 监听
@@ -332,7 +355,7 @@ test('点扩展自绘的在页字幕覆盖层：关旧弹窗，但那一击不�
 
   const before = (h.docListeners['capture:click'] || []).length;
   for (const fn of (h.docListeners['capture:mousedown'] || [])) fn({ target: onOverlay });
-  assert.strictEqual(findById(h.body, 'hibiki-popup-host'), null,
+  assert.strictEqual(findById(h.body, 'fushi-popup-host'), null,
     '点覆盖层仍应关掉旧弹窗（新词要让位）');
   assert.strictEqual((h.docListeners['capture:click'] || []).length, before,
     '不得为自家在页 UI 装吞击监听——那一击是用来查下一个词的');
@@ -342,7 +365,7 @@ test('查词失败（服务没开）也要给侧栏发关窗回执，否则同�
   const h = loadContent(null, () => ({ ok: false }));
   h.sandbox.window.fushiShowLookupFromSidePanel('世界', null, 0.2);
 
-  assert.strictEqual(findById(h.body, 'hibiki-popup-host'), null,
+  assert.strictEqual(findById(h.body, 'fushi-popup-host'), null,
     '前置：查词失败时页面弹窗不该建出来');
   assert.ok(
     h.sent.some((m) => m && m.type === 'fushiSidePanelLookupGone'),
@@ -354,11 +377,11 @@ test('查词失败（服务没开）也要给侧栏发关窗回执，否则同�
 test('关掉弹窗的那一击不再传给站点（Netflix 点画面=播放/暂停切换）', () => {
   const h = loadContent();
   h.sandbox.window.fushiShowLookupFromSidePanel('世界', null, 0.2);
-  assert.ok(findById(h.body, 'hibiki-popup-host'), '前置：页面弹窗应在场');
+  assert.ok(findById(h.body, 'fushi-popup-host'), '前置：页面弹窗应在场');
 
   const outside = makeEl('div');
   for (const fn of (h.docListeners['capture:mousedown'] || [])) fn({ target: outside });
-  assert.strictEqual(findById(h.body, 'hibiki-popup-host'), null, '点弹窗外应关窗');
+  assert.strictEqual(findById(h.body, 'fushi-popup-host'), null, '点弹窗外应关窗');
 
   let stopped = 0;
   const clickEvent = {
@@ -383,7 +406,7 @@ test('Esc 关掉页面弹窗，并截住这次按键不让站点再处理', () =
     stopImmediatePropagation() { stopped += 1; },
   };
   for (const fn of (h.docListeners['capture:keydown'] || [])) fn(esc);
-  assert.strictEqual(findById(h.body, 'hibiki-popup-host'), null, 'Esc 没关掉页面弹窗');
+  assert.strictEqual(findById(h.body, 'fushi-popup-host'), null, 'Esc 没关掉页面弹窗');
   assert.ok(stopped >= 1, 'Esc 未被截住，站点自己的 Esc 处理会同时发生');
 });
 
@@ -458,6 +481,7 @@ function loadSidePanel(storedSettings, tabReply, lookupReply) {
   let nextTerm = '世界'; // 置空 = 点在行内空白，取不到词
   const cueTextNode = { textContent: '世界です', nodeType: 3 };
   const windowObj = {
+    fushiT: FUSHI_T,
     addEventListener() {},
     innerWidth: 400,
     innerHeight: 800,

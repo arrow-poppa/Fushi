@@ -23,7 +23,7 @@ import io.flutter.plugin.common.MethodChannel
  * the first word.
  */
 object PopupEngineHolder {
-    const val ENGINE_ID: String = "hibiki_popup_engine"
+    const val ENGINE_ID: String = "fushi_popup_engine"
     private const val ENTRYPOINT: String = "popupMain"
 
     @Volatile
@@ -59,6 +59,15 @@ object PopupEngineHolder {
     private var pendingSubtitle: IntArray? = null
 
     /**
+     * 截屏识字（BUG-3487）：被点字所在 text block 的全文与本行在块里的起点。Dart 查词窗
+     * 据此截出整句作制卡 `{sentence}`；null = 入口没给（回落为整行）。
+     */
+    class SourceBlock(val text: String, val offset: Int)
+
+    @Volatile
+    private var pendingSourceBlock: SourceBlock? = null
+
+    /**
      * BUG-1757：关闭回调必须记住**是谁注册的**。
      *
      * 本 holder 是 object 单例，而 [PopupDictFlutterActivity] 会被反复创建/销毁。旧实现
@@ -86,11 +95,13 @@ object PopupEngineHolder {
         charIndex: Int = -1,
         anchor: IntArray? = null,
         subtitle: IntArray? = null,
+        sourceBlock: SourceBlock? = null,
     ) {
         pendingText = text
         pendingCharIndex = charIndex
         pendingAnchor = anchor
         pendingSubtitle = subtitle
+        pendingSourceBlock = sourceBlock
     }
 
     /**
@@ -118,7 +129,19 @@ object PopupEngineHolder {
         val cache = FlutterEngineCache.getInstance()
         if (cache.get(ENGINE_ID) != null) return false
 
-        val engine = FlutterEngine(context.applicationContext, null, false)
+        // BUG-2790：:popup 引擎单独关 Impeller（临时兼容层）。热槽 WebView 是老式 Hybrid
+        // Composition，一出现 raster 线程就并进 platform 线程；关窗 detach 时
+        // Rasterizer::Teardown 先 reset surface，而 ~GPUSurfaceGLImpeller 不像 Skia 那样
+        // ClearCurrent，GL 上下文就一直挂在 platform 线程上——下一个 Activity 挂回热引擎后
+        // 每帧 EGL_BAD_ACCESS，Flutter 一帧不出，屏上只剩冻住的旧 WebView（释义滑不动）。
+        // 引擎缺陷（flutter#174495），Skia 的析构路径不漏。只影响 :popup 进程（进程里就这
+        // 一个引擎，这是它的首次初始化，参数一定生效），主进程照旧 Impeller。
+        // 清理条件：上游修好 Teardown 顺序，或 Skia 被移除前改走「弹窗 WebView 用 TLHC」。
+        val engine = FlutterEngine(
+            context.applicationContext,
+            arrayOf("--enable-impeller=false"),
+            false,
+        )
         // BUG-865：传 applicationContext 让 registrant 也注册 anki channel，使 popupMain
         // 副 engine 上的 app 外查词面制卡不再抛 MissingPluginException。
         FloatingDictPluginRegistrant.registerWith(engine, context.applicationContext)
@@ -133,6 +156,7 @@ object PopupEngineHolder {
                     map["charIndex"] = pendingCharIndex
                     putAnchor(map, pendingAnchor)
                     putSubtitle(map, pendingSubtitle)
+                    putSourceBlock(map, pendingSourceBlock)
                     result.success(map)
                 }
                 "finishPopup" -> {
@@ -155,24 +179,35 @@ object PopupEngineHolder {
         return true
     }
 
-    /** Warm-reuse / onNewIntent path: push a new term into the running Dart app. */
+    /**
+     * Warm-reuse / onNewIntent path: push a new term into the running Dart app.
+     *
+     * [allowBlank]：悬浮球「查词 / 剪贴板查词」是**有意**打开一个空查词窗（只有搜索栏）。
+     * 默认仍丢弃空词（系统 PROCESS_TEXT 偶发空选区不该清掉当前结果）；只有显式要求
+     * 空窗的入口（[PopupDictFlutterActivity.EXTRA_OPEN_SEARCH] / EXTRA_READ_CLIPBOARD
+     * 且剪贴板为空）才把空词推过去，让热引擎上的 Dart 侧清掉上一次的词和锚点。
+     */
     fun pushProcessText(
         text: String,
         charIndex: Int = -1,
         anchor: IntArray? = null,
         subtitle: IntArray? = null,
+        sourceBlock: SourceBlock? = null,
+        allowBlank: Boolean = false,
     ) {
-        if (text.isBlank()) return
+        if (text.isBlank() && !allowBlank) return
         pendingText = text
         pendingCharIndex = charIndex
         pendingAnchor = anchor
         pendingSubtitle = subtitle
+        pendingSourceBlock = sourceBlock
         val ch = channel ?: return
         val args = HashMap<String, Any>()
         args["text"] = text
         args["charIndex"] = charIndex
         putAnchor(args, anchor)
         putSubtitle(args, subtitle)
+        putSourceBlock(args, sourceBlock)
         Handler(Looper.getMainLooper()).post { ch.invokeMethod("onNewProcessText", args) }
     }
 
@@ -196,5 +231,15 @@ object PopupEngineHolder {
     private fun putSubtitle(map: HashMap<String, Any>, subtitle: IntArray?) {
         if (subtitle == null || subtitle.size != 4) return
         map["subtitle"] = listOf(subtitle[0], subtitle[1], subtitle[2], subtitle[3])
+    }
+
+    /**
+     * BUG-3487：所属块全文与本行起点写进载荷（键 `sourceBlock` / `sourceBlockOffset`），
+     * 没有就整个省略——Dart 侧读不到即回落为整行句子。
+     */
+    private fun putSourceBlock(map: HashMap<String, Any>, sourceBlock: SourceBlock?) {
+        if (sourceBlock == null) return
+        map["sourceBlock"] = sourceBlock.text
+        map["sourceBlockOffset"] = sourceBlock.offset
     }
 }

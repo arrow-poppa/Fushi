@@ -122,9 +122,10 @@ class GlobalLookupWindow {
   // renderer off-screen; once the composition HWND is attached to the game it
   // resizes/repositions that SAME visible HWND in place, preserving every live
   // iframe instead of flashing the whole stack away.
+  // [root_height] = 根卡实测高度（物理 px，0 = 未上报），见 direct_root_height_。
   void ResizeStackForGal(int dx, int dy, int width, int height,
                          double bbox_left, double bbox_top,
-                         int64_t geometry_epoch);
+                         int64_t geometry_epoch, int root_height = 0);
   // Moves the off-screen-rendered card to the pending cursor anchor at its final
   // size and makes it visible (arming the click-outside hooks). Called once per
   // lookup after the page has self-measured, so the user never sees the
@@ -263,7 +264,11 @@ class GlobalLookupWindow {
                                uint32_t view_height, int32_t glyph_x,
                                int32_t glyph_y, uint32_t glyph_w,
                                uint32_t glyph_h, uint32_t* out_client_width,
-                               uint32_t* out_client_height);
+                               uint32_t* out_client_height,
+                               int32_t* out_root_client_x = nullptr,
+                               int32_t* out_root_client_y = nullptr);
+  // BUG-2921 — [out_root_client_x]/[out_root_client_y]：根卡在游戏客户区里的真实左上角
+  // （物理 px）。Dart 拿它把嵌套子卡的布局视口切到客户区域，子卡才排得进真实画面。
 
   // 把游戏侧转发来的一条 LookupInputSlot 喂给已有的 composition controller。
   // [kind] 取 voice_hook_ipc.h 的 kLookupInput*（0=move 1=leftDown 2=leftUp
@@ -285,10 +290,17 @@ class GlobalLookupWindow {
                                           HWND hwnd, LONG id_object,
                                           LONG id_child, DWORD thread,
                                           DWORD time);
+  // BUG-2788 — 平台线程上的 WH_CBT：否决 Chromium 在触摸时对卡片子窗的
+  // SetFocus 连带激活卡片（见 window_activation_policy.h 的第 2 条路径）。
+  static LRESULT CALLBACK ActivationGuardProc(int code, WPARAM wparam,
+                                              LPARAM lparam);
+  static void EnsureActivationGuard();
   // BUG-1048 — 处理钩子线程投递过来的「全局点击」消息（见 low_level_mouse_hook.h）：
   // 落在窗口外 -> 关闭浮窗；落在窗口内 -> 交给 web host 自己命中测试。跑在窗口线程，
   // 钩子线程只搬坐标，不碰任何 C++ 对象。
-  void HandleGlobalClick(POINT screen_pt, bool inside_window);
+  // |consumed| = 钩子已把这一击从游戏输入流吞掉（BUG-2710 取证：吞了却不关卡 /
+  // 不转发，就是一次被静默吃掉的点击）。
+  void HandleGlobalClick(POINT screen_pt, bool inside_window, bool consumed);
   // BUG-1166 — 处理钩子线程投递过来的「落在卡片上的滚轮」（钩子已把它从输入流里
   // 吞掉，见 low_level_mouse_hook.h）。这里把它还原成一条真 WM_MOUSEWHEEL 交给
   // WebView2：composition 实例经 SendMouseInput，windowed 实例投给光标压着的
@@ -303,6 +315,10 @@ class GlobalLookupWindow {
                                 const fushi::MouseHookWheel& wheel);
   LRESULT HandleMessage(UINT message, WPARAM wparam, LPARAM lparam);
   int OffscreenX() const;
+  // 离屏停放位是「建窗那一刻」的虚拟桌面右缘 + 200：显示拓扑变了（分辨率 / 缩放 /
+  // 热插拔让桌面变宽），已显示未上屏（!revealed_）的停放窗就会落进屏幕，变成一块
+  // 吞点击的不可见区域（BUG-2886）。按新拓扑重新停放；已上屏的卡片不动。
+  void ReparkOffscreenIfParked();
   // TODO-867 P2: round the window corners to match popup.css's card radius.
   // BUG-749: when the host has reported per-shell rects (transient cascade
   // mode), the region is the UNION of those card rects instead of the full
@@ -317,6 +333,17 @@ class GlobalLookupWindow {
   // host as host CSS px relative to the window, so the host hit-tests its shells
   // and dismisses the appropriate layer (the host owns the shell geometry truth).
   void ForwardGlobalClickToHost(int screen_x, int screen_y);
+  // BUG-2651 (issue #1581) — 覆盖窗带 WS_EX_NOACTIVATE、永不拿键盘焦点，卡片里的
+  // 选区没法用系统路径复制：Ctrl+C 落到前台应用，WebView2 自带右键菜单又被置顶的
+  // 卡片盖住。host 上报「卡片里有没有非空选区」，只在「有选区且卡片在屏」时临时
+  // 注册 Ctrl+C 热键，命中后由 native 取选区写剪贴板；右键菜单改为本窗自己弹的
+  // Win32 菜单（天然在置顶带之上）。
+  void OnOverlaySelectionChanged(bool has_selection);
+  void UpdateCopyHotkey();
+  void CopyOverlaySelectionToClipboard();
+  void HandleContextMenuRequested(
+      ICoreWebView2ContextMenuRequestedEventArgs* args);
+  void ShowPendingContextMenu();
   void EnsureWindowClass();
   // Root fix: hwnd_ must be non-null IFF a LIVE window that is OURS exists.
   // External teardown (WebView2 runtime crash/update, owner destroy, any
@@ -333,7 +360,9 @@ class GlobalLookupWindow {
   // request is stale and must not move the live HWND or acknowledge the host.
   bool BeginGeometryRequest(int64_t geometry_epoch);
   bool CommitPendingShellGeometry(int64_t geometry_epoch);
-  void FinalizePendingShellGeometry(int64_t geometry_epoch);
+  void FinalizePendingShellGeometry(int64_t geometry_epoch,
+                                    double clamp_dx_css = 0.0,
+                                    double clamp_dy_css = 0.0);
   void ClearPendingShellGeometry();
 
   // Tear down the dismissal hooks (foreground WinEvent + low-level mouse) and
@@ -346,6 +375,10 @@ class GlobalLookupWindow {
   // liveness re-arm timer, so that leak does not decay: it keeps a pure
   // pass-through hook alive on the chain forever. One funnel, two callers.
   void ReleaseDismissHooks();
+  // BUG-1471 / BUG-2746 — the single rollback for a hook armed synchronously
+  // before reveal when that reveal then fails (arm / wheel source not
+  // acknowledged, SetWindowPos failed). Reveal and RevealStack share it.
+  void RollBackRevealArm();
 
   /// 显示期间周期性重申置顶（BUG-1479）。
   ///
@@ -377,6 +410,10 @@ class GlobalLookupWindow {
   // composition controller（SendMouseInput），否则透明面板点不动/滚不动。windowed
   // 瞬态窗的 WebView2 子窗自动收输入，不经此路径。
   void ForwardCompositionMouse(UINT message, WPARAM wparam, LPARAM lparam);
+  // BUG-2770：触摸 / 触控笔的 WM_POINTER* 经 SendPointerInput 原样进 WebView2。
+  // 返回 false（鼠标指针、非 composition、取不到指针信息）时调用方落回
+  // DefWindowProc，由系统照旧提升成鼠标消息走 ForwardCompositionMouse。
+  bool ForwardCompositionPointer(UINT message, WPARAM wparam);
   void RecoverDeadWebView(const std::string& replay_script);
   RouteContext RouteForMessage(const std::string& json) const;
   // TODO-1153 -- logs + reports an overlay WebView2 bring-up failure (never
@@ -409,6 +446,9 @@ class GlobalLookupWindow {
   // 覆盖窗的点击外关闭。
   bool mouse_hook_armed_ = false;
   static GlobalLookupWindow* s_hook_owner_;
+  static HHOOK s_activation_guard_hook_;
+  // 本实例正主动抢前台（自绘右键菜单）：ActivationGuardProc 只放行这一窗口期。
+  bool self_activation_allowed_ = false;
   bool visible_ = false;
   bool revealed_ = false;
   bool capture_suppressed_ = false;
@@ -441,6 +481,18 @@ class GlobalLookupWindow {
   double direct_glyph_top_ = 0.0;
   double direct_glyph_width_ = 0.0;
   double direct_glyph_height_ = 0.0;
+  // BUG-2921 — 贴字形的是**根卡**，不是整个 union。本次查词首次直连上屏时只有根卡
+  // （union == 根卡），记下根卡在 host window-local 坐标里的左上角与宽度；之后每次
+  // present / 嵌套 resize 都先按根卡尺寸贴字形，再用 bbox 偏移推出 union 原点。
+  // 拿 union 尺寸去贴字形会在子卡出现时把根卡整体挪走（翻到字形下方再被夹回），
+  // 子卡顶部随之越出客户区被裁。高度取 Dart 每次随 revealStack 带来的根卡实测高度，
+  // 根卡因尾批词典长高时仍贴着字形那条边。
+  void ResetDirectRootPin();
+  bool direct_root_pin_valid_ = false;
+  int32_t direct_root_local_left_ = 0;
+  int32_t direct_root_local_top_ = 0;
+  int32_t direct_root_width_ = 0;
+  int32_t direct_root_height_ = 0;
   bool webview_ready_ = false;
   // TODO-1268 (BUG-693): a dead-surface rebuild is in flight; renders
   // cache into pending_json_ until NavigationCompleted re-arms
@@ -505,6 +557,19 @@ class GlobalLookupWindow {
   // composition 模式下 WebView2 请求的光标（add_CursorChanged 回调更新）；
   // WM_SETCURSOR 据此 SetCursor，让 hover 链接/文本时光标形状正确。
   HCURSOR composition_cursor_ = nullptr;
+
+  // BUG-2651 — host 最近一次上报的「卡片里有非空选区」；不随 Hide 清零（host 只在
+  // 变化时上报），热键是否注册由 UpdateCopyHotkey 按「有选区 && IsShowing()」推导。
+  bool selection_present_ = false;
+  bool copy_hotkey_registered_ = false;
+  // 自绘右键菜单的模态循环进行中：全局点击钩子此时不得把点在菜单上的那一下当成
+  // 「点卡外」关卡。
+  bool context_menu_active_ = false;
+  // 为弹菜单临时抢前台后，要把前台还给的那个窗口；前台钩子看到它回来时不关卡。
+  HWND context_menu_return_foreground_ = nullptr;
+  wil::com_ptr<ICoreWebView2ContextMenuRequestedEventArgs>
+      pending_context_menu_args_;
+  wil::com_ptr<ICoreWebView2Deferral> pending_context_menu_deferral_;
 
   // 2026-08-23 弹窗观感 — 伴随投影窗（每实例一个：瞬态查词窗按 shellRects
   // 逐卡画影，面板整窗一影）。生命周期随本实例；显隐由 SyncShadow 驱动。

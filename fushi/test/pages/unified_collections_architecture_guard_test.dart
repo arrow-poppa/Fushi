@@ -13,8 +13,6 @@ void main() {
   final File mergeEngine = File('lib/src/sync/backup_merge_engine.dart');
   final File importDialog =
       File('lib/src/media/video/video_import_dialog.dart');
-  final File database =
-      File('../packages/fushi_core/lib/src/database/database.dart');
   final File homeVideo =
       File('lib/src/pages/implementations/home_video_page.dart');
   final File historyPage =
@@ -22,7 +20,6 @@ void main() {
 
   late String mergeSrc;
   late String importSrc;
-  late String dbSrc;
   late String homeSrc;
   late String historySrc;
 
@@ -30,7 +27,6 @@ void main() {
     for (final File f in <File>[
       mergeEngine,
       importDialog,
-      database,
       homeVideo,
       historyPage,
     ]) {
@@ -38,19 +34,12 @@ void main() {
     }
     mergeSrc = mergeEngine.readAsStringSync();
     importSrc = importDialog.readAsStringSync();
-    dbSrc = database.readAsStringSync();
     homeSrc = homeVideo.readAsStringSync();
     historySrc = historyPage.readAsStringSync();
   });
 
-  test('迁移在 v38 同时拆播放列表 + 迁 series→合集（先拆后迁的顺序）', () {
-    final int split = dbSrc.indexOf('await splitPlaylistVideoBooksV38();');
-    final int migrate = dbSrc.indexOf('await migrateSeriesToCollectionsV38();');
-    expect(split, isNonNegative, reason: 'v38 必须调用 splitPlaylistVideoBooksV38');
-    expect(migrate, isNonNegative,
-        reason: 'v38 必须调用 migrateSeriesToCollectionsV38');
-    expect(split, lessThan(migrate), reason: '必须先拆播放列表再迁 series，避免拆出的集重复归组');
-  });
+  // （原「v38 先拆播放列表再迁 series」的迁移顺序守卫已随最低 schema 门槛 v75
+  // 删除：v38 台阶本身不在了，低于门槛的库直接拒绝打开。）
 
   test('备份合并携带 media_collections（Phase 5a：合集随备份存活）', () {
     final int mergeFn = mergeSrc.indexOf('Future<void> merge() async {');
@@ -85,11 +74,14 @@ void main() {
     expect(historySrc.contains('getPrimaryCollectionIdByEntry'), isTrue);
   });
 
-  test('合集渲染形态：书架横排行（CollectionShelfRow）+ 视频封面卡（用户拍板 2026-07-22）', () {
-    // 书架维持 Phase C 横排行；视频侧用户拍板恢复封面卡形态（「一进去就是封面，
-    // 跟小说那种一样」）：合集渲染成封面卡混入媒体库墙。互退即转红。
-    expect(historySrc.contains('CollectionShelfRow'), isTrue,
-        reason: '书架合集必须渲染成全宽横排行');
+  test('合集渲染形态：书架合集格子（SeriesShelfCard）+ 视频封面卡（用户拍板 2026-07-22 / 2026-10-13）', () {
+    // 书架：合集折成网格里的一个叠层格子（2026-10-13 用户拍板移除「整行展开」横排
+    // 行，反馈 #TgkCgTGy81）；视频侧用户拍板封面卡形态（「一进去就是封面，跟小说
+    // 那种一样」）：合集渲染成封面卡混入媒体库墙。互退即转红。
+    expect(historySrc.contains('_buildShelfCollectionCard'), isTrue,
+        reason: '书架合集必须渲染成网格里的一个格子');
+    expect(historySrc.contains('CollectionShelfRow'), isFalse,
+        reason: '书架不得回退到全宽横排行（整行展开已移除；横排行只剩游戏库用）');
     expect(homeSrc.contains('_buildCollectionCoverCard'), isTrue,
         reason: '视频库合集必须渲染成封面卡（一合集一封面）');
     expect(homeSrc.contains('CollectionShelfRow('), isFalse,
@@ -103,10 +95,10 @@ void main() {
     // 用户拍板设计稿（2026-08-01）：顶部全宽 backdrop hero 轮播（最近在看前 5
     // 合集）→「继续观看」/「最近添加」横滚行 → 竖横混排媒体库墙。撤任一接线
     // 或回退到恒 2:3 单一网格即转红。
-    expect(homeSrc.contains('_buildHeroCarousel'), isTrue,
-        reason: '视频首页必须有 hero 轮播（最近在看合集，backdrop 优先）');
+    // hero 轮播的断言已删（2026-10-04）：#792 dashboard 化后首页不再渲染轮播，
+    // `_buildHeroCarousel` 只剩无调用方的死代码，旧断言反而强迫死代码留存。
     expect(homeSrc.contains('getAllCollectionScrapeMeta'), isTrue,
-        reason: 'hero 轮播必须消费合集刮削资料（backdrop / 简介 / airDate）');
+        reason: '视频首页必须消费合集刮削资料（作品名 / 年份筛选）');
     expect(homeSrc.contains('_buildContinueRow'), isTrue,
         reason: '必须有「继续观看」横滚行');
     expect(homeSrc.contains('_buildRecentlyAddedRow'), isTrue,
@@ -206,8 +198,13 @@ void main() {
     );
     expect(detail.existsSync(), isTrue);
     final String detailSrc = detail.readAsStringSync();
-    expect(detailSrc.contains('_episodeThumb'), isTrue,
-        reason: 'playlist 详情页剧集行必须带每集封面缩略图');
+    // 集缩略图的视觉住在共享布局 `collectionEpisodeThumb`（本地系列 + 媒体服务器
+    // 详情页同一套）；页面只负责把**该集自己**的封面喂进去。
+    expect(
+      containsCodeLine(detailSrc, 'collectionEpisodeThumb('),
+      isTrue,
+      reason: 'playlist 详情页剧集行必须带每集封面缩略图',
+    );
     // 锚点锁的是**契约**（缩略图取该集自己的 coverPath、无封面退占位），不是某种
     // 具体渲染写法。旧判据 `contains('Image.file')` 把实现写法当契约：BUG-1299 把
     // `_episodeThumb` 从裸 `Image.file(...) + BoxFit.cover` 改成
@@ -218,16 +215,38 @@ void main() {
     // BUG-1704 把成员抽象成 CollectionEpisodeSlot（本地行 + 只在对端的集同槽），
     // 封面解析随之从 _episodeThumb 内联挪进 _episodeCover。契约一点没变——缩略图
     // 仍必须取**该集自己**的封面；锚点跟着契约多走一层间接，判据本身不放宽。
-    final String thumbBody = methodBody(detailSrc, 'Widget _episodeThumb(');
-    expect(containsCodeLine(thumbBody, '_episodeCover(slot)'), isTrue,
-        reason: '缩略图必须按该集自身解析封面（_episodeCover），不得直接吃合集封面');
-    expect(containsCodeLine(thumbBody, '_thumbPlaceholder('), isTrue,
-        reason: '无封面 / 读取失败必须退占位图，不得留空或抛');
-    final String coverBody =
-        methodBody(detailSrc, 'ImageProvider? _episodeCover(');
-    expect(containsCodeLine(coverBody, 'slot.coverPath'), isTrue,
-        reason: '每集封面必须取该集自身的 coverPath（每集独立视频各有封面），'
-            '不得回退成整个合集共用一张封面');
+    // 视觉搬进共享布局后，「按该集自身解析封面」的契约锁在页面的调用点：喂给
+    // collectionEpisodeThumb 的 provider 必须来自 _episodeCover(该集)。
+    expect(
+      containsCodeLine(
+        detailSrc,
+        'collectionEpisodeThumb(context, _episodeCover(',
+      ),
+      isTrue,
+      reason: '缩略图必须按该集自身解析封面（_episodeCover），不得直接吃合集封面',
+    );
+    final String layoutSrc = File(
+      'lib/src/media/collections/collection_detail_layout.dart',
+    ).readAsStringSync();
+    final String thumbBody = methodBody(
+      layoutSrc,
+      'Widget collectionEpisodeThumb(',
+    );
+    expect(
+      containsCodeLine(thumbBody, 'collectionEpisodeThumbPlaceholder('),
+      isTrue,
+      reason: '无封面 / 读取失败必须退占位图，不得留空或抛',
+    );
+    final String coverBody = methodBody(
+      detailSrc,
+      'ImageProvider? _episodeCover(',
+    );
+    expect(
+      containsCodeLine(coverBody, 'slot.coverPath'),
+      isTrue,
+      reason: '每集封面必须取该集自身的 coverPath（每集独立视频各有封面），'
+          '不得回退成整个合集共用一张封面',
+    );
   });
 
   test('排序交互重设计：死权重零读取 + 排序菜单 + 成员序单一真相源 + 详情页就地排序', () {
@@ -376,12 +395,18 @@ void main() {
     // 移到新首页 HomeDashboardPage，此处只守卫书架页仍在用的「最近阅读」排序语义。）
     // v82/v83：recency 表键 = 书稳定 uid，页面身份 bookKey 经 _epubUidByKey 换算
     // 一跳再查；没读过仍退 importedAt。退回裸 bookKey 直查（丢换算）即红。
+    // BUG-2904：hero 与排序都必须走同一个换算 helper；hero 曾拿裸 bookKey 直查
+    // uid 键表恒查空、退化成「最近导入」——任何 `_lastReadAtByBookKey[` 直接下标
+    // 访问都算回潮。
     expect(
-        historySrc.contains(
-            '_lastReadAtByBookKey[_epubUidByKey[bookKey] ?? bookKey] ??'),
-        isTrue,
-        reason: '「最近阅读」= updatedAt（uid 键，bookKey 经换算表一跳），'
-            '没读过按导入时间融入（与视频页语义镜像）');
+        RegExp(r'lastReadAtForBookKey\(\s*_lastReadAtByBookKey,\s*_epubUidByKey,')
+            .allMatches(historySrc)
+            .length,
+        greaterThanOrEqualTo(2),
+        reason: '「最近阅读」排序与继续阅读 hero 都按 uid 键查'
+            '（bookKey 经换算表一跳），没读过按导入时间融入');
+    expect(historySrc.contains('_lastReadAtByBookKey['), isFalse,
+        reason: 'recency 表键是 uid，裸下标访问会绕过 bookKey→uid 换算（BUG-2904）');
     expect(historySrc.contains('payload.seq'), isFalse,
         reason: '列表下标假名次已删（provider 序 = importedAt 倒序，不是访问序）');
   });

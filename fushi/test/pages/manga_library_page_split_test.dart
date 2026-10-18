@@ -1,17 +1,15 @@
 import 'dart:io';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
 
-import 'package:fushi/src/media/manga/discovery/manga_discovery_page.dart';
 import 'package:fushi/src/media/manga/manga_library_page.dart';
 import 'package:fushi/src/media/manga/manga_sources_page.dart';
 import 'package:fushi/src/media/media_item.dart';
 import 'package:fushi/src/media/sources/manga_fushi_source.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/pages/implementations/media_library_shell.dart';
-import 'package:fushi/src/pages/implementations/module_settings_view.dart';
 import 'package:fushi/src/pages/implementations/reader_fushi_history_page.dart';
 
 import '../helpers/source_guard.dart';
@@ -24,8 +22,10 @@ import '../helpers/source_guard.dart';
 /// 1. 分流谓词本身（互补、无遗漏、无重复）；
 /// 2. 漫画库页确实带 `mangaOnly: true` 接进同一个书架实现，没有接反。
 ///
-/// PR#594 落地后追加第 3 件：顶层视图列表是无条件常量，不随平台分叉
-/// （BUG-1710 把重复的「浏览」tab 并进「发现」后恒为三视图 + 设置）。
+/// PR#594 落地后追加第 3 件：顶层视图列表不随扩展宿主分叉，唯一允许的条件是
+/// App Store 合规门（BUG-1710 把重复的「浏览」tab 并进「发现」；2026-09-27「发现」
+/// 与在线来源搬进顶层「浏览」模块，2026-10-01 又作为库页子标签加回：书架 / 发现 /
+/// 来源 / 扩展 / 导入 / 设置）。
 
 MediaItem _item(String identifier, String sourceKey) => MediaItem(
       mediaIdentifier: identifier,
@@ -83,8 +83,8 @@ void main() {
     testWidgets('漫画库页的书架视图接的是 mangaOnly: true 的书架实现（没接反）',
         (WidgetTester tester) async {
       // 只取 build 的产物，不真正挂载子树：整页依赖 DB / WebView / 一堆 provider，
-      // 挂起来就成了「测环境」而不是测这条接线。漫画库页现在是三视图壳
-      // （书架 / 发现 / 来源），书架仍是其中一个视图——穿过壳取该视图的产物。
+      // 挂起来就成了「测环境」而不是测这条接线。漫画库页现在是视图壳
+      // （书架 / 来源 / 设置），书架仍是其中一个视图——穿过壳取该视图的产物。
       Widget? built;
       await tester.pumpWidget(
         Builder(builder: (BuildContext context) {
@@ -94,54 +94,44 @@ void main() {
       );
       expect(built, isA<MediaLibraryShell>());
       final MediaLibraryShell shell = built! as MediaLibraryShell;
-      // 书架 / 发现 / 来源三视图（外加设置）。Mihon 扩展是「来源」的一部分，不占
-      // tab；「发现」不随**扩展宿主是否可用**变（AniList 与扩展宿主无关）。这条
-      // 断言同时是 BUG-1710 的反向锚：browse 视图被并进 discover 后不得再回到漫画
-      // 库——两个 tab 的 label 都是「发现」，用户点哪个都分不清。
-      //
-      // 本用例跑在宿主平台（非 iOS），所以看到的是完整四项。iOS 上「发现」按 App
-      // Store 合规整条不存在（`StoreRestrictedCapability.externalDiscovery`），
-      // 那条分叉由下一个用例按源码钉住——它是唯一放行的条件。
+      // 书架 / 发现 / 来源 / 扩展 / 导入（测试宿主不是 iOS，合规门全开）。
+      // 「设置」视图已移除，漫画设置走全局「设置 › 漫画」（2026-10-09）。
+      // 「发现」与在线来源 / 扩展和顶层「浏览」模块是同一组组件（2026-10-01 加回）。
       expect(
         shell.views.map((MediaLibraryViewSpec v) => v.kind).toList(),
         <MediaLibraryViewKind>[
           MediaLibraryViewKind.library,
           MediaLibraryViewKind.discover,
+          MediaLibraryViewKind.onlineSources,
+          MediaLibraryViewKind.extensions,
           MediaLibraryViewKind.sources,
-          MediaLibraryViewKind.settings,
         ],
       );
       expect(
         shell.views.map((MediaLibraryViewSpec v) => v.kind),
         isNot(contains(MediaLibraryViewKind.browse)),
-        reason: 'BUG-1710：漫画的在线来源清单已并进「发现」，不得再有第二个发现 tab',
+        reason: 'BUG-1710：两个都叫「发现」的 tab 不得再并存',
       );
       final Widget shelf = shell.views.first.builder(
           tester.element(find.byType(SizedBox)), const SizedBox.shrink());
       expect(shelf, isA<ReaderFushiHistoryPage>());
       expect((shelf as ReaderFushiHistoryPage).mangaOnly, isTrue);
-      // 「发现」是漫画唯一的发现页（横滑行 + 来源清单 + 搜索）。
+      // 「导入」视图必须是漫画来源页——本地扫描根 + 互联（在线来源是独立视图）。
       expect(
-        shell.views[1].builder(
-            tester.element(find.byType(SizedBox)), const SizedBox.shrink()),
-        isA<MangaDiscoveryPage>(),
-      );
-      // 「来源」视图必须是漫画来源页——本地扫描根 + 扩展 + 在线来源都收在这里。
-      expect(
-        shell.views[2].builder(
-            tester.element(find.byType(SizedBox)), const SizedBox.shrink()),
+        shell.views
+            .firstWhere(
+              (MediaLibraryViewSpec v) =>
+                  v.kind == MediaLibraryViewKind.sources,
+            )
+            .builder(
+                tester.element(find.byType(SizedBox)), const SizedBox.shrink()),
         isA<MangaSourcesPage>(),
-      );
-      expect(
-        shell.views.last.builder(
-            tester.element(find.byType(SizedBox)), const SizedBox.shrink()),
-        isA<ModuleSettingsView>(),
       );
       // 反向锚：普通书架的默认值必须仍是 false，否则漫画会在两边都出现。
       expect(const ReaderFushiHistoryPage().mangaOnly, isFalse);
     });
 
-    test('导航形态与扩展宿主是否可用完全解耦（iOS/Linux 同构）', () {
+    test('导航形态与扩展宿主是否可用完全解耦，只按合规门分叉', () {
       // 这条不 pump widget：它守的是**源码层面**没有任何按平台分叉的视图列表。
       // 平台探测符号在 iOS/Linux 返回 false，一旦有人再把它塞回 MangaLibraryPage，
       // 导航结构就又分平台裂开了。
@@ -159,28 +149,27 @@ void main() {
         isFalse,
         reason: '漫画库页的视图列表必须是无条件常量，不得按平台/扩展可用性分叉',
       );
-      // 同一句的另一半：视图列表里**几乎**不该有条件表达式——出现条件即意味着某
-      // 平台/某状态下 tab 会少一个。
-      //
-      // 唯一放行的是 App Store 合规边界（`StoreRestrictedCapability`）：iOS 上
-      // 「发现」不是「扩展宿主暂不可用」，而是整条能力按审核要求不存在，留一个点
-      // 进去什么都没有的死 tab 比少一个 tab 更差。所以判据从「一个条件都不许有」
-      // 收紧成「**只许有那一个条件**」——`MihonRuntimeFactory` 这类按运行时能力
-      // 分叉的写法，以及任何别的新条件，仍然当场红。
-      final List<String> conditions = RegExp(r'if \(([^)]*)\)')
-          .allMatches(source)
-          .map((Match match) => match.group(1)!.trim())
-          .toList();
+      // 同一句的另一半：视图列表里的条件只许是 App Store 合规门——出现别的条件
+      // 即意味着某平台/某状态下 tab 会少一个（没有 Mihon 宿主的平台由漫画来源面
+      // 自己换成「不可用」说明，视图照样在）。
+      final List<String> conditions =
+          RegExp(r'if \((.*)\)\s*$', multiLine: true)
+              .allMatches(source)
+              .map((Match match) => match.group(1)!.trim())
+              .toList();
       expect(
-        conditions,
-        everyElement('StoreRestrictedCapability.externalDiscovery.isAvailable'),
-        reason: '视图列表里只允许 App Store 合规边界这一个条件；'
-            '按平台/扩展可用性分叉一律不行',
+        conditions.toSet(),
+        <String>{
+          'StoreRestrictedCapability.externalDiscovery.isAvailable',
+          'isOnlineSourcesDomainAvailable(OnlineSourcesDomain.manga)',
+        },
+        reason: '视图列表只许按合规门分叉；按平台/扩展宿主分叉一律不行',
       );
       for (final String removed in <String>[
         'mangaSources',
         'mangaExtensions',
         'sourceSettings',
+        'settings',
       ]) {
         expect(
           MediaLibraryViewKind.values

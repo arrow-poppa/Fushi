@@ -1,10 +1,12 @@
-import 'package:flutter/material.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
+import 'package:fushi/src/settings/settings_schema_models.dart';
 import 'package:fushi/src/settings/settings_schema_appearance.dart';
 import 'package:fushi/src/settings/settings_schema_card_creation.dart';
 import 'package:fushi/src/settings/settings_schema_downloads.dart';
+import 'package:fushi/src/settings/settings_schema_floating_ball.dart';
 import 'package:fushi/src/settings/settings_schema_game.dart';
 import 'package:fushi/src/settings/settings_schema_lookup.dart';
 import 'package:fushi/src/settings/settings_schema_manga.dart';
@@ -86,6 +88,7 @@ List<SettingsDestination> _buildDestinations() {
   // 导航分组与此处共用固定顺序；平台/模块可见性仍在展示时求值。
   return List<SettingsDestination>.unmodifiable(<SettingsDestination>[
     buildAppearanceDestination(),
+    buildFloatingBallDestination(),
     buildReadingDestination(),
     buildMangaDestination(),
     buildVideoDestination(),
@@ -93,6 +96,7 @@ List<SettingsDestination> _buildDestinations() {
     if (kMediaTrackingEnabled) buildMediaTrackingDestination(),
     buildLookupDestination(),
     buildCardCreationDestination(),
+    buildModelsDestination(),
     buildDownloadsDestination(),
     buildServicesDestination(),
     buildProfilesDestination(),
@@ -181,7 +185,7 @@ SettingsDestination buildReaderGroupDestination(
   return SettingsDestination(
     id: SettingsDestinationId.readerQuickSettings,
     title: title,
-    icon: Icons.tune_outlined,
+    icon: FushiIcons.settings,
     sections: <SettingsSection>[SettingsSection(items: items)],
   );
 }
@@ -253,7 +257,7 @@ SettingsDestination buildVideoGroupDestination(
   return SettingsDestination(
     id: SettingsDestinationId.videoQuickSettings,
     title: title,
-    icon: Icons.tune_outlined,
+    icon: FushiIcons.settings,
     sections: sections.isEmpty
         ? <SettingsSection>[const SettingsSection(items: <SettingsItem>[])]
         : sections,
@@ -277,7 +281,7 @@ SettingsDestination buildReaderQuickSettingsDestination(
     id: SettingsDestinationId.readerQuickSettings,
     title: t.reader_settings_section,
     summary: t.source_description_epub,
-    icon: Icons.tune_outlined,
+    icon: FushiIcons.settings,
     sections: <SettingsSection>[
       sectionFor(ReaderGroup.layout, t.section_layout),
       sectionFor(ReaderGroup.behavior, t.settings_destination_reading_controls),

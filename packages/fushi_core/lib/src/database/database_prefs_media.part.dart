@@ -448,9 +448,20 @@ mixin _FushiDbPrefsMedia
       });
 
   // ── video_books ─────────────────────────────────────────────────
+  /// v118：`localAddedAt`（本机开始拥有的时刻）插入时未携带 → now；冲突转更新
+  /// （同 bookUid 重复登记、互联重下覆盖同一副本）时**永不改写**——那不是重新
+  /// 拥有。互联下载登记把 `importedAt` 镜像成 host 值（BUG-2463），本列仍记本机
+  /// 落地时刻（语义见 [FushiDatabase.insertEpubBook]）。
   Future<void> upsertVideoBook(VideoBooksCompanion vb) async {
-    await into(videoBooks).insert(vb,
-        onConflict: DoUpdate((_) => vb, target: [videoBooks.bookUid]));
+    await into(videoBooks).insert(
+        vb.localAddedAt.present
+            ? vb
+            : vb.copyWith(
+                localAddedAt:
+                    Value<int?>(DateTime.now().millisecondsSinceEpoch)),
+        onConflict: DoUpdate(
+            (_) => vb.copyWith(localAddedAt: const Value<int?>.absent()),
+            target: [videoBooks.bookUid]));
     // 删除传播：重新加入同 bookUid 的视频清除其 sync 删除墓碑（防误判待删）。
     if (vb.bookUid.present) {
       await clearSyncDeletionTombstone('video', vb.bookUid.value);
@@ -471,5 +482,15 @@ mixin _FushiDbPrefsMedia
       (update(videoBooks)
             ..where(($VideoBooksTable t) =>
                 t.bookUid.equals(bookUid) & t.sourceId.isNull()))
+          .write(VideoBooksCompanion(sourceId: Value<int?>(sourceId)));
+
+  /// 无条件把视频改归属到 [sourceId]（只写 `source_id`，不动其它列）。
+  ///
+  /// 下载管线把文件放进托管来源根目录后用它收口归属：文件物理上就在这个来源
+  /// 里，哪怕扫描器抢先按别的（重叠的）来源建了行，也该归托管来源，否则按
+  /// `source_id` 过滤的刮削计划看不到刚导入的文件。
+  Future<int> assignVideoBookSource(String bookUid, int sourceId) =>
+      (update(videoBooks)
+            ..where(($VideoBooksTable t) => t.bookUid.equals(bookUid)))
           .write(VideoBooksCompanion(sourceId: Value<int?>(sourceId)));
 }

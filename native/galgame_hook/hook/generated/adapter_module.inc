@@ -14,3 +14,7 @@
         aos_sfa_.onModuleLoaded(entry.szModule);
         unity_mono_.onModuleLoaded(entry.szModule);
         smash_fzmedia_.onModuleLoaded(entry.szModule);
+        yuris_.onModuleLoaded(entry.szModule);
+        fvp_.onModuleLoaded(entry.szModule);
+        kogado_hy_.onModuleLoaded(entry.szModule);
+        luca_.onModuleLoaded(entry.szModule);

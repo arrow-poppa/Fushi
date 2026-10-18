@@ -1,5 +1,34 @@
 // 垫掉 popup.js 里的 flutter_inappwebview.callHandler，转成扩展逻辑。
 // 必须在 popup.js 之前加载（manifest content_scripts 顺序保证）。
+// 界面文案统一走 i18n.js（fushiT）；测试壳没装 i18n 时退回键名。
+function fushiShimT(key, params) {
+  return (typeof window.fushiT === 'function') ? window.fushiT(key, params) : key;
+}
+
+// Fushi 复习（SRS）词状态：经 background.js 转发到 server /api/srs/term-status。
+// app 的复习模块关着时服务端回 404 → 记住一段时间不再转发（每次查词不白跑一趟 HTTP）；
+// 任何失败都 fail-soft 成 null（弹窗不显示复习标记），绝不阻断查词。
+var FUSHI_SRS_DISABLED_BACKOFF_MS = 60000;
+var fushiSrsDisabledUntil = 0;
+async function fushiSrsTermStatus(arg) {
+  if (Date.now() < fushiSrsDisabledUntil) return null;
+  try {
+    var a = arg || {};
+    var resp = await chrome.runtime.sendMessage({
+      type: 'srsTermStatus',
+      expression: a.expression || '',
+      reading: a.reading || '',
+    });
+    if (resp && resp.status === 404) {
+      fushiSrsDisabledUntil = Date.now() + FUSHI_SRS_DISABLED_BACKOFF_MS;
+      return null;
+    }
+    var status = resp && resp.ok && resp.data ? resp.data.status : null;
+    return status && typeof status === 'object' ? status : null;
+  } catch (_) {
+    return null;
+  }
+}
 window.flutter_inappwebview = {
   callHandler: function (name, ...args) {
     switch (name) {
@@ -84,12 +113,12 @@ window.flutter_inappwebview = {
             chrome.runtime.sendMessage(
               msg,
               (resp) => {
-                try { if (chrome.runtime.lastError) { toast('✗ 制卡失败'); resolve(false); return; } } catch (_) { /* no-op */ }
+                try { if (chrome.runtime.lastError) { toast('✗ ' + fushiShimT('mine_failed')); resolve(false); return; } } catch (_) { /* no-op */ }
                 var dup = !!(resp && resp.ok && resp.data && resp.data.result === 'duplicate');
                 var ok = !!(resp && resp.ok && resp.data && resp.data.result === 'success');
-                if (dup) toast('✓ 该词卡片已存在');
-                else if (ok) toast('✓ 已制卡');
-                else toast('✗ 制卡失败');
+                if (dup) toast('✓ ' + fushiShimT('mine_duplicate_exists'));
+                else if (ok) toast('✓ ' + fushiShimT('mine_done'));
+                else toast('✗ ' + fushiShimT('mine_failed'));
                 // 一次性草稿：出卡即清（与入队路 / app 内同事件）。
                 if ((ok || dup) && typeof window.fushiClearSentenceDraft === 'function') {
                   window.fushiClearSentenceDraft();
@@ -100,10 +129,10 @@ window.flutter_inappwebview = {
           }
           var res = (typeof window.fushiEnqueue === 'function')
             ? window.fushiEnqueue(args[0], sentence) : { ok: false, reason: 'no-queue' };
-          if (res && res.ok && res.duplicate) toast('✓ 已在制卡队列中（' + res.count + '）');
-          else if (res && res.ok) toast('✓ 已加入制卡队列（' + res.count + '）\n看完后一次生成全部');
-          else if (res && res.reason === 'no-cue') toast('✗ 没找到当前字幕，稍候再试');
-          else toast('✗ 入队失败');
+          if (res && res.ok && res.duplicate) toast('✓ ' + fushiShimT('mine_already_queued_n', { n: res.count }));
+          else if (res && res.ok) toast('✓ ' + fushiShimT('mine_queued_n', { n: res.count }) + '\n' + fushiShimT('mine_queued_generate_later'));
+          else if (res && res.reason === 'no-cue') toast('✗ ' + fushiShimT('mine_no_cue'));
+          else toast('✗ ' + fushiShimT('mine_enqueue_failed'));
           // Queue membership is not an Anki note: preserve that distinction for the button.
           resolve({ queued: !!(res && res.ok), ankiConnect: false });
         });
@@ -122,6 +151,85 @@ window.flutter_inappwebview = {
             return !!(resp && resp.ok && resp.data && resp.data.duplicate === true);
           } catch (_) {
             return false;
+          }
+        })();
+      case 'srsTermStatus':
+        return fushiSrsTermStatus(args[0]);
+      case 'srsOpenCard':
+        // 点复习标记：让 app 打开那张卡（POST /api/srs/open）。失败只回 false，不打扰查词。
+        return (async function () {
+          try {
+            var o = args[0] || {};
+            var resp = await chrome.runtime.sendMessage({
+              type: 'srsOpenCard',
+              cardId: o.cardId || '',
+              noteId: o.noteId || '',
+            });
+            return !!(resp && resp.ok && resp.data && resp.data.opened === true);
+          } catch (_) {
+            return false;
+          }
+        })();
+      case 'favoriteEntry':
+      case 'favoriteCheck':
+        // BUG-3141：☆/★ 收藏。此前这两个桥落到 default 回 null——popup.js 拿 null 当「没收藏」，
+        // 点了图标不变、Fushi 收藏夹也没有新行。经 background.js 转发到 server
+        // /api/extension/favorite（与 app 外浮窗同一份收藏读写），回**切换后**的布尔态。
+        // favoriteCheck 只读不写；失败一律 fail-soft 成 false（☆），绝不阻断查词。
+        // favoriteEntry 失败时如实 toast：用户点了收藏，没收藏上必须看得见。
+        return (async function () {
+          var toggle = name === 'favoriteEntry';
+          try {
+            var a = args[0] || {};
+            var sentence = '';
+            if (toggle && typeof window.fushiMineContext === 'function') {
+              try {
+                var fctx = window.fushiMineContext();
+                sentence = (fctx && (fctx.contextSentence || (fctx.window && fctx.window.text) ||
+                  fctx.pageSentence)) || '';
+              } catch (_) { sentence = ''; }
+            }
+            var resp = await chrome.runtime.sendMessage({
+              type: 'favorite',
+              toggle: toggle,
+              expression: a.expression || '',
+              reading: a.reading || '',
+              glossary: toggle ? (a.glossary || '') : '',
+              sentence: sentence,
+            });
+            if (resp && resp.ok && resp.data && typeof resp.data.favorite === 'boolean') {
+              return resp.data.favorite;
+            }
+            if (toggle && typeof window.fushiToast === 'function') {
+              window.fushiToast('✗ ' + fushiShimT(resp && resp.status === 404
+                ? 'favorite_failed_old_app' : 'favorite_failed'));
+            }
+            return false;
+          } catch (_) {
+            if (toggle && typeof window.fushiToast === 'function') {
+              window.fushiToast('✗ ' + fushiShimT('favorite_failed'));
+            }
+            return false;
+          }
+        })();
+      case 'openInAnki':
+        // Issue #1409：↗「在 Anki 中打开这个词的卡」。经 background.js 转发到 server
+        // /api/anki/open（与 app 内 openInAnki 桥同一 repo.openWordInAnki）。回三态名
+        // 'opened' / 'noMatch' / 'failed'（popup.js openWordInAnki 的契约）；**不能回 null**
+        // ——null 专指「宿主没接这根桥」，此前正是落到 default 分支才恒提示打不开。
+        // 任何失败（扩展已重载、server 未开、旧 app 无此端点 404、outcome 不认识）→ 'failed'。
+        return (async function () {
+          try {
+            var a = args[0] || {};
+            var resp = await chrome.runtime.sendMessage({
+              type: 'openInAnki',
+              expression: a.expression || '',
+              reading: a.reading || '',
+            });
+            var outcome = resp && resp.ok && resp.data ? resp.data.outcome : null;
+            return (outcome === 'opened' || outcome === 'noMatch') ? outcome : 'failed';
+          } catch (_) {
+            return 'failed';
           }
         })();
       // 多句合一制卡（与 app 内 dictionary_popup_webview 四个 handler 同名同契约；实现在
@@ -170,6 +278,23 @@ window.flutter_inappwebview = {
             return null;
           }
         })();
+      case 'listWordAudioSources':
+        // 「选择音频源」菜单（♪ 长按 / 右键）：经 background 向 server POST
+        // /api/lookup/audio/list，拿回每个启用源各自的短命取字节 URL
+        // [{name, variant, url}]。旧 app 无该端点（404）/ 失败 → 空列表，popup.js 显示「暂无发音」。
+        return (async function () {
+          try {
+            var l = args[0] || {};
+            var resp = await chrome.runtime.sendMessage({
+              type: 'lookupAudioList',
+              expression: l.expression || '',
+              reading: l.reading || '',
+            });
+            return (resp && resp.ok && Array.isArray(resp.audioSources)) ? resp.audioSources : [];
+          } catch (_) {
+            return [];
+          }
+        })();
       // 单词音频播放已统一到 popup.js 自身（playWordAudio 直接 new Audio(url).play()），
       // 三端同一路径，不再经 callHandler('playWordAudio')。故此处旧的 playWordAudio 桥
       // 已删除。resolveWordAudio 仍返回可直接播放的 URL（扩展侧是 sync server 的
@@ -190,6 +315,7 @@ window.flutter_inappwebview = {
   function apply(resp) {
     if (resp && resp.ok && resp.base && resp.token) {
       window.__fushiDictMedia = { base: resp.base, token: resp.token };
+      if (typeof fushiRetryDictionaryFont === 'function') fushiRetryDictionaryFont();
     }
   }
   function refresh() {

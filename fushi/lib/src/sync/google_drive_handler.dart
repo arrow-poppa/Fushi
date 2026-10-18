@@ -7,6 +7,7 @@ import 'package:googleapis/drive/v3.dart' as drive;
 import 'package:googleapis_auth/googleapis_auth.dart' as auth;
 import 'package:fushi/src/sync/google_drive_auth.dart';
 import 'package:fushi/src/sync/google_drive_sync_space.dart';
+import 'package:fushi/src/sync/sync_asset_range_reader.dart';
 import 'package:fushi_engine/sync/sync_asset_store.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi/src/sync/sync_remote_listing.dart';
@@ -121,9 +122,15 @@ class GoogleDriveHandler with SyncFolderCache, SyncBackendFileTrioMixin {
   void clearCache() {
     super.clearCache();
     _cachedApi = null;
+    _fileSizes.clear();
   }
 
   // ── API client ────────────────────────────────────────────────────
+
+  /// 测试用：直接装一个（假 HTTP client 驱动的）[drive.DriveApi]，绕过 OAuth。
+  /// 传 null 清掉。[clearCache] / [setSyncSpace] 也会清。
+  @visibleForTesting
+  void debugUseDriveApi(drive.DriveApi? api) => _cachedApi = api;
 
   Future<drive.DriveApi> _api() async {
     if (_cachedApi != null) return _cachedApi!;
@@ -397,7 +404,8 @@ class GoogleDriveHandler with SyncFolderCache, SyncBackendFileTrioMixin {
         final list = await api.files.list(
           spaces: _space.spaces, // [GoogleDriveSyncSpace]: 当前空间（appdata/drive）。
           q: "'$qParent' in parents and trashed=false",
-          $fields: 'nextPageToken,files(id,name,mimeType,size)',
+          $fields:
+              'nextPageToken,files(id,name,mimeType,size,md5Checksum,modifiedTime)',
           pageSize: 1000,
           pageToken: pageToken,
         );
@@ -408,6 +416,10 @@ class GoogleDriveHandler with SyncFolderCache, SyncBackendFileTrioMixin {
               name: f.name!,
               isFolder: f.mimeType == _folderMimeType,
               sizeBytes: f.size != null ? int.tryParse(f.size!) : null,
+              // 内容 MD5：只有二进制文件有，文件夹 / Google 文档为 null。
+              revision: f.md5Checksum,
+              // Drive 的 modifiedTime 是 RFC 3339（googleapis 已解析成 DateTime），转 UTC 毫秒。
+              modifiedAt: f.modifiedTime?.toUtc().millisecondsSinceEpoch,
             ));
           }
         }
@@ -447,7 +459,7 @@ class GoogleDriveHandler with SyncFolderCache, SyncBackendFileTrioMixin {
   /// 便宜。字段只取 id/name/parents/mimeType——不要内容、不要时间戳，因为同步方向本来
   /// 就只看文件名（progress 的时间戳与分数编码在名字里）。
   Future<RemoteListingSnapshot?> snapshotListing(String rootFolder) async {
-    // 只在隐藏的 App Data 空间启用。那个空间按 app 隔离，里面除了 Hibiki 自己的同步
+    // 只在隐藏的 App Data 空间启用。那个空间按 app 隔离，里面除了 Fushi 自己的同步
     // 数据什么都没有，所以「列出空间里的全部文件」等价于「列出同步根下的全部文件」。
     //
     // 「与 Hoshi/ッツ 共享」开关打开时空间是用户**可见的 My Drive**（完整 drive
@@ -669,7 +681,7 @@ class GoogleDriveHandler with SyncFolderCache, SyncBackendFileTrioMixin {
     required String folderId,
     required String fileName,
     required File file,
-    void Function(double progress)? onProgress,
+    SyncTransferProgress? onProgress,
   }) async {
     final length = await file.length();
     final contentType = _guessContentType(fileName);
@@ -680,7 +692,8 @@ class GoogleDriveHandler with SyncFolderCache, SyncBackendFileTrioMixin {
       int bytesUploaded = 0;
       final stream = file.openRead().map((chunk) {
         bytesUploaded += chunk.length;
-        onProgress?.call(length > 0 ? bytesUploaded / length : 0);
+        onProgress?.call(
+            length > 0 ? bytesUploaded / length : 0, bytesUploaded);
         return chunk;
       });
       final media = drive.Media(stream, length, contentType: contentType);
@@ -722,7 +735,7 @@ class GoogleDriveHandler with SyncFolderCache, SyncBackendFileTrioMixin {
   Future<void> downloadContentFile({
     required String fileId,
     required File destination,
-    void Function(double progress)? onProgress,
+    SyncTransferProgress? onProgress,
   }) async {
     await _call((api) async {
       final metadata = await api.files.get(
@@ -746,6 +759,48 @@ class GoogleDriveHandler with SyncFolderCache, SyncBackendFileTrioMixin {
             debugPrint('[sync] failed to clean up temp file: $e'),
       );
     });
+  }
+
+  /// 文件字节数缓存（[openFileRange] 截区间用）。资产按 id 寻址、上传即新 id，
+  /// 同一 id 的大小不会变，缓存进程内即可。
+  final Map<String, int> _fileSizes = <String, int>{};
+
+  /// 按字节区间读 [fileId]（云盘视频流播：`files.get?alt=media` + `Range`）。
+  ///
+  /// 鉴权走同一个 [_call]：access token 过期时刷新后重试，`Authorization` 头只存在于
+  /// googleapis 客户端内部，不会交给播放内核、也不会进日志。
+  Future<SyncAssetRange> openFileRange(
+    String fileId, {
+    required int start,
+    int? end,
+  }) async {
+    final int total = _fileSizes[fileId] ??
+        await _call((api) async {
+          final metadata =
+              await api.files.get(fileId, $fields: 'size') as drive.File;
+          final int? size =
+              metadata.size == null ? null : int.tryParse(metadata.size!);
+          if (size == null) {
+            throw GoogleDriveError('No size for file $fileId');
+          }
+          return size;
+        });
+    _fileSizes[fileId] = total;
+    if (start >= total) throw SyncAssetRangeNotSatisfiable(total);
+    final int last = end == null || end >= total ? total - 1 : end;
+    final drive.Media media = await _call((api) async => await api.files.get(
+          fileId,
+          downloadOptions: drive.PartialDownloadOptions(
+            drive.ByteRange(start, last),
+          ),
+        ) as drive.Media);
+    return SyncAssetRange(
+      start: start,
+      end: last,
+      totalBytes: total,
+      contentType: media.contentType,
+      bytes: media.stream,
+    );
   }
 
   Future<SyncFileRef?> findContentFile(

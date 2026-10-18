@@ -12,16 +12,16 @@
 
 // galgame 一键制卡 C 阶段（docs/specs/galgame-mining）—— 引擎级 voice hook 的**进程间契约**。
 //
-// 部署红线：这套 injector + hook DLL 是**独立可选 helper 组件**，和 `hibiki.exe` 物理隔离、
+// 部署红线：这套 injector + hook DLL 是**独立可选 helper 组件**，和 `fushi.exe` 物理隔离、
 // 分离分发（`CreateRemoteThread`/`WriteProcessMemory` 注入必被杀软启发式报毒，编进本体会污
-// 染整个 app 的分发口碑）。Hibiki 主进程把 injector 当子进程拉起、通过下面这块共享内存消费
+// 染整个 app 的分发口碑）。Fushi 主进程把 injector 当子进程拉起、通过下面这块共享内存消费
 // 干净语音 PCM——被标记的注入代码只待在这个隔离组件里。
 //
 // 数据流（混音前的干净语音轨）：
 //   game.exe 内的 hook DLL：在 XAudio2/DirectSound 把语音送进混音**之前** memcpy 进环形缓冲
 //     → 只在音频回调里 memcpy + 更新 write_pos（零阻塞：写盘/编码/IPC 全部移出回调，爆音红线）
 //   共享内存：header + 紧随其后的 PCM 环形缓冲
-//   Hibiki host（经 injector）：读环形缓冲最近 N 毫秒 → 波形选区 → 制卡出口（复用 A 阶段流水线）
+//   Fushi host（经 injector）：读环形缓冲最近 N 毫秒 → 波形选区 → 制卡出口（复用 A 阶段流水线）
 namespace fushi_voice_hook {
 
 // 共享内存魔数 'HVH1'（小端）与当前契约版本。跨进程读到不匹配即拒绝，防旧/坏映射。
@@ -65,7 +65,7 @@ constexpr uint32_t kSharedMagic = 0x31485648;  // 'H''V''H''1'
 //     lookup_frame_applied_seq。host 只有看到该确认才能抓游戏窗口；发布成功不等于游戏渲染树
 //     已经干净，拿普通 dismiss 的 MethodChannel 返回值当屏障会稳定把 popup 拍进卡片图片。
 // v16：在头部最尾追加 injected WASAPI loopback 的 fail-closed 控制/确认。旧实现只门控
-//     Hibiki 宿主进程里的 loopback，却让游戏内 DLL 一加载就无条件创建另一个系统混音捕获线程；
+//     Fushi 宿主进程里的 loopback，却让游戏内 DLL 一加载就无条件创建另一个系统混音捕获线程；
 //     cleanOnly/resourceOnly 因而仍会录音。request_seq 最后发布请求，applied_seq 最后确认
 //     Stop/Release/线程退出；版本不匹配时 DLL 拒绝映射，旧 helper 不能绕过默认 deny。
 // v17：在头部最尾追加**本次注入所用 hook DLL 的 SHA-256**（`hook_module_sha256`）。
@@ -137,9 +137,12 @@ constexpr uint32_t kSharedMagic = 0x31485648;  // 'H''V''H''1'
 //     region 基址，新旧混装会整体错位而版本门本会放行）。
 // v24 appends the injected Siglus text ownership decision. DLL Ready is not
 // permission for the injector to race native text installation with Luna.
-constexpr uint32_t kSharedVersion = 24;
+// v25 appends the game-stream native input request/status plane. It is
+// deliberately independent from lookup_shield: remote confirm input targets the
+// game itself, not the lookup popup suppression contract.
+constexpr uint32_t kSharedVersion = 25;
 
-enum class SiglusTextOwner : uint32_t {
+enum class NativeTextOwner : uint32_t {
   kPending = 0,
   kNotApplicable = 1,
   kNativeOwned = 2,
@@ -246,6 +249,37 @@ inline constexpr uint32_t kLeafAquaplusSampledInputLeftButton = 0x1u;
 inline constexpr uint32_t kLeafAquaplusSampledInputRightButton = 0x2u;
 inline constexpr uint32_t kLeafAquaplusSampledInputMiddleButton = 0x4u;
 inline constexpr uint32_t kLeafAquaplusSampledInputButtonMask = 0x7u;
+
+// v25 game-stream native input backend. The host publishes a bounded held-button
+// mask for one exact game HWND; injected adapters may reflect that state only
+// inside their target process sampled-input return values. This plane must never
+// call global SendInput/SetCursorPos and must not reuse lookup_shield ownership.
+inline constexpr uint32_t kGameStreamInputRequestWriteInProgress = 0x80000000u;
+inline constexpr uint32_t kGameStreamInputRequestSequenceMask = 0x7fffffffu;
+inline constexpr uint32_t kGameStreamInputButtonLeft = 0x1u;
+// Engine-neutral remote gamepad actions (BUG-2726). The host publishes what the
+// remote player holds; each adapter maps an action to whatever its engine
+// actually samples (SGRE: the DirectInput keyboard key the engine binds to that
+// action). The layout of the request block is unchanged, so this stays v25: an
+// older injected DLL masks these bits off, reports them as not observed, and the
+// host fails closed with `native_input_not_observed` instead of guessing.
+inline constexpr uint32_t kGameStreamInputButtonDpadUp = 0x100u;
+inline constexpr uint32_t kGameStreamInputButtonDpadDown = 0x200u;
+inline constexpr uint32_t kGameStreamInputButtonDpadLeft = 0x400u;
+inline constexpr uint32_t kGameStreamInputButtonDpadRight = 0x800u;
+inline constexpr uint32_t kGameStreamInputButtonCancel = 0x1000u;
+inline constexpr uint32_t kGameStreamInputButtonShoulderLeft = 0x2000u;
+inline constexpr uint32_t kGameStreamInputButtonShoulderRight = 0x4000u;
+inline constexpr uint32_t kGameStreamInputButtonMenu = 0x8000u;
+inline constexpr uint32_t kGameStreamInputGamepadButtonMask = 0xff00u;
+inline constexpr uint32_t kGameStreamInputButtonMask =
+    kGameStreamInputButtonLeft | kGameStreamInputGamepadButtonMask;
+inline constexpr uint32_t kGameStreamInputStatusUnknown = 0u;
+inline constexpr uint32_t kGameStreamInputStatusApplied = 1u;
+inline constexpr uint32_t kGameStreamInputStatusRejectedTarget = 2u;
+inline constexpr uint32_t kGameStreamInputStatusExpired = 3u;
+inline constexpr uint32_t kGameStreamInputStatusUnsupported = 4u;
+inline constexpr uint64_t kGameStreamInputDefaultLeaseMs = 750u;
 // Cross-process completion notification sent by the injected Leaf detour after
 // every requested GetAsyncKeyState low bit has been observed and a later raw-0
 // sample proves the transaction tail is drained. WM_APP is fixed at 0x8000.
@@ -319,6 +353,32 @@ constexpr uint32_t kTextSourceSgre = 5;
 // smash/fzmedia (TYPE-MOON "smash" framework: Fate/stay night REMASTERED family)
 // exact text published by the native KAG text-layer layout hook.
 constexpr uint32_t kTextSourceSmashFzmedia = 6;
+// BGI/Ethornell exact text published by the native message SetTextImpl hook.
+constexpr uint32_t kTextSourceBgi = 7;
+// Artemis exact text: the fully revealed newest Layer::CreateGlyph run.
+constexpr uint32_t kTextSourceArtemis = 8;
+// YU-RIS exact text: the message line the engine's per-character text step
+// draws, read from its message state at the line's first character.
+constexpr uint32_t kTextSourceYuris = 9;
+// Kogado "Hy" exact text: the script page the message window's row renderer
+// shows, rows joined, speaker row removed.
+constexpr uint32_t kTextSourceKogadoHy = 11;
+// LucaSystem exact text: the Japanese record of the scenario VM's MESSAGE
+// opcode, role prefix and glossary markers removed.
+constexpr uint32_t kTextSourceLuca = 12;
+// Text source ids 13-14: reserved, unassigned. The Malie adapter took 15 while
+// other engine adapters were in flight; no branch in this repository uses
+// 13-14 (checked 2026-10-03 across all local refs). The host maps unknown kinds
+// to the generic 'hook:' lane, so a new kind must be registered here AND in
+// GalHookedLine.textThreadKey/textThreadLabel (fushi/lib/src/mining/
+// galgame_audio_source.dart) in the same change; register the number here
+// first.
+// Malie exact text: the click unit the message window's segment parser hands
+// to the RICHTEXT3D reveal (voice tag and ruby removed).
+constexpr uint32_t kTextSourceMalie = 15;
+// FVP (Favorite View Point) exact text published by the native TextPrint
+// (text object Print) hook.
+constexpr uint32_t kTextSourceFvp = 10;
 constexpr uint32_t kTextEventLine = 0;
 constexpr uint32_t kTextEventThreadDiscovered = 1;
 // Some Luna engine hooks expose scenario text and system controls from the
@@ -351,6 +411,7 @@ constexpr uint32_t kDiagSiglusExactTextHookReady = 0x00004000u;
 constexpr uint32_t kDiagSiglusExactTextObserved = 0x00008000u;
 constexpr uint32_t kDiagFfmpegResourceHooksReady = 0x00010000u;
 constexpr uint32_t kDiagFfmpegResourceCaptured = 0x00020000u;
+// VisualArts 语音归档（Siglus OVK / RealLive NWK）在身份认定后真被打开：宿主据此切 gameResource。
 constexpr uint32_t kDiagVisualArtsOvkHooksReady = 0x00040000u;
 constexpr uint32_t kDiagVisualArtsOvkCaptured = 0x00080000u;
 constexpr uint32_t kDiagKirikiriVorbisOpenHookReady = 0x00100000u;
@@ -542,7 +603,7 @@ constexpr uint32_t kXAudioDiag2KirikiriLookupBootstrapFired = 0x01000000u;     /
 constexpr uint32_t kXAudioDiag2KirikiriLookupBootstrapFaulted = 0x02000000u;   // TVPExecuteScript 抛了（SEH 拦下）
 // bootstrap 脚本跑完之后，TJS 侧那个 System.addContinuousHandler 回调每帧都在前置条件
 // `typeof global.kag == "Object" && typeof global.kag.addHook == "Object"` 上静默 return，
-// 症状与「脚本没跑」完全同形（都是 fushiLookupNotify 不存在、控制台无 [HibikiLookup] 行）。
+// 症状与「脚本没跑」完全同形（都是 fushiLookupNotify 不存在、控制台无 [FushiLookup] 行）。
 // 这三位把前置条件拆开量：脚本活着吗 / kag 出来了吗 / 这个 KAG 分支有 addHook 吗。
 constexpr uint32_t kXAudioDiag2KirikiriLookupTjsBootstrapFnAlive = 0x04000000u;  // global.fushiLookupBootstrap 仍在
 constexpr uint32_t kXAudioDiag2KirikiriLookupKagObjectReady = 0x08000000u;       // global.kag 是对象
@@ -575,10 +636,16 @@ inline constexpr bool HasReadyGameResourceAudio(uint32_t reserved_luna,
                                                 uint32_t hook_diagnostics,
                                                 uint32_t reserved_hook_diagnostics = 0,
                                                 uint32_t xaudio_diagnostics = 0) {
-  const uint32_t unity_required = kDiagUnityIl2CppHooksReady |
-                                  kDiagUnityResourceExtractorReady;
+  // Unity 资源语音链：injector 侧抽取器就绪，且游戏内一侧的 AudioClip 播放入口已挂——
+  // IL2CPP 置 kDiagUnityIl2CppHooksReady；Mono（MonoBleedingEdge / 5.x mono.dll）
+  // 没有 IL2CPP 那组位，只在有语音资源证据（本会话打开过 *voice*.bundle 或框架的
+  // voiceover 入口）时于次诊断字置 kDiagUnityAudioPlaybackHookReady（IL2CPP 同样会置）。
+  const bool unity_hooks_ready =
+      (hook_diagnostics & kDiagUnityIl2CppHooksReady) != 0 ||
+      (reserved_hook_diagnostics & kDiagUnityAudioPlaybackHookReady) != 0;
   const bool unity_ready =
-      (hook_diagnostics & unity_required) == unity_required;
+      unity_hooks_ready &&
+      (hook_diagnostics & kDiagUnityResourceExtractorReady) != 0;
   return (reserved_luna & kDiagKirikiriVoiceStreamHookReady) != 0 ||
          (reserved_luna & kDiagSiglusOvkHooksReady) != 0 ||
          (hook_diagnostics & kDiagFfmpegResourceHooksReady) != 0 ||
@@ -699,7 +766,7 @@ struct LoopbackMarker {
 
 // ══ v14 游戏内查词区 ════════════════════════════════════════════════════
 // KiriKiri/KAGEX 在**游戏渲染树内部**显示词典卡片。注入侧只做几何传感、
-// 位图落地和输入转发；分词、查词、排版、卡片像素全部由 host（Hibiki 既有
+// 位图落地和输入转发；分词、查词、排版、卡片像素全部由 host（Fushi 既有
 // popup.html + WebView2 离屏合成）负责。跨进程边界上因此只有一块位图和一串整数。
 //
 // 三条通道各自单写单读，无锁：
@@ -842,6 +909,39 @@ constexpr uint32_t kLookupGeometryProviderIdHunexGge = 14u;
 // smash/fzmedia KAG text-layer exact layout provider (append-only id).
 constexpr uint32_t kLookupGeometryProviderIdSmashFzmedia = 15u;
 constexpr uint32_t kLookupGeometryProviderIdCmvs = 16u;
+// Artemis Engine glyph-node exact layout provider (append-only id).
+constexpr uint32_t kLookupGeometryProviderIdArtemis = 17u;
+// RealLive text-surface exact layout provider (append-only id).
+constexpr uint32_t kLookupGeometryProviderIdReallive = 18u;
+// CatSystem2 message-page exact layout provider (append-only id).
+constexpr uint32_t kLookupGeometryProviderIdCatSystem2 = 19u;
+// Unity (Mono) per-glyph TextMesh message framework exact layout provider
+// (append-only id).
+constexpr uint32_t kLookupGeometryProviderIdUnityMono = 20u;
+// BGI/Ethornell message-page exact layout provider (append-only id).
+constexpr uint32_t kLookupGeometryProviderIdBgi = 21u;
+// YU-RIS message-layer exact layout provider (append-only id).
+constexpr uint32_t kLookupGeometryProviderIdYuris = 22u;
+// Kogado "Hy" message-window row layout provider (append-only id).
+constexpr uint32_t kLookupGeometryProviderIdKogadoHy = 24u;
+// LucaSystem message-window (cText glyph record) exact layout provider
+// (append-only id).
+constexpr uint32_t kLookupGeometryProviderIdLuca = 25u;
+// Provider ids 26-27: reserved, unassigned. The Malie adapter took 28 while
+// other engine adapters were in flight; no branch in this repository uses
+// 26-27 (checked 2026-10-04 across all local refs and upstream/develop).
+// Every production pair is whitelisted in three places that must change
+// together: IsProductionProviderPair
+// (fushi/windows/runner/lookup_hit_validation.h),
+// isGalLookupProductionProviderPair (fushi/lib/src/platform/
+// gal_hook_text_overlay_channel.dart) and its contract test
+// (fushi/test/lookup/gal_ingame_lookup_contract_test.dart, which pins 26-27 as
+// rejected). Register a new id here first.
+// Malie RICHTEXT3D message exact layout provider (append-only id).
+constexpr uint32_t kLookupGeometryProviderIdMalie = 28u;
+// FVP (Favorite View Point) text-buffer print exact layout provider
+// (append-only id).
+constexpr uint32_t kLookupGeometryProviderIdFvp = 23u;
 
 constexpr uint32_t kLookupGeometryStatusUnavailable = 0u;
 constexpr uint32_t kLookupGeometryStatusReady = 1u;
@@ -1167,7 +1267,7 @@ struct SharedHeader {
   uint32_t clip_region_offset;      // clip 索引起始
   volatile uint64_t text_write_count;  // 单调：已写文本事件数（host 取 last..count 的新事件）
   volatile uint64_t clip_write_count;  // 单调：已写语音 clip 数
-  // 0=尚未选定（v12 起文本环恒空）；非 0=用户在 Hibiki 选择的 TextSlot::thread_id。
+  // 0=尚未选定（v12 起文本环恒空）；非 0=用户在 Fushi 选择的 TextSlot::thread_id。
   // injector 无条件过滤重复伪影，再仅写该线程/同一 hook face。
   volatile uint64_t selected_text_thread_id;
   // LunaHook（引擎精确）出干净行后 injector 置 1；置 1 后游戏内 GDI 文本 hook 让位不再写文本，
@@ -1328,7 +1428,20 @@ struct SharedHeader {
   volatile uint32_t adapter_report_seq;    // 单调；0 = 从未上报过（≠"没有 adapter"）
   // v24, hook worker -> injector, single writer. Initialize before Ready;
   // Pending may become one terminal value and never return to Pending.
-  volatile uint32_t siglus_text_owner;
+  volatile uint32_t native_text_owner;
+  // ── v25 game-stream native input（host→hook request；hook→host ack）───────
+  // request_seq 的最高位是写令牌。payload 只描述目标 HWND 和当前 held button mask，
+  // 不携带屏幕坐标，也不允许注入侧改变桌面全局输入状态。deadline_tick_ms 使用
+  // GetTickCount64 同一台机器的单调毫秒，失联/失焦时 hook fail-closed 不再 OR synthetic state。
+  volatile uint32_t game_stream_input_request_seq;
+  volatile uint32_t game_stream_input_status_seq;
+  volatile uint64_t game_stream_input_target_hwnd;
+  volatile uint64_t game_stream_input_transaction_id;
+  volatile uint64_t game_stream_input_deadline_tick_ms;
+  volatile uint32_t game_stream_input_active_buttons;
+  volatile uint32_t game_stream_input_status;
+  volatile uint32_t game_stream_input_observed_buttons;
+  volatile uint32_t game_stream_input_applied_seq;
 };
 #pragma pack(pop)
 
@@ -1373,6 +1486,15 @@ struct LookupShieldStatusPublication {
   uint32_t observed_mask = 0;
   uint32_t fault_mask = 0;
   uint32_t status_flags = 0;
+};
+
+struct GameStreamInputRequestSnapshot {
+  uint32_t seq = 0;
+  uint64_t target_hwnd = 0;
+  uint64_t transaction_id = 0;
+  uint64_t deadline_tick_ms = 0;
+  uint32_t active_buttons = 0;
+  bool valid = false;
 };
 
 struct NativeLoopbackRequestSnapshot {
@@ -1699,6 +1821,141 @@ inline bool PublishLookupShieldStatus(
   return LookupShieldRequestMatches(header, request);
 }
 
+inline GameStreamInputRequestSnapshot ReadGameStreamInputRequest(
+    const SharedHeader* header) {
+  GameStreamInputRequestSnapshot result;
+  if (header == nullptr) return result;
+  for (int attempt = 0; attempt < 8; ++attempt) {
+    const uint32_t before =
+        AtomicLoadShared32(&header->game_stream_input_request_seq);
+    if (before == 0 ||
+        (before & kGameStreamInputRequestWriteInProgress) != 0) {
+      continue;
+    }
+    result.target_hwnd =
+        AtomicLoadPreview64(&header->game_stream_input_target_hwnd);
+    result.transaction_id =
+        AtomicLoadPreview64(&header->game_stream_input_transaction_id);
+    result.deadline_tick_ms =
+        AtomicLoadPreview64(&header->game_stream_input_deadline_tick_ms);
+    result.active_buttons =
+        AtomicLoadShared32(&header->game_stream_input_active_buttons) &
+        kGameStreamInputButtonMask;
+    MemoryBarrier();
+    const uint32_t after =
+        AtomicLoadShared32(&header->game_stream_input_request_seq);
+    if (before == after &&
+        (after & kGameStreamInputRequestWriteInProgress) == 0) {
+      result.seq = after;
+      result.valid = true;
+      return result;
+    }
+  }
+  return GameStreamInputRequestSnapshot{};
+}
+
+inline bool GameStreamInputRequestMatches(
+    const SharedHeader* header,
+    const GameStreamInputRequestSnapshot& expected) {
+  const GameStreamInputRequestSnapshot current =
+      ReadGameStreamInputRequest(header);
+  return expected.valid && current.valid && current.seq == expected.seq &&
+         current.target_hwnd == expected.target_hwnd &&
+         current.transaction_id == expected.transaction_id &&
+         current.deadline_tick_ms == expected.deadline_tick_ms &&
+         current.active_buttons == expected.active_buttons;
+}
+
+inline uint32_t PublishGameStreamInputRequest(
+    SharedHeader* header, uint64_t target_hwnd, uint64_t transaction_id,
+    uint32_t active_buttons, uint64_t deadline_tick_ms) {
+  if (header == nullptr || target_hwnd == 0 || deadline_tick_ms == 0) {
+    return 0;
+  }
+  const uint32_t normalized_buttons =
+      active_buttons & kGameStreamInputButtonMask;
+  const GameStreamInputRequestSnapshot stable =
+      ReadGameStreamInputRequest(header);
+  if (stable.valid && stable.target_hwnd == target_hwnd &&
+      stable.transaction_id == transaction_id &&
+      stable.deadline_tick_ms == deadline_tick_ms &&
+      stable.active_buttons == normalized_buttons) {
+    return stable.seq;
+  }
+
+  auto* seq = reinterpret_cast<volatile LONG*>(
+      &header->game_stream_input_request_seq);
+  uint32_t current = 0;
+  bool claimed = false;
+  const ULONGLONG claim_deadline = GetTickCount64() + 1000;
+  do {
+    current = AtomicLoadShared32(&header->game_stream_input_request_seq);
+    if ((current & kGameStreamInputRequestWriteInProgress) != 0) {
+      SwitchToThread();
+      continue;
+    }
+    const uint32_t token = current | kGameStreamInputRequestWriteInProgress;
+    const LONG observed = InterlockedCompareExchange(
+        seq, static_cast<LONG>(token), static_cast<LONG>(current));
+    if (static_cast<uint32_t>(observed) == current) {
+      claimed = true;
+      break;
+    }
+  } while (GetTickCount64() < claim_deadline);
+  if (!claimed) return 0;
+
+  AtomicStorePreview64(&header->game_stream_input_target_hwnd, target_hwnd);
+  AtomicStorePreview64(&header->game_stream_input_transaction_id,
+                       transaction_id);
+  AtomicStorePreview64(&header->game_stream_input_deadline_tick_ms,
+                       deadline_tick_ms);
+  AtomicStoreShared32(&header->game_stream_input_active_buttons,
+                      normalized_buttons);
+  uint32_t published =
+      (current & kGameStreamInputRequestSequenceMask) + 1u;
+  published &= kGameStreamInputRequestSequenceMask;
+  if (published == 0) published = 1;
+  AtomicStoreShared32(&header->game_stream_input_request_seq, published);
+  return published;
+}
+
+inline bool PublishGameStreamInputStatus(
+    SharedHeader* header, const GameStreamInputRequestSnapshot& request,
+    uint32_t status, uint32_t observed_buttons) {
+  if (header == nullptr || !GameStreamInputRequestMatches(header, request)) {
+    return false;
+  }
+  auto* status_seq = reinterpret_cast<volatile LONG*>(
+      &header->game_stream_input_status_seq);
+  const uint32_t current =
+      AtomicLoadShared32(&header->game_stream_input_status_seq);
+  if ((current & kGameStreamInputRequestWriteInProgress) != 0) {
+    return false;
+  }
+  const uint32_t token = current | kGameStreamInputRequestWriteInProgress;
+  const LONG observed_token = InterlockedCompareExchange(
+      status_seq, static_cast<LONG>(token), static_cast<LONG>(current));
+  if (static_cast<uint32_t>(observed_token) != current) {
+    return false;
+  }
+  if (!GameStreamInputRequestMatches(header, request)) {
+    AtomicStoreShared32(&header->game_stream_input_status_seq, current);
+    return false;
+  }
+  AtomicStoreShared32(&header->game_stream_input_status, status);
+  AtomicStoreShared32(&header->game_stream_input_observed_buttons,
+                      observed_buttons & kGameStreamInputButtonMask);
+  // Once payload changes, always publish a new status generation, even if a
+  // newer request arrived during these writes. Its reader rejects this older
+  // applied_seq; restoring the old generation would expose a torn old ACK.
+  AtomicStoreShared32(&header->game_stream_input_applied_seq, request.seq);
+  uint32_t published = (current & kGameStreamInputRequestSequenceMask) + 1u;
+  published &= kGameStreamInputRequestSequenceMask;
+  if (published == 0) published = 1;
+  AtomicStoreShared32(&header->game_stream_input_status_seq, published);
+  return GameStreamInputRequestMatches(header, request);
+}
+
 // v19 查词准入：hook 侧发布。payload 先落，seq 最后发布——读侧看到新 seq 就保证
 // admission/sha256 已经写完。写者唯一（registry 汇总点），所以不需要写令牌。
 //
@@ -1936,6 +2193,28 @@ inline uint32_t ReadAdapterReports(const SharedHeader* header,
     return static_cast<uint32_t>(take);
   }
   return 0u;
+}
+
+// 引擎身份查询：本会话里是否有 id 为 `adapter_id` 的 adapter 报告 probe() 成立。
+// 这是 host 侧按**引擎识别结果**（而不是 exe 哈希 / 文件名）切换行为的唯一入口：
+// adapter 的 probe() 本身就是结构判据，这里只读它发布的结论。seq==0（hook 还没上报）
+// 与「上报了但没有该引擎」同样返回 false——调用方需要的是「已确认是该引擎」，
+// 还不知道时保持默认行为。读取是有界的（最多 kAdapterReportSlots 槽、栈上拷贝）。
+inline bool AdapterReportsClaimEngine(const SharedHeader* header,
+                                      const char* adapter_id) {
+  if (header == nullptr || adapter_id == nullptr || adapter_id[0] == 0) {
+    return false;
+  }
+  AdapterReportSlot slots[kAdapterReportSlots] = {};
+  const uint32_t count =
+      ReadAdapterReports(header, slots, kAdapterReportSlots);
+  for (uint32_t i = 0; i < count; ++i) {
+    if (slots[i].applicable != 0u &&
+        std::strncmp(slots[i].id, adapter_id, kAdapterReportIdChars) == 0) {
+      return true;
+    }
+  }
+  return false;
 }
 
 inline NativeLoopbackRequestSnapshot ReadNativeLoopbackRequest(
@@ -2527,8 +2806,10 @@ inline bool IsLookupFrameSane(const SharedHeader* header,
 }
 
 static_assert(sizeof(SharedHeader) % 8 == 0, "SharedHeader must stay 8-aligned");
-static_assert(offsetof(SharedHeader, siglus_text_owner) % 4 == 0,
-              "Siglus ownership must support aligned Interlocked access");
+static_assert(offsetof(SharedHeader, native_text_owner) % 4 == 0,
+              "Native text ownership must support aligned Interlocked access");
+static_assert(offsetof(SharedHeader, game_stream_input_request_seq) % 4 == 0,
+              "Game-stream input seq must support aligned Interlocked access");
 static_assert(sizeof(LookupHitSlot) % 8 == 0, "LookupHitSlot must stay 8-aligned");
 static_assert(sizeof(LookupFrame) % 8 == 0, "LookupFrame must stay 8-aligned");
 static_assert(sizeof(LookupInputSlot) % 8 == 0,
@@ -2552,28 +2833,14 @@ static_assert(sizeof(LoopbackMarker) % 8 == 0, "LoopbackMarker must stay 8-align
 // injector 创建、hook DLL 打开：共享内存 + 「就绪」事件（DLL 装好后 SetEvent，injector 据此
 // 确认注入成功并读回格式）。
 //
-// Fushi 改名后的 host 使用 FushiVoiceHook；旧 Hibiki host 仍只会打开 HibikiVoiceHook。
-// helper/DLL 可能被部署到旧安装中做兼容修复，因此两侧都按实际组件文件名选同一命名空间，
-// 而不是让新版默认名静默破坏旧 host。严格只认完整 basename，避免任意路径子串误判。
-inline bool ComponentUsesLegacyHibikiIpc(const std::wstring& component_path) {
-  const size_t slash = component_path.find_last_of(L"\\/");
-  const wchar_t* basename = slash == std::wstring::npos
-                                ? component_path.c_str()
-                                : component_path.c_str() + slash + 1;
-  return _wcsicmp(basename, L"hibiki_voice_injector.exe") == 0 ||
-         _wcsicmp(basename, L"hibiki_voice_hook.dll") == 0;
+// injector 与 hook DLL 同一次构建产出、同目录随 fushi.exe 落地（BUG-1449，运行期不下载
+// helper），两侧永远同版本，所以只有一套名字。改名前 Hibiki 的 `HibikiVoiceHook*` 命名空间
+// 只在旧 Hibiki 安装自带的 hibiki_voice_* 组件里存在，本源码不再产出那组文件。
+inline std::wstring SharedMemoryName(DWORD target_pid) {
+  return std::wstring(L"Local\\FushiVoiceHook_") + std::to_wstring(target_pid);
 }
-
-inline std::wstring SharedMemoryName(DWORD target_pid,
-                                     bool legacy_hibiki = false) {
-  return std::wstring(legacy_hibiki ? L"Local\\HibikiVoiceHook_"
-                                    : L"Local\\FushiVoiceHook_") +
-         std::to_wstring(target_pid);
-}
-inline std::wstring ReadyEventName(DWORD target_pid,
-                                   bool legacy_hibiki = false) {
-  return std::wstring(legacy_hibiki ? L"Local\\HibikiVoiceHookReady_"
-                                    : L"Local\\FushiVoiceHookReady_") +
+inline std::wstring ReadyEventName(DWORD target_pid) {
+  return std::wstring(L"Local\\FushiVoiceHookReady_") +
          std::to_wstring(target_pid);
 }
 

@@ -126,8 +126,12 @@ class UpdateFeedService implements UpdateFeedPublisher {
   ///
   /// **不申请权限，只查询**：这里跑在 HomePage 就绪那一帧，用户没做任何动作。
   /// 权限申请只在 [enableSystemNotifications]（BUG-2498）。
-  Future<void> warmUpNotifier() async {
-    if (!systemNotificationsEnabled) return;
+  ///
+  /// [otherConsumers]：同一个通知后端还有别的消费方开着系统通知（反馈回复提醒）。
+  /// 那时即便更新提醒的总开关关着也要初始化——点击回调只有这一个，不挂上，点反馈
+  /// 通知冷启动的那次点击就丢了。
+  Future<void> warmUpNotifier({bool otherConsumers = false}) async {
+    if (!systemNotificationsEnabled && !otherConsumers) return;
     _notifierReady ??= await _notifier.ensureReady();
     if (_notifierReady != true) return;
     // 冷启动点击只在这里回放：别的 ensureReady 入口（发通知、打开开关）都可能
@@ -280,6 +284,10 @@ class UpdateFeedService implements UpdateFeedPublisher {
         limit: limit,
       );
 
+  /// 按主键取一条（不存在 = null）。
+  Future<UpdateFeedEntryRow?> entry(String entryId) =>
+      _db.getUpdateFeedEntry(entryId);
+
   Future<void> markSeen(Iterable<String> entryIds) => _db
       .markUpdateFeedEntriesSeen(entryIds, seenAt: _now().millisecondsSinceEpoch);
 
@@ -290,6 +298,22 @@ class UpdateFeedService implements UpdateFeedPublisher {
       kind: kind?.dbValue,
       seenAt: _now().millisecondsSinceEpoch,
     );
+    await _cancelNotifications(kind);
+  }
+
+  /// 清空更新记录（含未读）；[kind] 非空时只清该域，并撤掉该域挂着的系统通知
+  /// ——条目都没了，通知栏那条点进去也落不到任何东西。
+  ///
+  /// 删掉的只是「记录」：仍然成立的事件（例如还没装的最新 app 版本）会在该域
+  /// 下一轮检查时重新投递，这是对的——它确实还在等用户处理。返回删除条数。
+  Future<int> clear({UpdateFeedKind? kind}) async {
+    final int removed = await _db.clearUpdateFeedEntries(kind: kind?.dbValue);
+    await _cancelNotifications(kind);
+    return removed;
+  }
+
+  /// 撤系统通知；[kind] 为 null = 全部域。
+  Future<void> _cancelNotifications(UpdateFeedKind? kind) async {
     final List<UpdateFeedKind> kinds =
         kind == null ? UpdateFeedKind.values : <UpdateFeedKind>[kind];
     for (final UpdateFeedKind k in kinds) {
@@ -320,6 +344,7 @@ const Map<UpdateFeedKind, int> kUpdateNotificationBaseIds =
   UpdateFeedKind.mangaChapter: 9102,
   UpdateFeedKind.mangaExtension: 9103,
   UpdateFeedKind.appRelease: 9104,
+  UpdateFeedKind.animeExtension: 9105,
 };
 
 /// 通知 id：无组 = 域固定 id；有组 = 域序号占高 4 位 + 组名 FNV-1a 哈希占低

@@ -1,8 +1,9 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/manga/manga_global_search_page.dart';
@@ -60,7 +61,7 @@ void main() {
   late MihonManager manager;
 
   setUp(() async {
-    root = await Directory.systemTemp.createTemp('hibiki-mihon-browse-');
+    root = await Directory.systemTemp.createTemp('fushi-mihon-browse-');
     database = FushiDatabase.forTesting(NativeDatabase.memory());
     runtime = _BrowseRuntime();
 
@@ -237,7 +238,6 @@ void main() {
           home: MangaGlobalSearchPage(
             mihonManager: manager,
             mihonSources: manager.sources,
-            aidokuPackages: const [],
             initialQuery: 'fixture',
           ),
         ),
@@ -323,13 +323,62 @@ void main() {
     await tester.pump();
     expect(find.text('Raw Otaku fixture'), findsOneWidget);
 
-    await tester.tap(find.byIcon(Icons.add_circle_outline));
+    // M3E：「加载更多」改成 filledTonal 图标按钮（FushiIcons.add），按它的稳定
+    // key 定位，不绑定具体图标码点。
+    final Finder loadMore = find.byKey(
+      const ValueKey<String>('mihon_browse_more'),
+    );
+    await tester.tap(loadMore);
     await tester.pump();
     await tester.pump();
 
     expect(find.text('Raw Otaku fixture'), findsOneWidget);
-    expect(find.byIcon(Icons.add_circle_outline), findsNothing);
+    expect(loadMore, findsNothing);
   });
+
+  testWidgets(
+    'open on website joins the source baseUrl with the manga url when the '
+    'runtime cannot ask the extension',
+    (WidgetTester tester) async {
+      // 运行时是纯 Fake（没有 MihonWebUrlRuntime 能力）→ 走 baseUrl + url 兜底。
+      await database.replaceMangaOnlineSources(
+        'org.example.fixture',
+        <MangaOnlineSourcesCompanion>[
+          MangaOnlineSourcesCompanion.insert(
+            extensionPackage: 'org.example.fixture',
+            sourceId: '9223372036854775807',
+            name: 'Raw Otaku',
+            language: 'en',
+            baseUrl: const Value('https://fixture.invalid'),
+          ),
+        ],
+      );
+      await manager.reload();
+      final List<Uri> launched = <Uri>[];
+      await tester.pumpWidget(
+        MaterialApp(
+          home: MihonMangaDetailPage(
+            manager: manager,
+            sourceContext: await manager.contextForSource(
+              manager.sources.single,
+            ),
+            manga: _BrowseRuntime.manga,
+            openExternal: (Uri url) async => launched.add(url),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      // M3E 详情骨架：「在网站打开」在 hero 的「⋯」菜单里。
+      await tester.tap(find.byKey(const ValueKey<String>('online_work_more')));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey<String>('manga_series_open_website')),
+      );
+      await tester.pumpAndSettle();
+      expect(launched, <Uri>[Uri.parse('https://fixture.invalid/manga/fixture')]);
+      expect(tester.takeException(), isNull);
+    },
+  );
 }
 
 class _BrowseRuntime extends Fake

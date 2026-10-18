@@ -184,7 +184,7 @@ bool _isUpdateTempFileName(String name) {
 /// 纯函数（TODO-1010 / TODO-1149）：给定 updates 目录条目列表，挑出**应删除的旧完整
 /// 安装包**与**过期的 `.staging` 下载暂存根目录**。
 ///
-/// 根因：下载完成的安装包（`Hibiki-x.y.z-setup.exe` / `.apk` / `.AppImage` …）落在
+/// 根因：下载完成的安装包（`fushi-x.y.z-windows-setup.exe` / `.apk` / `.AppImage` …）落在
 /// updates 目录后，旧版历史只清临时文件（`.part`/`.meta.json`/`.owner.json`），完整
 /// 产物**从不回收**，每升级一版就多堆一个几十~几百 MB 的包（TODO-1010）；同理下载
 /// promote（[_promoteCompleteDownload]）只删内层 `{id}` 子目录、留下的空
@@ -422,6 +422,26 @@ Future<File> downloadUpdateAsset({
   final Future<File>? activeDownload = _activeUpdateDownloads[activeKey];
   if (activeDownload != null) return activeDownload;
 
+  // BUG-2714：切到后台时 Android 会杀进程，自动更新下到一半就断。下载期间挂
+  // 保活前台服务（与互联下载等其它来源经同一个 hub 汇总，互不撤对方的保活）。
+  final DownloadKeepAlive keepAlive =
+      downloadKeepAliveHub.lease('update:$activeKey');
+  final String keepAliveTitle =
+      t.update_download_notification_title(version: version);
+  unawaited(keepAlive.update(
+    title: keepAliveTitle,
+    text: t.download_task_status_downloading,
+  ));
+  void reportProgress(double value) {
+    onProgress?.call(value);
+    final int percent = (value.clamp(0.0, 1.0) * 100).floor();
+    unawaited(keepAlive.update(
+      title: keepAliveTitle,
+      text: '${t.download_task_status_downloading} · $percent%',
+      percent: percent,
+    ));
+  }
+
   final Future<File> download = _downloadUpdateAssetUncoalesced(
     asset: asset,
     version: version,
@@ -431,7 +451,7 @@ Future<File> downloadUpdateAsset({
     connectionCount: connectionCount,
     minSegmentBytes: minSegmentBytes,
     pinnedCandidateUrl: pinnedCandidateUrl,
-    onProgress: onProgress,
+    onProgress: reportProgress,
     onDiagnostics: onDiagnostics,
     onSourceFailure: onSourceFailure,
     cancellation: cancellation,
@@ -440,6 +460,7 @@ Future<File> downloadUpdateAsset({
   try {
     return await download;
   } finally {
+    unawaited(keepAlive.stop());
     if (identical(_activeUpdateDownloads[activeKey], download)) {
       _activeUpdateDownloads.remove(activeKey);
     }

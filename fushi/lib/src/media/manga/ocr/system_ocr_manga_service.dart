@@ -10,7 +10,9 @@ library;
 import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
+import 'dart:ui' show Rect;
 
+import 'package:image/image.dart' as img;
 import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/media/manga/manga_json_writeback.dart';
@@ -18,23 +20,39 @@ import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 import 'package:fushi/src/media/manga/ocr/google_lens_ocr_service.dart'
     show GoogleLensPageCache;
 import 'package:fushi_engine/ocr/manga_ocr_folder_job.dart';
+import 'package:fushi_engine/ocr/manga_ocr_pipeline.dart'
+    show MangaOcrPageScheduler;
 import 'package:fushi_engine/ocr/manga_ocr_service.dart';
+import 'package:fushi_engine/ocr/ocr_page_tiling.dart';
+import 'package:fushi_engine/ocr/ocr_types.dart';
 import 'package:fushi/src/ocr/system_ocr_channel.dart';
 
 /// 单页识别超时。系统识别器正常是几百毫秒级，30 秒只用来兜住「彻底卡住」。
 const Duration kSystemOcrPageTimeout = Duration(seconds: 30);
 
 /// 缓存目录名前缀。带语言后缀，换语言不复用旧结果。
-String systemOcrEngineSignature(String language) => 'system_ocr_$language';
+///
+/// `v2`：切片识别 + 跨片合并（BUG-2767）。Apple 上旧结果只认出一成不到的字，
+/// 签名不换的话，已经跑过的卷会一直命中那份缓存、永远拿不到新结果。
+String systemOcrEngineSignature(String language) => 'system_ocr_v2_$language';
 
 /// 系统 OCR 的整卷 runner。接口与 Lens 那条对齐，因此能直接接进
 /// `manga_ocr_job_stream.dart` 的引擎分发。
 abstract interface class SystemOcrMangaRunner {
+  /// [focus]：运行中跟着读者当前页改道（[MangaOcrPageScheduler]）。
   Stream<MangaOcrVolumeEvent> ocrFolder({
     required String imageDirPath,
     String? volumeTitle,
     int startPage,
     bool onlyMissing,
+    required String language,
+    MangaOcrPageFocus? focus,
+  });
+
+  /// 识别一张已取到的页图（在线直读章的逐页识别用；不读写任何缓存）。
+  Future<MokuroImage> recognizePageBytes(
+    Uint8List bytes, {
+    required String relativeUrl,
     required String language,
   });
 
@@ -58,6 +76,7 @@ class SystemOcrMangaService implements SystemOcrMangaRunner {
     int startPage = 0,
     bool onlyMissing = true,
     required String language,
+    MangaOcrPageFocus? focus,
   }) {
     late final StreamController<MangaOcrVolumeEvent> controller;
     bool cancelled = false;
@@ -70,12 +89,14 @@ class SystemOcrMangaService implements SystemOcrMangaRunner {
               startPage: startPage,
               onlyMissing: onlyMissing,
               language: language,
+              focus: focus,
               isCancelled: () => cancelled || controller.isClosed,
-              onProgress: (int done, int total) {
+              onProgress: (int done, int total, int pageIndex) {
                 if (!controller.isClosed) {
                   controller.add(MangaOcrVolumeEvent.page(
                     pagesDone: done,
                     pagesTotal: total,
+                    pageIndex: pageIndex,
                   ));
                 }
               },
@@ -109,8 +130,9 @@ class SystemOcrMangaService implements SystemOcrMangaRunner {
     required int startPage,
     required bool onlyMissing,
     required String language,
+    required MangaOcrPageFocus? focus,
     required bool Function() isCancelled,
-    required void Function(int done, int total) onProgress,
+    required void Function(int done, int total, int pageIndex) onProgress,
   }) async {
     final List<MangaOcrPageFile> pages =
         enumerateMangaPages(Directory(imageDirPath));
@@ -128,16 +150,17 @@ class SystemOcrMangaService implements SystemOcrMangaRunner {
     await cache.writeManifest(pages);
 
     // 当前页优先，扫到末页后绕回开头补齐。用户点的那一页最先出结果——这条
-    // 顺序正是「点一下就查词」能成立的前提。
-    final int start = startPage.clamp(0, pages.length - 1);
-    final List<int> order = <int>[
-      for (int index = start; index < pages.length; index++) index,
-      for (int index = 0; index < start; index++) index,
-    ];
+    // 顺序正是「点一下就查词」能成立的前提；读者翻页后跟着读者改道（[focus]）。
+    final MangaOcrPageScheduler scheduler =
+        MangaOcrPageScheduler(pages.length, startPage);
 
     final Map<int, MokuroImage> results = <int, MokuroImage>{};
     int done = 0;
-    for (final int pageIndex in order) {
+    while (true) {
+      final int? focused = focus?.take();
+      if (focused != null) scheduler.focus(focused);
+      final int? pageIndex = scheduler.next();
+      if (pageIndex == null) break;
       if (isCancelled()) {
         break;
       }
@@ -157,7 +180,7 @@ class SystemOcrMangaService implements SystemOcrMangaRunner {
       // 累计写入能到 GB 级。Lens 那条链同样只在最后写一次。
       await cache.write(pageIndex, page, image);
       done++;
-      onProgress(done, pages.length);
+      onProgress(done, pages.length, pageIndex);
     }
 
     return _writePayload(imageDirPath, pages, results, language);
@@ -166,15 +189,35 @@ class SystemOcrMangaService implements SystemOcrMangaRunner {
   Future<MokuroImage> _recognizePage(
     MangaOcrPageFile page,
     String language,
-  ) async {
-    final Uint8List bytes = await page.file.readAsBytes();
+  ) async =>
+      recognizePageBytes(
+        await page.file.readAsBytes(),
+        relativeUrl: page.relativeUrl,
+        language: language,
+      );
+
+  @override
+  Future<MokuroImage> recognizePageBytes(
+    Uint8List bytes, {
+    required String relativeUrl,
+    required String language,
+  }) async {
+    final List<OcrRect> tiles = planSystemOcrTiles(bytes);
     // 单页超时放在这里而不是各平台原生侧：一处约束胜过四份各写一遍的实现，
     // 而且原生侧加超时要处理「回调已经发过一次」的双重回复风险。卡住的那一页
     // 按失败结束整个任务，用户能重试；不设上限则是整卷无声吊死。
-    final SystemOcrPageResult result = await _platform
-        .recognize(bytes, language: language)
-        .timeout(kSystemOcrPageTimeout);
-    return buildSystemOcrPage(page.relativeUrl, result);
+    final SystemOcrPageResult result = await _platform.recognize(
+      bytes,
+      language: language,
+      tiles: <Rect>[
+        for (final OcrRect tile in tiles)
+          Rect.fromLTRB(tile.left, tile.top, tile.right, tile.bottom),
+      ],
+    ).timeout(kSystemOcrPageTimeout);
+    return buildSystemOcrPage(
+      relativeUrl,
+      mergeSystemOcrTiles(result, tiles),
+    );
   }
 
   Future<String> _writePayload(
@@ -210,6 +253,69 @@ class SystemOcrMangaService implements SystemOcrMangaRunner {
     await writeMangaJsonAtomically(output, payload);
     return output;
   }
+}
+
+/// 按页图的**原始像素尺寸**（只读文件头，不解码）规划切片。
+///
+/// 故意不用 `probeOrientedImageSize`：原生侧裁切的是未应用 EXIF 方向的像素
+/// 缓冲（见 `FushiSystemOcr.swift` 类文档第 3 条），切片必须在同一个坐标系里。
+/// 认不出尺寸就不切——整页识别是恒等的退路，不是错误。
+List<OcrRect> planSystemOcrTiles(Uint8List bytes) {
+  final img.DecodeInfo? info;
+  try {
+    info = img.findDecoderForData(bytes)?.startDecode(bytes);
+  } on Object {
+    return const <OcrRect>[];
+  }
+  if (info == null || info.width <= 0 || info.height <= 0) {
+    return const <OcrRect>[];
+  }
+  return planOcrPageTiles(info.width, info.height);
+}
+
+/// 把逐片识别出的行合成整页结果（跨切线拼接 + 重叠区去重，见
+/// `ocr_page_tiling.dart`）。平台没切片时原样返回。
+SystemOcrPageResult mergeSystemOcrTiles(
+  SystemOcrPageResult result,
+  List<OcrRect> tiles,
+) {
+  if (tiles.isEmpty ||
+      result.lines.every((SystemOcrTextLine line) => line.tile == null)) {
+    return result;
+  }
+  final List<OcrTextLine> merged = mergeTiledOcrLines(<OcrTextLine>[
+    for (final SystemOcrTextLine line in result.lines)
+      OcrTextLine(
+        text: line.text,
+        rect: OcrRect(
+          left: line.rect.left,
+          top: line.rect.top,
+          right: line.rect.right,
+          bottom: line.rect.bottom,
+        ),
+        tile: line.tile,
+      ),
+  ], tiles);
+  return SystemOcrPageResult(
+    lines: <SystemOcrTextLine>[
+      for (final OcrTextLine line in merged)
+        () {
+          final Rect rect = Rect.fromLTRB(
+            line.rect.left,
+            line.rect.top,
+            line.rect.right,
+            line.rect.bottom,
+          );
+          return SystemOcrTextLine(
+            text: line.text,
+            rect: rect,
+            isVertical: inferSystemOcrVertical(rect),
+          );
+        }(),
+    ],
+    imageWidth: result.imageWidth,
+    imageHeight: result.imageHeight,
+  );
 }
 
 /// 把平台回传的行组装成一页 [MokuroImage]。

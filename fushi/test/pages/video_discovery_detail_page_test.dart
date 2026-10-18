@@ -1,9 +1,11 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi/src/pages/implementations/video_discovery_detail_page.dart';
+import '../helpers/glass_unwrap.dart';
 
 VideoDiscoveryItem _item(String id, String title) {
   return VideoDiscoveryItem(
@@ -179,15 +181,11 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 50));
 
-    final OutlinedButton resource = tester.widget<OutlinedButton>(
-      find.byKey(const ValueKey<String>('video-discovery-search-resource')),
-    );
-    final OutlinedButton subtitle = tester.widget<OutlinedButton>(
-      find.byKey(const ValueKey<String>('video-discovery-search-subtitle')),
-    );
-    final FilledButton subscribe = tester.widget<FilledButton>(
-      find.byKey(const ValueKey<String>('video-discovery-subscribe')),
-    );
+    // M3E 详情骨架：「找资源」是主按钮（filled）、字幕是 tonal 次按钮，两者都是
+    // FilledButton。
+    final FilledButton resource = tester.widget<FilledButton>(glassUnwrap<FilledButton>(find.byKey(const ValueKey<String>('video-discovery-search-resource'))),);
+    final FilledButton subtitle = tester.widget<FilledButton>(glassUnwrap<FilledButton>(find.byKey(const ValueKey<String>('video-discovery-search-subtitle'))),);
+    final FilledButton subscribe = tester.widget<FilledButton>(glassUnwrap<FilledButton>(find.byKey(const ValueKey<String>('video-discovery-subscribe'))),);
     expect(resource.onPressed, isNotNull,
         reason: '下载进行中要能换源重下；per-series 并发限制在队列层根本不存在。');
     expect(subscribe.onPressed, isNull);
@@ -237,5 +235,62 @@ void main() {
       findsOneWidget,
     );
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('详情显示可复制的罗马音与英文名', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1280, 1800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final List<String> copied = <String>[];
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      (MethodCall call) async {
+        if (call.method == 'Clipboard.setData') {
+          copied.add(
+              (call.arguments as Map<Object?, Object?>)['text']! as String);
+        }
+        return null;
+      },
+    );
+    addTearDown(
+      () => tester.binding.defaultBinaryMessenger
+          .setMockMethodCallHandler(SystemChannels.platform, null),
+    );
+    final VideoDiscoveryItem listItem = _item('romaji', '银河特急');
+    final VideoDiscoveryItem detailed = VideoDiscoveryItem(
+      reference: listItem.reference,
+      overview: listItem.overview,
+      metadataWork: VideoMetadataWork(
+        provider: VideoMetadataProviderKind.tmdb,
+        kind: VideoMetadataMediaKind.tv,
+        title: '银河特急',
+        romajiTitle: 'Ginga Tokkyuu Milky Subway',
+        englishTitle: 'Milky Subway: The Galactic Limited Express',
+      ),
+    );
+
+    await tester.pumpWidget(
+      _harness(
+        VideoDiscoveryDetailPage(
+          item: listItem,
+          actions: VideoDiscoveryActions(
+            loadDetails: (_) async => VideoDiscoveryDetailData(item: detailed),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Ginga Tokkyuu Milky Subway'), findsOneWidget);
+    expect(
+      find.text('Milky Subway: The Galactic Limited Express'),
+      findsOneWidget,
+    );
+    final Finder copyButtons = find.byTooltip(t.copy);
+    expect(copyButtons, findsNWidgets(2));
+    await tester.tap(copyButtons.first);
+    await tester.pumpAndSettle();
+    expect(copied, <String>['Ginga Tokkyuu Milky Subway']);
   });
 }

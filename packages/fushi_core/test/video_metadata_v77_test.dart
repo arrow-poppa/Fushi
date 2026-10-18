@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:drift/drift.dart' hide isNotNull, isNull;
 import 'package:drift/native.dart';
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:sqlite3/common.dart' show CommonDatabase;
 
@@ -444,7 +444,7 @@ void main() {
     expect(recovered.updatedAt, recovered.finishedAt);
   });
 
-  test('v68 -> v77 creates all metadata tables without touching old rows',
+  test('v76 -> v77 creates all metadata tables without touching old rows',
       () async {
     final FushiDatabase db = FushiDatabase.forTesting(
       NativeDatabase.memory(
@@ -494,7 +494,7 @@ CREATE TABLE video_books (
             "INSERT INTO media_collections (id, name, created_at) "
             "VALUES (9, 'Existing collection', 1)",
           );
-          raw.execute('PRAGMA user_version = 68');
+          raw.execute('PRAGMA user_version = 76');
           raw.execute('PRAGMA foreign_keys = ON');
         },
       ),
@@ -505,7 +505,7 @@ CREATE TABLE video_books (
         (await db.customSelect('PRAGMA user_version').getSingle())
             .read<int>('user_version');
     expect(version, db.schemaVersion);
-    expect(db.schemaVersion, greaterThanOrEqualTo(69));
+    expect(db.schemaVersion, greaterThanOrEqualTo(77));
 
     final int workId = await db.upsertVideoMetadataWork(
       VideoMetadataWorksCompanion.insert(
@@ -596,5 +596,230 @@ CREATE TABLE video_books (
       greaterThanOrEqualTo(77),
       reason: 'v77 = video metadata extras used by this test',
     );
+  });
+
+  group('BUG-2754 video delete with local extras', () {
+    Future<int> seedWork(FushiDatabase db, String ownerUid) =>
+        db.upsertVideoMetadataWork(
+          VideoMetadataWorksCompanion.insert(
+            bookUid: Value<String?>(ownerUid),
+            mediaType: 'movie',
+            title: ownerUid,
+            updatedAt: 1,
+          ),
+        );
+
+    Future<void> seedLocalExtra(
+            FushiDatabase db, int workId, String extraUid) =>
+        db.upsertVideoMetadataExtra(
+          VideoMetadataExtrasCompanion.insert(
+            extraKey: 'local:$extraUid',
+            workId: workId,
+            bookUid: Value<String?>(extraUid),
+            kind: 'featurette',
+            sourceKind: 'local',
+            title: extraUid,
+            updatedAt: 1,
+          ),
+        );
+
+    Future<void> seedOnlineExtra(FushiDatabase db, int workId) =>
+        db.replaceOnlineVideoMetadataExtras(
+            workId, <VideoMetadataExtrasCompanion>[
+          VideoMetadataExtrasCompanion.insert(
+            extraKey: 'tmdb:online',
+            workId: workId,
+            kind: 'trailer',
+            sourceKind: 'online',
+            title: 'Online trailer',
+            remoteUrl: const Value<String?>('https://youtu.be/online'),
+            updatedAt: 1,
+          ),
+        ]);
+
+    test('deleting a video mounted as a local extra succeeds', () async {
+      final FushiDatabase db = _freshDatabase();
+      addTearDown(db.close);
+      await _insertVideo(db, 'movie');
+      await _insertVideo(db, 'extra');
+      final int workId = await seedWork(db, 'movie');
+      await seedLocalExtra(db, workId, 'extra');
+      await seedOnlineExtra(db, workId);
+
+      // 修复前：FK SET NULL 撞 CHECK(local ⇒ book_uid NOT NULL)，整个事务回滚。
+      await db.deleteVideoBook('extra');
+
+      expect(await db.getVideoBookByBookUid('extra'), isNull);
+      final List<VideoMetadataExtraRow> extras =
+          await db.getVideoMetadataExtras(workId);
+      expect(extras.map((VideoMetadataExtraRow row) => row.extraKey),
+          <String>['tmdb:online'],
+          reason: 'local extra row leaves with its video; online extra stays');
+      expect(await db.getVideoBookByBookUid('movie'), isNotNull);
+      expect(await db.customSelect('PRAGMA foreign_key_check').get(), isEmpty);
+    });
+
+    test('deleteVideoBooks clears every owned table in one batch', () async {
+      final FushiDatabase db = _freshDatabase();
+      addTearDown(db.close);
+      const List<String> doomed = <String>['a', 'b', 'c'];
+      for (final String uid in <String>[...doomed, 'keep']) {
+        await _insertVideo(db, uid);
+        await db.replaceCuesForBook(uid, <AudioCuesCompanion>[
+          AudioCuesCompanion.insert(
+            bookKey: uid,
+            chapterHref: 'video://default',
+            sentenceIndex: 0,
+            textFragmentId: '',
+            cueText: uid,
+            startMs: 0,
+            endMs: 1,
+            audioFileIndex: 0,
+          ),
+        ]);
+        await db.upsertShelfOrder(MediaKind.video, uid, 1);
+        await db.upsertVideoFileSpec(VideoFileSpecsCompanion.insert(
+          filePath: 'D:/Videos/$uid.mkv',
+          fileSizeBytes: 1,
+          fileModifiedAt: 1,
+          probedAt: 1,
+          probeVersion: 1,
+        ));
+      }
+      final int tagId = await db.createTag('Tag', 0xFF000000);
+      for (final String uid in <String>[...doomed, 'keep']) {
+        await db.addTagToVideoBook(uid, tagId);
+      }
+      final int workId = await seedWork(db, 'keep');
+      await seedLocalExtra(db, workId, 'b');
+      final int emptied = await db.createMediaCollection('Only doomed');
+      final int kept = await db.createMediaCollection('Mixed');
+      await db.addToCollection(emptied, MediaKind.video, 'a');
+      await db.addToCollection(emptied, MediaKind.video, 'c');
+      await db.addToCollection(kept, MediaKind.video, 'b');
+      await db.addToCollection(kept, MediaKind.video, 'keep');
+
+      final List<VideoBookRow> deleted =
+          await db.deleteVideoBooks(<String>[...doomed, 'missing']);
+
+      expect(deleted.map((VideoBookRow row) => row.bookUid).toSet(),
+          doomed.toSet(),
+          reason: 'returns pre-delete snapshots of rows that existed');
+      for (final String uid in doomed) {
+        expect(await db.getVideoBookByBookUid(uid), isNull);
+        expect(await db.getCuesForBook(uid), isEmpty);
+        expect(await db.getShelfEntry(MediaKind.video, uid), isNull);
+        expect(await db.videoFileSpec('D:/Videos/$uid.mkv'), isNull);
+      }
+      expect(await db.getVideoMetadataExtras(workId), isEmpty);
+      final List<TagAssignmentRow> tags = await db.getAllTagAssignments();
+      expect(
+          tags.map((TagAssignmentRow row) => row.entryKey), <String>['keep']);
+      final List<MediaCollectionRow> collections =
+          await db.getAllMediaCollections();
+      expect(collections.map((MediaCollectionRow row) => row.id), <int>[kept],
+          reason: 'collection emptied by the batch is removed');
+      expect(
+          (await db.getCollectionItems(kept))
+              .map((MediaCollectionItemRow row) => row.entryKey),
+          <String>['keep']);
+      // 幸存者一行不少。
+      expect(await db.getVideoBookByBookUid('keep'), isNotNull);
+      expect(await db.getCuesForBook('keep'), hasLength(1));
+      expect(await db.getShelfEntry(MediaKind.video, 'keep'), isNotNull);
+      expect(await db.videoFileSpec('D:/Videos/keep.mkv'), isNotNull);
+      expect(await db.customSelect('PRAGMA foreign_key_check').get(), isEmpty);
+    });
+
+    test('deleteVideoBooks chunks past the SQLite variable limit', () async {
+      final FushiDatabase db = _freshDatabase();
+      addTearDown(db.close);
+      final List<String> uids = <String>[
+        for (int i = 0; i < 1100; i++) 'v$i',
+      ];
+      await db.batch((Batch batch) {
+        for (final String uid in uids) {
+          batch.insert(
+            db.videoBooks,
+            VideoBooksCompanion.insert(
+              bookUid: uid,
+              title: uid,
+              videoPath: 'D:/Videos/$uid.mkv',
+            ),
+          );
+        }
+      });
+      final List<VideoBookRow> deleted = await db.deleteVideoBooks(uids);
+      expect(deleted, hasLength(1100));
+      expect(await db.allVideoBooks(), isEmpty);
+    });
+  });
+
+  group('resolveVideoMetadataWorkForCollection', () {
+    late FushiDatabase db;
+    setUp(() => db = _freshDatabase());
+    tearDown(() => db.close());
+
+    Future<int> bookWork(String bookUid) => db.upsertVideoMetadataWork(
+          VideoMetadataWorksCompanion.insert(
+            bookUid: Value<String?>(bookUid),
+            mediaType: 'tv',
+            title: bookUid,
+            updatedAt: 1,
+          ),
+        );
+
+    test('合集自己的作品行优先', () async {
+      final int collectionId = await db.createMediaCollection('Series');
+      await _insertVideo(db, 'ep1');
+      await db.addToCollectionRaw(collectionId, 'video', 'ep1');
+      await bookWork('ep1');
+      final int own = await db.upsertVideoMetadataWork(
+        VideoMetadataWorksCompanion.insert(
+          collectionId: Value<int?>(collectionId),
+          mediaType: 'tv',
+          title: 'Series',
+          updatedAt: 1,
+        ),
+      );
+      expect(
+        (await db.resolveVideoMetadataWorkForCollection(collectionId))!.id,
+        own,
+      );
+    });
+
+    test('只下了第一集（资料挂在单集上）→ 合集页照样拿到这部作品', () async {
+      final int collectionId = await db.createMediaCollection('Kurumi');
+      await _insertVideo(db, 'ep1');
+      await db.addToCollectionRaw(collectionId, 'video', 'ep1');
+      final int work = await bookWork('ep1');
+      expect(await db.getVideoMetadataWorkByCollection(collectionId), isNull);
+      expect(
+        (await db.resolveVideoMetadataWorkForCollection(collectionId))!.id,
+        work,
+      );
+    });
+
+    test('多个成员各自一部作品（播放列表）→ 不猜', () async {
+      final int collectionId = await db.createMediaCollection('Mixed');
+      for (final String uid in <String>['a', 'b']) {
+        await _insertVideo(db, uid);
+        await db.addToCollectionRaw(collectionId, 'video', uid);
+        await bookWork(uid);
+      }
+      expect(
+        await db.resolveVideoMetadataWorkForCollection(collectionId),
+        isNull,
+      );
+    });
+
+    test('别的合集的成员不算', () async {
+      final int mine = await db.createMediaCollection('Mine');
+      final int other = await db.createMediaCollection('Other');
+      await _insertVideo(db, 'x');
+      await db.addToCollectionRaw(other, 'video', 'x');
+      await bookWork('x');
+      expect(await db.resolveVideoMetadataWorkForCollection(mine), isNull);
+    });
   });
 }

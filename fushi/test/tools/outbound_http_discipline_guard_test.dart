@@ -93,10 +93,26 @@ const Map<String, String> kBareOutboundRegistry = <String, String>{
           '它自带 connectionFactory 做连接期超时；走 HTTP 代理会让制卡整条链路当场失效。',
   'fushi/lib/src/media/manga/mihon/desktop_mihon_runtime.dart':
       'Mihon 桌面 sidecar：控制面与封面图都打本进程拉起的 127.0.0.1:<port> 认证代理端点。',
+  'fushi/lib/src/utils/net/ffmpeg_relay_route.dart':
+      '制卡预取 HLS master：findProxy 钉死为本进程的原生中继（127.0.0.1 带凭据），'
+          '与 ffmpeg 读同一条路径。真正出网的是中继自己的 appNativeProxyUpstreamClientFactory'
+          '（已走 app 代理）；这里再套用户代理会把本机中继请求也送进代理，取不到。',
   'packages/fushi_engine/lib/media/torrent/qbittorrent_client.dart':
       '外接 qBittorrent WebUI，默认 127.0.0.1:8080（用户可改成局域网 NAS）。',
   'packages/fushi_engine/lib/media/torrent/torznab_client.dart':
       '用户自配 indexer，实践中多为自建/局域网/loopback（源码里另有 loopback 明文放行判据）。',
+  'packages/fushi_engine/lib/sync/fushi_sync_server/video.part.dart':
+      '互联 host 把蓝光加密分段转给本进程的 AACS 解密回环（127.0.0.1:<port>，持有即可读'
+          '明文的 bearer URL，BUG-3236）；走用户代理会把这条本机请求和它的能力 URL 一起送出去。',
+  'packages/fushi_engine/lib/tts/local/gpt_sovits_local_server.dart':
+      '本机 GPT-SoVITS 探活：只打本进程拉起的 http://127.0.0.1:<port>/openapi.json；'
+          '走用户代理会把回环请求送进代理，服务永远判不就绪、朗读自动拉起整条失效。',
+  'packages/fushi_engine/lib/tts/local/irodori_local_server.dart':
+      '本机 Irodori-TTS-Server 探活：只打本进程拉起的 http://127.0.0.1:<port>/health 与 '
+          '/v1/models；走用户代理会把回环请求送进代理，服务永远判不就绪。',
+  'packages/fushi_server/lib/src/ctl/admin_client.dart':
+      '`fushi_server ctl` 打本机正在运行的 serve 管理 API：通配绑定改写成 127.0.0.1，'
+          'TLS 按本地证书指纹钉死；走用户代理会把带 admin_token 的本机请求送进代理。',
   // --- 局域网互联（peer 发现 / 配对 / 直连） ---
   'fushi/lib/src/sync/interconnect_post_transport.dart':
       '互联 POST 传输：目标恒为已配对的局域网 peer。',
@@ -110,15 +126,28 @@ const Map<String, String> kBareOutboundRegistry = <String, String>{
       '互联代下载客户端：目标恒为已配对 host，与 manga-OCR 客户端同一理由。',
   'fushi/lib/src/sync/interconnect_subscription_client.dart':
       '互联内容订阅客户端：目标恒为已配对 host，与 manga-OCR 客户端同一理由。',
+  'fushi/lib/src/sync/interconnect_assistant_client.dart':
+      '互联 AI 助手会话客户端（手机把一句话交给电脑办）：目标恒为已配对 host，与 manga-OCR 客户端同一理由。',
+  'packages/fushi_server/lib/src/commands/sync_commands.dart':
+      '`fushi_server sync push|pull` 聚合同步：目标恒为用户给出的已配对互联 host'
+          '（https 走指纹钉扎，http 需显式允许），与 interconnect_sync_backend 同一理由。',
   'packages/fushi_engine/lib/sync/pairing/fushi_ping_client.dart':
       '配对 peer 存活 ping：目标是 mDNS 发现出来的局域网地址。',
+  'fushi/lib/src/sync/interconnect_peer_addresses.dart':
+      '互联地址学习（/api/host/addresses）：目标恒为已配对 host 的某条地址（LAN / IPv6 / '
+          '组网 / P2P 本地转发口 127.0.0.1），与 manga-OCR 客户端同一理由；隧道口走代理必然取不到。',
   'fushi/lib/src/models/app_model.dart':
       '远端查词 / 远端发音共用的 keep-alive client（TODO-744）：目标恒为已配对的局域网 peer。',
+  'fushi/lib/src/sync/video_remote_client.dart':
+      '手机遥控电脑视频（快照 / 事件流 / 控制命令）：目标恒为已配对 host，与 manga-OCR 客户端同一理由。',
+  'fushi/lib/src/pages/implementations/video_remote_page.dart':
+      '手机遥控页的词典资源 client（样式 / 媒体 / 发音由电脑端提供）：目标恒为已配对 host，'
+          '与 app_model 的远端查词 client 同一理由。',
 };
 
 /// 登记在案的文件总数（装配点 + 豁免）。**这是自校验用的哨兵**：改清单必须同步改这个数，
 /// 光靠「新增未登记即红」挡不住「悄悄多登记一条」。
-const int kRegisteredOutboundFileCount = 21;
+const int kRegisteredOutboundFileCount = 31;
 
 /// 裸出站构造的判据。
 ///

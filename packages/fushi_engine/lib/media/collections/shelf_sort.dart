@@ -67,49 +67,62 @@ int compareShelfSortKeys(ShelfSortKey a, ShelfSortKey b, ShelfSortMode mode) {
   return a.tieKey.compareTo(b.tieKey);
 }
 
-bool _isDigit(int codeUnit) => codeUnit >= 0x30 && codeUnit <= 0x39;
+/// 全角 ASCII（U+FF01–FF5E）折成半角、全角空格（U+3000）折成空格，再把 ASCII
+/// 大写折小写；其余码元原样（CJK 无大小写概念，直接码元序）。日文书名里
+/// 「志乃と恋 ２」与「志乃と恋 3」混用全角 / 半角数字是常态，不折叠就排成 3 < ２。
+int _folded(int codeUnit) {
+  int c = codeUnit;
+  if (c >= 0xFF01 && c <= 0xFF5E) {
+    c -= 0xFEE0;
+  } else if (c == 0x3000) {
+    c = 0x20;
+  }
+  return (c >= 0x41 && c <= 0x5A) ? c | 0x20 : c;
+}
 
-/// ASCII 大写折小写；其余码元原样（CJK 无大小写概念，直接码元序）。
-int _lowered(int codeUnit) =>
-    (codeUnit >= 0x41 && codeUnit <= 0x5A) ? codeUnit | 0x20 : codeUnit;
+bool _isDigitAt(String s, int index) {
+  final int c = _folded(s.codeUnitAt(index));
+  return c >= 0x30 && c <= 0x39;
+}
 
-/// Natural 文本比较：ASCII 数字段按数值比较（跳前导零、先长度后逐位，无溢出），
-/// 其余按 ASCII 不分大小写的码元序。「第1卷 < 第2卷 < 第10卷」。全角/汉字数字
-/// 不做数值化（按码元序），诚实边界。
+/// Natural 文本比较：数字段（半角或全角）按数值比较（跳前导零、先长度后逐位，
+/// 无溢出），其余按全角折半角、ASCII 不分大小写的码元序。
+/// 「第1卷 < 第２卷 < 第10卷」。汉字数字（一二三）不做数值化，按码元序。
 int naturalCompare(String a, String b) {
   int i = 0;
   int j = 0;
   while (i < a.length && j < b.length) {
-    if (_isDigit(a.codeUnitAt(i)) && _isDigit(b.codeUnitAt(j))) {
+    if (_isDigitAt(a, i) && _isDigitAt(b, j)) {
       // 消费两侧完整数字段。
       int endA = i;
       int endB = j;
-      while (endA < a.length && _isDigit(a.codeUnitAt(endA))) {
+      while (endA < a.length && _isDigitAt(a, endA)) {
         endA++;
       }
-      while (endB < b.length && _isDigit(b.codeUnitAt(endB))) {
+      while (endB < b.length && _isDigitAt(b, endB)) {
         endB++;
       }
       // 跳前导零（至少留一位）。
       int numA = i;
       int numB = j;
-      while (numA < endA - 1 && a.codeUnitAt(numA) == 0x30) {
+      while (numA < endA - 1 && _folded(a.codeUnitAt(numA)) == 0x30) {
         numA++;
       }
-      while (numB < endB - 1 && b.codeUnitAt(numB) == 0x30) {
+      while (numB < endB - 1 && _folded(b.codeUnitAt(numB)) == 0x30) {
         numB++;
       }
       final int lenA = endA - numA;
       final int lenB = endB - numB;
       if (lenA != lenB) return lenA - lenB;
       for (int k = 0; k < lenA; k++) {
-        final int d = a.codeUnitAt(numA + k) - b.codeUnitAt(numB + k);
+        final int d =
+            _folded(a.codeUnitAt(numA + k)) - _folded(b.codeUnitAt(numB + k));
         if (d != 0) return d;
       }
       i = endA;
       j = endB;
     } else {
-      final int d = _lowered(a.codeUnitAt(i)) - _lowered(b.codeUnitAt(j));
+      final int d = _folded(a.codeUnitAt(i)) - _folded(b.codeUnitAt(j));
       if (d != 0) return d;
       i++;
       j++;
@@ -138,6 +151,28 @@ T? mostRecentlyReadCandidate<T>(
     }
   }
   return best;
+}
+
+/// 书架条目的阅读状态（书 / 漫画 / 有声书共用一个口径）。书架 / 漫画库搜索栏
+/// 「阅读状态」下拉的档位也是它（null = 全部）。
+enum ShelfReadStatus { unread, reading, finished }
+
+/// 条目阅读状态的**唯一判据**，书架概览统计（[tallyShelfProgress]）与阅读状态
+/// 筛选共用：
+/// * [completed]（`EpubBooks.completedAt` 非 null，手动标记或读到末尾自动写入）
+///   → 读完，不受进度约束；
+/// * `duration<=0`（无进度维度，如纯字幕书）→ 未读；
+/// * `position>=duration` → 读完；`0<position<duration` → 在读；其余未读。
+ShelfReadStatus classifyShelfReadStatus({
+  required bool completed,
+  required int position,
+  required int duration,
+}) {
+  if (completed) return ShelfReadStatus.finished;
+  if (duration <= 0 || position <= 0) return ShelfReadStatus.unread;
+  return position >= duration
+      ? ShelfReadStatus.finished
+      : ShelfReadStatus.reading;
 }
 
 /// 书架概览统计（在读数 / 读完数 / 在读候选列表）。
@@ -178,18 +213,18 @@ ShelfProgressTally<T> tallyShelfProgress<T>(
   int finished = 0;
   final List<T> inProgress = <T>[];
   for (final T book in epubBackedBooks) {
-    if (isCompleted != null && isCompleted(book)) {
-      finished++;
-      continue;
-    }
-    final int dur = duration(book);
-    if (dur <= 0) continue;
-    final int pos = position(book);
-    if (pos >= dur) {
-      finished++;
-    } else if (pos > 0) {
-      reading++;
-      inProgress.add(book);
+    switch (classifyShelfReadStatus(
+      completed: isCompleted != null && isCompleted(book),
+      position: position(book),
+      duration: duration(book),
+    )) {
+      case ShelfReadStatus.finished:
+        finished++;
+      case ShelfReadStatus.reading:
+        reading++;
+        inProgress.add(book);
+      case ShelfReadStatus.unread:
+        break;
     }
   }
   return ShelfProgressTally<T>(

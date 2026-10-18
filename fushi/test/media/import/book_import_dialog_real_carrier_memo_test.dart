@@ -4,7 +4,7 @@ import 'dart:typed_data';
 
 import 'package:archive/archive.dart';
 import 'package:drift/native.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi_engine/epub/epub_storage.dart';
@@ -122,6 +122,7 @@ void main() {
       },
       directoryHasPageImages: MangaModule.directoryHasPageImages,
       directoryCarrierFileCount: MangaModule.directoryCarrierFileCount,
+      directoryMokuroFileCount: MangaModule.directoryMokuroFileCount,
     );
 
     expect(resolver.resolve(first.path), ImportCarrier.epub);

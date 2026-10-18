@@ -1,5 +1,9 @@
 (function () {
   'use strict';
+  // 界面文案统一走 i18n.js（fushiT）；测试壳没装 i18n 时退回键名。
+  function tr(key, params) {
+    return (typeof window.fushiT === 'function') ? window.fushiT(key, params) : key;
+  }
 
   var listEl = document.getElementById('list');
   var trackEl = document.getElementById('track');
@@ -70,12 +74,19 @@
       var foldBtn = document.createElement('button');
       foldBtn.type = 'button';
       foldBtn.className = 'hdr-fold';
-      foldBtn.textContent = '▾';
-      foldBtn.title = '折叠/展开工具区';
-      foldBtn.setAttribute('aria-label', '折叠或展开头部工具区');
+      foldBtn.title = tr('sp_fold_title');
+      foldBtn.setAttribute('aria-label', tr('sp_fold_aria_label'));
+      // 折叠钮字形：Material Symbols Rounded（icons.js 先于本文件装入）；拿不到时退回文字三角。
+      var setFoldGlyph = function (folded) {
+        var glyph = typeof window.fushiIcon === 'function'
+          ? window.fushiIcon(folded ? 'chevron_right' : 'expand_more', { size: 18 }) : null;
+        foldBtn.textContent = glyph ? '' : (folded ? '▸' : '▾');
+        if (glyph) foldBtn.appendChild(glyph);
+      };
+      setFoldGlyph(false);
       var applyFold = function (folded) {
         document.body.classList.toggle('hdr-folded', folded);
-        foldBtn.textContent = folded ? '▸' : '▾';
+        setFoldGlyph(folded);
       };
       foldBtn.addEventListener('click', function () {
         var folded = !document.body.classList.contains('hdr-folded');
@@ -148,6 +159,21 @@
       else closePageLookup();
     });
   } catch (_) { /* storage 不可用：按默认（页面渲染）走 */ }
+  // 「按住 Shift 悬停查词」总开关（与 content.js 同一个 storage.shiftHoverLookup，默认开）。
+  // 关掉后字幕行上的 Shift 悬停与「按下 Shift 立即查」都不再触发；点击查词不受影响。
+  var shiftHoverLookup = true;
+  try {
+    chrome.storage.local.get('shiftHoverLookup', function (saved) {
+      try { if (chrome.runtime.lastError) return; } catch (_) { return; }
+      if (saved && typeof saved.shiftHoverLookup === 'boolean') {
+        shiftHoverLookup = saved.shiftHoverLookup;
+      }
+    });
+    chrome.storage.onChanged.addListener(function (changes, area) {
+      if (area !== 'local' || !changes || !changes.shiftHoverLookup) return;
+      shiftHoverLookup = changes.shiftHoverLookup.newValue !== false;
+    });
+  } catch (_) { /* storage 不可用：按默认（开）走 */ }
   // 复杂词的 popupJson 可超过 2 MB，解析后的对象树通常还会膨胀数倍。只按“48 个词”
   // 淘汰会让 Side Panel 很快常驻数百 MB，并在后续查词时触发秒级 GC。双门槛保留常用
   // 小词，同时让超大结果最多只占少量槽位；最新一条即使单独超预算也保留以支持复查。
@@ -161,6 +187,8 @@
   // 超时竞速保证 Promise 一定 settle（值取 > app 冷查询 P99；超时按失败处理，UI 显示可重试的
   // 失败文案而不是无限转圈）。
   var RUNTIME_MESSAGE_TIMEOUT_MS = 8000;
+  // 复习模块关着（/api/srs/term-status 404）后的退避截止时刻。
+  var srsDisabledUntil = 0;
   function sendRuntime(message) {
     return new Promise(function (resolve) {
       var settled = false;
@@ -317,8 +345,20 @@
     Object.keys(theme).forEach(function (key) {
       if (typeof theme[key] === 'string') lookupContainer.style.setProperty(key, theme[key]);
     });
+    // 扩展主题显式 light/dark 压过 app 的值（theme.js；查词请求已带同一个 colorScheme 提示）。
     var scheme = theme['--fushi-color-scheme'];
+    if (window.fushiTheme && typeof window.fushiTheme.resolve === 'function') {
+      scheme = window.fushiTheme.resolve(scheme);
+    }
     if (scheme === 'dark' || scheme === 'light') lookupContainer.setAttribute('data-theme', scheme);
+    // 预设 / 自定义调色板下弹窗颜色项按扩展主题覆盖（见 content.js fushiApplyTheme）。
+    if (window.fushiTheme && typeof window.fushiTheme.applyPopupPalette === 'function') {
+      window.fushiTheme.applyPopupPalette(lookupContainer, scheme);
+    }
+    // M3E 视觉层（与页面弹窗同一开关，见 theme.js applyPopupStyle）。
+    if (window.fushiTheme && typeof window.fushiTheme.applyPopupStyle === 'function') {
+      window.fushiTheme.applyPopupStyle(lookupContainer, theme['--fushi-glass'] === '0');
+    }
     var columns = theme['--dict-columns'];
     if (typeof columns === 'string' && columns) {
       document.documentElement.style.setProperty('--dict-columns', columns);
@@ -328,6 +368,10 @@
     // BUG-2284：墨水屏「瞬时滚动」随主题下发（app popupInstantScroll），popup.js 的 wheel
     // 监听读同名全局改走固定步长瞬跳。缺该 key = 旧 app，保持关闭。
     window.__fushiPopupInstantScroll = theme['--fushi-instant-scroll'] === '1';
+    // 瞬时滚动的滚轮步长（占视口比例）同通道下发，popup.js 非法/缺失回退自身常量。
+    var instantStep = parseFloat(theme['--fushi-instant-scroll-wheel-step']);
+    window.__fushiPopupInstantScrollWheelStep =
+      isFinite(instantStep) && instantStep > 0 ? instantStep : undefined;
     // 用户拖过尺寸（lookupUserResized）后，本会话内不再让主题下发的宽高盖掉用户的选择；
     // 拖拽结果经 popupSize 回写 app，下次会话由主题带回来。
     lookupThemeForBox = theme;
@@ -342,6 +386,10 @@
   // fushiResolvePopupBox 把上限折回基准尺度；压到最窄可读宽度仍放不下时改压 zoom，
   // 让整窗等比缩小而不是切内容。
   var lookupThemeForBox = null;
+  // 扩展字号覆盖（popup-size.js）变化：已打开的侧边栏弹窗就地按新 zoom 重算尺寸盒。
+  if (typeof fushiOnPopupFontSizeChange === 'function') {
+    fushiOnPopupFontSizeChange(function () { if (lookupThemeForBox) applyLookupBox(); });
+  }
   function applyLookupBox() {
     var box = fushiResolvePopupBox(
       lookupThemeForBox, { width: window.innerWidth, height: window.innerHeight });
@@ -385,7 +433,7 @@
     window.lookupEntries = Array.isArray(data.entries) ? data.entries : [];
     window.audioSources = Array.isArray(data.audioSources) ? data.audioSources : [];
     window.needsAudio = true;
-    window._noResultsMessage = '没有查到结果';
+    window._noResultsMessage = tr('lookup_no_results');
     applyLookupTheme(data.theme);
     // 花括号是必需的：BUG-1942 的自动朗读块插进来之后，这个 else 曾经绑到了下面那个
     // `if (typeof window.fushiAutoReadFirstEntry === 'function')` 上 —— 于是词典组件
@@ -394,7 +442,7 @@
     if (typeof window.renderPopup === 'function') {
       window.renderPopup();
     } else {
-      lookupContainer.innerHTML = '<div class="no-results">词典组件尚未就绪，请重试。</div>';
+      lookupContainer.innerHTML = '<div class="no-results">' + tr('lookup_component_not_ready') + '</div>';
     }
     // 查词后自动朗读：与页面弹窗共用 auto-read.js 那一份（开关同为 app 全局偏好）。
     if (typeof window.fushiAutoReadFirstEntry === 'function') {
@@ -560,7 +608,7 @@
       if (shouldPosition) positionLookup(anchor);
       return;
     }
-    lookupContainer.innerHTML = '<div class="no-results">正在查词…</div>';
+    lookupContainer.innerHTML = '<div class="no-results">' + tr('lookup_in_progress') + '</div>';
     if (shouldPosition) positionLookup(anchor);
     // try/finally 锁死两条不变式：①「正在查词…」绝不永久停留——fetchLookup 无论 resolve /
     // reject（内部处理回调抛错）都必须落到成功或失败文案；② pointer 扫词在途闸一定被复位。
@@ -575,7 +623,7 @@
     }
     if (requestId !== lookupRequestId) return;
     if (!data) {
-      lookupContainer.innerHTML = '<div class="no-results">查词失败，请确认 Fushi 查词服务已开启。</div>';
+      lookupContainer.innerHTML = '<div class="no-results">' + tr('lookup_failed_service') + '</div>';
       if (shouldPosition) positionLookup(anchor);
       // 失败后复位扫描去重键：不复位的话鼠标停在同一个字上永远触发不了重试。
       activeScanKey = '';
@@ -639,7 +687,7 @@
       }
     } catch (_) { term = ''; }
     if (!term) {
-      if (announceMissing) toast('未识别到可查词文字');
+      if (announceMissing) toast(tr('lookup_no_text_at_point'));
       return false;
     }
     var scanKey = pointer.index + '\u0000' + term;
@@ -692,21 +740,86 @@
           return !!(response && response.ok && response.data && response.data.duplicate === true);
         });
       }
+      if (name === 'srsTermStatus') {
+        // Fushi 复习词状态（与 bridge-shim 同契约）：回 null 或状态对象；app 的复习模块关着
+        // 时服务端 404 → 记住一段时间不再问。
+        if (Date.now() < srsDisabledUntil) return Promise.resolve(null);
+        var srsReq = args[0] || {};
+        return sendRuntime({
+          type: 'srsTermStatus', expression: srsReq.expression || '', reading: srsReq.reading || '',
+        }).then(function (response) {
+          if (response && response.status === 404) {
+            srsDisabledUntil = Date.now() + 60000;
+            return null;
+          }
+          var status = response && response.ok && response.data ? response.data.status : null;
+          return status && typeof status === 'object' ? status : null;
+        });
+      }
+      if (name === 'srsOpenCard') {
+        var srsOpen = args[0] || {};
+        return sendRuntime({
+          type: 'srsOpenCard', cardId: srsOpen.cardId || '', noteId: srsOpen.noteId || '',
+        }).then(function (response) {
+          return !!(response && response.ok && response.data && response.data.opened === true);
+        });
+      }
+      if (name === 'openInAnki') {
+        // Issue #1409：与 bridge-shim 同契约——回 'opened' / 'noMatch' / 'failed'，绝不回 null
+        // （null = 宿主没接这根桥）；background 超时/失败/旧 app 无端点 → 'failed'。
+        var openReq = args[0] || {};
+        return sendRuntime({
+          type: 'openInAnki', expression: openReq.expression || '', reading: openReq.reading || '',
+        }).then(function (response) {
+          var outcome = response && response.ok && response.data ? response.data.outcome : null;
+          return (outcome === 'opened' || outcome === 'noMatch') ? outcome : 'failed';
+        });
+      }
+      if (name === 'favoriteEntry' || name === 'favoriteCheck') {
+        // BUG-3141：与 bridge-shim 同契约——回处理后的收藏态；失败 fail-soft 成 false（☆），
+        // 切换失败时 toast，用户点了收藏没收藏上必须看得见。
+        var favToggle = name === 'favoriteEntry';
+        var favReq = args[0] || {};
+        return sendRuntime({
+          type: 'favorite',
+          toggle: favToggle,
+          expression: favReq.expression || '',
+          reading: favReq.reading || '',
+          glossary: favToggle ? (favReq.glossary || '') : '',
+          sentence: favToggle && currentLookupCue && currentLookupCue.text ? String(currentLookupCue.text) : '',
+        }).then(function (response) {
+          if (response && response.ok && response.data && typeof response.data.favorite === 'boolean') {
+            return response.data.favorite;
+          }
+          if (favToggle) {
+            toast('✗ ' + tr(response && response.status === 404 ? 'favorite_failed_old_app' : 'favorite_failed'));
+          }
+          return false;
+        });
+      }
       if (name === 'resolveWordAudio') {
         var audio = args[0] || {};
         return sendRuntime({
           type: 'lookupAudio', expression: audio.expression || '', reading: audio.reading || '',
         }).then(function (response) { return response && response.ok ? response.url || null : null; });
       }
+      if (name === 'listWordAudioSources') {
+        var listReq = args[0] || {};
+        return sendRuntime({
+          type: 'lookupAudioList', expression: listReq.expression || '', reading: listReq.reading || '',
+        }).then(function (response) {
+          return response && response.ok && Array.isArray(response.audioSources) ? response.audioSources : [];
+        });
+      }
       if (name === 'mineEntry') {
         return sendToTab({
           type: 'fushiSubtitleSidePanelMine', fields: args[0] || {}, cue: currentLookupCue,
         }).then(function (response) {
           if (response && response.ok) {
-            toast(response.duplicate ? '✓ 已在制卡队列中' : '✓ 已加入制卡队列');
+            toast('✓ ' + tr(response.duplicate ? 'mine_already_queued' : 'mine_queued'));
             return true;
           }
-          toast('✗ 制卡失败：当前视频页不可用');
+          toast('✗ ' + tr('mine_failed_page_unavailable'));
           return false;
         });
       }
@@ -718,6 +831,7 @@
   sendRuntime({ type: 'dictMediaConfig' }).then(function (response) {
     if (response && response.ok && response.base && response.token) {
       window.__fushiDictMedia = { base: response.base, token: response.token };
+      if (typeof fushiRetryDictionaryFont === 'function') fushiRetryDictionaryFont();
     }
   });
 
@@ -797,15 +911,15 @@
       tracks.forEach(function (track) {
         var option = document.createElement('option');
         option.value = track.lang;
-        option.textContent = track.label + (track.pending ? '（选中加载）' : '（' + track.length + '）');
+        option.textContent = track.label + (track.pending ? tr('sp_track_pending_suffix') : '（' + track.length + '）');
         trackEl.appendChild(option);
       });
       trackEl.hidden = tracks.length === 0;
       trackEl.value = state.activeLang || '';
       offsetEl.hidden = tracks.length === 0;
     }
-    offsetValueEl.textContent = ((Number(state.offsetMs) || 0) >= 0 ? '+' : '') +
-      ((Number(state.offsetMs) || 0) / 1000).toFixed(1) + 's';
+    // 正在手填时不打断（state 每秒刷新一次）。
+    if (document.activeElement !== offsetValueEl) offsetValueEl.value = formatOffsetSeconds(state.offsetMs);
   }
 
   function renderCues() {
@@ -816,9 +930,7 @@
     if (!cues.length) {
       var empty = document.createElement('div');
       empty.className = 'empty';
-      empty.textContent = currentState && currentState.hasVideo
-        ? '暂无字幕。开启站内字幕，或点“＋”加载外挂字幕。'
-        : '当前标签页没有可用的视频。';
+      empty.textContent = tr(currentState && currentState.hasVideo ? 'sp_empty_no_subtitles' : 'sp_empty_no_video');
       listEl.appendChild(empty);
       return;
     }
@@ -831,7 +943,7 @@
       timestamp.className = 'timestamp';
       timestamp.type = 'button';
       timestamp.textContent = fmtTs(cue.startMs);
-      timestamp.title = '跳转到此句';
+      timestamp.title = tr('sp_row_seek_title');
       timestamp.addEventListener('click', function (event) {
         event.stopPropagation();
         sendToTab({ type: 'fushiSubtitleSidePanelSeek', ms: cue.startMs });
@@ -842,7 +954,7 @@
       // 同一份渲染，见 ruby-render.js。
       if (typeof window.fushiRenderCueText === 'function') window.fushiRenderCueText(text, cue);
       else text.textContent = cue.text;
-      text.title = '单击文字查词；点击时间或行空白跳转；双击选择文本；按住 Shift 悬停扫词';
+      text.title = tr('sp_row_text_title');
       text.addEventListener('click', function (event) {
         // 行内文字单击=查词（asbplayer 同款；8-11 迁原生 Side Panel 时随旧 UI 层一起丢了，
         // 用户报「点击查词不见了，只能 Shift 查」）。拖选/双击形成的选区在场时不查，
@@ -863,7 +975,7 @@
         lastPointer = {
           x: event.clientX, y: event.clientY, cue: cue, index: index, textEl: text,
         };
-        if (event.shiftKey) schedulePointerLookup(lastPointer);
+        if (event.shiftKey && shiftHoverLookup) schedulePointerLookup(lastPointer);
       }
       text.addEventListener('pointerenter', rememberPointer, { passive: true });
       text.addEventListener('pointermove', rememberPointer, { passive: true });
@@ -927,9 +1039,9 @@
 
   function applyState(state, includesCues) {
     currentState = state;
-    statusEl.textContent = state.hasVideo
-      ? ((state.tracks || []).length ? '已连接当前视频' : '已找到视频，等待字幕')
-      : '当前标签页没有视频';
+    statusEl.textContent = tr(state.hasVideo
+      ? ((state.tracks || []).length ? 'sp_status_connected' : 'sp_status_waiting_subtitles')
+      : 'sp_status_no_video');
     renderTracks(state);
     if (includesCues) {
       cues = Array.isArray(state.cues) ? state.cues : [];
@@ -947,7 +1059,7 @@
       var tab = await queryActiveTab();
       if (!tab || !Number.isInteger(tab.id)) {
         currentTabId = null;
-        statusEl.textContent = '找不到当前标签页';
+        statusEl.textContent = tr('sp_status_no_tab');
         return;
       }
       if (currentTabId !== tab.id) {
@@ -960,7 +1072,7 @@
         includeCues: forceCues === true,
       });
       if (!state || !state.ok) {
-        statusEl.textContent = '此页面尚未连接 Fushi 扩展';
+        statusEl.textContent = tr('sp_status_not_connected');
         if (stateSignature !== 'offline') {
           stateSignature = 'offline'; cues = []; currentState = null; renderCues();
         }
@@ -998,6 +1110,45 @@
     if (state && state.ok) { stateSignature = metadataSignature(state); applyState(state, true); }
   });
 
+  // 手填偏移（用户群 10-09）：输入秒数回车 = 绝对偏移，0 = 复位；解析规则与播放器菜单
+  // （player-controls.js parseOffsetSeconds）一致，守卫 side-panel-offset-input.test.js 交叉比对。
+  function formatOffsetSeconds(ms) {
+    var n = Number(ms);
+    if (!isFinite(n) || n === 0) return '0';
+    var sec = Math.round(n / 10) / 100;
+    // |偏移| < 5ms 舍入到 0（含 -0）：显示 '0'，不能落到负号分支变成 '-0'。
+    if (sec === 0) return '0';
+    return (sec > 0 ? '+' : '-') + String(Math.abs(sec));
+  }
+  function parseOffsetSeconds(text) {
+    var t = String(text == null ? '' : text).trim()
+      .replace(/[−－–]/g, '-').replace(/＋/g, '+').replace(/[，,]/g, '.').replace(/\s*(s|秒)$/i, '');
+    if (!/^[+-]?(\d+(\.\d*)?|\.\d+)$/.test(t)) return null;
+    var ms = Math.round(parseFloat(t) * 1000);
+    if (!isFinite(ms) || Math.abs(ms) > 3600 * 1000) return null;
+    return ms;
+  }
+  async function commitOffsetInput() {
+    var ms = parseOffsetSeconds(offsetValueEl.value);
+    if (ms === null) {
+      offsetValueEl.value = formatOffsetSeconds(currentState ? currentState.offsetMs : 0);
+      return;
+    }
+    var state = await sendToTab({ type: 'fushiSubtitleSidePanelOffset', absoluteMs: ms });
+    if (state && state.ok) { stateSignature = metadataSignature(state); applyState(state, true); }
+    offsetValueEl.value = formatOffsetSeconds(state && state.ok ? state.offsetMs : ms);
+  }
+  // 回车 = 失焦提交（失焦触发 change）；文本框不在 <form> 里，回车 / Esc 本就没有默认动作。
+  offsetValueEl.addEventListener('keydown', function (event) {
+    if (event.key === 'Enter') offsetValueEl.blur();
+    else if (event.key === 'Escape') {
+      offsetValueEl.value = formatOffsetSeconds(currentState ? currentState.offsetMs : 0);
+      offsetValueEl.blur();
+    }
+  });
+  offsetValueEl.addEventListener('change', commitOffsetInput);
+  offsetValueEl.addEventListener('focus', function () { try { offsetValueEl.select(); } catch (_) {} });
+
   document.getElementById('offset-reset').addEventListener('click', async function () {
     var state = await sendToTab({ type: 'fushiSubtitleSidePanelOffset', reset: true });
     if (state && state.ok) { stateSignature = metadataSignature(state); applyState(state, true); }
@@ -1008,7 +1159,7 @@
     var files = Array.from(fileEl.files || []);
     for (var i = 0; i < files.length; i++) {
       var file = files[i];
-      if (file.size > 8 * 1024 * 1024) { toast('字幕文件过大（上限 8 MB）'); continue; }
+      if (file.size > 8 * 1024 * 1024) { toast(tr('subtitle_file_too_large')); continue; }
       var content = await file.text();
       var parsed = await new Promise(function (resolve) {
         chrome.runtime.sendMessage(
@@ -1020,7 +1171,7 @@
         );
       });
       if (!parsed || !parsed.ok || !parsed.data || !Array.isArray(parsed.data.cues)) {
-        toast('字幕解析失败：请确认 Fushi 已启动');
+        toast(tr('subtitle_parse_failed_app'));
         continue;
       }
       var state = await sendToTab({
@@ -1031,7 +1182,7 @@
       if (state && state.ok) {
         stateSignature = metadataSignature(state);
         applyState(state, true);
-        toast('已加载外挂字幕：' + parsed.data.cues.length + ' 句');
+        toast(tr('subtitle_external_loaded', { n: parsed.data.cues.length }));
       }
     }
     fileEl.value = '';
@@ -1052,6 +1203,7 @@
   var SUBTITLE_PROVIDER_LABELS = {
     jimaku: 'Jimaku',
     opensubtitles: 'OpenSubtitles',
+    subdl: 'SubDL',
     ajatt: 'AJATT',
   };
   function providerLabel(id) {
@@ -1060,16 +1212,14 @@
   }
   function subsErrorText(data, response) {
     var error = data && data.error;
-    if (error === 'no-provider') {
-      return '没有可用的字幕来源：请在 Fushi 设置 → 视频 → 字幕 里启用 AJATT，或填 Jimaku / OpenSubtitles 的 key';
-    }
+    if (error === 'no-provider') return tr('subs_err_no_provider');
     // 旧版 app（还只有 jimaku 端点）会回这个码。
-    if (error === 'no-api-key') return '请先在 Fushi 设置 → 视频 → 字幕 填写 Jimaku API key';
-    if (error === 'unauthorized') return '字幕来源拒绝访问：请检查 API key';
-    if (error === 'rate-limited') return '字幕来源限流或配额用尽，请稍后再试';
-    if (error === 'missing-query') return '请输入搜索词';
-    if (!response || response.ok !== true) return '字幕搜索失败：请确认 Fushi 已启动';
-    return '字幕来源暂不可用，请稍后再试';
+    if (error === 'no-api-key') return tr('subs_err_no_api_key');
+    if (error === 'unauthorized') return tr('subs_err_unauthorized');
+    if (error === 'rate-limited') return tr('subs_err_rate_limited');
+    if (error === 'missing-query') return tr('subs_err_missing_query');
+    if (!response || response.ok !== true) return tr('subs_err_search_failed');
+    return tr('subs_err_unavailable');
   }
   // 部分来源挂了但另一些答了：结果照出，同时说清楚少了谁——把它们混成一个「没找到」，
   // 用户只会一遍遍换搜索词（app 内「找字幕」也是这么处理的）。
@@ -1083,14 +1233,14 @@
     return names;
   }
   async function subsInstall(candidate) {
-    toast('正在下载：' + candidate.fileName);
+    toast(tr('subs_downloading', { name: candidate.fileName }));
     var response = await sendRuntime({ type: 'subtitleFetch', handle: candidate.handle });
     var data = response && response.data;
     if (!response || response.ok !== true || !data || data.ok !== true ||
         !Array.isArray(data.cues) || !data.cues.length) {
       toast(data && data.error === 'unknown-handle'
-        ? '候选已过期，请重新搜索'
-        : (data && data.error === 'unsupported' ? '不支持的字幕格式' : subsErrorText(data, response)));
+        ? tr('subs_err_stale_candidate')
+        : (data && data.error === 'unsupported' ? tr('subs_err_unsupported') : subsErrorText(data, response)));
       return;
     }
     var state = await sendToTab({
@@ -1103,18 +1253,34 @@
       applyState(state, true);
       subsResultsEl.hidden = true;
       subsResultsEl.textContent = '';
-      toast('已加载' + (providerLabel(data.provider || candidate.provider)
-        ? ' ' + providerLabel(data.provider || candidate.provider) : '') +
-        '字幕：' + data.cues.length + ' 句');
+      var providerName = providerLabel(data.provider || candidate.provider);
+      toast(tr('subs_loaded', { provider: providerName ? providerName + ' ' : '', n: data.cues.length }));
     }
+  }
+  // 查字幕的结果提示（无结果 / 只列了前 N 条）：语义 info 色块 + 左侧图标，与工具栏菜单 / 设置页的
+  // 提示条同一套 .fushi-notice（material.css「语义 tonal 色块」）。
+  function subsNotice(text) {
+    var notice = document.createElement('div');
+    notice.className = 'subs-empty fushi-notice';
+    notice.setAttribute('data-tone', 'info');
+    notice.setAttribute('role', 'status');
+    var glyph = typeof window.fushiIcon === 'function' ? window.fushiIcon('info', { size: 20 }) : null;
+    if (glyph) {
+      var slot = document.createElement('span');
+      slot.className = 'msr-slot';
+      slot.setAttribute('aria-hidden', 'true');
+      slot.appendChild(glyph);
+      notice.appendChild(slot);
+    }
+    var copy = document.createElement('span');
+    copy.textContent = text;
+    notice.appendChild(copy);
+    return notice;
   }
   function renderSubsResults(candidates, truncated) {
     subsResultsEl.textContent = '';
     if (!candidates.length) {
-      var empty = document.createElement('div');
-      empty.className = 'subs-empty';
-      empty.textContent = '无结果。试试日文原名，或填集数缩小范围。';
-      subsResultsEl.appendChild(empty);
+      subsResultsEl.appendChild(subsNotice(tr('subs_no_results')));
       subsResultsEl.hidden = false;
       return;
     }
@@ -1132,31 +1298,26 @@
       if (label) parts.push(label);
       if (candidate.entryName) parts.push(candidate.entryName);
       if (candidate.language) parts.push(candidate.language);
-      if (candidate.episode != null) parts.push('第' + candidate.episode + '集');
+      if (candidate.episode != null) parts.push(tr('subs_episode_label', { n: candidate.episode }));
       // 机翻档与人工档并排时质量差一个数量级，来源既然标了就得显示出来。
-      if (candidate.aiTranslated === true) parts.push('机翻');
+      if (candidate.aiTranslated === true) parts.push(tr('subs_machine_translated'));
       meta.textContent = parts.join(' · ');
       row.appendChild(name);
       row.appendChild(meta);
       row.addEventListener('click', function () { subsInstall(candidate); });
       subsResultsEl.appendChild(row);
     });
-    if (truncated) {
-      var more = document.createElement('div');
-      more.className = 'subs-empty';
-      more.textContent = '结果过多已截断，填集数可缩小范围。';
-      subsResultsEl.appendChild(more);
-    }
+    if (truncated) subsResultsEl.appendChild(subsNotice(tr('subs_truncated')));
     subsResultsEl.hidden = false;
   }
   var subsSearching = false;
   async function subsSearch() {
     if (subsSearching) return;
     var query = String(subsQueryEl.value || '').trim();
-    if (!query) { toast('请输入搜索词'); return; }
+    if (!query) { toast(tr('subs_err_missing_query')); return; }
     var episode = parseInt(subsEpEl.value, 10);
     subsSearching = true;
-    toast('正在搜索字幕…');
+    toast(tr('subs_searching'));
     try {
       var response = await sendRuntime({
         type: 'subtitleSearch',
@@ -1171,7 +1332,7 @@
       renderSubsResults(Array.isArray(data.candidates) ? data.candidates : [],
         data.truncated === true);
       var failed = failedProviderNames(data);
-      if (failed.length) toast('部分来源未响应：' + failed.join('、'));
+      if (failed.length) toast(tr('subs_partial_failures', { names: failed.join(', ') }));
     } finally {
       subsSearching = false;
     }
@@ -1207,6 +1368,7 @@
   autoButton.addEventListener('click', function () {
     autoScroll = !autoScroll;
     autoButton.classList.toggle('is-on', autoScroll);
+    autoButton.setAttribute('aria-pressed', autoScroll ? 'true' : 'false');
     if (autoScroll) { scrollIndex = -1; updateCurrent(currentState && currentState.currentTimeMs); }
   });
   document.getElementById('settings').addEventListener('click', function () {
@@ -1220,7 +1382,7 @@
     }
     // Yomitan 的 modifier-on-keydown 路径：指针已经停在词上时，按下 Shift 就用最后
     // 一次 pointer 坐标立即查，不要求用户再晃动鼠标，也不 preventDefault。
-    if (event.key === 'Shift' && !event.repeat && lastPointer) {
+    if (event.key === 'Shift' && !event.repeat && lastPointer && shiftHoverLookup) {
       lookupAtPointer(lastPointer, { explicit: true, announceMissing: true });
     }
   }, true);
@@ -1257,6 +1419,7 @@
   function stopAutoScroll() {
     autoScroll = false;
     autoButton.classList.toggle('is-on', false);
+    autoButton.setAttribute('aria-pressed', 'false');
   }
   listEl.addEventListener('wheel', stopAutoScroll, { passive: true });
   listEl.addEventListener('touchmove', stopAutoScroll, { passive: true });

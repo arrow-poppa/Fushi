@@ -26,14 +26,33 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Consumer;
 
 import app.fushi.reader.constants.ChannelNames;
 import io.flutter.embedding.engine.FlutterEngine;
+import io.flutter.plugin.common.MethodCall;
 import io.flutter.plugin.common.MethodChannel;
 
 public class AnkiChannelHandler {
     private static final String CHANNEL = ChannelNames.ANKI;
+    /** Card source IDs are UUID v4 strings (see CardSourceLink). */
+    private static final String SOURCE_ID_PATTERN =
+            "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$";
     private static final int AD_PERM_REQUEST = 0;
+
+    /**
+     * AnkiDroid ContentProvider 查询专用的单线程后台执行器（见 {@link #dispatch}）。
+     * 进程级共享：主 engine 与悬浮词典副 engine 的调用同样串行，彼此不并发打 provider。
+     */
+    private static final ExecutorService PROVIDER_IO =
+        Executors.newSingleThreadExecutor(r -> {
+            Thread t = new Thread(r, "fushi-anki-provider");
+            t.setDaemon(true);
+            return t;
+        });
 
     // BUG-2098：`requestAnkidroidPermissions` 的返回值。此前恒 success(true)——发起
     // 系统权限请求后**不等用户答复**就返回，Dart 侧紧接着查 provider，于是权限对话框
@@ -89,11 +108,11 @@ public class AnkiChannelHandler {
 
     public void register(@NonNull FlutterEngine engine) {
         new MethodChannel(engine.getDartExecutor().getBinaryMessenger(), CHANNEL)
-            .setMethodCallHandler((call, result) -> {
+            .setMethodCallHandler((call, rawResult) -> dispatch(call, rawResult, result -> {
                 final String model = call.argument("model");
                 final String deck = call.argument("deck");
                 final String key = call.argument("key");
-                final String markerTag = call.argument("markerTag");
+                final String sourceId = call.argument("sourceId");
                 final String reading = call.argument("reading");
                 final ArrayList<Integer> readingFieldIndices = call.argument("readingFieldIndices");
                 final ArrayList<String> fields = call.argument("fields");
@@ -112,6 +131,8 @@ public class AnkiChannelHandler {
                 final String deckName = call.argument("deckName");
                 final Number noteIdArg = call.argument("noteId");
                 final Map<String, String> fieldValues = call.argument("fieldValues");
+                // BUG-2606：覆盖=整体替换——没点名的字段也写空、并入新制会打的标签。
+                final Boolean clearUnspecified = call.argument("clearUnspecified");
                 // Lapis 样式客制化：模板列表（每项 name/front/back），见
                 // readNoteType / updateNoteTypeTemplates。
                 final ArrayList<Map<String, String>> noteTypeTemplates =
@@ -169,14 +190,16 @@ public class AnkiChannelHandler {
                         }
                         break;
                     case "updateNoteFields":
-                        // TODO-270 C2：按 noteId 覆盖给定字段（名 -> 值），其余字段保留。
+                        // TODO-270 C2：按 noteId 覆盖给定字段（名 -> 值），其余字段保留；
+                        // BUG-2606：clearUnspecified=true 时其余字段写空、tags 并入。
                         if (noteIdArg == null || fieldValues == null) {
                             result.error("MISSING_ARG",
                                 "noteId and fieldValues are required", null);
                         } else if (requirePermission(result)) {
                             try {
                                 String updateError = updateNoteFields(
-                                    noteIdArg.longValue(), fieldValues);
+                                    noteIdArg.longValue(), fieldValues,
+                                    Boolean.TRUE.equals(clearUnspecified), tags);
                                 if (updateError != null) {
                                     result.error("UPDATE_NOTE_FAILED",
                                         updateError, null);
@@ -189,13 +212,12 @@ public class AnkiChannelHandler {
                             }
                         }
                         break;
-                    case "findNotesBySourceMarker":
-                        if (markerTag == null
-                                || !markerTag.matches("^fushi_source_[0-9a-f]{32}$")) {
-                            result.error("INVALID_ARG", "Invalid source marker tag", null);
+                    case "findNotesBySourceId":
+                        if (sourceId == null || !sourceId.matches(SOURCE_ID_PATTERN)) {
+                            result.error("INVALID_ARG", "Invalid card source ID", null);
                         } else if (requirePermission(result)) {
                             try {
-                                result.success(findNotesBySourceMarker(markerTag));
+                                result.success(findNotesBySourceId(sourceId));
                             } catch (Exception e) {
                                 result.error(providerErrorCode(e), e.getMessage(), null);
                             }
@@ -211,15 +233,13 @@ public class AnkiChannelHandler {
                             result.error("MISSING_ARG",
                                 "models and key are required", null);
                         } else if (requirePermission(result)) {
-                            new Handler(Looper.getMainLooper()).post(() -> {
-                                try {
-                                    result.success(findNotesByContent(
-                                        models, key, reading, readingFieldIndices));
-                                } catch (Exception e) {
-                                    result.error(providerErrorCode(e),
-                                        e.getMessage(), null);
-                                }
-                            });
+                            try {
+                                result.success(findNotesByContent(
+                                    models, key, reading, readingFieldIndices));
+                            } catch (Exception e) {
+                                result.error(providerErrorCode(e),
+                                    e.getMessage(), null);
+                            }
                         }
                         break;
                     case "openNote":
@@ -245,18 +265,16 @@ public class AnkiChannelHandler {
                             // HBK-AUDIT-020: the dupe-check queries the AnkiDroid
                             // ContentProvider, which can throw (provider disabled
                             // mid-session, SecurityException, null cursor). Without
-                            // this guard the exception escaped the posted Runnable
+                            // this guard the exception escaped the provider task
                             // and the Dart Future never completed (hang). Always
                             // complete the result.
-                            new Handler(Looper.getMainLooper()).post(() -> {
-                                try {
-                                    result.success(checkForDuplicates(
-                                        models, key, reading, readingFieldIndices));
-                                } catch (Exception e) {
-                                    result.error("DUPE_CHECK_FAILED",
-                                        e.getMessage(), null);
-                                }
-                            });
+                            try {
+                                result.success(checkForDuplicates(
+                                    models, key, reading, readingFieldIndices));
+                            } catch (Exception e) {
+                                result.error("DUPE_CHECK_FAILED",
+                                    e.getMessage(), null);
+                            }
                         }
                         break;
                     case "getDecks":
@@ -410,6 +428,11 @@ public class AnkiChannelHandler {
                     case "requestAnkidroidPermissions":
                         requestAnkidroidPermissions(result);
                         break;
+                    case "hasAnkidroidPermission":
+                        // 只查不弹框：制卡前的模板探测不能替后面的加卡再弹一次授权框
+                        // （BUG-2869）。
+                        result.success(!ankiDroid.shouldRequestPermission());
+                        break;
                     case "openAnkiPermissionSettings":
                         // BUG-2098：永久拒绝后系统不再弹框，唯一出路是应用详情页里的
                         // 权限项；把跳转做成显式能力，Dart 侧才能给「去设置」按钮。
@@ -469,7 +492,55 @@ public class AnkiChannelHandler {
                     default:
                         result.notImplemented();
                 }
-            });
+            }));
+    }
+
+    /**
+     * 「空闲一阵后第一次查词要等很久」（shishamo 2026-10-05）：查词弹窗渲染后会逐条
+     * 探测「这个词是否已制卡」（{@code checkForDuplicates} / {@code findNotesByContent}），
+     * 每一次都是一趟跨进程 ContentProvider 查询。AnkiDroid 后台进程被系统回收后，
+     * 这趟查询要先把 AnkiDroid **整个冷启动**（HiBreak 实测：主线程被占 210–250 ms、
+     * 丢 37 帧，弹窗渲染信号从 ~50 ms 推迟到 ~490 ms；牌组大、机器慢时更久），而这里
+     * 原先**全部在主线程**上执行——Hybrid Composition 下 Flutter 的
+     * raster 与 WebView 都绑在主线程，于是整个界面（含刚翻出的弹窗）冻住，直到 AnkiDroid
+     * 起来。一直查词时 AnkiDroid 进程是热的，所以只有「空闲后第一次」慢。
+     *
+     * <p>根因修复：所有碰 AnkiDroid ContentProvider 的方法一律在单线程后台执行器上跑
+     * （保持调用间 FIFO 顺序，addNote → updateNoteFields 不会乱序），结果经
+     * {@link MainThreadResult} 回投主线程（MethodChannel.Result 只能在主线程回复）。
+     * 只有需要 Activity / 不做 IPC 的几个方法留在主线程（见 {@link #runsOnMainThread}）。
+     */
+    private void dispatch(@NonNull MethodCall call, @NonNull MethodChannel.Result result,
+            @NonNull Consumer<MethodChannel.Result> handleCall) {
+        if (runsOnMainThread(call.method)) {
+            handleCall.accept(result);
+            return;
+        }
+        final MethodChannel.Result reply = new MainThreadResult(result);
+        PROVIDER_IO.execute(() -> {
+            try {
+                handleCall.accept(reply);
+            } catch (Throwable t) {
+                // 后台线程上未捕获的异常会直接杀进程；且 Dart 侧 Future 必须完成。
+                reply.error("ANKI_PROVIDER_ERROR", String.valueOf(t.getMessage()), null);
+            }
+        });
+    }
+
+    /**
+     * 留在主线程的方法：要 Activity 弹权限框 / 跳设置页 / 起 Activity，或只是本进程
+     * 内的权限判断（不跨进程）。其余方法都会查询 AnkiDroid ContentProvider。
+     */
+    static boolean runsOnMainThread(@NonNull String method) {
+        switch (method) {
+            case "requestAnkidroidPermissions":
+            case "hasAnkidroidPermission":
+            case "openAnkiPermissionSettings":
+            case "openNote":
+                return true;
+            default:
+                return false;
+        }
     }
 
     /**
@@ -681,19 +752,27 @@ public class AnkiChannelHandler {
     }
 
     /**
-     * TODO-270 C2: overwrites only the given fields of an existing note,
-     * preserving every field the caller did not name (symmetric with the
-     * AnkiConnect updateNoteFields contract).
+     * TODO-270 C2: overwrites the given fields of an existing note (symmetric
+     * with the AnkiConnect updateNoteFields contract).
      *
      * <p>{@link AnkiProvider#updateNoteFields} takes a positional
      * {@code String[]} keyed by the model's field order. We start from the note's
-     * current values and overwrite only the named ones, so unspecified fields are
-     * not cleared.
+     * current values and overwrite the named ones; with {@code clearUnspecified}
+     * false, unspecified fields are preserved.
+     *
+     * <p>BUG-2606: {@code clearUnspecified} true makes this a whole-card replace
+     * (the card becomes what a freshly mined one would be): every field the
+     * caller did not name is written empty, so a stale value left in an unmapped
+     * field (Lapis {@code SentenceFurigana}, filled by another tool and preferred
+     * by the template) can no longer keep showing the old sentence. {@code tags}
+     * (the set a fresh mine would carry) is unioned into the note's existing
+     * tags — the user's other tags are kept.
      *
      * @return {@code null} on success, or a human-readable error string when the
      *         note / its model cannot be found or AnkiDroid refused the update.
      */
-    private String updateNoteFields(long noteId, Map<String, String> fieldValues) {
+    private String updateNoteFields(long noteId, Map<String, String> fieldValues,
+                                    boolean clearUnspecified, List<String> tags) {
         final AnkiProvider api = AnkiProviders.forContext(context);
         AnkiNote note = api.getNote(noteId);
         if (note == null) {
@@ -703,22 +782,31 @@ public class AnkiChannelHandler {
         if (fieldNames == null) {
             return "Note type not found for note: " + noteId;
         }
-        // Start from the existing values so unspecified fields are preserved
-        // (overwrite-given-fields-only semantics).
         String[] existing = note.getFields();
         String[] merged = new String[fieldNames.length];
         for (int i = 0; i < fieldNames.length; i++) {
             String value = fieldValues.get(fieldNames[i]);
             if (value != null) {
                 merged[i] = value;
-            } else if (i < existing.length && existing[i] != null) {
+            } else if (!clearUnspecified && i < existing.length && existing[i] != null) {
                 merged[i] = existing[i];
             } else {
                 merged[i] = "";
             }
         }
         boolean ok = api.updateNoteFields(noteId, merged);
-        return ok ? null : "AnkiDroid rejected the field update for note " + noteId;
+        if (!ok) {
+            return "AnkiDroid rejected the field update for note " + noteId;
+        }
+        if (tags != null && !tags.isEmpty()) {
+            Set<String> mergedTags = new HashSet<>(note.getTags());
+            if (mergedTags.addAll(tags)) {
+                if (!api.updateNoteTags(noteId, mergedTags)) {
+                    return "AnkiDroid rejected the tag update for note " + noteId;
+                }
+            }
+        }
+        return null;
     }
 
     /**
@@ -847,11 +935,16 @@ public class AnkiChannelHandler {
     }
 
     /**
-     * Resolve a synced source identity without guessing by word or local note id.
-     * The notes URI accepts Anki browser syntax (notes_v2 accepts SQL instead).
+     * Candidate notes whose fields contain the card source ID substring, without
+     * guessing by word or local note id. The notes URI accepts Anki browser
+     * syntax (notes_v2 accepts SQL instead); an unqualified term is a substring
+     * match over the note fields, mirroring
+     * {@code CardSourceLink.searchQueryForSourceId}. Substring hits are only
+     * candidates: the Dart repository confirms identity by parsing each note's
+     * {@code fushi://source} href (BUG-2527 removed the redundant marker tag).
      * Rebase to the selected installation so parallel AnkiDroid builds work too.
      */
-    private List<Long> findNotesBySourceMarker(String markerTag) {
+    private List<Long> findNotesBySourceId(String sourceId) {
         final AnkiDroidTarget target = AnkiDroidTarget.resolve(context);
         if (target == null) {
             throw new IllegalStateException("AnkiDroid is unavailable");
@@ -859,22 +952,14 @@ public class AnkiChannelHandler {
         final List<Long> ids = new ArrayList<>();
         try (Cursor cursor = context.getContentResolver().query(
                 target.rebase(FlashCardsContract.Note.CONTENT_URI),
-                new String[] {FlashCardsContract.Note._ID, FlashCardsContract.Note.TAGS},
-                "tag:" + markerTag, null, null)) {
+                new String[] {FlashCardsContract.Note._ID},
+                "sourceId=" + sourceId, null, null)) {
             // A null cursor means lookup failed, never a trustworthy empty match.
             if (cursor == null) {
                 throw new IllegalStateException("AnkiDroid source lookup returned no cursor");
             }
             final int idIndex = cursor.getColumnIndexOrThrow(FlashCardsContract.Note._ID);
-            final int tagsIndex = cursor.getColumnIndexOrThrow(FlashCardsContract.Note.TAGS);
             while (cursor.moveToNext()) {
-                final String rawTags = cursor.getString(tagsIndex);
-                // Browser tag searches may include child tags. Only the exact
-                // marker authorizes editing; a prefix/hierarchy match does not.
-                if (rawTags == null
-                        || !Arrays.asList(rawTags.trim().split("\\s+")).contains(markerTag)) {
-                    continue;
-                }
                 final long id = cursor.getLong(idIndex);
                 if (id > 0 && !ids.contains(id)) ids.add(id);
             }
@@ -1086,5 +1171,47 @@ public class AnkiChannelHandler {
 
     private static String emptyIfNull(@Nullable String value) {
         return value == null ? "" : value;
+    }
+
+    /**
+     * 把后台执行器上产生的回复投回主线程：Flutter 要求 {@link MethodChannel.Result}
+     * 在平台主线程上回复。已在主线程时直接回复，不多绕一圈消息队列。只认第一次回复：
+     * 分支回复后又抛异常时，{@link #dispatch} 的兜底 error 不得二次回复（Flutter 对
+     * 重复回复抛 IllegalStateException，会在主线程上崩）。
+     */
+    static final class MainThreadResult implements MethodChannel.Result {
+        private static final Handler MAIN = new Handler(Looper.getMainLooper());
+        private final MethodChannel.Result inner;
+        private final AtomicBoolean replied = new AtomicBoolean(false);
+
+        MainThreadResult(@NonNull MethodChannel.Result inner) {
+            this.inner = inner;
+        }
+
+        private static void onMain(@NonNull Runnable r) {
+            if (Looper.myLooper() == Looper.getMainLooper()) {
+                r.run();
+            } else {
+                MAIN.post(r);
+            }
+        }
+
+        @Override
+        public void success(@Nullable Object value) {
+            if (replied.compareAndSet(false, true)) onMain(() -> inner.success(value));
+        }
+
+        @Override
+        public void error(@NonNull String code, @Nullable String message,
+                @Nullable Object details) {
+            if (replied.compareAndSet(false, true)) {
+                onMain(() -> inner.error(code, message, details));
+            }
+        }
+
+        @Override
+        public void notImplemented() {
+            if (replied.compareAndSet(false, true)) onMain(inner::notImplemented);
+        }
     }
 }

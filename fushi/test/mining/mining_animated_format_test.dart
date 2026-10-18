@@ -350,7 +350,8 @@ void main() {
             FfmpegFailureReporter? onFailure,
             int audioChannels = 1,
             String audioBitrate = '64k',
-            String? tlsPinSha256}) async =>
+            String? tlsPinSha256,
+            Map<String, String> httpHeaders = const {}}) async =>
         outputPath;
 
     /// 只让 GIF 成功的抽取器 + 调用流水账。模拟「旧包捆绑的 ffmpeg 没有 libsvtav1」。
@@ -367,6 +368,7 @@ void main() {
         bool diagnosticOnly = false,
         FfmpegFailureReporter? onFailure,
         String? tlsPinSha256,
+        Map<String, String> httpHeaders = const {},
       }) async {
         calls.add((
           format: format,
@@ -493,6 +495,7 @@ void main() {
         bool diagnosticOnly = false,
         FfmpegFailureReporter? onFailure,
         String? tlsPinSha256,
+        Map<String, String> httpHeaders = const {},
       }) async {
         calls.add((
           format: format,
@@ -652,6 +655,11 @@ void main() {
 
 /// 恒失败的 ffmpeg 后端：模拟「捆绑的 ffmpeg 没有 libsvtav1 → Unknown encoder」。
 class _AlwaysFailingBackend implements FfmpegBackend {
+  /// 查询类命令（BUG-2938 新增原语）：本假件不区分，交给 [run]。
+  @override
+  Future<FfmpegRunResult> runQuery(List<String> args, Duration timeout) =>
+      run(args, timeout);
+
   const _AlwaysFailingBackend();
 
   @override

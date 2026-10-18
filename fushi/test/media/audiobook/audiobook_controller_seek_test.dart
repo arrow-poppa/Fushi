@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/media/audiobook/audiobook_controller.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:just_audio_platform_interface/just_audio_platform_interface.dart';
 
@@ -159,7 +160,7 @@ void main() {
       final AudiobookPlayerController controller = AudiobookPlayerController();
       addTearDown(controller.dispose);
       final File audioFile =
-          File('${Directory.systemTemp.path}/hibiki-audiobook-load-test.mp3');
+          File('${Directory.systemTemp.path}/fushi-audiobook-load-test.mp3');
       if (!audioFile.existsSync()) {
         audioFile.writeAsBytesSync(const <int>[0]);
       }
@@ -181,8 +182,8 @@ void main() {
       final AudiobookPlayerController controller = AudiobookPlayerController();
       addTearDown(controller.dispose);
       final List<File> audioFiles = <File>[
-        File('${Directory.systemTemp.path}/hibiki-audiobook-load-test-1.mp3'),
-        File('${Directory.systemTemp.path}/hibiki-audiobook-load-test-2.mp3'),
+        File('${Directory.systemTemp.path}/fushi-audiobook-load-test-1.mp3'),
+        File('${Directory.systemTemp.path}/fushi-audiobook-load-test-2.mp3'),
       ];
       for (final File audioFile in audioFiles) {
         if (!audioFile.existsSync()) {
@@ -211,7 +212,7 @@ void main() {
       final AudiobookPlayerController controller = AudiobookPlayerController();
       addTearDown(controller.dispose);
       final File audioFile =
-          File('${Directory.systemTemp.path}/hibiki-audiobook-skip-test.mp3');
+          File('${Directory.systemTemp.path}/fushi-audiobook-skip-test.mp3');
       if (!audioFile.existsSync()) {
         audioFile.writeAsBytesSync(const <int>[0]);
       }

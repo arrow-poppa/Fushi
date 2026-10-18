@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/onboarding/onboarding_steps.dart';
@@ -25,6 +25,8 @@ void main() {
     expect(catalog['jimaku']!.link.toString(), 'https://jimaku.cc/account');
     expect(catalog['opensubtitles']!.link.toString(),
         'https://www.opensubtitles.com/en/consumers');
+    expect(catalog['subdl']!.link.toString(), 'https://subdl.com/panel/api');
+    expect(catalog['subdl']!.requirement, t.onboarding_online_services_key);
     expect(catalog['mal_anilist']!.requirement,
         t.onboarding_online_services_ready);
     expect(catalog['mal_anilist']!.link, isNull);

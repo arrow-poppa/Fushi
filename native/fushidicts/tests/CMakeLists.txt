@@ -58,6 +58,8 @@ add_fushi_test(text_processor_test text_processor_test.cpp
     "${FUSHI_ROOT}/fushidicts_external/utfcpp/source")
 # 弹窗 deinflectionTrace：纯内存，直接喂 LookupResult 给 build_popup_json。
 add_fushi_test(popup_json_deinflection_test popup_json_deinflection_test.cpp)
+# BUG-2753：空读音（MDX 等）并入同表记唯一显式读音的卡，与 Dart 侧同口径。
+add_fushi_test(popup_json_reading_merge_test popup_json_reading_merge_test.cpp)
 # FFI 边界异常闸门覆盖守卫：扫 fushidicts_ffi.cpp 源码，确认每个导出都经过
 # ffi_guard*。漏掉闸门的后果是异常逃出 extern "C" → std::terminate → 进程静默
 # 消失（用户侧：「转圈转一半 app 自己退出，没有报错」），人工 review 兜不住。
@@ -82,6 +84,11 @@ add_fushi_test(media_import_query_test media_import_query_test.cpp)
 # two top-level directories stays unrecognised. Also pins the macOS Finder
 # shapes (__MACOSX/ + .DS_Store), nested wrappers and directory-marker entries.
 add_fushi_test(zip_wrapper_directory_test zip_wrapper_directory_test.cpp)
+# BUG-3277: names carried in the Info-ZIP Unicode Path extra (0x7075) -- an
+# archive without bit 11 stores Shift-JIS raw names and the real UTF-8 name
+# there; media must be keyed by the UTF-8 name. Includes "zip/zip.hpp".
+add_fushi_test(zip_unicode_path_extra_test zip_unicode_path_extra_test.cpp
+    "${FUSHI_SRC}")
 add_fushi_test(freq_pitch_import_query_test freq_pitch_import_query_test.cpp)
 add_fushi_test(freq_pitch_merge_query_test freq_pitch_merge_query_test.cpp)
 # BUG-1304: the two tests above drive DictionaryQuery::query(); this one drives
@@ -129,6 +136,56 @@ add_test(NAME en_apostrophe_lookup_test
          COMMAND en_apostrophe_lookup_test
                  "${FUSHI_ROOT}/../../fushi/assets/transforms/en.json")
 
+# 英语词形变化闭环：不规则形（真 en_irregular.json）+ 整本无词性的 Yomitan 词典
+# 靠 term_rules.flag 把空 rules 当通配，带词性的词典 Yomitan 语义不变。
+add_executable(en_inflection_lookup_test
+    "${CMAKE_CURRENT_SOURCE_DIR}/en_inflection_lookup_test.cpp")
+target_link_libraries(en_inflection_lookup_test PRIVATE fushidicts)
+target_include_directories(en_inflection_lookup_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+if(MSVC)
+  target_compile_options(en_inflection_lookup_test PRIVATE /utf-8 /Zc:__cplusplus /permissive-)
+endif()
+add_test(NAME en_inflection_lookup_test
+         COMMAND en_inflection_lookup_test
+                 "${FUSHI_ROOT}/../../fushi/assets/transforms/en.json"
+                 "${FUSHI_ROOT}/../../fushi/assets/transforms/en_irregular.json")
+
+# BUG-3212：关西方言「うた → った」不得跨词吞掉「ため / たび」的「た」（真 ja.json）。
+add_executable(ja_kansai_ta_boundary_test
+    "${CMAKE_CURRENT_SOURCE_DIR}/ja_kansai_ta_boundary_test.cpp")
+target_link_libraries(ja_kansai_ta_boundary_test PRIVATE fushidicts)
+target_include_directories(ja_kansai_ta_boundary_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+if(MSVC)
+  target_compile_options(ja_kansai_ta_boundary_test PRIVATE /utf-8 /Zc:__cplusplus /permissive-)
+endif()
+add_test(NAME ja_kansai_ta_boundary_test
+         COMMAND ja_kansai_ta_boundary_test
+                 "${FUSHI_ROOT}/../../fushi/assets/transforms/ja.json")
+
+# BUG-3261：汉字 + 假名混写（棚にあげる → 棚に上げる）经读音通路命中。
+add_executable(ja_mixed_orthography_lookup_test
+    "${CMAKE_CURRENT_SOURCE_DIR}/ja_mixed_orthography_lookup_test.cpp")
+target_link_libraries(ja_mixed_orthography_lookup_test PRIVATE fushidicts)
+target_include_directories(ja_mixed_orthography_lookup_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+if(MSVC)
+  target_compile_options(ja_mixed_orthography_lookup_test PRIVATE /utf-8 /Zc:__cplusplus /permissive-)
+endif()
+add_test(NAME ja_mixed_orthography_lookup_test
+         COMMAND ja_mixed_orthography_lookup_test
+                 "${FUSHI_ROOT}/../../fushi/assets/transforms/ja.json")
+
+# BUG-2853：Yomitan 词典自带变形（`[formOf, [rule...]]` 重定向记录）在 lookup 里被跟随。
+add_executable(yomitan_redirect_lookup_test
+    "${CMAKE_CURRENT_SOURCE_DIR}/yomitan_redirect_lookup_test.cpp")
+target_link_libraries(yomitan_redirect_lookup_test PRIVATE fushidicts)
+target_include_directories(yomitan_redirect_lookup_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+if(MSVC)
+  target_compile_options(yomitan_redirect_lookup_test PRIVATE /utf-8 /Zc:__cplusplus /permissive-)
+endif()
+add_test(NAME yomitan_redirect_lookup_test
+         COMMAND yomitan_redirect_lookup_test
+                 "${FUSHI_ROOT}/../../fushi/assets/transforms/en.json")
+
 # --- TODO-892: malformed-DEFLATE / null-decompressor / breadcrumb guards ---
 # zip_malformed_deflate_test includes <libdeflate.h> (to forge a real deflate
 # stream) + "zip/zip.hpp" + the public importer header. fushidicts links
@@ -168,6 +225,16 @@ add_fushi_test(mdx_sibling_script_media_test mdx_sibling_script_media_test.cpp
 # 发音按钮渲染成 0×0 破图、点不着。
 add_fushi_test(mdx_loose_asset_media_test mdx_loose_asset_media_test.cpp
     "${FUSHI_ROOT}/fushidicts_external/libdeflate")
+# BUG-3234: an MDict inside a zip (and any .mdd) is extracted and mounted
+# without holding the member / media companion in RAM -- peak private commit of
+# a child import is bounded on Windows -- and the low_ram mode Android/iOS run
+# in imports the same yomitan dictionary as the wide default.
+add_fushi_test(import_memory_bound_test import_memory_bound_test.cpp
+    "${FUSHI_SRC}"
+    "${FUSHI_ROOT}/fushidicts_external/libdeflate")
+if(WIN32)
+  target_link_libraries(import_memory_bound_test PRIVATE psapi)
+endif()
 # Phase A: MDD (MDX media companion) parses byte-exact and auto-mounts into the
 # dict as media.bin/idx; get_media_file returns the bytes by normalized path.
 add_fushi_test(mdd_media_import_test mdd_media_import_test.cpp
@@ -190,6 +257,12 @@ add_fushi_test(mdx_streaming_blocks_test mdx_streaming_blocks_test.cpp
 # fushidicts_src/.
 add_fushi_test(import_breadcrumb_test import_breadcrumb_test.cpp
     "${FUSHI_SRC}")
+# BUG-2952: the importer must end with an ImportResult, never a dead process
+# (map_rw block reservation vs SIGBUS on a full disk, exception boundary,
+# per-entry kanji tolerance). Includes hash/ and memory/ rooted at fushidicts_src/.
+add_fushi_test(import_failure_boundary_test import_failure_boundary_test.cpp
+    "${FUSHI_SRC}"
+    "${FUSHI_ROOT}/fushidicts_external/utfcpp/source")
 # Source-scan guard: walk fushidicts_src/ and require a null check after every
 # libdeflate_alloc_decompressor(). The source root is passed on argv so the
 # test does not depend on the runtime cwd.

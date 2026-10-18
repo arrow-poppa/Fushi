@@ -10,8 +10,9 @@ library;
 
 import 'dart:async';
 import 'dart:io';
+import 'dart:typed_data';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
@@ -19,11 +20,15 @@ import 'package:fushi/src/media/manga/manga_ocr_wizard_dialog.dart';
 import 'package:fushi/src/media/manga/manga_ocr_wizard_engines.dart';
 import 'package:fushi/src/media/manga/ocr/google_lens_ocr_service.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_engine.dart';
+import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 import 'package:fushi_engine/ocr/manga_ocr_service.dart';
 import 'package:fushi/src/sync/interconnect_manga_ocr_client.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart'
+    show FushiSegmentedButton;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:drift/native.dart';
 import 'package:path/path.dart' as p;
+import '../../helpers/glass_unwrap.dart';
 
 /// 移动端形态的内置服务：平台不支持（远程是唯一可用引擎）。
 class _UnsupportedOcrService implements MangaOcrService {
@@ -49,6 +54,7 @@ class _UnsupportedOcrService implements MangaOcrService {
   Stream<MangaOcrVolumeEvent> ocrFolder({
     required String imageDirPath,
     String? volumeTitle,
+    int startPage = 0,
   }) =>
       const Stream<MangaOcrVolumeEvent>.empty();
 }
@@ -90,8 +96,17 @@ class _NoopLensRunner implements GoogleLensMangaOcrRunner {
     int startPage = 0,
     bool onlyMissing = false,
     String language = 'ja',
+    MangaOcrPageFocus? focus,
   }) =>
       const Stream<MangaOcrVolumeEvent>.empty();
+
+  @override
+  Future<MokuroImage> recognizePageBytes(
+    Uint8List bytes, {
+    required String relativeUrl,
+    required String language,
+  }) =>
+      throw UnimplementedError();
 
   @override
   Future<void> clearCache(String imageDirPath) async {}
@@ -197,7 +212,7 @@ void main() {
     // 远程可用 → Run 可点（唯一引擎，无需分段选择器）。
     final Finder runBtn =
         find.widgetWithText(FilledButton, t.manga_ocr_wizard_run);
-    expect(tester.widget<FilledButton>(runBtn).onPressed, isNotNull);
+    expect(tester.widget<FilledButton>(glassUnwrap<FilledButton>(runBtn)).onPressed, isNotNull);
     await tester.tap(runBtn);
     await tester.pump();
     expect(remote.lastImageDir, imageDir.path);
@@ -240,9 +255,10 @@ void main() {
     await tester.pumpAndSettle();
 
     // 选项保留（与另外三个引擎同构），但置灰。
-    final SegmentedButton<MangaOcrEngineId> selector =
-        tester.widget<SegmentedButton<MangaOcrEngineId>>(
-            find.byType(SegmentedButton<MangaOcrEngineId>));
+    final FushiSegmentedButton<MangaOcrEngineId> selector =
+        tester.widget<FushiSegmentedButton<MangaOcrEngineId>>(
+          find.byType(FushiSegmentedButton<MangaOcrEngineId>),
+        );
     final ButtonSegment<MangaOcrEngineId> pairedSegment = selector.segments
         .firstWhere((ButtonSegment<MangaOcrEngineId> s) =>
             s.value == MangaOcrEngineId.pairedHost);
@@ -275,7 +291,7 @@ void main() {
     expect(find.text(t.manga_remote_ocr_not_ready), findsOneWidget);
     final Finder runBtn =
         find.widgetWithText(FilledButton, t.manga_ocr_wizard_run);
-    expect(tester.widget<FilledButton>(runBtn).onPressed, isNull);
+    expect(tester.widget<FilledButton>(glassUnwrap<FilledButton>(runBtn)).onPressed, isNull);
   });
 
   testWidgets(
@@ -294,7 +310,7 @@ void main() {
     expect(find.text(t.manga_remote_ocr_not_ready), findsNothing);
     final Finder runBtn =
         find.widgetWithText(FilledButton, t.manga_ocr_wizard_run);
-    expect(tester.widget<FilledButton>(runBtn).onPressed, isNotNull);
+    expect(tester.widget<FilledButton>(glassUnwrap<FilledButton>(runBtn)).onPressed, isNotNull);
   });
 
   testWidgets('no capable host: remote hidden, engines-none, Run disabled',
@@ -309,7 +325,7 @@ void main() {
     expect(find.text(t.manga_ocr_engine_none), findsOneWidget);
     final Finder runBtn =
         find.widgetWithText(FilledButton, t.manga_ocr_wizard_run);
-    expect(tester.widget<FilledButton>(runBtn).onPressed, isNull);
+    expect(tester.widget<FilledButton>(glassUnwrap<FilledButton>(runBtn)).onPressed, isNull);
   });
 
   testWidgets(
@@ -326,9 +342,10 @@ void main() {
     await tester.tap(find.text('open'));
     await tester.pumpAndSettle();
 
-    final SegmentedButton<MangaOcrEngineId> selector =
-        tester.widget<SegmentedButton<MangaOcrEngineId>>(
-            find.byType(SegmentedButton<MangaOcrEngineId>));
+    final FushiSegmentedButton<MangaOcrEngineId> selector =
+        tester.widget<FushiSegmentedButton<MangaOcrEngineId>>(
+          find.byType(FushiSegmentedButton<MangaOcrEngineId>),
+        );
     final ButtonSegment<MangaOcrEngineId> paired = selector.segments.firstWhere(
       (ButtonSegment<MangaOcrEngineId> segment) =>
           segment.value == MangaOcrEngineId.pairedHost,
@@ -337,7 +354,7 @@ void main() {
     expect(selector.selected, <MangaOcrEngineId>{MangaOcrEngineId.pairedHost});
     final Finder runBtn =
         find.widgetWithText(FilledButton, t.manga_ocr_wizard_run);
-    expect(tester.widget<FilledButton>(runBtn).onPressed, isNull);
+    expect(tester.widget<FilledButton>(glassUnwrap<FilledButton>(runBtn)).onPressed, isNull);
   });
 
   testWidgets(
@@ -406,6 +423,6 @@ void main() {
     // 回到 configure：Run 可再点。
     final Finder runBtn =
         find.widgetWithText(FilledButton, t.manga_ocr_wizard_run);
-    expect(tester.widget<FilledButton>(runBtn).onPressed, isNotNull);
+    expect(tester.widget<FilledButton>(glassUnwrap<FilledButton>(runBtn)).onPressed, isNotNull);
   });
 }

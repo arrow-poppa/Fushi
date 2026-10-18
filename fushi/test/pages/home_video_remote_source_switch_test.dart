@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:drift/native.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -56,7 +56,7 @@ void main() {
   late Directory pathProviderDir;
   setUpAll(() {
     pathProviderDir =
-        Directory.systemTemp.createTempSync('hibiki_remote_switch_pp');
+        Directory.systemTemp.createTempSync('fushi_remote_switch_pp');
     binding.defaultBinaryMessenger.setMockMethodCallHandler(
       const MethodChannel('plugins.flutter.io/path_provider'),
       (MethodCall call) async => pathProviderDir.path,
@@ -89,7 +89,7 @@ void main() {
     prefs = PreferencesRepository(db);
     await prefs.loadFromDb();
     storeDir =
-        Directory.systemTemp.createTempSync('hibiki_remote_switch_store');
+        Directory.systemTemp.createTempSync('fushi_remote_switch_store');
     platformServices = testPlatformServices();
     ankiRepository = FakeAnkiRepository();
     appModel = AppModel(platformServices)
@@ -323,6 +323,8 @@ class _FakeInterconnectVideoClient implements RemoteVideoClient {
     String id,
     File dest, {
     void Function(double progress)? onProgress,
+    void Function(int received, int? total)? onBytes,
+    Future<void>? cancelSignal,
   }) async =>
       throw UnimplementedError();
 
@@ -394,6 +396,8 @@ class _FakeCloudVideoSource implements CloudRemoteVideoClient {
     String id,
     File dest, {
     void Function(double progress)? onProgress,
+    void Function(int received, int? total)? onBytes,
+    Future<void>? cancelSignal,
   }) async =>
       throw UnimplementedError();
 
@@ -412,4 +416,7 @@ class _FakeCloudVideoSource implements CloudRemoteVideoClient {
     void Function(double progress)? onProgress,
   }) async =>
       false;
+
+  @override
+  CloudStreamVideoClient? streamingClient() => null;
 }

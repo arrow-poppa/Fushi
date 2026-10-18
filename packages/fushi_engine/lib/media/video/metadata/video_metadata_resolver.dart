@@ -1,8 +1,8 @@
 /// 严格视频资料识别器：一个主源 + 至多一个兜底源。
 ///
-/// 主源/兜底源由调用方按用户偏好给出（生产是 MAL ↔ TMDB 互为主备；AniDB
-/// 之类的单源语义就不传兜底）。主源没有**唯一精确命中**时才问兜底源；兜底源
-/// 精确命中即采用；两边都只剩待确认候选时把两边候选合并交人工。
+/// 主源/兜底源由调用方按用户偏好给出（生产默认 AniDB 主 + TMDB 补充，Shoko
+/// 形态；MAL ↔ TMDB 互为主备仍可选）。主源没有**唯一精确命中**时才问兜底源；
+/// 兜底源精确命中即采用；两边都只剩待确认候选时把两边候选合并交人工。
 library;
 
 import 'dart:async';
@@ -12,8 +12,12 @@ import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_transport.dart';
 import 'package:fushi_engine/media/video/scraper/filename_parser.dart';
+import 'package:fushi_engine/media/video/scraper/scraper_types.dart';
 import 'package:fushi_engine/media/video/scraper/title_normalizer.dart';
+import 'package:fushi_engine/foundation/engine_paths.dart';
+import 'package:fushi_engine/media/video/metadata/anidb_video_metadata_provider.dart';
 import 'package:fushi_engine/media/video/metadata/mal_video_metadata_provider.dart';
+import 'package:path/path.dart' as p;
 import 'package:fushi_engine/media/video/metadata/tmdb_video_metadata_provider.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_config.dart';
 
@@ -36,6 +40,7 @@ class VideoMetadataResolveRequest {
     this.episodeCount,
     this.confirmedLookup,
     this.fallbackProvider,
+    this.includeAdult = false,
     List<String> identityHints = const <String>[],
   })  : assert(fallbackProvider != selectedProvider),
         titleCandidates = List<String>.unmodifiable(titleCandidates),
@@ -63,6 +68,9 @@ class VideoMetadataResolveRequest {
   final int? episodeCount;
   final VideoMetadataLookup? confirmedLookup;
   final List<String> identityHints;
+
+  /// 透传给 [VideoMetadataSearchRequest.includeAdult]。
+  final bool includeAdult;
 }
 
 class VideoMetadataResolution {
@@ -74,7 +82,20 @@ class VideoMetadataResolution {
     this.providerKind,
     List<VideoMetadataWork> candidates = const <VideoMetadataWork>[],
     this.reason,
+    this.transient = false,
+    this.searchedWithoutResult = false,
   }) : candidates = List<VideoMetadataWork>.unmodifiable(candidates);
+
+  /// 标题搜索链跑完、一条结果都没有，而且没有任何一家失败：真正搜过的源
+  /// 全部查无，其余源只是没配置（没发请求）。鉴权失败 / 坏响应 / 临时故障都让
+  /// 它为 false——那些是「没搜成」，不是「搜了没有」。
+  final bool searchedWithoutResult;
+
+  /// [VideoMetadataResolutionStatus.providerUnavailable] 的两种来源要分开：
+  /// true = 请求发出去了但暂时失败（网络 / 5xx / 限流，见
+  /// `isTransientVideoMetadataFailure`），过会儿原样重试可能成功；false = 没配置
+  /// 等重试也不会变的情况。其它状态恒 false。
+  final bool transient;
 
   final VideoMetadataResolutionStatus status;
   final VideoMetadataResolutionMethod? method;
@@ -95,8 +116,20 @@ class VideoMetadataProviderRegistry {
     String? locale,
   }) =>
       VideoMetadataProviderRegistry(<VideoMetadataProvider>[
-        // 两个 provider 拿同一个资料语言：标题、简介、海报必须同一种语言，
+        // 三个 provider 拿同一个资料语言：标题、简介、海报必须同一种语言，
         // 任一处漏传就是「刮削不同语言」。
+        // AniDB HTTP 资料链（Shoko 的主源）：吃 **HTTP** 身份，不是 UDP 身份——
+        // 随包 `fushiplayer` 只登记了 UDP，HTTP 身份随包为空（BUG-2623），此时
+        // provider 发请求前就判不可用、只剩标题目录；用户自定义 client 时两边同一
+        // 对（禁 Shoko 的 animeplugin/ommserver）。进程级 2s+ 限流闸按 endpoint
+        // 共享，anime XML 落盘 24h（Shoko AnimeDoc_{aid}.xml）。
+        AniDbVideoMetadataProvider(
+          clientName: config.anidbHttpClientName,
+          clientVersion: config.anidbHttpClientVersion,
+          language: locale ?? config.locale,
+          xmlCacheDirectory: () async => Directory(p.join(
+              (await enginePaths.supportRootDirectory()).path, 'anidb_anime')),
+        ),
         MalVideoMetadataProvider(language: locale ?? config.locale),
         TmdbVideoMetadataProvider(
           apiKey: config.tmdbApiKey,
@@ -173,31 +206,47 @@ class VideoMetadataResolver {
     // 不被询问，后台任务于是把整条记成待确认）。
     final List<VideoMetadataResolution> ambiguous = <VideoMetadataResolution>[];
     final List<VideoMetadataResolution> failures = <VideoMetadataResolution>[];
+    bool searchedEmpty = false;
+    bool searchFailed = false;
     for (final VideoMetadataProviderKind kind in request.providerChain) {
-      final VideoMetadataResolution resolved = await _attempt(kind, () async {
-        final VideoMetadataProvider? provider = registry.provider(kind);
-        if (provider == null || !provider.isAvailable) {
-          return VideoMetadataResolution(
-            status: VideoMetadataResolutionStatus.providerUnavailable,
-            providerKind: kind,
-            reason: '${kind.name} is not configured',
-          );
-        }
-        return _searchWithProvider(provider, request);
-      });
+      final VideoMetadataProvider? provider = registry.provider(kind);
+      if (provider == null || !provider.isAvailable) {
+        failures.add(VideoMetadataResolution(
+          status: VideoMetadataResolutionStatus.providerUnavailable,
+          providerKind: kind,
+          reason: '${kind.name} is not configured',
+        ));
+        continue;
+      }
+      final VideoMetadataResolution resolved =
+          await _attempt(kind, () => _searchWithProvider(provider, request));
       switch (resolved.status) {
         case VideoMetadataResolutionStatus.matched:
           return resolved;
         case VideoMetadataResolutionStatus.ambiguous:
           ambiguous.add(resolved);
         case VideoMetadataResolutionStatus.notFound:
+          searchedEmpty = true;
+          failures.add(resolved);
         case VideoMetadataResolutionStatus.providerUnavailable:
+          searchFailed = true;
           failures.add(resolved);
       }
     }
     if (ambiguous.isNotEmpty) return _mergeAmbiguous(ambiguous);
-    if (failures.length == 1) return failures.single;
+    final bool exhausted = searchedEmpty && !searchFailed;
+    if (failures.length == 1) {
+      final VideoMetadataResolution single = failures.single;
+      return VideoMetadataResolution(
+        status: single.status,
+        providerKind: single.providerKind,
+        reason: single.reason,
+        transient: single.transient,
+        searchedWithoutResult: exhausted,
+      );
+    }
     return VideoMetadataResolution(
+      searchedWithoutResult: exhausted,
       status: failures.any((VideoMetadataResolution result) =>
               result.status ==
               VideoMetadataResolutionStatus.providerUnavailable)
@@ -208,6 +257,8 @@ class VideoMetadataResolver {
           .map((VideoMetadataResolution result) =>
               '${result.providerKind?.name}: ${result.reason}')
           .join('; '),
+      // 链上任一家是临时故障，它恢复后重试就可能命中。
+      transient: failures.any((VideoMetadataResolution r) => r.transient),
     );
   }
 
@@ -242,15 +293,15 @@ class VideoMetadataResolver {
 
   /// 已确认/显式身份只在链上的源之间受理。历史 AniDB 绑定在含 MAL 的链上
   /// 仍受理（协调器靠它做 AniDB→MAL 映射与旧身份保护），单源语义不受理外源。
+  /// 已确认 / 显式 id 只要来自**仍可选的生产主源**（AniDB / MAL / TMDB）就按
+  /// 那家直取，不限于本次询问链——用户或上一轮确认过的身份不因主源偏好变化
+  /// 被静默换源、重搜（2026-09-20 默认主源 MAL → AniDB 时存量 MAL 作品照旧）。
   bool _acceptsIdentity(
     VideoMetadataProviderKind provider,
     VideoMetadataResolveRequest request,
-  ) {
-    final List<VideoMetadataProviderKind> chain = request.providerChain;
-    return chain.contains(provider) ||
-        (chain.contains(VideoMetadataProviderKind.mal) &&
-            provider == VideoMetadataProviderKind.anidb);
-  }
+  ) =>
+      request.providerChain.contains(provider) ||
+      kSelectableVideoMetadataProviders.contains(provider);
 
   Future<VideoMetadataResolution> _attempt(
     VideoMetadataProviderKind kind,
@@ -276,6 +327,7 @@ class VideoMetadataResolver {
         lookup: lookup,
         method: method,
         reason: error.toString(),
+        transient: isTransientVideoMetadataFailure(error),
       );
     }
   }
@@ -293,8 +345,10 @@ class VideoMetadataResolver {
       if (title.isEmpty) continue;
       final Set<String> normalizedTitles = _normalizedTitles(title);
       if (normalizedTitles.isEmpty) continue;
+      final VideoMetadataResolveRequest titleRequest =
+          _requestForTitle(request, title);
       final List<VideoMetadataWork> searched =
-          await _searchGated(provider, request, title);
+          await _searchGated(provider, titleRequest, title);
       final Map<String, VideoMetadataWork> exact =
           <String, VideoMetadataWork>{};
       for (final VideoMetadataWork candidate in searched) {
@@ -319,7 +373,8 @@ class VideoMetadataResolver {
             ? fetchedDetails[lookupKey]
             : await provider.fetchWork(lookup);
         if (details != null) {
-          details = await _validatedDetails(provider, lookup, details, request);
+          details =
+              await _validatedDetails(provider, lookup, details, titleRequest);
         }
         fetchedDetails[lookupKey] = details;
         if (details == null) {
@@ -423,6 +478,33 @@ class VideoMetadataResolver {
     );
   }
 
+  /// 这条标题候选适用的请求：候选以**裸年份**结尾、且请求年份正是它（`Death Race
+  /// 2000` + year 2000）时，这个「年份」就是从候选自己的片名尾巴上剥下来的，不是
+  /// 独立证据——按它过年份门会把 1975 年的《Death Race 2000》拒掉（BUG-3266）。
+  /// 此时该候选不带年份搜、不过年份门；其余候选照常。
+  static VideoMetadataResolveRequest _requestForTitle(
+    VideoMetadataResolveRequest request,
+    String title,
+  ) {
+    final int? year = request.year;
+    if (year == null) return request;
+    final ParsedMediaName parsed = FilenameParser.parse(title);
+    if (parsed.titleWithTrailingYear == null || parsed.year != year) {
+      return request;
+    }
+    return VideoMetadataResolveRequest(
+      selectedProvider: request.selectedProvider,
+      fallbackProvider: request.fallbackProvider,
+      mediaKind: request.mediaKind,
+      titleCandidates: request.titleCandidates,
+      seasonNumber: request.seasonNumber,
+      episodeCount: request.episodeCount,
+      confirmedLookup: request.confirmedLookup,
+      includeAdult: request.includeAdult,
+      identityHints: request.identityHints,
+    );
+  }
+
   /// 一个标题的搜索计划（对标 MoviePilot `TmdbApi.match`）：先带年份搜；
   /// 过 type/year gate 后为空再用同一标题、不带年份搜一次（gate 仍按
   /// request.year ±1 过滤）。provider 侧的年份过滤（TMDB `first_air_date_year`）
@@ -439,6 +521,7 @@ class VideoMetadataResolver {
           mediaKind: request.mediaKind,
           year: year,
           seasonNumber: request.seasonNumber,
+          includeAdult: request.includeAdult,
         ),
       );
       return <VideoMetadataWork>[

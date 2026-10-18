@@ -33,7 +33,24 @@ class _RecordingService extends AnkiConnectService {
   Future<bool> mediaFileExists(String filename) async => false;
 
   @override
-  Future<Map<String, String>?> notesInfo(int noteId) async => existingFields;
+  Future<AnkiConnectNoteInfo?> noteInfo(int noteId) async {
+    final Map<String, String>? fields = existingFields;
+    if (fields == null) return null;
+    return (modelName: noteModelName, fields: fields);
+  }
+
+  /// BUG-2606 起覆盖路径会 addTags；不覆写就打真 localhost:8765——本机开着 Anki
+  /// 时假绿、CI 上红。
+  final List<({int noteId, List<String> tags})> addTagsCalls =
+      <({int noteId, List<String> tags})>[];
+
+  @override
+  Future<void> addTags(int noteId, List<String> tags) async {
+    addTagsCalls.add((noteId: noteId, tags: List<String>.from(tags)));
+  }
+
+  /// 假 note 的笔记类型名；null = 服务端没给，仓库跳过类型校验。
+  String? noteModelName;
 
   @override
   Future<void> storeMediaFile({
@@ -92,7 +109,7 @@ AnkiSettings _settings() => const AnkiSettings(
       availableDecks: <AnkiDeck>[AnkiDeck(id: 1, name: 'Mining')],
       availableNoteTypes: <AnkiNoteType>[
         AnkiNoteType(
-            id: 2, name: 'Hibiki', fields: <String>['Expression', 'Reading']),
+            id: 2, name: 'Fushi', fields: <String>['Expression', 'Reading']),
       ],
       fieldMappings: <String, String>{
         'Expression': '{expression}',
@@ -188,8 +205,8 @@ void main() {
         result: <Map<String, dynamic>>[
           <String, dynamic>{
             'noteId': 777,
-            'modelName': 'Hibiki',
-            'tags': <String>['hibiki'],
+            'modelName': 'Fushi',
+            'tags': <String>['fushi'],
             'fields': <String, dynamic>{
               'Expression': <String, dynamic>{'value': '勉強', 'order': 0},
               'Reading': <String, dynamic>{'value': 'べんきょう', 'order': 1},
@@ -366,7 +383,7 @@ void main() {
           availableNoteTypes: <AnkiNoteType>[
             AnkiNoteType(
                 id: 2,
-                name: 'Hibiki',
+                name: 'Fushi',
                 fields: <String>['Expression', 'Sentence']),
           ],
           fieldMappings: <String, String>{

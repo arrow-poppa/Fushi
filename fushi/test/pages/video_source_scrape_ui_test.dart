@@ -2,14 +2,18 @@ import 'dart:async';
 
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/i18n/strings.g.dart' show t;
 import 'package:fushi/models.dart';
 import 'package:fushi_engine/media/source_library/source_library_row.dart';
 import 'package:fushi/src/media/source_library/source_library_scanner.dart';
+import 'package:fushi_engine/media/video/metadata/video_library_scrape_sweep.dart'
+    show VideoPendingScrapeWork;
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart';
+import 'package:fushi_engine/media/video/metadata/video_scrape_ai_identity.dart';
 import 'package:fushi/src/media/video/metadata/video_source_scrape_dialog.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_task.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_work_planner.dart'
@@ -18,6 +22,7 @@ import 'package:fushi/src/pages/implementations/media_sources_view.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 import '../helpers/test_platform_services.dart';
+import '../helpers/glass_unwrap.dart';
 
 FushiDatabase _memDb() => FushiDatabase.forTesting(
       NativeDatabase.memory(
@@ -106,6 +111,33 @@ class _HoldingScrapeRunner implements VideoSourceScrapeRunner {
       sourceIds: <int>[source.id],
       totalWorks: 3,
       succeededWorks: 3,
+    );
+  }
+}
+
+/// 立即完成，报告里带 [warnings] 条说明（`Issue #n`）。
+class _ReportRunner implements VideoSourceScrapeRunner {
+  _ReportRunner({required this.warnings});
+  final int warnings;
+
+  @override
+  Future<SourceScrapeReport> scrapeSource(
+    SourceLibraryRow source, {
+    required VideoSourceScrapeCancellationToken cancellationToken,
+    required VideoSourceScrapeProgressCallback onProgress,
+    VideoSourceScrapeConfirmationCallback? onConfirmation,
+    VideoSourceScrapeBatchContext? batchContext,
+    List<VideoSourceScrapeWork>? plannedWorks,
+    String runScope = 'source',
+  }) async {
+    return SourceScrapeReport(
+      sourceIds: <int>[source.id],
+      totalWorks: warnings,
+      succeededWorks: warnings,
+      warnings: <SourceScrapeIssue>[
+        for (int index = 1; index <= warnings; index++)
+          SourceScrapeIssue(workTitle: 'Show $index', message: 'Issue #$index'),
+      ],
     );
   }
 }
@@ -218,6 +250,169 @@ Future<int> _seedUnresolvedRun(FushiDatabase db, int sourceId) =>
         finishedAt: const Value<int?>(2),
       ),
     );
+
+/// 支持「AI 识别」的 runner：[available] 模拟「设置 › AI」有没有指派提供商。
+class _AiIdentifyRunner
+    implements VideoSourceScrapeRunner, VideoSourceScrapeAiIdentify {
+  _AiIdentifyRunner({
+    required this.available,
+    this.reason = 'same year and studio',
+  });
+
+  bool available;
+  final String reason;
+  final List<String> identifiedKeys = <String>[];
+
+  @override
+  bool get aiIdentityAvailable => available;
+
+  @override
+  Future<SourceScrapeReport> scrapeSource(
+    SourceLibraryRow source, {
+    required VideoSourceScrapeCancellationToken cancellationToken,
+    required VideoSourceScrapeProgressCallback onProgress,
+    VideoSourceScrapeConfirmationCallback? onConfirmation,
+    VideoSourceScrapeBatchContext? batchContext,
+    List<VideoSourceScrapeWork>? plannedWorks,
+    String runScope = 'source',
+  }) async =>
+      SourceScrapeReport(sourceIds: <int>[source.id]);
+
+  @override
+  Future<SourceScrapeReport> identifyWorkWithAi({
+    required SourceLibraryRow source,
+    required String workTitle,
+    String? workStableKey,
+    required VideoSourceScrapeCancellationToken cancellationToken,
+    required VideoSourceScrapeProgressCallback onProgress,
+  }) async {
+    identifiedKeys.add(workStableKey ?? workTitle);
+    return SourceScrapeReport(
+      sourceIds: <int>[source.id],
+      totalWorks: 1,
+      succeededWorks: 1,
+      warnings: <SourceScrapeIssue>[
+        SourceScrapeIssue(
+          workTitle: workTitle,
+          message: encodeVideoScrapeAiIdentityNote(
+            AiVideoIdentityDecision(
+              key: 'anidb:65733',
+              confidence: 0.93,
+              reason: reason,
+            ),
+          ),
+          workKey: workStableKey,
+        ),
+      ],
+    );
+  }
+}
+
+/// 交互式批次里把一个带 AI 建议的确认请求交给面板，等用户选。
+class _AiSuggestionConfirmationRunner implements VideoSourceScrapeRunner {
+  _AiSuggestionConfirmationRunner(this.candidates);
+
+  final List<VideoSourceScrapeConfirmationCandidate> candidates;
+  VideoSourceScrapeConfirmationCandidate? chosen;
+
+  @override
+  Future<SourceScrapeReport> scrapeSource(
+    SourceLibraryRow source, {
+    required VideoSourceScrapeCancellationToken cancellationToken,
+    required VideoSourceScrapeProgressCallback onProgress,
+    VideoSourceScrapeConfirmationCallback? onConfirmation,
+    VideoSourceScrapeBatchContext? batchContext,
+    List<VideoSourceScrapeWork>? plannedWorks,
+    String runScope = 'source',
+  }) async {
+    chosen = await onConfirmation!(
+      VideoSourceScrapeConfirmation(
+        sourceId: source.id,
+        sourceLabel: source.label,
+        localWorkTitle: 'Doraemon Movies',
+        candidates: candidates,
+        aiSuggestion: const VideoSourceScrapeAiSuggestion(
+          candidateIndex: 1,
+          confidencePercent: 72,
+          reason: 'theatrical release matches the folder',
+        ),
+      ),
+    );
+    return SourceScrapeReport(
+      sourceIds: <int>[source.id],
+      totalWorks: 1,
+      succeededWorks: chosen == null ? 0 : 1,
+    );
+  }
+}
+
+/// 一条待确认作品：真实来源行 + 真实视频行组成的 book 单元。
+Future<VideoPendingScrapeWork> _seedPendingWork(FushiDatabase db) async {
+  final int sourceId = await _seedSource(db, mediaKind: 'video');
+  final SourceLibraryRow source = (await db.getMediaSourceById(sourceId))!;
+  await db.upsertVideoBook(VideoBooksCompanion(
+    bookUid: const Value<String>('movie-a'),
+    title: const Value<String>('Unscraped Movie'),
+    videoPath: const Value<String>('/nonexistent/video/Unscraped Movie.mkv'),
+    sourceId: Value<int?>(sourceId),
+  ));
+  final VideoBookRow book = (await db.getVideoBookByBookUid('movie-a'))!;
+  return VideoPendingScrapeWork(
+    source: source,
+    work: VideoSourceScrapeWork(
+      source: source,
+      title: 'Unscraped Movie',
+      members: <VideoBookRow>[book],
+    ),
+  );
+}
+
+/// 打开任务面板并切到「待确认」tab。
+Future<void> _openPendingTab(
+  WidgetTester tester,
+  FushiDatabase db,
+  VideoSourceScrapeTaskController controller,
+  VideoPendingScrapeWork entry, {
+  Future<List<VideoPendingScrapeWork>> Function()? loadPendingWorks,
+  bool showAiIdentify = true,
+}) async {
+  await tester.pumpWidget(
+    MaterialApp(
+      home: Builder(
+        builder: (BuildContext context) => Scaffold(
+          body: TextButton(
+            onPressed: () => unawaited(
+              showVideoSourceScrapeTaskPanel(
+                context: context,
+                controller: controller,
+                loadRuns: () => db.getVideoSourceScrapeRuns(limit: 20),
+                loadPendingWorks: loadPendingWorks ??
+                    () async => <VideoPendingScrapeWork>[entry],
+                showAiIdentify: showAiIdentify,
+              ),
+            ),
+            child: const Text('Open tasks'),
+          ),
+        ),
+      ),
+    ),
+  );
+  await tester.tap(find.text('Open tasks'));
+  await tester.pumpAndSettle();
+  await tester.tap(
+    find.byKey(const ValueKey<String>('video-source-tab-pending')),
+  );
+  await tester.pumpAndSettle();
+  expect(
+    find.byKey(
+      const ValueKey<String>('video-source-pending-work-book:movie-a'),
+    ),
+    findsOneWidget,
+  );
+}
+
+const ValueKey<String> _aiButtonKey =
+    ValueKey<String>('video-source-pending-ai-book:movie-a');
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -343,6 +538,87 @@ void main() {
     expect(controller.isRunning, isFalse);
   });
 
+  // BUG-2594：已完成报告的说明列表以前硬截在 260px 里，弹窗下半截一直空着。
+  // 现在整个「当前任务」tab 是一个列表，说明行一直铺到 tab 底部。
+  testWidgets('finished report issues fill the whole activity tab',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1400, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final FushiDatabase db = _memDb();
+    addTearDown(db.close);
+    final int sourceId = await _seedSource(db, mediaKind: 'video');
+    final SourceLibraryRow source = (await db.getMediaSourceById(sourceId))!;
+    final _ReportRunner runner = _ReportRunner(warnings: 60);
+    final VideoSourceScrapeTaskController controller =
+        VideoSourceScrapeTaskController(runner);
+    addTearDown(controller.dispose);
+    await controller.scrapeSource(source);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (BuildContext context) => Scaffold(
+            body: TextButton(
+              onPressed: () => unawaited(showVideoSourceScrapeTaskPanel(
+                context: context,
+                controller: controller,
+                loadRuns: () => db.getVideoSourceScrapeRuns(limit: 20),
+              )),
+              child: const Text('Open tasks'),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('Open tasks'));
+    await tester.pumpAndSettle();
+
+    final Finder list =
+        find.byKey(const PageStorageKey<String>('video-source-activity-list'));
+    expect(list, findsOneWidget);
+    final Finder issues =
+        find.descendant(of: list, matching: find.textContaining('Issue #'));
+    // 弹窗内容高 640（屏高 1000 × .65），扣掉提示 / tab 栏后列表约 520px；
+    // 每行两行文字 ≈ 56px → 至少 8 行**真正落在列表可视区内**；旧的 260px
+    // 硬截只能露出 4 行（懒加载的 cacheExtent 会多建几行，所以按矩形数）。
+    final Rect listRect = tester.getRect(list);
+    final int visible = issues
+        .evaluate()
+        .where((Element element) => listRect
+            .contains(tester.getRect(find.byWidget(element.widget)).center))
+        .length;
+    // M3E 分段卡片行（2026-10-06：卡内边距 + 行间 2px + 顶部状态卡）每行约
+    // 76px，同样高度能露出 5 行以上；判据仍是「多于旧 260px 硬截的 4 行」且
+    // 可视行一直排到列表底部。
+    expect(visible, greaterThanOrEqualTo(5), reason: '说明行没有铺满 tab');
+    final List<Rect> visibleRows = issues
+        .evaluate()
+        .map((Element element) => tester.getRect(find.byWidget(element.widget)))
+        .where((Rect r) => listRect.contains(r.center))
+        .toList();
+    final double rowPitch = visibleRows[1].top - visibleRows[0].top;
+    expect(visibleRows.last.bottom, greaterThan(listRect.bottom - 2 * rowPitch),
+        reason: '说明行要一直铺到 tab 底部，不能停在半截');
+    final RenderBox listBox = tester.renderObject(list);
+    final RenderBox tabView = tester.renderObject(find.byType(TabBarView));
+    expect(listBox.size.height, tabView.size.height,
+        reason: '列表要占满 TabBarView 的整个高度');
+    // 列表可以滚到最后一条说明（说明文字是 SelectableText，拖拽会变成选字，
+    // 直接驱动滚动位置）。
+    final ScrollableState scrollable = tester.state<ScrollableState>(
+        find.descendant(of: list, matching: find.byType(Scrollable)).first);
+    // 懒列表的 maxScrollExtent 是逐步估出来的，跳到底要循环几次。
+    for (int round = 0; round < 20; round++) {
+      scrollable.position.jumpTo(scrollable.position.maxScrollExtent);
+      await tester.pumpAndSettle();
+      if (scrollable.position.pixels >= scrollable.position.maxScrollExtent) {
+        break;
+      }
+    }
+    expect(find.textContaining('Issue #60'), findsOneWidget);
+  });
+
   testWidgets('book and manga rows never expose video scrape controls',
       (WidgetTester tester) async {
     for (final String kind in <String>['book', 'manga']) {
@@ -440,7 +716,7 @@ void main() {
     await tester.tap(find.byTooltip('Source scrape settings'));
     await tester.pumpAndSettle();
     expect(
-      tester.widget<TextField>(localeField()).controller!.text,
+      tester.widget<TextField>(glassUnwrap<TextField>(localeField())).controller!.text,
       'ja',
     );
     await tester.enterText(localeField(), '   ');
@@ -614,9 +890,14 @@ void main() {
     // 搜索框预填的是那条待确认作品名，用户可直接搜。
     expect(runner.queries, <String>['Doraemon Movies']);
 
-    await tester.tap(find.byKey(
+    // M3E 手动指定弹窗（页眉图标 + 说明 + 搜索框 + 分段候选卡）在 800×600 下
+    // 正文要滚：结果卡落在正文滚动区下沿、被动作行盖住。先滚进来再点。
+    final Finder candidate = find.byKey(
       const ValueKey<String>('video-source-candidate-anidb-tv-65733'),
-    ));
+    );
+    await tester.ensureVisible(candidate);
+    await tester.pumpAndSettle();
+    await tester.tap(candidate);
     await tester.pumpAndSettle();
 
     expect(runner.boundTitles, <String>['Doraemon Movies']);
@@ -686,5 +967,256 @@ void main() {
     expect(find.text('Scrape result'), findsOneWidget);
     expect(find.text('No match found'), findsOneWidget);
     expect(source.id, sourceId);
+  });
+
+  group('AI identify in the pending tab', () {
+    for (final bool reloadFails in <bool>[false, true]) {
+      testWidgets(
+          'long AI conclusion scrolls during reload and after '
+          '${reloadFails ? 'failure' : 'the last work is cleared'}', (
+        WidgetTester tester,
+      ) async {
+        await tester.binding.setSurfaceSize(const Size(800, 600));
+        addTearDown(() => tester.binding.setSurfaceSize(null));
+        final FushiDatabase db = _memDb();
+        addTearDown(db.close);
+        final VideoPendingScrapeWork entry = await _seedPendingWork(db);
+        final _AiIdentifyRunner runner = _AiIdentifyRunner(
+          available: true,
+          reason: List<String>.generate(
+            20,
+            (int index) => 'AI evidence $index: matching year and studio.',
+          ).join('\n'),
+        );
+        final VideoSourceScrapeTaskController controller =
+            VideoSourceScrapeTaskController(runner);
+        addTearDown(controller.dispose);
+        final Completer<List<VideoPendingScrapeWork>> reload =
+            Completer<List<VideoPendingScrapeWork>>();
+        bool retried = false;
+        await _openPendingTab(
+          tester,
+          db,
+          controller,
+          entry,
+          loadPendingWorks: () async {
+            if (runner.identifiedKeys.isEmpty) {
+              return <VideoPendingScrapeWork>[entry];
+            }
+            if (retried) return <VideoPendingScrapeWork>[];
+            return reload.future;
+          },
+        );
+        await tester.tap(find.byKey(_aiButtonKey));
+        await tester.pump();
+        await tester.pump(const Duration(seconds: 1));
+        expect(runner.identifiedKeys, <String>['book:movie-a']);
+        expect(find.textContaining('AI evidence 19'), findsOneWidget);
+        expect(
+          tester.takeException(),
+          isNull,
+          reason: '长结论在等待重新加载时也必须滚动，不能固定在正文外',
+        );
+
+        if (reloadFails) {
+          reload.completeError(StateError('pending refresh failed'));
+        } else {
+          reload.complete(<VideoPendingScrapeWork>[]);
+        }
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+        expect(find.byKey(_aiButtonKey), findsNothing);
+        final Finder list = find.byKey(
+          const PageStorageKey<String>('video-source-pending-list'),
+        );
+        final Finder scrollable =
+            find.descendant(of: list, matching: find.byType(Scrollable)).first;
+        final Finder outcome = find.text(
+          reloadFails
+              ? t.video_source_scrape_list_reload
+              : t.video_source_scrape_pending_empty,
+        );
+        await tester.scrollUntilVisible(outcome, 200, scrollable: scrollable);
+        await tester.pumpAndSettle();
+        expect(
+          outcome.hitTestable(),
+          findsOneWidget,
+          reason: '结论底下的空态或重试按钮必须能滚进正文视口',
+        );
+        expect(tester.takeException(), isNull);
+        if (reloadFails) {
+          retried = true;
+          await tester.tap(outcome);
+          await tester.pumpAndSettle();
+          await tester.scrollUntilVisible(
+            find.text(t.video_source_scrape_pending_empty),
+            200,
+            scrollable: scrollable,
+          );
+          await tester.pumpAndSettle();
+          expect(
+            find.text(t.video_source_scrape_pending_empty).hitTestable(),
+            findsOneWidget,
+          );
+          expect(tester.takeException(), isNull);
+        }
+      });
+    }
+
+    testWidgets('available AI: the button runs identifyWorkWithAi once',
+        (WidgetTester tester) async {
+      final FushiDatabase db = _memDb();
+      addTearDown(db.close);
+      final VideoPendingScrapeWork entry = await _seedPendingWork(db);
+      final _AiIdentifyRunner runner = _AiIdentifyRunner(available: true);
+      final VideoSourceScrapeTaskController controller =
+          VideoSourceScrapeTaskController(runner);
+      addTearDown(controller.dispose);
+
+      await _openPendingTab(tester, db, controller, entry);
+      expect(find.byKey(_aiButtonKey), findsOneWidget);
+      await tester.tap(find.byKey(_aiButtonKey));
+      await tester.pumpAndSettle();
+
+      expect(runner.identifiedKeys, <String>['book:movie-a']);
+      // 结论逐条译成文案：汇总 + ai:matched 标记的本地化标题与理由。
+      expect(find.textContaining(t.video_scrape_ai_matched), findsOneWidget);
+      expect(find.textContaining('same year and studio'), findsOneWidget);
+      expect(find.text(t.ai_assist_no_provider), findsNothing);
+    });
+
+    testWidgets(
+        'unavailable AI: the button only points to settings and sends nothing',
+        (WidgetTester tester) async {
+      final FushiDatabase db = _memDb();
+      addTearDown(db.close);
+      final VideoPendingScrapeWork entry = await _seedPendingWork(db);
+      final _AiIdentifyRunner runner = _AiIdentifyRunner(available: false);
+      final VideoSourceScrapeTaskController controller =
+          VideoSourceScrapeTaskController(runner);
+      addTearDown(controller.dispose);
+
+      await _openPendingTab(tester, db, controller, entry);
+      // 入口对没指派 AI 的用户也可见（BUG-2694 的约定）。
+      expect(find.byKey(_aiButtonKey), findsOneWidget);
+      await tester.tap(find.byKey(_aiButtonKey));
+      await tester.pumpAndSettle();
+
+      expect(find.text(t.ai_assist_no_provider), findsOneWidget);
+      expect(runner.identifiedKeys, isEmpty);
+      expect(controller.isRunning, isFalse);
+      expect(controller.queuedManualRequestCount, 0);
+    });
+
+    testWidgets('AI module off: no AI button even when AI is available',
+        (WidgetTester tester) async {
+      final FushiDatabase db = _memDb();
+      addTearDown(db.close);
+      final VideoPendingScrapeWork entry = await _seedPendingWork(db);
+      final _AiIdentifyRunner runner = _AiIdentifyRunner(available: true);
+      final VideoSourceScrapeTaskController controller =
+          VideoSourceScrapeTaskController(runner);
+      addTearDown(controller.dispose);
+
+      await _openPendingTab(
+        tester,
+        db,
+        controller,
+        entry,
+        showAiIdentify: false,
+      );
+      expect(find.byKey(_aiButtonKey), findsNothing);
+      expect(find.byTooltip(t.video_source_scrape_ai_identify), findsNothing);
+      expect(find.byTooltip(t.video_source_scrape_manual_search_title),
+          findsOneWidget);
+    });
+
+    testWidgets('runner without AI support: no AI button at all',
+        (WidgetTester tester) async {
+      final FushiDatabase db = _memDb();
+      addTearDown(db.close);
+      final VideoPendingScrapeWork entry = await _seedPendingWork(db);
+      final VideoSourceScrapeTaskController controller =
+          VideoSourceScrapeTaskController(_ManualBindingRunner());
+      addTearDown(controller.dispose);
+
+      await _openPendingTab(tester, db, controller, entry);
+      expect(find.byKey(_aiButtonKey), findsNothing);
+      expect(find.byTooltip(t.video_source_scrape_ai_identify), findsNothing);
+      // 手动指定入口照旧在。
+      expect(find.byTooltip(t.video_source_scrape_manual_search_title),
+          findsOneWidget);
+    });
+  });
+
+  testWidgets('confirmation marks only the AI-suggested candidate',
+      (WidgetTester tester) async {
+    final FushiDatabase db = _memDb();
+    addTearDown(db.close);
+    final int sourceId = await _seedSource(db, mediaKind: 'video');
+    final SourceLibraryRow source = (await db.getMediaSourceById(sourceId))!;
+    final _AiSuggestionConfirmationRunner runner =
+        _AiSuggestionConfirmationRunner(
+            <VideoSourceScrapeConfirmationCandidate>[
+      _candidate(id: '1001', title: 'Doraemon (TV)', year: 2005),
+      _candidate(id: '1002', title: 'Doraemon Movie', year: 2006),
+      _candidate(id: '1003', title: 'Doraemon Special', year: 2007),
+    ]);
+    final VideoSourceScrapeTaskController controller =
+        VideoSourceScrapeTaskController(runner);
+    addTearDown(controller.dispose);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (BuildContext context) => Scaffold(
+            body: TextButton(
+              onPressed: () {
+                unawaited(controller.scrapeSource(source, interactive: true));
+                unawaited(showVideoSourceScrapeTaskPanel(
+                  context: context,
+                  controller: controller,
+                  loadRuns: () => db.getVideoSourceScrapeRuns(limit: 20),
+                ));
+              },
+              child: const Text('Start'),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('Start'));
+    await tester.pumpAndSettle();
+    expect(controller.pendingConfirmation, isNotNull);
+
+    final String label = t.video_source_scrape_ai_suggested(percent: 72);
+    Finder labelIn(String id) => find.descendant(
+          of: find
+              .byKey(ValueKey<String>('video-source-candidate-anidb-tv-$id')),
+          matching: find.textContaining(label),
+        );
+    // 重设计后弹窗页眉 / tab 栏更高，800×600 测试窗里活动列表视口只剩一百多
+    // 像素，AI 建议的那条候选落在视口外：先滚进来再看标注（用户同样要滚）。
+    await tester.ensureVisible(find.byKey(
+        const ValueKey<String>('video-source-candidate-anidb-tv-1002'),
+        skipOffstage: false));
+    await tester.pumpAndSettle();
+    expect(find.textContaining(label), findsOneWidget);
+    expect(labelIn('1002'), findsOneWidget);
+    expect(labelIn('1001'), findsNothing);
+    expect(labelIn('1003'), findsNothing);
+    expect(find.textContaining('theatrical release matches the folder'),
+        findsOneWidget);
+
+    // 只作标注：选哪条仍由用户决定，选了非 AI 建议的那条也照常交回。
+    final Finder first = find.byKey(
+        const ValueKey<String>('video-source-candidate-anidb-tv-1001'),
+        skipOffstage: false);
+    await tester.ensureVisible(first);
+    await tester.pumpAndSettle();
+    await tester.tap(first);
+    await tester.pumpAndSettle();
+    expect(runner.chosen?.lookup.externalId, '1001');
+    expect(controller.isRunning, isFalse);
   });
 }

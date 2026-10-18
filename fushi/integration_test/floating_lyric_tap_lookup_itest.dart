@@ -27,7 +27,7 @@
 //      exact regression signature the user kept reporting.
 //   4. FAULT INJECTION (the mid-session death matching the user's log): kill
 //      the overlay's own WebView2 process tree - scoped strictly to this
-//      run's isolated LOCALAPPDATA Hibiki/GlobalLookupWebView2 user-data
+//      run's isolated LOCALAPPDATA Fushi/GlobalLookupWebView2 user-data
 //      folder, never the user's real instances - then tap the strip again
 //      and require the card to be HOST-rendered again. Without the
 //      ProcessFailed self-heal in global_lookup_window.cpp the overlay stays
@@ -42,8 +42,9 @@
 import 'dart:ffi';
 import 'dart:io';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/media/audiobook/audiobook_controller.dart';
 import 'package:integration_test/integration_test.dart';
 
 import 'support/test_app_launcher.dart';
@@ -51,7 +52,6 @@ import 'package:fushi/src/lookup/global_lookup_channel.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart'
     show ReaderFushiSource;
 import 'package:fushi/src/models/app_model.dart' show AppModel;
-import 'package:fushi_audio/fushi_audio.dart' show AudiobookPlayerController;
 
 import 'helpers/focus_driver.dart';
 import 'helpers/library_fixture.dart' show readyAppModel, seedAudiobook;
@@ -378,7 +378,7 @@ void main() {
               reason: 'LOCALAPPDATA must exist (isolated by the runner)');
           final String sep = Platform.pathSeparator;
           final String overlayUdf =
-              '$localAppData${sep}Hibiki${sep}GlobalLookupWebView2';
+              '$localAppData${sep}Fushi${sep}GlobalLookupWebView2';
           final int killedCount = await _killOverlayWebViewProcs(overlayUdf);
           debugPrint('[float-tap] killed overlay WebView2 procs: '
               '$killedCount (udf=$overlayUdf)');

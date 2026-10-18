@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:drift/native.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/audiobook/book_import_dialog.dart';
@@ -22,6 +22,9 @@ void main() {
     'manga': 'lib/src/media/manga/manga_import_dialog.dart',
     'audiobook': 'lib/src/media/audiobook/audiobook_import_dialog.dart',
     'video': 'lib/src/media/video/video_import_dialog.dart',
+    // 下载中心「添加任务」框：拖 .torrent 进打开的框要能替换所选种子。
+    'manual-download':
+        'lib/src/pages/implementations/manual_download_task_dialog.dart',
   };
 
   dialogs.forEach((String name, String path) {

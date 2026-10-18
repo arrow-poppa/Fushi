@@ -13,23 +13,16 @@ import 'package:fushi/src/media/manga/mihon/mihon_extension_store_client.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_extension_updates.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_models.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_runtime.dart';
+import 'package:fushi/src/media/manga/mihon/mihon_runtime_factory.dart';
 import 'package:fushi/src/startup/exit_flush_registry.dart';
 
-/// 开箱即用的默认扩展仓库（用户指定）。没有它的话「漫画扩展」一节首次打开是空的，
-/// 用户得先自己知道一个仓库地址才能开始——而这个仓库就是社区事实标准。
-const String kMihonDefaultStoreIndexUrl =
-    'https://github.com/keiyoushi/extensions/raw/repo/index.pb';
-
-/// 默认仓库在拉到真实索引之前的显示名。第一次成功刷新会用仓库自报的名字覆写。
-const String kMihonDefaultStoreName = 'Keiyoushi';
-
-/// 默认仓库**只自动装配一次**：置位后用户删掉它就不会被下次启动重新塞回来。
+/// 扩展仓库**不内置**（2026-10-09 用户口径：「扩展仓库内置仓库全部不内置」）。
 ///
-/// 置位的判据是「装配这一步做完了」，而装配现在是一次**本地** DB 写（见
-/// [MihonManager._seedDefaultStore]），不依赖网络，所以不存在「置早了导致永不重试」
-/// 的窗口。存量里 pref 仍为 false 的用户（旧代码下装配因断网失败过）下次启动即自愈。
-const String kMihonDefaultStoreSeededPref = 'mihon_default_store_seeded';
-
+/// 新安装时仓库列表为空，空态引导用户自己添加信任的仓库。早先版本首次启动会
+/// 替用户落一行默认仓库（漫画 keiyoushi、视频 yuzono/anime-repo），并置位偏好
+/// `mihon_default_store_seeded` / `mihon_default_anime_store_seeded`；那些行是
+/// 普通仓库记录，升级后原样保留（已装扩展照常检查更新），用户可以自己删。两个
+/// 偏好键只是历史残留，不再读写（持久化名冻结，不做清理迁移）。
 class MihonManager extends ChangeNotifier {
   MihonManager({
     required this.database,
@@ -37,8 +30,9 @@ class MihonManager extends ChangeNotifier {
     required this.runtime,
     MihonExtensionStoreClient? storeClient,
     MihonDownloadCountsClient? downloadCountsClient,
-    this.seedDefaultStore = false,
     this.fetchDownloadCounts = false,
+    this.kind = MihonMediaKind.manga,
+    this.ownsRuntime = true,
     Duration coverCacheMaxAge = const Duration(
       days: kMangaCoverCacheDefaultMaxAgeDays,
     ),
@@ -49,7 +43,7 @@ class MihonManager extends ChangeNotifier {
       Directory(p.join(rootDirectory.path, 'cache', 'covers')),
       maxAge: coverCacheMaxAge,
     );
-    if (Platform.isWindows || Platform.isMacOS) {
+    if (ownsRuntime && MihonRuntimeFactory.usesDesktopSidecar) {
       _exitShutdown = ExitFlushRegistry.instance.register(
         shutdownRuntimeForExit,
       );
@@ -59,23 +53,29 @@ class MihonManager extends ChangeNotifier {
   final FushiDatabase database;
   final Directory rootDirectory;
   final MihonRuntime runtime;
+
+  /// 本 manager 管的是哪个生态的扩展（漫画 / 视频）。
+  ///
+  /// 三张扩展表按 `media_kind` 分片（v107），[reload] 只读本生态的行；安装门只收
+  /// 本生态的 APK（[MihonExtensionInspection.kind] 不符即 `WRONG_MEDIA_KIND`）；
+  /// 仓库同样按生态各一份。运行时可以共用——同一个
+  /// sidecar / 原生宿主两种扩展都认，见 [ownsRuntime]。
+  final MihonMediaKind kind;
+
+  /// 是否由本 manager 负责 [runtime] 的生命周期（退出时关 sidecar、dispose）。
+  ///
+  /// 真实 app 里漫画与视频两个 manager **共用一个** runtime 实例（桌面端一个
+  /// sidecar JVM 512 MiB，两个太贵；Android 原生宿主本来就是单例），生命周期由
+  /// 持有它的 `AppModel` 统一管，两个 manager 都传 false。单测构造一个 manager
+  /// 配一个 fake runtime 时保持默认 true，语义不变。
+  final bool ownsRuntime;
   late final MihonCoverCache coverCache;
   final MihonExtensionStoreClient _storeClient;
 
-  /// 是否在 [initialise] 里装配默认扩展仓库（见 [kMihonDefaultStoreIndexUrl]）。
-  ///
-  /// 默认 **false**，只有真实 app 启动那一处（`AppModel.mihonManager`）传 true。
-  /// 装默认仓库是**应用启动策略**，不是「构造一个 manager」的语义：挂在
-  /// [initialise] 上无条件执行，会让任何构造 manager 的单测都去真实网络拉
-  /// keiyoushi 索引（1900+ 条），既慢又把测试结果绑在外网上——这正是本轮
-  /// `mihon_manager_install_test` 那条 cold-start 用例变红的原因。
-  final bool seedDefaultStore;
-
   /// 是否在目录刷新后去 GitHub 拉扩展的公开下载量（见 [MihonDownloadCounts]）。
   ///
-  /// 与 [seedDefaultStore] 同样的理由默认 **false**，只有真实 app 启动那一处传
-  /// true：这是一次 5 MB 量级的外网请求，挂在构造函数的默认值上会让每个构造
-  /// manager 的单测都去打 `api.github.com`（既慢又把测试绑在外网和 60 次/小时的
+  /// 默认 **false**，只有真实 app 启动那一处传 true：这是一次 5 MB 量级的外网
+  /// 请求，挂在构造函数的默认值上会让每个构造 manager 的单测都去打 `api.github.com`（既慢又把测试绑在外网和 60 次/小时的
   /// 未认证配额上）。
   final bool fetchDownloadCounts;
 
@@ -118,8 +118,9 @@ class MihonManager extends ChangeNotifier {
   /// ChangeNotifier/widget disposal is not guaranteed to run. Register this
   /// bounded callback with the app exit barrier to stop the exact retained
   /// sidecar process before the Flutter process terminates.
-  Future<void> shutdownRuntimeForExit() =>
-      _runtimeShutdown ??= runtime.dispose();
+  Future<void> shutdownRuntimeForExit() => _runtimeShutdown ??= ownsRuntime
+      ? runtime.dispose()
+      : Future<void>.value();
 
   Future<void> initialise() {
     final Future<void>? current = _initialising;
@@ -144,9 +145,6 @@ class MihonManager extends ChangeNotifier {
       // 必须在 reload 之后：判断孤儿要拿 installed 跟标记里的包名比对。
       await _recoverAbandonedPreview();
       await _clearStagedApks();
-      // 种子必须在刷新**之前**：它只往本地写一行，写完紧接着的 _refreshStores
-      // 就把它的目录一并拉下来——默认仓库从此和用户自己加的仓库走同一条路径。
-      await _seedDefaultStore();
       await _refreshStores();
     } catch (exception) {
       error = '$exception';
@@ -157,44 +155,6 @@ class MihonManager extends ChangeNotifier {
     }
   }
 
-  /// 首次启动把 [kMihonDefaultStoreIndexUrl] 落成一行本地仓库配置（见常量文档）。
-  ///
-  /// **纯本地写，不碰网络。** 早先这里调 [addStore]，于是「默认仓库存在」被绑死在
-  /// 「首次启动能连上 github.com」上：连不上就一行都不写，用户看到的是一个空列表，
-  /// 而且完全不知道本该有一个默认仓库——所谓「下次启动重试」在长期连不上的网络下
-  /// 等于永远没有。仓库**配置**和仓库**目录**是两件事：配置该无条件落地，目录由
-  /// 紧随其后的 [_refreshStores] 用和其它仓库完全相同的路径去拉，失败就照常写进
-  /// `lastError` 让用户看见并可手动重试，而不是静默消失。
-  ///
-  /// 落地后即置位 [kMihonDefaultStoreSeededPref]：置位语义是「已经替用户装配过」，
-  /// 不是「已经拉到过目录」——所以用户删掉它之后不会被下次启动塞回来。
-  Future<void> _seedDefaultStore() async {
-    if (!seedDefaultStore) return;
-    final bool seeded = await database.getPrefTyped<bool>(
-      kMihonDefaultStoreSeededPref,
-      false,
-    );
-    if (seeded) return;
-    // 用户自己先加过同一个地址：认下它，别用种子行覆盖掉他的排序/启用状态。
-    if (!stores.any(
-      (MangaExtensionStoreRow row) =>
-          row.indexUrl == kMihonDefaultStoreIndexUrl,
-    )) {
-      await database.upsertMangaExtensionStore(
-        MangaExtensionStoresCompanion.insert(
-          indexUrl: kMihonDefaultStoreIndexUrl,
-          name: kMihonDefaultStoreName,
-          // index.pb。真实格式由第一次成功刷新覆写，这里只是让「从未刷新过」的行
-          // 也能被 _refreshStores 正常处理（etag/lastModified 都为空，不会走 304）。
-          format: MihonStoreFormat.currentProtobuf.name,
-          sortOrder: Value(_nextStoreSortOrder()),
-        ),
-      );
-      await reload();
-    }
-    await database.setPrefTyped<bool>(kMihonDefaultStoreSeededPref, true);
-  }
-
   int _nextStoreSortOrder() => stores.isEmpty
       ? 0
       : stores
@@ -203,9 +163,10 @@ class MihonManager extends ChangeNotifier {
             1;
 
   Future<void> reload() async {
-    stores = await database.getMangaExtensionStores();
-    installed = await database.getMangaExtensions();
-    sources = await database.getMangaOnlineSources();
+    final String mediaKind = kind.dbValue;
+    stores = await database.getMangaExtensionStores(mediaKind: mediaKind);
+    installed = await database.getMangaExtensions(mediaKind: mediaKind);
+    sources = await database.getMangaOnlineSources(mediaKind: mediaKind);
     _notify();
   }
 
@@ -222,6 +183,7 @@ class MihonManager extends ChangeNotifier {
       await database.upsertMangaExtensionStore(
         MangaExtensionStoresCompanion.insert(
           indexUrl: store.indexUrl,
+          mediaKind: Value(kind.dbValue),
           name: store.name,
           format: store.format.name,
           badgeLabel: Value(store.badgeLabel),
@@ -250,7 +212,10 @@ class MihonManager extends ChangeNotifier {
 
   Future<void> _refreshStores() async {
     final List<MihonAvailableExtension> next = <MihonAvailableExtension>[];
-    for (final MangaExtensionStoreRow row in stores) {
+    final List<MangaExtensionStoreRow> rows = List<MangaExtensionStoreRow>.of(
+      stores,
+    );
+    for (final MangaExtensionStoreRow row in rows) {
       if (!row.enabled) continue;
       final List<MihonAvailableExtension> cachedExtensions = available
           .where(
@@ -280,6 +245,23 @@ class MihonManager extends ChangeNotifier {
         // the store from the DB cannot reconstruct that list. Retain the
         // already parsed list in that case; external/legacy indexes can
         // still be fetched independently from extensionListUrl.
+        // BUG-2641：入口地址可能被解析到另一个身份（legacy `index.min.json` 跟到同目录
+        // `repo.json`，默认视频仓库 yuzono 就是这样）。过去这里按解析后的地址落库、
+        // 却不删种子行，于是主键不同的两行指向同一仓库，之后每次刷新各拉一遍，
+        // 扩展列表整份翻倍。解析后的身份已有自己的**启用**行：这行只是别名，删掉
+        // 即可，目录由那一行自己拉；否则把这一行原子地迁到解析后的地址（同
+        // [editStoreUrl]）——包括解析后那行被停用的情况：用户在翻倍期间很可能停用了
+        // 其中一行来去重，若停的恰是 repo.json 那行，只删别名会让整个默认仓库从列表
+        // 消失；迁移则用本行（启用中）的启用位与排序覆盖它。
+        final bool aliased = store.indexUrl != row.indexUrl;
+        if (aliased &&
+            rows.any(
+              (MangaExtensionStoreRow other) =>
+                  other.indexUrl == store.indexUrl && other.enabled,
+            )) {
+          await database.deleteMangaExtensionStore(row.indexUrl);
+          continue;
+        }
         final List<MihonAvailableExtension> extensions =
             fetched.notModified && store.extensionListUrl == null
             ? cachedExtensions
@@ -288,23 +270,29 @@ class MihonManager extends ChangeNotifier {
                 allowInsecure: insecure,
               );
         next.addAll(extensions);
-        await database.upsertMangaExtensionStore(
-          MangaExtensionStoresCompanion.insert(
-            indexUrl: store.indexUrl,
-            name: store.name,
-            format: store.format.name,
-            badgeLabel: Value(store.badgeLabel),
-            signingKey: Value(store.signingKey),
-            contactJson: Value(jsonEncode(store.contact)),
-            extensionListUrl: Value(store.extensionListUrl),
-            enabled: Value(row.enabled),
-            sortOrder: Value(row.sortOrder),
-            etag: Value(fetched.etag ?? row.etag),
-            lastModified: Value(fetched.lastModified ?? row.lastModified),
-            lastSyncAt: Value(DateTime.now().millisecondsSinceEpoch),
-            lastError: const Value(null),
-          ),
-        );
+        await database.transaction(() async {
+          if (aliased) {
+            await database.deleteMangaExtensionStore(row.indexUrl);
+          }
+          await database.upsertMangaExtensionStore(
+            MangaExtensionStoresCompanion.insert(
+              indexUrl: store.indexUrl,
+              mediaKind: Value(kind.dbValue),
+              name: store.name,
+              format: store.format.name,
+              badgeLabel: Value(store.badgeLabel),
+              signingKey: Value(store.signingKey),
+              contactJson: Value(jsonEncode(store.contact)),
+              extensionListUrl: Value(store.extensionListUrl),
+              enabled: Value(row.enabled),
+              sortOrder: Value(row.sortOrder),
+              etag: Value(fetched.etag ?? row.etag),
+              lastModified: Value(fetched.lastModified ?? row.lastModified),
+              lastSyncAt: Value(DateTime.now().millisecondsSinceEpoch),
+              lastError: const Value(null),
+            ),
+          );
+        });
       } catch (exception) {
         // A manual refresh must not blank an already visible catalogue merely
         // because this request failed. Cold start has no in-memory catalogue,
@@ -313,6 +301,7 @@ class MihonManager extends ChangeNotifier {
         await database.upsertMangaExtensionStore(
           MangaExtensionStoresCompanion.insert(
             indexUrl: row.indexUrl,
+            mediaKind: Value(kind.dbValue),
             name: row.name,
             format: row.format,
             badgeLabel: Value(row.badgeLabel),
@@ -384,6 +373,7 @@ class MihonManager extends ChangeNotifier {
         await database.upsertMangaExtensionStore(
           MangaExtensionStoresCompanion.insert(
             indexUrl: store.indexUrl,
+            mediaKind: Value(kind.dbValue),
             name: store.name,
             format: store.format.name,
             badgeLabel: Value(store.badgeLabel),
@@ -555,7 +545,17 @@ class MihonManager extends ChangeNotifier {
     try {
       final MihonExtensionInspection inspection = await runtime
           .inspectExtension(temp.path);
-      if (inspection.libVersion != '1.4' && inspection.libVersion != '1.6') {
+      // 生态门先于版本门：一个 Aniyomi APK 装进漫画 manager（或反过来）不是
+      // 「版本不对」，是根本不属于这里——两个生态的 lib 版本号空间也不同
+      // （漫画 1.4/1.6，视频 14），先判生态才能给出对的原因。
+      if (inspection.kind != kind) {
+        throw MihonRuntimeException(
+          'WRONG_MEDIA_KIND',
+          'Extension is a ${inspection.kind.dbValue} extension; '
+              'this list only installs ${kind.dbValue} extensions',
+        );
+      }
+      if (!kind.supportedLibVersions.contains(inspection.libVersion)) {
         throw MihonRuntimeException(
           'UNSUPPORTED_LIB',
           'Extension lib ${inspection.libVersion} is not supported',
@@ -664,7 +664,7 @@ class MihonManager extends ChangeNotifier {
         p.join(rootDirectory.path, 'extensions', '$packageName.apk'),
       );
       final File backup = File('${target.path}.previous');
-      final bool desktop = Platform.isWindows || Platform.isMacOS;
+      final bool desktop = MihonRuntimeFactory.usesDesktopSidecar;
       if (desktop) {
         if (await backup.exists()) await backup.delete();
         if (await target.exists()) await target.rename(backup.path);
@@ -683,11 +683,11 @@ class MihonManager extends ChangeNotifier {
           packageName: packageName,
           apkPath: runtimePath,
         );
-        final List<MihonSource> loaded = await runtime.listSources(extension);
+        final List<MihonSource> loaded = await _listSources(extension);
         if (loaded.isEmpty) {
-          throw const MihonRuntimeException(
+          throw MihonRuntimeException(
             'NO_SOURCES',
-            'Extension did not expose any manga sources',
+            'Extension did not expose any ${kind.dbValue} sources',
           );
         }
         final String storedPath = p.join(
@@ -714,6 +714,7 @@ class MihonManager extends ChangeNotifier {
             apkSha256: proposal.apkSha256,
             signerSha256: signer,
             installedAt: DateTime.now().millisecondsSinceEpoch,
+            mediaKind: Value(kind.dbValue),
           ),
         );
         await database.replaceMangaOnlineSources(
@@ -725,6 +726,7 @@ class MihonManager extends ChangeNotifier {
               name: source.name,
               language: source.language,
               baseUrl: Value(source.baseUrl),
+              mediaKind: Value(kind.dbValue),
             ),
           ),
         );
@@ -753,9 +755,9 @@ class MihonManager extends ChangeNotifier {
   ///   的意义是铺满一个语言的可用源，不是替用户决定升级。
   /// - **升级**（[upgrade] = true，扩展页「一键更新」，BUG-2481）：只处理已装且仓库
   ///   里版本更高的（[hasMihonExtensionUpdate]，与角标同一判据），没装的 / 已是最新
-  ///   的跳过。签名换了的那条会以 `SIGNER_NOT_TRUSTED` 落进 `failed`（调用方传
-  ///   `trustSigner: false`），让用户回到单条流程看着指纹确认——一键更新不能
-  ///   顺手信任新签名。
+  ///   的跳过。签名换了的那条在 [_prepareInstallBytes] 以 `SIGNATURE_CHANGED`
+  ///   落进 `failed`（与已装版本签名不符，这道门不看 `trustSigner`），让用户回到
+  ///   单条流程看着指纹确认——一键更新 / 后台自动更新都不能顺手接受新签名。
   ///
   /// 两种模式都把整批的运行时失效攒到最后一次（见
   /// [MihonRuntime.invalidateExtensions]）：桌面 sidecar 每次失效都要重启，逐个
@@ -777,6 +779,7 @@ class MihonManager extends ChangeNotifier {
     final List<String> installedPackages = <String>[];
     final List<String> skippedPackages = <String>[];
     final Map<String, String> failedPackages = <String, String>{};
+    final Map<String, String> failureCodes = <String, String>{};
     final Map<String, MangaExtensionRow> installedByPackage =
         <String, MangaExtensionRow>{
           for (final MangaExtensionRow row in installed) row.packageName: row,
@@ -865,6 +868,9 @@ class MihonManager extends ChangeNotifier {
             alreadyInstalled.add(target.packageName);
           } catch (exception) {
             failedPackages[target.packageName] = '$exception';
+            if (exception is MihonRuntimeException) {
+              failureCodes[target.packageName] = exception.code;
+            }
             // 失败的提案连着一份 tmp/*.apk.part，当场删掉而不是等下次启动兜底：
             // 一百条里失败十条就是十份最大 100 MiB 的残骸。
             if (proposal != null) {
@@ -893,6 +899,7 @@ class MihonManager extends ChangeNotifier {
       installed: List<String>.unmodifiable(installedPackages),
       skipped: List<String>.unmodifiable(skippedPackages),
       failed: Map<String, String>.unmodifiable(failedPackages),
+      failureCodes: Map<String, String>.unmodifiable(failureCodes),
     );
   }
 
@@ -955,11 +962,11 @@ class MihonManager extends ChangeNotifier {
             packageName: packageName,
             apkPath: runtimePath,
           );
-          final List<MihonSource> loaded = await runtime.listSources(extension);
+          final List<MihonSource> loaded = await _listSources(extension);
           if (loaded.isEmpty) {
-            throw const MihonRuntimeException(
+            throw MihonRuntimeException(
               'NO_SOURCES',
-              'Extension did not expose any manga sources',
+              'Extension did not expose any ${kind.dbValue} sources',
             );
           }
           session = MihonPreviewSession(
@@ -1079,7 +1086,7 @@ class MihonManager extends ChangeNotifier {
   }) async {
     await _guarded(() async {
       await runtime.uninstallPrivateExtension(extension.packageName);
-      if (Platform.isWindows || Platform.isMacOS) {
+      if (MihonRuntimeFactory.usesDesktopSidecar) {
         final File file = File(resolveApkPath(extension));
         if (await file.exists()) await file.delete();
       }
@@ -1136,17 +1143,85 @@ class MihonManager extends ChangeNotifier {
       sources,
       counts,
     );
-    for (int index = 0; index < ordered.length; index++) {
-      final MangaOnlineSourceRow row = ordered[index];
-      if (row.sortOrder == index) continue;
-      await database.updateMangaOnlineSourceSettings(
-        extensionPackage: row.extensionPackage,
-        sourceId: row.sourceId,
-        sortOrder: index,
-      );
-    }
-    await reload();
+    // 与拖拽重排同一条串行写入路径：不会与在飞的拖拽互相覆盖。
+    await reorderSources(ordered);
     return true;
+  }
+
+  /// 拖拽重排（「来源」列表组内拖拽 / 菜单上移下移）：按 [ordered] 的先后把
+  /// `sort_order` 重写成 0..n-1，一次 reload。调用方传完整列表（置顶组在前、
+  /// 其余组在后，组内即用户排出的顺序），与 `pinned desc, sort_order` 的查询序
+  /// 一致；与**当前存储**相同的行不写。
+  ///
+  /// HBK-AUDIT-016：连续重排（A0/B1 拖成 BA，保存未完再拖回 AB）曾经并发执行、
+  /// 并按调用方手里旧行的 `sortOrder` 判「没变」——第二次全部跳过写入，库里
+  /// 停在 BA。现在所有排序意图串行提交，且只提交**最后一次**意图（中间被覆盖的
+  /// 不再写）；比较基准是写入前现读的存储顺序，不是调用方快照。返回的 Future
+  /// 在本次意图（或覆盖它的更新意图）落库并 reload 之后完成。
+  Future<void> reorderSources(List<MangaOnlineSourceRow> ordered) {
+    _queuedReorder = List<MangaOnlineSourceRow>.of(ordered);
+    return _reorderWorker ??= _drainReorders();
+  }
+
+  /// 最近一次尚未落库的排序意图；新意图直接覆盖旧意图。
+  List<MangaOnlineSourceRow>? _queuedReorder;
+
+  /// 正在串行落库的 worker；空闲时为 null。
+  Future<void>? _reorderWorker;
+
+  Future<void> _drainReorders() async {
+    Object? lastError;
+    StackTrace? lastStack;
+    try {
+      while (true) {
+        final List<MangaOnlineSourceRow>? next = _queuedReorder;
+        if (next == null) break;
+        _queuedReorder = null;
+        try {
+          await _writeSourceOrder(next);
+          // 后来的意图成功落库，先前被它覆盖的失败不再有意义。
+          lastError = null;
+          lastStack = null;
+        } on Object catch (error, stack) {
+          lastError = error;
+          lastStack = stack;
+        }
+      }
+    } finally {
+      // 与「队列已空」的判定同步执行：之后到来的意图会起新 worker。
+      _reorderWorker = null;
+    }
+    if (lastError != null) {
+      Error.throwWithStackTrace(lastError, lastStack ?? StackTrace.current);
+    }
+  }
+
+  /// 一次排序意图 = 一个 Drift 事务（HBK-AUDIT-031）：中途任何一行写失败整体
+  /// 回滚，库里不会留下前几行已改、后几行未改的半截顺序（重复 sortOrder）。
+  /// 无论成败都 reload，让显示快照与存储一致。
+  Future<void> _writeSourceOrder(List<MangaOnlineSourceRow> ordered) async {
+    try {
+      await database.transaction(() async {
+        final Map<(String, String), int> stored = <(String, String), int>{
+          for (final MangaOnlineSourceRow row
+              in await database.getMangaOnlineSources(mediaKind: kind.dbValue))
+            (row.extensionPackage, row.sourceId): row.sortOrder,
+        };
+        for (int index = 0; index < ordered.length; index++) {
+          final MangaOnlineSourceRow row = ordered[index];
+          if (stored[(row.extensionPackage, row.sourceId)] == index) {
+            continue;
+          }
+          await database.updateMangaOnlineSourceSettings(
+            extensionPackage: row.extensionPackage,
+            sourceId: row.sourceId,
+            sortOrder: index,
+          );
+        }
+      });
+    } finally {
+      await reload();
+    }
   }
 
   Future<List<MihonPreference>> getPreferences(
@@ -1158,11 +1233,18 @@ class MihonManager extends ChangeNotifier {
     final List<MihonPreference> persisted = await _readPersistedPreferences(
       source,
     );
-    return runtime.getPreferences(
-      extensionRef(extension),
-      sourceModel(source),
-      persisted: persisted,
-    );
+    return switch (kind) {
+      MihonMediaKind.manga => runtime.getPreferences(
+        extensionRef(extension),
+        sourceModel(source),
+        persisted: persisted,
+      ),
+      MihonMediaKind.anime => animeRuntime.getAnimePreferences(
+        extensionRef(extension),
+        sourceModel(source),
+        persisted: persisted,
+      ),
+    };
   }
 
   Future<List<MihonPreference>> setPreference(
@@ -1175,12 +1257,20 @@ class MihonManager extends ChangeNotifier {
     final List<MihonPreference> persisted = await _readPersistedPreferences(
       source,
     );
-    final List<MihonPreference> updated = await runtime.setPreference(
-      extensionRef(extension),
-      sourceModel(source),
-      preference,
-      persisted: persisted,
-    );
+    final List<MihonPreference> updated = await switch (kind) {
+      MihonMediaKind.manga => runtime.setPreference(
+        extensionRef(extension),
+        sourceModel(source),
+        preference,
+        persisted: persisted,
+      ),
+      MihonMediaKind.anime => animeRuntime.setAnimePreference(
+        extensionRef(extension),
+        sourceModel(source),
+        preference,
+        persisted: persisted,
+      ),
+    };
     for (final MihonPreference item in updated) {
       await database.upsertMangaSourcePreference(
         MangaSourcePreferencesCompanion.insert(
@@ -1206,6 +1296,23 @@ class MihonManager extends ChangeNotifier {
       source.sourceId,
     );
   }
+
+  /// 视频生态需要 [AnimeMihonRuntime] 能力；生产的两个运行时都经
+  /// `MihonBridgeRuntime` 具备，缺的只可能是测试 fake 或未来的新宿主。
+  AnimeMihonRuntime get animeRuntime {
+    final Object candidate = runtime;
+    if (candidate is AnimeMihonRuntime) return candidate;
+    throw const MihonRuntimeException(
+      'ANIME_UNSUPPORTED',
+      'This Mihon runtime cannot host Aniyomi extensions',
+    );
+  }
+
+  Future<List<MihonSource>> _listSources(MihonExtensionRef extension) =>
+      switch (kind) {
+        MihonMediaKind.manga => runtime.listSources(extension),
+        MihonMediaKind.anime => animeRuntime.listAnimeSources(extension),
+      };
 
   Future<MihonSourceContext> contextForSource(
     MangaOnlineSourceRow source,
@@ -1433,6 +1540,7 @@ class MihonBulkInstallReport {
     required this.installed,
     required this.skipped,
     required this.failed,
+    this.failureCodes = const <String, String>{},
   });
 
   /// 这一轮真正装上的包名。
@@ -1443,6 +1551,11 @@ class MihonBulkInstallReport {
 
   /// 包名 → 失败原因。逐条独立，不影响同批其它扩展。
   final Map<String, String> failed;
+
+  /// 包名 → 失败的 [MihonRuntimeException.code]（只有运行时异常有码；网络错误等
+  /// 不在这里）。给后台自动更新判「换了签名」这类需要用户亲自处理的失败，不靠
+  /// 解析 [failed] 里的人读文本。
+  final Map<String, String> failureCodes;
 
   int get attempted => installed.length + skipped.length + failed.length;
 }

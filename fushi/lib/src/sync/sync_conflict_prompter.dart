@@ -1,4 +1,6 @@
 import 'package:flutter/widgets.dart';
+import 'package:fushi/src/sync/interconnect_playback_position_sync.dart';
+import 'package:fushi/src/sync/playback_position_conflict_dialog.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi/src/sync/sync_compare_dialog.dart';
 import 'package:fushi/src/sync/sync_orchestrator.dart';
@@ -76,6 +78,10 @@ class SyncConflictPrompter with PromptQueue {
   /// 直接渲染 [SyncCompareDialog]（注入已解析的 [backend]），而非走
   /// [showSyncCompareDialog] —— 后者从 db 自行解析 backend 且不回传 applied
   /// 计数，无法满足「用注入 backend + 观察是否已解决以决定 snooze」这两点。
+  ///
+  /// [decisions] 是同一轮 sweep 内跨通道共享的裁决簿（见
+  /// [SyncCompareDialog.decisions]）：调用方按通道逐个 present 时传同一个 map，
+  /// 前一条通道里用户裁决过的书在后一条通道不再弹。null = 单通道 / 不共享。
   Future<void> present({
     required GlobalKey<NavigatorState> navigatorKey,
     required FushiDatabase db,
@@ -83,6 +89,7 @@ class SyncConflictPrompter with PromptQueue {
     required List<SyncConflict> conflicts,
     required ConflictSource source,
     required bool inBook,
+    Map<String, SyncChoice>? decisions,
   }) =>
       enqueuePrompt(() => _presentNow(
             navigatorKey: navigatorKey,
@@ -91,6 +98,7 @@ class SyncConflictPrompter with PromptQueue {
             conflicts: conflicts,
             source: source,
             inBook: inBook,
+            decisions: decisions,
           ));
 
   Future<void> _presentNow({
@@ -100,12 +108,84 @@ class SyncConflictPrompter with PromptQueue {
     required List<SyncConflict> conflicts,
     required ConflictSource source,
     required bool inBook,
+    Map<String, SyncChoice>? decisions,
   }) async {
     if (!shouldPrompt(conflicts: conflicts, source: source, inBook: inBook)) {
       return;
     }
     final BuildContext? ctx = navigatorKey.currentContext;
     if (ctx == null) return; // HBK-AUDIT-012：navigatorKey 未 attach 时 null 安全
+    // BUG-3367：播放位置（视频 / 有声书）冲突走自己的弹窗——书籍对比弹窗只认
+    // 书，把它们交过去只会弹出一个空窗。两类各弹各的，书在前。
+    final List<SyncConflict> positionConflicts = <SyncConflict>[
+      for (final SyncConflict c in conflicts)
+        if (playbackPositionKindOfDimension(c.dimension) != null) c,
+    ];
+    final List<SyncConflict> bookConflicts = <SyncConflict>[
+      for (final SyncConflict c in conflicts)
+        if (playbackPositionKindOfDimension(c.dimension) == null) c,
+    ];
+    if (bookConflicts.isNotEmpty) {
+      await _presentBookConflicts(
+        ctx: ctx,
+        db: db,
+        backend: backend,
+        conflicts: bookConflicts,
+        decisions: decisions,
+      );
+    }
+    if (positionConflicts.isNotEmpty) {
+      await _presentPositionConflicts(
+        navigatorKey: navigatorKey,
+        db: db,
+        backend: backend,
+        conflicts: positionConflicts,
+      );
+    }
+  }
+
+  /// 播放位置冲突：先复核两端此刻仍分叉（[loadPlaybackPositionConflicts]），再弹
+  /// [PlaybackPositionConflictDialog] 并落地裁决。一条都没解决则本会话静默这组。
+  Future<void> _presentPositionConflicts({
+    required GlobalKey<NavigatorState> navigatorKey,
+    required FushiDatabase db,
+    required SyncBackend backend,
+    required List<SyncConflict> conflicts,
+  }) async {
+    final List<PlaybackPositionConflictView> views =
+        await loadPlaybackPositionConflicts(
+      db: db,
+      backend: backend,
+      conflicts: conflicts,
+    );
+    if (views.isEmpty) return;
+    final BuildContext? ctx = navigatorKey.currentContext;
+    if (ctx == null || !ctx.mounted) return;
+    dialogOpen = true;
+    int applied = 0;
+    try {
+      final Map<int, SyncChoice>? decisions =
+          await showAppDialog<Map<int, SyncChoice>>(
+        context: ctx,
+        barrierDismissible: false,
+        builder: (_) => PlaybackPositionConflictDialog(views: views),
+      );
+      if (decisions != null && decisions.isNotEmpty) {
+        applied = await applyPlaybackPositionDecisions(views, decisions);
+      }
+    } finally {
+      dialogOpen = false;
+    }
+    if (applied <= 0) markDismissed(conflicts);
+  }
+
+  Future<void> _presentBookConflicts({
+    required BuildContext ctx,
+    required FushiDatabase db,
+    required SyncBackend backend,
+    required List<SyncConflict> conflicts,
+    Map<String, SyncChoice>? decisions,
+  }) async {
     dialogOpen = true;
     try {
       final int? applied = await showAppDialog<int>(
@@ -115,6 +195,7 @@ class SyncConflictPrompter with PromptQueue {
           db: db,
           backend: backend,
           conflictsOnly: true,
+          decisions: decisions,
         ),
       );
       // applied>0 表示用户至少解决了一项；否则视为取消，本会话静默这组冲突。

@@ -1,9 +1,16 @@
 import 'dart:convert';
 
 import 'package:fushi_anki/fushi_anki.dart';
+import 'package:fushi_core/fushi_core.dart' show kStatLegacyProfileIdPrefKey;
 
+import 'package:fushi_engine/media/media_pref_keys.dart'
+    show kLyricsModeBookPrefDbPrefix;
 import 'package:fushi_engine/media/override_title_key.dart';
+import 'package:fushi_engine/profile/profile_document.dart'
+    show kObsoleteGalgameUpscalingModePrefKey, kProfileSettingCategoryPref;
 import 'package:fushi/src/media/video/video_online_services_preferences.dart';
+import 'package:fushi/src/media/video/video_screenshot_destination.dart'
+    show kVideoScreenshotDirectoryPref;
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/sync/pref_redaction_policy.dart';
@@ -12,14 +19,14 @@ class ProfileKeys {
   ProfileKeys._();
 
   static const String categoryAnki = 'anki';
-  static const String categoryPref = 'pref';
+  static const String categoryPref = kProfileSettingCategoryPref;
 
   /// v63 已从 live preferences 与 Profile 副本中删除的旧全局超分键。
   ///
   /// 每游戏真值是 `galgames.upscaling_mode`；此键只保留为输入拒绝标识，防止
   /// 旧快照或旧分享 JSON 在升级后把废弃数据重新写回。
   static const String obsoleteGalgameUpscalingModePrefKey =
-      'galgame_magpie_upscaling_mode';
+      kObsoleteGalgameUpscalingModePrefKey;
 
   /// TODO-1077: per-profile snapshot of the `dictionary_metadata` Drift table
   /// (enable list / order / formatKey / type / hidden+collapsed languages /
@@ -43,14 +50,36 @@ class ProfileKeys {
     // 全开。排除后既不再写入快照也不再从快照读回，存量老快照里可能已存着的
     // module_* 行留着不读即可（读侧过滤失效，无需 schema 迁移）。
     //
-    // 键名从 [ModuleId.allPrefKeys] 生成，不手抄——加模块时这里自动跟上。
-    ...ModuleId.allPrefKeys,
+    // 键名从 [ModuleId.devicePrefKeys] 生成（开关 + 底栏顺序），不手抄——加模块时这里自动跟上。
+    ...ModuleId.devicePrefKeys,
     'active_profile_id',
+    // 绑定临时切换前用户自己选的配置 id：与 active_profile_id 同族。
+    'profile_fallback_id',
+    // v105 统计按 Profile 隔离：legacy 统计家族归属哪个 Profile 是**本库**的
+    // 事实（值是本库自增 id），与 active_profile_id 同族。进快照就会被别的
+    // Profile 的 applyProfile 剪掉，legacy 历史随即对所有 Profile 可见。
+    kStatLegacyProfileIdPrefKey,
     'first_time_setup',
     // 新手引导完成标志与 first_time_setup 同族：描述本安装的状态，不随 Profile 切换。
     'onboarding_completed',
+    // 「下载 → 浏览」一次性搬迁提示的已处理标记：同族。进快照的话，切到一个
+    // 标记落地前建的老 Profile 会把它删掉，关着浏览的用户又被提示一遍。
+    'browse_moved_notice_handled',
+    // BT / 磁力下载的 P2P 说明「不再提示」：同族（描述本安装看过说明，不随
+    // Profile 切换重新弹出）。
+    'p2p_download_notice_dismissed',
+    'game_resource_notice_dismissed',
+    // 封面模式迁到片段默认的一次性标记：同族。进快照的话，切 Profile 会把旧值 gif
+    // 带回来，下次启动迁移重跑，把用户此后自己选的 GIF 又改成片段。
+    'mining_image_mode_install_default',
+    // 「工具栏样式强制悬浮」一次性迁移标记：同族（迁移本身会改写各 Profile 快照
+    // 里的 reader_toolbar_style，标记只描述本安装）。
+    PreferencesRepository.readerToolbarStyleFloatingMigratedKey,
     kVideoOnlineServicesSetupDismissedPref,
     'current_home_tab_index',
+    // 宽屏导航 rail 的展开 / 收起记的是本机窗口布局，与 current_home_tab_index
+    // 同族；进快照的话切 Profile 会把侧栏忽宽忽窄地翻过去。
+    'nav_rail_expanded',
     'startup_default_dictionary_tab',
     'app_ui_scale',
     'app_ui_scale_mode',
@@ -64,6 +93,9 @@ class ProfileKeys {
     'last_selected_model',
     'update_never_remind',
     'update_auto_install',
+    // 扩展后台自动更新与 update_auto_install 同族：扩展装在本机、不分 Profile，
+    // 切 Profile 把安装策略翻掉没有意义。
+    'mihon_extension_auto_update',
     'update_beta_channel',
     // HBK-AUDIT-045: keep ALL update-channel/policy keys app-global so the
     // debug channel isn't asymmetrically profile-scoped vs the others.
@@ -87,6 +119,10 @@ class ProfileKeys {
     // path that may not even exist on this machine.
     'download_save_root',
     'download_save_root_history',
+    // 截图目录与 download_save_root 同族同理：它描述的是这台设备的磁盘，不是阅读
+    // Profile。随 Profile 走会让切 Profile 后截图落到本机不存在的路径上。
+    // 去向枚举（对话框/剪贴板/目录）是真偏好，照常随 Profile。
+    kVideoScreenshotDirectoryPref,
     obsoleteGalgameUpscalingModePrefKey,
     // TODO-855: the monotonic prefs-version counter is the cross-process signal
     // the :popup process reads to decide whether to refresh its warm-reuse
@@ -117,6 +153,13 @@ class ProfileKeys {
     // not a reading preference. Snapshotting it per profile would restore
     // stale schedules on profile switch for zero benefit.
     'airing_calendar_',
+    // 合集详情页每合集排序偏好：键里是本机合集自增 id（设备本地状态），换
+    // Profile 不该剪掉或串到别的合集上。
+    'collection_detail_sort_',
+    // 每本书独立记忆的歌词模式与 audiobook_follow_ 同族：按书的阅读状态，不是
+    // 阅读偏好。进快照的话切 Profile（进出歌词模式本身就会切到 lyrics 媒体类型
+    // 的 Profile）会把这本书刚写下的模式剪掉或换回旧值。
+    kLyricsModeBookPrefDbPrefix,
   ];
 
   /// BUG-1018 (A4): per-item display-name overrides are CONTENT tied to a
@@ -163,71 +206,65 @@ class ProfileKeys {
   }
 
   static Map<String, String> ankiSettingsToMap(AnkiSettings s) => {
-        'selectedDeckId': s.selectedDeckId?.toString() ?? '',
-        'selectedDeckName': s.selectedDeckName ?? '',
-        'selectedNoteTypeId': s.selectedNoteTypeId?.toString() ?? '',
-        'selectedNoteTypeName': s.selectedNoteTypeName ?? '',
-        'fieldMappings': jsonEncode(s.fieldMappings),
-        'tags': s.tags,
-        'tagIncludeHibiki': s.tagIncludeHibiki.toString(),
-        'tagIncludeCategory': s.tagIncludeCategory.toString(),
-        'allowDupes': s.allowDupes.toString(),
-        'compactGlossaries': s.compactGlossaries.toString(),
-        'embedMedia': s.embedMedia.toString(),
-        // 两个范围单选必须进快照：[mapToAnkiSettings] 重建的是一个全新
-        // AnkiSettings，不在这里的字段会在切 Profile 时静默回默认值
-        // （overwriteScope 原本就漏了，顺手一并补上）。
-        'overwriteScope': s.overwriteScope.name,
-        'duplicateScope': s.duplicateScope.name,
-      };
+    'selectedDeckId': s.selectedDeckId?.toString() ?? '',
+    'selectedDeckName': s.selectedDeckName ?? '',
+    'selectedNoteTypeId': s.selectedNoteTypeId?.toString() ?? '',
+    'selectedNoteTypeName': s.selectedNoteTypeName ?? '',
+    'fieldMappings': jsonEncode(s.fieldMappings),
+    'tags': s.tags,
+    'tagIncludeHibiki': s.tagIncludeHibiki.toString(),
+    'tagIncludeCategory': s.tagIncludeCategory.toString(),
+    'allowDupes': s.allowDupes.toString(),
+    'compactGlossaries': s.compactGlossaries.toString(),
+    'embedMedia': s.embedMedia.toString(),
+    // 两个范围单选必须进快照：[mapToAnkiSettings] 重建的是一个全新
+    // AnkiSettings，不在这里的字段会在切 Profile 时静默回默认值
+    // （overwriteScope 原本就漏了，顺手一并补上）。
+    'overwriteScope': s.overwriteScope.name,
+    'duplicateScope': s.duplicateScope.name,
+  };
 
   static AnkiSettings mapToAnkiSettings(
     Map<String, String> m,
     AnkiSettings current,
   ) {
     int? parseInt(String? v) => v == null || v.isEmpty ? null : int.tryParse(v);
+    String? nonEmpty(String? v) => v?.isNotEmpty == true ? v : null;
 
-    return AnkiSettings(
-      selectedDeckId: parseInt(m['selectedDeckId']),
-      selectedDeckName: m['selectedDeckName']?.isNotEmpty == true
-          ? m['selectedDeckName']
-          : null,
-      selectedNoteTypeId: parseInt(m['selectedNoteTypeId']),
-      selectedNoteTypeName: m['selectedNoteTypeName']?.isNotEmpty == true
-          ? m['selectedNoteTypeName']
-          : null,
-      availableDecks: current.availableDecks,
-      availableNoteTypes: current.availableNoteTypes,
-      fieldMappings:
-          _parseFieldMappings(m['fieldMappings'], current.fieldMappings),
-      tags: m['tags'] ?? '',
-      tagIncludeHibiki: m.containsKey('tagIncludeHibiki')
+    // 只覆盖快照拥有的字段（[ankiSettingsToMap] 那几项），其余一律保留当前值：
+    // 连接状态与后端选择（设备本地）、Lapis 样式、媒体去重、自动重排、批量制卡……
+    // 在 JSON 层合并而不是逐个列字段——此前这里从头构造一个新 AnkiSettings，
+    // 没列到的字段在切 Profile 时静默回默认值（Lapis 自定义 CSS、自动重排开关都会丢），
+    // 以后新加的字段也会重蹈覆辙。
+    return AnkiSettings.fromJson(<String, dynamic>{
+      ...current.toJson(),
+      'selectedDeckId': parseInt(m['selectedDeckId']),
+      'selectedDeckName': nonEmpty(m['selectedDeckName']),
+      'selectedNoteTypeId': parseInt(m['selectedNoteTypeId']),
+      'selectedNoteTypeName': nonEmpty(m['selectedNoteTypeName']),
+      'fieldMappings': _parseFieldMappings(
+        m['fieldMappings'],
+        current.fieldMappings,
+      ),
+      'tags': m['tags'] ?? '',
+      'tagIncludeHibiki': m.containsKey('tagIncludeHibiki')
           ? m['tagIncludeHibiki'] == 'true'
           : true,
-      tagIncludeCategory: m.containsKey('tagIncludeCategory')
+      'tagIncludeCategory': m.containsKey('tagIncludeCategory')
           ? m['tagIncludeCategory'] == 'true'
           : true,
-      allowDupes: m['allowDupes'] == 'true',
-      compactGlossaries: m['compactGlossaries'] == 'true',
-      embedMedia:
-          m.containsKey('embedMedia') ? m['embedMedia'] == 'true' : true,
+      'allowDupes': m['allowDupes'] == 'true',
+      'compactGlossaries': m['compactGlossaries'] == 'true',
+      'embedMedia': m.containsKey('embedMedia')
+          ? m['embedMedia'] == 'true'
+          : true,
       // 旧快照没有这两个键 → 保留当前值（而不是回默认），否则一次切
       // Profile 就把用户已选的范围抹掉。
-      overwriteScope: m.containsKey('overwriteScope')
-          ? ankiOverwriteScopeFromName(m['overwriteScope'])
-          : current.overwriteScope,
-      duplicateScope: m.containsKey('duplicateScope')
-          ? ankiDuplicateScopeFromName(m['duplicateScope'])
-          : current.duplicateScope,
-      // Endpoint and API key are device-local connection state, not Profile
-      // content. Applying a Profile must not reset the active backend or its
-      // credentials while PlatformServices still routes to the old value.
-      ankiConnectHost: current.ankiConnectHost,
-      ankiConnectPort: current.ankiConnectPort,
-      ankiConnectApiKey: current.ankiConnectApiKey,
-      ankiConnectUseHttps: current.ankiConnectUseHttps,
-      useAnkiConnectOnMobile: current.useAnkiConnectOnMobile,
-    );
+      if (m.containsKey('overwriteScope'))
+        'overwriteScope': m['overwriteScope'],
+      if (m.containsKey('duplicateScope'))
+        'duplicateScope': m['duplicateScope'],
+    });
   }
 
   /// Parses the stored fieldMappings JSON defensively. The value comes from the
@@ -243,7 +280,8 @@ class ProfileKeys {
       final dynamic decoded = jsonDecode(raw);
       if (decoded is Map) {
         return decoded.map(
-            (dynamic k, dynamic v) => MapEntry(k.toString(), v.toString()));
+          (dynamic k, dynamic v) => MapEntry(k.toString(), v.toString()),
+        );
       }
     } catch (_) {
       // Fall through to the fallback below.

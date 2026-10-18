@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/audiobook/audiobook_session.dart';
+import 'package:fushi/src/utils/misc/fushi_audio_handler.dart';
 import 'package:fushi/src/media/audiobook/floating_lyric_channel.dart';
 import 'package:fushi/src/utils/misc/channel_constants.dart';
 
@@ -36,17 +37,21 @@ void main() {
       // 门控重接线，从而漏接 handler。
       showFloatingLyric: () => false,
       showMediaNotification: () => false,
-      floatingLyricContextLines: () => 0,
+      floatingLyricVisibleLines: () => 1,
       floatingLyricStyle: () => style,
       floatingLyricClickLookup: () => false,
       onFloatingLyricLookup: appLevelLookup,
       controlStreams: AudioControlStreams(
-        playStream: const Stream<void>.empty(),
+        playIntentStream: const Stream<MediaPlayIntent>.empty(),
         seekStream: const Stream<Duration>.empty(),
         skipNextStream: const Stream<void>.empty(),
         skipPreviousStream: const Stream<void>.empty(),
         toggleFloatingLyricStream: const Stream<void>.empty(),
       ),
+      // BUG-2558：本装置不验后台听书统计（见
+      // `audiobook_background_study_clock_test.dart`），库给 null = 不建时钟。
+      database: () => null,
+      studyIdleTimeout: () => const Duration(minutes: 10),
     );
   }
 

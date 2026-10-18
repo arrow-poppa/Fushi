@@ -37,7 +37,7 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-3524](bugs/BUG-3524-popup-source-strip-no-scroll.md) | 🚧 | 🚧 | popup-source-strip-no-scroll |
+| [BUG-3524](bugs/BUG-3524-popup-source-strip-no-scroll.md) | ✅ | ✅ | 独立查词窗的源文本条不随结果滚动，也不能折叠 |
 | [BUG-3523](bugs/BUG-3523-ai-fallback-scan-window-whole-phrase.md) | ✅ | ✅ | AI Fallback 把扫描窗整串当成一个词：屏幕 OCR 点词时解释整句后半段 |
 | [BUG-3522](bugs/BUG-3522-hyphenated-compound-lookup.md) | ✅ | ✅ | 连字符复合词：超过 16 码点查不到整词；点后一段时不会退到复合词开头 |
 | [BUG-3521](bugs/BUG-3521-screen-ocr-spaced-script-line-join.md) | ✅ | ✅ | 截屏识字：拉丁 / 西里尔 / 希腊文折行拼回时丢空格，查词窗只给被点的那一行 |

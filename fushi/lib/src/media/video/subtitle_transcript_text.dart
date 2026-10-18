@@ -767,19 +767,20 @@ String subtitleTranscriptLookupTerm(String sentence, int graphemeIndex) =>
 /// 从被点字母起算，否则点 "hello" 的 'o' 只会亮出 "o"。越界返回 `(start: -1, term: '')`。
 ({int start, String term}) subtitleTranscriptLookupSpan(
   String sentence,
-  int graphemeIndex,
-) {
+  int graphemeIndex, {
+  LookupMatchedUnits? matchedUnits,
+}) {
   final List<String> graphemes = sentence.characters.toList();
   if (graphemeIndex < 0 || graphemeIndex >= graphemes.length) {
     return (start: -1, term: '');
   }
-  int start = graphemeIndex;
-  // 拉丁单词字符：只把起点回退到词首。其余脚本起点即命中字位。
-  if (isLatinWordGrapheme(graphemes[graphemeIndex])) {
-    while (start > 0 && isLatinWordGrapheme(graphemes[start - 1])) {
-      start--;
-    }
-  }
+  // 拉丁单词字符：起点回退到词首（连字符复合词的后一段在词典有整词时退到复合词
+  // 开头，见 [latinLookupStartAt]）。其余脚本起点即命中字位。
+  int start = latinLookupStartAt(
+    graphemes,
+    graphemeIndex,
+    matchedUnits: matchedUnits,
+  );
   // **起点必须跳过前导空白**：查询串在 `pushNestedPopup` 里先 `trim()` 再送引擎，
   // 而引擎回报的匹配长度（matchedRunes）是相对 **trim 后**那个串数的。起点若停在
   // 空白上，[lookupHighlightGraphemeCount] 就把这个长度套回带前导空白的串——高亮

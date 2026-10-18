@@ -206,15 +206,16 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
     return _sentenceAtSourceUnit(page, source, source.unit);
   }
 
-  /// [source] 上 UTF-16 下标 [unit] 那个字所在的整句。整块模式直接在拼好的整块上
-  /// 按句截（块里已无折行），截不出（超长无标点）时回落为被点的那一行。
+  /// [source] 上 UTF-16 下标 [unit] 那个字所在的整句。整块模式在拼好的整块上按书本
+  /// 阅读器的句读截（[ocrSpacedBlockSentenceAt]），截不出时回落为被点的那一行。
   static String _sentenceAtSourceUnit(
     PopupDictionaryPage page,
     _OcrSourceText source,
     int unit,
   ) {
     if (!source.wholeBlock) return _sentenceAtLineUnit(page, unit);
-    return ocrBlockSentenceAt(source.text, unit) ?? page.searchTerm.trim();
+    return ocrSpacedBlockSentenceAt(source.text, unit) ??
+        page.searchTerm.trim();
   }
 
   /// 行内 UTF-16 下标 [unitInLine] 那个字所在的整句（BUG-3487）：有所属块就从块里截，

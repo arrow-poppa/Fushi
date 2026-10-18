@@ -189,18 +189,16 @@ int sourceGraphemeIndexOfUnit(String text, int unitIndex) {
 /// 起查（与视频字幕点词同口径）。下标越界返回 null。
 ({String suffix, int start})? sourceLookupSuffixAt(
   String text,
-  int graphemeIndex,
-) {
+  int graphemeIndex, {
+  LookupMatchedUnits? matchedUnits,
+}) {
   // BUG-442：与渲染同一上限——后缀从截断后的字符序列取，与可点字符一一对应。
   final List<String> capped =
       text.trim().characters.take(kMaxLookupInputChars).toList();
   if (graphemeIndex < 0 || graphemeIndex >= capped.length) return null;
-  int start = graphemeIndex;
-  if (isLatinWordGrapheme(capped[start])) {
-    while (start > 0 && isLatinWordGrapheme(capped[start - 1])) {
-      start--;
-    }
-  }
+  // 拉丁词退到词首；连字符复合词的后一段在词典有整词时退到复合词开头。
+  final int start =
+      latinLookupStartAt(capped, graphemeIndex, matchedUnits: matchedUnits);
   return (suffix: capped.skip(start).join(), start: start);
 }
 

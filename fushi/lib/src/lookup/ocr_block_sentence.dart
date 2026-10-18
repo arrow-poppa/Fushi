@@ -18,6 +18,8 @@
 ///   返回 null，让调用方回落为被点的那一行。
 library;
 
+import 'package:fushi/src/lookup/sentence_extraction.dart';
+
 const int kOcrBlockSentenceMaxLength = 200;
 
 const Set<String> _terminators = <String>{
@@ -282,4 +284,19 @@ const int kOcrSpacedBlockMaxLength = 1000;
   // 点在行尾空白上：落到这一行最后一个字。
   if (mapped < 0) mapped = text.length - 1;
   return (text: text, unit: mapped);
+}
+
+/// 整块模式（[ocrSpacedBlockAt] 拼好的整块）里 UTF-16 下标 [unit] 那个字所在的句子，
+/// 与书本阅读器同一套句读：PDF 阅读器用的 [extractSentenceAt]，句读表与 EPUB 阅读器
+/// 的 `fushiSelection.getSentenceContext` 逐字节一致（`。！？.!?` 断句，句末后的闭
+/// 括号 / 。、等跟着前一句）。整块已拼掉 OCR 折行，换行不会再被当成句界——与
+/// 书本把换行当空白同一个效果。
+///
+/// 与上面 [ocrBlockSentenceAt] 的块规则刻意不同：那套为漫画 / 游戏对白调过（`」「`
+/// 相接也断句、`3.5` 里的点不断句），靠空格分词的文字改走书本的规则，让截屏识字、
+/// 书本、PDF 的句子是同一个。截不出（空）时返回 null。
+String? ocrSpacedBlockSentenceAt(String joined, int unit) {
+  if (unit < 0 || unit >= joined.length) return null;
+  final String sentence = extractSentenceAt(joined, unit, 1).sentence;
+  return sentence.isEmpty ? null : sentence;
 }

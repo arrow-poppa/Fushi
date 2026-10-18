@@ -692,6 +692,31 @@ class FushiDicts {
   static const int defaultMaxResults = 16;
   static const int defaultScanLength = 16;
 
+  /// 连字符复合词（`state-of-the-art`、`jack-of-all-trades`）能把扫描窗口撑到多长。
+  static const int maxHyphenatedScanLength = 48;
+
+  /// 串首的连字符复合词：至少两段字母 / 数字（段内允许撇号），段间是单个 `-` / `‐`。
+  static final RegExp _leadingHyphenatedCompound = RegExp(
+    r"^[\p{L}\p{M}\p{N}]+(?:['’][\p{L}\p{M}\p{N}]+)*"
+    r"(?:[-‐][\p{L}\p{M}\p{N}]+(?:['’][\p{L}\p{M}\p{N}]+)*)+",
+    unicode: true,
+  );
+
+  /// 查询串 [text] 该用的扫描窗口（码点数）。
+  ///
+  /// 引擎只在前 [scanLength] 个码点里找最长匹配，默认 [defaultScanLength]。串首是
+  /// 一个比它长的连字符复合词时把窗口撑到恰好装下整个复合词（上限
+  /// [maxHyphenatedScanLength]）——否则 `jack-of-all-trades`（18 码点）这类词条
+  /// 永远查不到整词。引擎的候选前缀不会切在两个字母之间，窗口截在复合词中间时
+  /// 只能退回更短的那几段。别的查询（日文、普通单词）窗口不变。
+  static int scanLengthFor(String text) {
+    final RegExpMatch? match = _leadingHyphenatedCompound.firstMatch(text);
+    if (match == null) return defaultScanLength;
+    final int runes = match.group(0)!.runes.length;
+    if (runes <= defaultScanLength) return defaultScanLength;
+    return runes > maxHyphenatedScanLength ? maxHyphenatedScanLength : runes;
+  }
+
   // ── lookup (with deinflection) ──────────────────────────────────
   //
   // 排序选项（上游 bc62d2b/86c6e2f）：默认参数下走老导出、行为零变化。
@@ -701,7 +726,7 @@ class FushiDicts {
   List<FushiLookupResult> lookup(
     String text, {
     int maxResults = defaultMaxResults,
-    int scanLength = defaultScanLength,
+    int? scanLength,
     String? frequencyDictionary,
     FushiLookupFrequencyOrder frequencyOrder = FushiLookupFrequencyOrder.auto,
     String? primaryReading,
@@ -714,9 +739,10 @@ class FushiDicts {
     final pr = (primaryReading ?? '').toNativeUtf8(allocator: calloc);
     try {
       final r = useOptions
-          ? _bindings!.lookupWithOptions(_handle!, tp, maxResults, scanLength,
-              fd, frequencyOrder.index, pr)
-          : _bindings!.lookup(_handle!, tp, maxResults, scanLength);
+          ? _bindings!.lookupWithOptions(_handle!, tp, maxResults,
+              scanLength ?? scanLengthFor(text), fd, frequencyOrder.index, pr)
+          : _bindings!.lookup(
+              _handle!, tp, maxResults, scanLength ?? scanLengthFor(text));
 
       final rPtr = calloc<FfiLookupResults>();
       rPtr.ref = r;
@@ -755,13 +781,13 @@ class FushiDicts {
   String lookupPopupJson(
     String text, {
     int maxResults = defaultMaxResults,
-    int scanLength = defaultScanLength,
+    int? scanLength,
     int maxTerms = 100,
   }) {
     final tp = text.toNativeUtf8(allocator: calloc);
     try {
-      final ptr = _bindings!
-          .lookupPopupJson(_handle!, tp, maxResults, scanLength, maxTerms);
+      final ptr = _bindings!.lookupPopupJson(_handle!, tp, maxResults,
+          scanLength ?? scanLengthFor(text), maxTerms);
       if (ptr == nullptr) return '[]';
       try {
         // 容错解码：词典 popupJson 数据可能含非法 UTF-8 字节（非标准编码导入的

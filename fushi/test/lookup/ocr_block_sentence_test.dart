@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/lookup/ocr_block_sentence.dart';
+import 'package:fushi/src/lookup/sentence_extraction.dart';
 
 /// BUG-3487：截屏识字制卡句子从 OCR text block 里截整句。块全文是原生侧把块内
 /// 各行按 `\n` 拼起来的，换行只是排版折行、不是句界。
@@ -255,6 +256,32 @@ void main() {
       final String line = 'word ' * 150;
       expect(ocrSpacedBlockAt(block, 0, line, 0), isNull);
       expect(ocrSpacedBlockAt(block, 0, line, 0, maxLength: 5000), isNotNull);
+    });
+  });
+
+  // Modo bloco inteiro: mesma regra de frase dos livros (extractSentenceAt).
+  group('ocrSpacedBlockSentenceAt', () {
+    test('matches the book reader sentence for every tapped position', () {
+      const String joined =
+          'Le chat dort sur le canapé. Il rêve (beaucoup). Fin!';
+      for (int i = 0; i < joined.length; i++) {
+        if (joined[i] == ' ') continue;
+        expect(
+          ocrSpacedBlockSentenceAt(joined, i),
+          extractSentenceAt(joined, i, 1).sentence,
+          reason: 'posição $i',
+        );
+      }
+    });
+
+    test('closing brackets after the full stop stay with the sentence', () {
+      const String joined = 'Er sagte (ja.) Dann ging er.';
+      expect(ocrSpacedBlockSentenceAt(joined, 3), 'Er sagte (ja.)');
+    });
+
+    test('out of range is null', () {
+      expect(ocrSpacedBlockSentenceAt('abc', -1), isNull);
+      expect(ocrSpacedBlockSentenceAt('abc', 3), isNull);
     });
   });
 }

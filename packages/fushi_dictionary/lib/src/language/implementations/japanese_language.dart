@@ -48,7 +48,7 @@ class JapaneseLanguage extends Language {
   static final LinkedHashMap<String, int> _matchLengthCache =
       LinkedHashMap<String, int>();
 
-  /// 匹配长度缓存的键：引擎只看查询串的前 [FushiDicts.defaultScanLength] 个
+  /// 匹配长度缓存的键：引擎只看查询串的前 [FushiDicts.scanLengthFor] 个
   /// **码点**——候选前缀都在这个扫描窗口内，BUG-3212 的关西方言保护结构判定也只
   /// 读窗口内的文本——所以键取的正是这段，结果只依赖键里的文本。
   ///
@@ -59,7 +59,9 @@ class JapaneseLanguage extends Language {
   static String matchLengthCacheKey(String text) {
     int units = 0;
     int codePoints = 0;
-    while (units < text.length && codePoints < FushiDicts.defaultScanLength) {
+    // 与引擎同一个窗口：连字符复合词会把窗口撑长（[FushiDicts.scanLengthFor]）。
+    final int window = FushiDicts.scanLengthFor(text);
+    while (units < text.length && codePoints < window) {
       final int unit = text.codeUnitAt(units);
       final bool surrogatePair =
           unit >= 0xD800 &&

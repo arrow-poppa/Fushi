@@ -75,3 +75,69 @@ String lookupWordAtIndex(
   final String matched = scan(text: text, index: range.start);
   return matched.trim().length > word.length ? matched : word;
 }
+
+/// 引擎对查询串 [text] 的最长匹配长度（UTF-16 码元，0 = 没匹配到 / 引擎未就绪）。
+typedef LookupMatchedUnits = int Function(String text);
+
+int _engineMatchedUnits(String text) {
+  if (!FushiDicts.isInitialized) return 0;
+  final List<FushiLookupResult> results = FushiDicts.instance.lookup(
+    text,
+    maxResults: 1,
+  );
+  return results.isEmpty ? 0 : results.first.matched.length;
+}
+
+bool _isHyphenGrapheme(String grapheme) => grapheme == '-' || grapheme == '‐';
+
+/// 只把探测串截到这么多个字位：引擎窗口最多 [FushiDicts.maxHyphenatedScanLength]。
+const int _kHyphenProbeGraphemes = 64;
+
+/// 点在拉丁单词上时扫描查词的起点（字位下标）：词首；若这个词是连字符复合词的
+/// 后一段（`gaming-mode` 里的 `mode`），且词典里有**盖住被点字**的复合词，起点再
+/// 退到复合词的那一段开头。
+///
+/// 不能一律退到复合词开头：词典没收 `gaming-mode` 时，点 `mode` 会查出 `gaming`
+/// ——不是用户点的词。所以从最左边的那一段起逐个探测（[matchedUnits]，默认问
+/// 引擎），第一段的匹配一直延伸到被点字才采用；都不够就停在被点的那个词的词首。
+/// 引擎未就绪时探测恒为 0，行为与旧的「只退到词首」一致。
+///
+/// 被点的不是拉丁单词字符时原样返回 [index]。
+int latinLookupStartAt(
+  List<String> graphemes,
+  int index, {
+  LookupMatchedUnits? matchedUnits,
+}) {
+  if (index < 0 || index >= graphemes.length) return index;
+  if (!isLatinWordGrapheme(graphemes[index])) return index;
+  int wordStart = index;
+  while (wordStart > 0 && isLatinWordGrapheme(graphemes[wordStart - 1])) {
+    wordStart--;
+  }
+  // 复合词里更靠前的各段开头，由近到远。
+  final List<int> segmentStarts = <int>[];
+  int cursor = wordStart;
+  while (cursor >= 2 &&
+      _isHyphenGrapheme(graphemes[cursor - 1]) &&
+      isLatinWordGrapheme(graphemes[cursor - 2])) {
+    cursor--;
+    while (cursor > 0 && isLatinWordGrapheme(graphemes[cursor - 1])) {
+      cursor--;
+    }
+    segmentStarts.add(cursor);
+  }
+  if (segmentStarts.isEmpty) return wordStart;
+  final LookupMatchedUnits probe = matchedUnits ?? _engineMatchedUnits;
+  for (final int start in segmentStarts.reversed) {
+    final String suffix = graphemes
+        .skip(start)
+        .take(_kHyphenProbeGraphemes)
+        .join();
+    final int unitsThroughTapped = graphemes
+        .sublist(start, index + 1)
+        .join()
+        .length;
+    if (probe(suffix) >= unitsThroughTapped) return start;
+  }
+  return wordStart;
+}

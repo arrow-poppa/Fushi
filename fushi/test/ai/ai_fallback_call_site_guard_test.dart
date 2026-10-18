@@ -144,4 +144,16 @@ void main() {
       reason: '这些入口交出来的是扫描窗，不是用户划定的边界：\n${offenders.join("\n")}',
     );
   });
+
+  test('pushNestedPopup 的边界由调用方声明，不写死成明确', () {
+    // 屏幕 OCR、来源条、字幕、texthooker 都经 pushNestedPopup 交扫描窗。这里曾写死
+    // hasExplicitBoundary: true，未知词兜底就把「testemunha neste país」整串当成一个词。
+    final String body = bodyOf(
+      read('lib/src/pages/implementations/dictionary_page_mixin.dart'),
+      'Future<int> pushNestedPopup({',
+    );
+    expect(body, contains('applyAiFallback('));
+    expect(body, contains('hasExplicitBoundary: explicitBoundary'));
+    expect(body, isNot(contains('hasExplicitBoundary: true')));
+  });
 }

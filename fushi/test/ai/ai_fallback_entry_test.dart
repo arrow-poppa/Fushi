@@ -190,6 +190,48 @@ void main() {
     });
   });
 
+  group('resolveScanFallbackTerm takes only the tapped word', () {
+    // A tap hands over the text from the tapped word to the end of the line.
+    // Taking that whole made "testemunha neste país" a single "word" on screen
+    // OCR (docs/agent/ai-explanation.md §8.5).
+    test('a spaced script yields the leading word', () {
+      final AiFallbackToken? token = AiFallback.resolveScanFallbackTerm(
+        'testemunha neste país',
+      );
+      expect(token?.term, 'testemunha');
+      expect(token?.textLength, 'testemunha'.length);
+    });
+
+    test('keeps hyphenated and accented words whole', () {
+      expect(
+        AiFallback.resolveScanFallbackTerm('state-of-the-art design')?.term,
+        'state-of-the-art',
+      );
+      expect(AiFallback.resolveScanFallbackTerm('você disse')?.term, 'você');
+      expect(AiFallback.resolveScanFallbackTerm('Привет, мир')?.term, 'Привет');
+    });
+
+    test('a window starting in a script without spaces yields nothing', () {
+      for (final String window in <String>[
+        '日本語ですねこれは',
+        'ですね',
+        'カタカナ',
+        'ภาษาไทย',
+      ]) {
+        expect(
+          AiFallback.resolveScanFallbackTerm(window),
+          isNull,
+          reason: '$window has no recoverable word boundary',
+        );
+      }
+    });
+
+    test('blank or punctuation-only windows yield nothing', () {
+      expect(AiFallback.resolveScanFallbackTerm('   '), isNull);
+      expect(AiFallback.resolveScanFallbackTerm('— 123'), isNull);
+    });
+  });
+
   group('synthetic result', () {
     AiFallbackToken token([String term = 'Proxmox']) =>
         AiFallbackToken(term: term, textLength: term.length);

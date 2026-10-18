@@ -1221,6 +1221,7 @@ mixin DictionaryPageMixin {
     bool autoRead = false,
     bool reuseWarmSlot = false,
     bool revealWhileSearching = false,
+    bool explicitBoundary = false,
   }) async {
     final String trimmed = query.trim();
     if (trimmed.isEmpty) return 0;
@@ -1270,9 +1271,10 @@ mixin DictionaryPageMixin {
           term: trimmed,
           maximumTerms: maxTerms,
         ),
-        // 这条路的 query 是用户自己给的（手动搜索框输入、卡片内链接点击、字幕行
-        // 选中），整串就是他要问的东西——边界现成，不需要猜。
-        hasExplicitBoundary: true,
+        // 调用方给的 query 分两种：用户自己给的整串（搜索框输入、链接点击，传
+        // explicitBoundary: true）就是要问的东西；点按 / 悬停交来的扫描窗（屏幕
+        // OCR、来源条、字幕、texthooker）是「被点的词到行尾」，只取开头那个词。
+        hasExplicitBoundary: explicitBoundary,
       );
       // 词典查询（三级缓存 → FFI）到此为止。小内存模式把 popupJson 缓存砍到 2MB、
       // ffiLookup 砍到 8MB，重复查词的命中率随之下降、这一段会更常真跑 FFI——所以条目

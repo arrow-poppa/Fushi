@@ -109,7 +109,23 @@ void main() {
       expect(out.entries.single.word, 'machine learning');
     });
 
-    test('refuses when no boundary was supplied', () async {
+    test(
+      'a scan window in a spaced script explains only the tapped word',
+      () async {
+        // Screen OCR / the source strip hand over "tapped word to end of line".
+        // Taking it whole made the AI explain "testemunha neste país".
+        await enableFallback();
+        final DictionarySearchResult out = appModel.applyAiFallback(
+          empty('testemunha neste país'),
+          hasExplicitBoundary: false,
+        );
+        expect(AiFallback.isFallbackResult(out), isTrue);
+        expect(out.entries.single.word, 'testemunha');
+        expect(out.bestLength, 'testemunha'.length);
+      },
+    );
+
+    test('refuses a scan window in a script without spaces', () async {
       // Without a boundary there is nothing to derive a word from that would be
       // correct in a language without spaces — and this pipeline does not know
       // the language by design.

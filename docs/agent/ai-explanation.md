@@ -387,6 +387,23 @@ full selected word is preserved — never reduced to a partially matched prefix.
 space-based tokeniser is kept only as the degenerate path for surfaces that provide a
 raw text buffer with no bounded selection.
 
+What counts as a selection is decided per call site, by `hasExplicitBoundary`:
+
+- **Explicit** — text typed into a search box, text another app handed over as a
+  selection, and a headword / cross-reference link. The whole string is the term.
+- **Scan window** — a tap or hover that hands over "the tapped word to the end of the
+  line": screen OCR, the source strip, subtitles, texthooker, the book reader, nested
+  taps inside a card. This is *not* a boundary. Taking it whole turned
+  `testemunha neste país` into one "word" (BUG-3523). `AiFallback.resolveScanFallbackTerm`
+  takes only the leading word when the window starts in a script that separates words,
+  and yields nothing when it starts in one that does not (Han, kana, Thai, Lao, Khmer,
+  Myanmar, Tibetan). This is a property of the text itself, not a language setting, so
+  the lookup pipeline stays language-agnostic.
+
+`pushNestedPopup` takes `explicitBoundary` (default `false`); a guard in
+`fushi/test/ai/ai_fallback_call_site_guard_test.dart` keeps it from being hard-coded to
+`true` again.
+
 ### 8.6 Identifying headers
 The reference sends `HTTP-Referer: https://yomitan.wiki/` and
 `X-OpenRouter-Title: Yomitan`. Fushi must not claim to be Yomitan, and

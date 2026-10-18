@@ -133,6 +133,31 @@ abstract final class AiFallback {
     return tokenize(text);
   }
 
+  /// Scripts that do not separate words: a scan window starting with one of
+  /// them has no recoverable word boundary for an unknown word.
+  static final RegExp _unspacedScriptStart = RegExp(
+    r'^[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}'
+    r'\p{Script=Thai}\p{Script=Lao}\p{Script=Khmer}\p{Script=Myanmar}'
+    r'\p{Script=Tibetan}]',
+    unicode: true,
+  );
+
+  /// The fallback word for a **scan window**: a tap or hover that handed the
+  /// lookup the text from the tapped word to the end of the line (screen OCR,
+  /// the source strip, subtitles, the book reader).
+  ///
+  /// Such a window is not a boundary — taking it whole turned
+  /// `testemunha neste país` into one "word". In a script that separates words
+  /// the leading word is the boundary, so it goes through [tokenize]; a window
+  /// that starts in a script without spaces yields nothing, for the reason
+  /// [resolveFallbackTerm] gives.
+  static AiFallbackToken? resolveScanFallbackTerm(String text) {
+    final String trimmed = text.trimLeft();
+    if (trimmed.isEmpty) return null;
+    if (_unspacedScriptStart.hasMatch(trimmed)) return null;
+    return tokenize(trimmed);
+  }
+
   /// Builds the synthetic result the popup renders.
   ///
   /// The entry carries an empty glossary, exactly like the reference: the card

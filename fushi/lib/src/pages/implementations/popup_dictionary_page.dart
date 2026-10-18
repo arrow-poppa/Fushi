@@ -255,7 +255,12 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
           );
     if (scan == null) {
       _sourceLineQuery = '';
-      _pushSearch(text, Rect.zero, reuseWarmSlot: true);
+      _pushSearch(
+        text,
+        Rect.zero,
+        reuseWarmSlot: true,
+        explicitBoundary: true,
+      );
       return;
     }
     _sourceLineQuery = scan.suffix.trim();
@@ -350,6 +355,9 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
     // 源文本条点字发起的「扫描查词」（Yomitan 式）。非空时本条与搜索框都**不动**：
     // 变的只有下方那份结果和条上的高亮跨度，锚点就是被点的那个字素簇。
     SourceLookupScan? scan,
+    // 整串就是用户要问的（宿主推来的选中文本、搜索栏提交）。扫描查词与卡片内点词
+    // 交来的是「被点的词到行尾」，AI 兜底只取开头那个词。
+    bool explicitBoundary = false,
   }) async {
     final String trimmed = query.trim();
     if (trimmed.isEmpty) return;
@@ -381,6 +389,7 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
       // 独立查词窗是整窗卡片（非贴选区小浮卡），搜索期保持卡片显示、空白由
       // DictionaryPopupLayer 的加载盖板兜住——不走「搜索期隐藏 + anchored 占位卡」。
       revealWhileSearching: true,
+      explicitBoundary: explicitBoundary,
     );
     if (!mounted || highlightGeneration != _sourceHighlightGeneration) return;
     setState(() {
@@ -486,7 +495,12 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
     // TODO-951 症状C：保留常驻热槽（pruneToWarmSlot），别 clear 掉热 WebView；
     // 顶层重查走 reuseWarmSlot 原地复用。
     setState(_popup.pruneToWarmSlot);
-    _pushSearch(text.trim(), Rect.zero, reuseWarmSlot: true);
+    _pushSearch(
+      text.trim(),
+      Rect.zero,
+      reuseWarmSlot: true,
+      explicitBoundary: true,
+    );
   }
 
   /// BUG-2900：基础层的结果来自外部入口那一行，制卡 / 覆写时用整行补 `{sentence}`

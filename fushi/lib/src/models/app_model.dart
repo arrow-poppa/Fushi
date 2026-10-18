@@ -7114,10 +7114,12 @@ class AppModel with ChangeNotifier {
   ///
   /// * **不进引擎、不进索引**：结果整条在 Dart 侧造，`popupJson` 留空走纯 Dart
   ///   分组器，`native/fushidicts/` 一行都不碰。
-  /// * **只在有明确边界时兜底**。参考实现是按语言黑名单（ja/zh/th…）关掉这条路的，
+  /// * **没有明确边界时只取扫描窗开头的那个词**，且只在靠空格分词的文字上。参考
+  ///   实现是按语言黑名单（ja/zh/th…）关掉这条路的，
   ///   但本仓查词流水线**有意语言无关**（`targetLanguage` 已于 2026-07-26 按用户
   ///   指令删除，并有守卫 `target_language_removed_guard_test.dart` 钉死）。所以这里
-  ///   不引入语言概念：调用方给了边界（用户选中的那段文本）就用它，没给就不兜底。
+  ///   不引入语言概念：调用方给了边界（用户选中的那段文本）就用它；没给时只看扫描窗
+  ///   开头的文字本身靠不靠空格分词，靠空格就取开头那个词，否则不兜底。
   ///   参考实现要黑名单，正是因为它得从一段裸缓冲里**猜**词边界；边界是现成的时候
   ///   那个问题根本不存在。
   /// * 用户没开这个开关时是**零成本**：先读偏好再谈别的。
@@ -7126,20 +7128,23 @@ class AppModel with ChangeNotifier {
     required bool hasExplicitBoundary,
   }) {
     if (result.entries.isNotEmpty) return result;
-    if (!hasExplicitBoundary) return result;
     // 偏好没加载完就别读：`prefsRepo` 是个 `!`，而查词可以先于 initialise() 发生
     // （热槽种子、widget 测试）。这里抛异常会把**整条查词渲染**一起带走。
     if (!isPreferencesReady) return result;
     if (!aiSettings.read().unknownWordFallback) return result;
-    final AiFallbackToken? token = AiFallback.resolveFallbackTerm(
-      result.searchTerm,
-      hasExplicitBoundary: true,
-      // 有边界时 resolveFallbackTerm 根本不看这个参数——上面那行已经把「没有边界」
-      // 的情况挡掉了。传空串是为了不把语言概念带进查词链路；**不能**靠它代替上面
-      // 那道门：空串不在 kNoWordBoundaryLanguages 里，会被当成「有分词的语言」而
-      // 去跑分词器，在日语上正好吐出半句话当一个词。
-      language: '',
-    );
+    // 有边界：整串就是用户要问的（搜索框输入、外部 app 选中的文本、链接）。
+    // 没边界：点按 / 悬停交来的是「从被点的词到行尾」的扫描窗，整串当词会把
+    // 「testemunha neste país」造成一个词——只取开头那个词；窗以不靠空格分词的
+    // 文字开头时取不出边界，不兜底（见 [AiFallback.resolveScanFallbackTerm]）。
+    final AiFallbackToken? token = hasExplicitBoundary
+        ? AiFallback.resolveFallbackTerm(
+            result.searchTerm,
+            hasExplicitBoundary: true,
+            // 有边界时 resolveFallbackTerm 根本不看这个参数。传空串是为了不把语言
+            // 概念带进查词链路。
+            language: '',
+          )
+        : AiFallback.resolveScanFallbackTerm(result.searchTerm);
     if (token == null) return result;
     return AiFallback.buildResult(token);
   }

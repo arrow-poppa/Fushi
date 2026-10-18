@@ -1849,6 +1849,7 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
                           query,
                           _resultWordScreenRect(localRect),
                           reuseWarmSlot: true,
+                          explicitBoundary: true,
                         );
                       },
                       // BUG-3216：结果卡制卡补上源文本条那一句作例句（查词页没有书 /
@@ -2084,6 +2085,8 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
     String query,
     Rect selectionRect, {
     bool reuseWarmSlot = false,
+    // 链接（词头 / 交叉引用）的 query 就是一个完整的词；释义里点词交来的是扫描窗。
+    bool explicitBoundary = false,
   }) {
     return pushNestedPopup(
       query: query,
@@ -2091,6 +2094,7 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
       controller: _popup,
       reuseWarmSlot: reuseWarmSlot,
       autoRead: true,
+      explicitBoundary: explicitBoundary,
     );
   }
 

@@ -150,6 +150,18 @@ add_test(NAME en_inflection_lookup_test
                  "${FUSHI_ROOT}/../../fushi/assets/transforms/en.json"
                  "${FUSHI_ROOT}/../../fushi/assets/transforms/en_irregular.json")
 
+# 葡萄牙语 / 意大利语词形还原（真 pt.json / it.json，与 manifest 里全部变换表一起装载）。
+add_executable(romance_inflection_lookup_test
+    "${CMAKE_CURRENT_SOURCE_DIR}/romance_inflection_lookup_test.cpp")
+target_link_libraries(romance_inflection_lookup_test PRIVATE fushidicts)
+target_include_directories(romance_inflection_lookup_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+if(MSVC)
+  target_compile_options(romance_inflection_lookup_test PRIVATE /utf-8 /Zc:__cplusplus /permissive-)
+endif()
+add_test(NAME romance_inflection_lookup_test
+         COMMAND romance_inflection_lookup_test
+                 "${FUSHI_ROOT}/../../fushi/assets/transforms")
+
 # BUG-3212：关西方言「うた → った」不得跨词吞掉「ため / たび」的「た」（真 ja.json）。
 add_executable(ja_kansai_ta_boundary_test
     "${CMAKE_CURRENT_SOURCE_DIR}/ja_kansai_ta_boundary_test.cpp")

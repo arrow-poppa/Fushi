@@ -106,6 +106,7 @@
 - **安全上限**：导入/查询期的资源/尺寸上限加固。
 - **FFI / JNI 桥**：`fushidicts_ffi.cpp`（Dart FFI）+ `fushidicts_jni.cpp`（Android JNI）。**不用上游 `c-bindings` 分支**。
   - 注意：`score` / `get_freq_value(s)_for_dict` / `Dictionary` 均为引擎内部符号，FFI/JNI 桥与 Dart binding 均未暴露——本批三处改动**不影响 FFI 签名**。
+- **变形还原按语言接龙**（`fushidicts_src/deinflector.cpp`）：条件位按语言各自从 0 分配，链上的下一条规则必须与上一条同语言（`DeinflectionResult::language`），否则位布局相同的两门语言（pt / it）会互相接龙到递归上限。单字只套整词规则（pt `é` → `ser`、it `è` → `essere`）。词性过滤（`pos_to_conditions`）仍按裸标签跨语言合并，只会偏宽、不会误拒。测试 `tests/romance_inflection_lookup_test.cpp`。
 - **额外吸收的 sibling commit**：`feb48f5`（`ImportResult.detected_type`，自动词典类型检测），非 origin/main 主线。
 
 ## 依赖差异

@@ -150,6 +150,15 @@ int Deinflector::phrasal_lang_index(const std::string& lang) {
   return static_cast<int>(phrasal_langs_.size() - 1);
 }
 
+// 同一门语言可以分几份文件（en.json + en_irregular.json），按语言名取同一个下标。
+int Deinflector::language_index(const std::string& lang) {
+  for (size_t i = 0; i < languages_.size(); i++) {
+    if (languages_[i] == lang) return static_cast<int>(i);
+  }
+  languages_.push_back(lang);
+  return static_cast<int>(languages_.size() - 1);
+}
+
 void Deinflector::load_transforms_json(const std::string& json) {
   fushidicts_json::Descriptor descriptor;
   auto ec = glz::read<glz::opts{.error_on_unknown_keys = false}>(descriptor, json);
@@ -230,6 +239,7 @@ void Deinflector::load_transforms_json(const std::string& json) {
   }
 
   // Load transform rules
+  const int language = language_index(lang);
   for (const auto& [transform_key, transform] : descriptor.transforms) {
     int group_id = add_group({.name = transform.name, .description = transform.description});
     const int phrasal_lang = transform.phrasalVerb ? phrasal_lang_index(lang) : -1;
@@ -249,14 +259,14 @@ void Deinflector::load_transforms_json(const std::string& json) {
         vec.push_back({.from = rule.fromSuffix, .to = rule.toSuffix,
                        .conditions_in = cond_in, .conditions_out = cond_out,
                        .group_id = group_id, .is_whole_word = false,
-                       .phrasal_lang = phrasal_lang});
+                       .phrasal_lang = phrasal_lang, .language = language});
         size_t len = utf8::distance(rule.fromSuffix.begin(), rule.fromSuffix.end());
         max_suffix_length_ = std::max(max_suffix_length_, len);
       } else if (rule.type == "prefix") {
         auto& vec = prefix_transforms_[rule.fromPrefix];
         vec.push_back({.from = rule.fromPrefix, .to = rule.toPrefix,
                        .conditions_in = cond_in, .conditions_out = cond_out,
-                       .group_id = group_id});
+                       .group_id = group_id, .language = language});
         size_t len = utf8::distance(rule.fromPrefix.begin(), rule.fromPrefix.end());
         max_prefix_length_ = std::max(max_prefix_length_, len);
       } else if (rule.type == "wholeWord") {
@@ -264,12 +274,13 @@ void Deinflector::load_transforms_json(const std::string& json) {
         vec.push_back({.from = rule.from, .to = rule.to,
                        .conditions_in = cond_in, .conditions_out = cond_out,
                        .group_id = group_id, .is_whole_word = true,
-                       .phrasal_lang = phrasal_lang});
+                       .phrasal_lang = phrasal_lang, .language = language});
         size_t len = utf8::distance(rule.from.begin(), rule.from.end());
         max_suffix_length_ = std::max(max_suffix_length_, len);
       } else if (rule.type == "phrasalVerbInterposedObject") {
         phrasal_langs_[phrasal_lang_index(lang)].interposed.push_back(
-            {.conditions_in = cond_in, .conditions_out = cond_out, .group_id = group_id});
+            {.conditions_in = cond_in, .conditions_out = cond_out, .group_id = group_id,
+             .language = language});
       }
     }
   }
@@ -298,11 +309,11 @@ uint64_t Deinflector::pos_to_conditions(const std::vector<std::string>& part_of_
 std::vector<DeinflectionResult> Deinflector::deinflect(const std::string& text) const {
   std::vector<DeinflectionResult> results;
   std::vector<TransformGroup> trace;
-  deinflect_recursive(text, 0, trace, results, 0);
+  deinflect_recursive(text, 0, -1, trace, results, 0);
   return results;
 }
 
-void Deinflector::deinflect_recursive(const std::string& text, uint64_t conditions,
+void Deinflector::deinflect_recursive(const std::string& text, uint64_t conditions, int language,
                                       std::vector<TransformGroup>& trace,
                                       std::vector<DeinflectionResult>& results,
                                       int depth) const {
@@ -310,9 +321,23 @@ void Deinflector::deinflect_recursive(const std::string& text, uint64_t conditio
   if (text_len == 0) return;
   if (depth > kMaxRecursionDepth) return;
 
-  results.emplace_back(text, conditions, trace);
+  results.push_back({.text = text, .conditions = conditions, .trace = trace, .language = language});
 
-  if (text_len == 1) return;
+  // 单字只走整词规则（葡语 é → ser、意语 è → essere，都是最常用的动词形）。后缀 /
+  // 前缀规则在单字上只会造出噪声变体，所以仍旧不跑；整词规则是逐词登记的，安全。
+  if (text_len == 1) {
+    auto it = suffix_transforms_.find(text);
+    if (it == suffix_transforms_.end()) return;
+    for (const auto& rule : it->second) {
+      if (!rule.is_whole_word) continue;
+      if (language >= 0 && rule.language != language) continue;
+      if (conditions != 0 && !(conditions & rule.conditions_in)) continue;
+      trace.push_back(groups_[rule.group_id]);
+      deinflect_recursive(rule.to, rule.conditions_out, rule.language, trace, results, depth + 1);
+      trace.pop_back();
+    }
+    return;
+  }
 
   // Suffix matching: scan from longest to shortest
   size_t start = std::min(max_suffix_length_, text_len);
@@ -326,10 +351,11 @@ void Deinflector::deinflect_recursive(const std::string& text, uint64_t conditio
       std::string prefix(text.begin(), prefix_it);
       for (const auto& rule : it->second) {
         if (rule.is_whole_word && !prefix.empty()) continue;
+        if (language >= 0 && rule.language != language) continue;
         if (conditions != 0 && !(conditions & rule.conditions_in)) continue;
         std::string transformed = prefix + rule.to;
         trace.push_back(groups_[rule.group_id]);
-        deinflect_recursive(transformed, rule.conditions_out, trace, results, depth + 1);
+        deinflect_recursive(transformed, rule.conditions_out, rule.language, trace, results, depth + 1);
         trace.pop_back();
       }
     }
@@ -350,10 +376,11 @@ void Deinflector::deinflect_recursive(const std::string& text, uint64_t conditio
       if (it != prefix_transforms_.end()) {
         std::string remainder(end_it, text.end());
         for (const auto& rule : it->second) {
+          if (language >= 0 && rule.language != language) continue;
           if (conditions != 0 && !(conditions & rule.conditions_in)) continue;
           std::string transformed = rule.to + remainder;
           trace.push_back(groups_[rule.group_id]);
-          deinflect_recursive(transformed, rule.conditions_out, trace, results, depth + 1);
+          deinflect_recursive(transformed, rule.conditions_out, rule.language, trace, results, depth + 1);
           trace.pop_back();
         }
       }
@@ -362,7 +389,7 @@ void Deinflector::deinflect_recursive(const std::string& text, uint64_t conditio
 
   // 短语动词（放在最后、同样参与递归链：宾语插入 → 动词头还原 → …）
   if (!phrasal_langs_.empty()) {
-    deinflect_phrasal(text, conditions, trace, results, depth);
+    deinflect_phrasal(text, conditions, language, trace, results, depth);
   }
 }
 
@@ -381,7 +408,7 @@ void Deinflector::deinflect_recursive(const std::string& text, uint64_t conditio
 // 与 Yomitan 的两处刻意差异：小品词按**整个空格分隔的 token** 匹配（Yomitan 的正则
 // 不封尾，"gave upstairs" 也会被当成 "gave up…"）；动词头的 prefix 规则不参与
 // （"will give up" 这种整串前缀由主循环的 prefix 匹配处理，不必重复）。
-void Deinflector::deinflect_phrasal(const std::string& text, uint64_t conditions,
+void Deinflector::deinflect_phrasal(const std::string& text, uint64_t conditions, int language,
                                     std::vector<TransformGroup>& trace,
                                     std::vector<DeinflectionResult>& results,
                                     int depth) const {
@@ -410,10 +437,11 @@ void Deinflector::deinflect_phrasal(const std::string& text, uint64_t conditions
           for (const auto& rule : it->second) {
             if (rule.phrasal_lang != static_cast<int>(li)) continue;
             if (rule.is_whole_word && !prefix.empty()) continue;
+            if (language >= 0 && rule.language != language) continue;
             if (conditions != 0 && !(conditions & rule.conditions_in)) continue;
             std::string transformed = prefix + rule.to + " " + tail;
             trace.push_back(groups_[rule.group_id]);
-            deinflect_recursive(transformed, pl.conditions_out, trace, results, depth + 1);
+            deinflect_recursive(transformed, pl.conditions_out, rule.language, trace, results, depth + 1);
             trace.pop_back();
           }
         }
@@ -440,10 +468,11 @@ void Deinflector::deinflect_phrasal(const std::string& text, uint64_t conditions
       }
       if (particle_start != std::string::npos && particle_start > 0) {
         for (const auto& rule : pl.interposed) {
+          if (language >= 0 && rule.language != language) continue;
           if (conditions != 0 && !(conditions & rule.conditions_in)) continue;
           std::string transformed = head + " " + tail.substr(particle_start);
           trace.push_back(groups_[rule.group_id]);
-          deinflect_recursive(transformed, rule.conditions_out, trace, results, depth + 1);
+          deinflect_recursive(transformed, rule.conditions_out, rule.language, trace, results, depth + 1);
           trace.pop_back();
         }
       }

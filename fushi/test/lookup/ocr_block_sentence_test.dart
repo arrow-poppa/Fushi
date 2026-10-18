@@ -155,4 +155,106 @@ void main() {
       expect(ocrLineWithSentenceContinuation(block, 0, 'メニュー' * 40), isNull);
     });
   });
+
+  group('line joining for space-delimited scripts', () {
+    test('a line ending in punctuation still gets a space before the next', () {
+      // Antes: 「Hello,」+「world」 virava 「Hello,world」.
+      const String block = 'Hello,\nworld. Next.';
+      expect(ocrBlockSentenceAt(block, 0), 'Hello, world.');
+    });
+
+    test('Cyrillic and Greek line breaks are word breaks too', () {
+      expect(ocrBlockSentenceAt('Привет\nмир. Ещё.', 0), 'Привет мир.');
+      expect(ocrBlockSentenceAt('Καλή\nμέρα. Άλλη.', 0), 'Καλή μέρα.');
+    });
+
+    test('a hyphen at the end of a line joins without a space', () {
+      expect(
+        ocrBlockSentenceAt('Das ist ein Haus-\ntür. Ende.', 0),
+        'Das ist ein Haus-tür.',
+      );
+    });
+
+    test('CJK next to Latin across a break stays glued as before', () {
+      expect(ocrBlockSentenceAt('日本語の\nABCです。', 0), '日本語のABCです。');
+    });
+  });
+
+  // 靠空格分词的文字：源文本条显示整块，被点字下标换算到拼好的整块上。
+  group('ocrSpacedBlockAt', () {
+    test('joins every line of a European block and maps the tapped unit', () {
+      const String block =
+          'Le chat dort sur\nle canapé depuis\nce matin. Il rêve.';
+      const String line = 'le canapé depuis';
+      final int offset = indexOf(block, line);
+      final ({String text, int unit})? r = ocrSpacedBlockAt(
+        block,
+        offset,
+        line,
+        line.indexOf('canapé'),
+      );
+      expect(r, isNotNull);
+      expect(r!.text, 'Le chat dort sur le canapé depuis ce matin. Il rêve.');
+      expect(r.text.substring(r.unit, r.unit + 6), 'canapé');
+    });
+
+    test('the first and the last line map too', () {
+      const String block = 'Ich gehe\nnach Hause.';
+      final ({String text, int unit})? first = ocrSpacedBlockAt(
+        block,
+        0,
+        'Ich gehe',
+        0,
+      );
+      expect(first!.text, 'Ich gehe nach Hause.');
+      expect(first.unit, 0);
+      final ({String text, int unit})? last = ocrSpacedBlockAt(
+        block,
+        indexOf(block, 'nach'),
+        'nach Hause.',
+        'nach Hause.'.indexOf('Hause'),
+      );
+      expect(last!.text.substring(last.unit), 'Hause.');
+    });
+
+    test('leading and trailing spaces on OCR lines do not shift the index', () {
+      const String block = '  Uno dos  \n  tres cuatro.';
+      const String line = '  tres cuatro.';
+      final ({String text, int unit})? r = ocrSpacedBlockAt(
+        block,
+        indexOf(block, line),
+        line,
+        line.indexOf('cuatro'),
+      );
+      expect(r!.text, 'Uno dos tres cuatro.');
+      expect(r.text.substring(r.unit), 'cuatro.');
+    });
+
+    test('blocks with Japanese or Chinese are left to the line mode', () {
+      const String block = '今日は\n良い天気。';
+      expect(ocrSpacedBlockAt(block, 0, '今日は', 0), isNull);
+      // Mesmo uma única palavra japonesa num bloco latino desliga o modo.
+      expect(ocrSpacedBlockAt('Hello\nこんにちは', 0, 'Hello', 0), isNull);
+    });
+
+    test(
+      'a single-line block, a bad offset or an out-of-range unit is null',
+      () {
+        expect(
+          ocrSpacedBlockAt('One line only.', 0, 'One line only.', 2),
+          isNull,
+        );
+        expect(ocrSpacedBlockAt('Ab\ncd', 1, 'Ab', 0), isNull);
+        expect(ocrSpacedBlockAt('Ab\ncd', 0, 'Ab', 2), isNull);
+        expect(ocrSpacedBlockAt('Ab\ncd', 0, 'Ab', -1), isNull);
+      },
+    );
+
+    test('a block longer than the cap falls back', () {
+      final String block = '${'word ' * 150}\n${'more ' * 150}';
+      final String line = 'word ' * 150;
+      expect(ocrSpacedBlockAt(block, 0, line, 0), isNull);
+      expect(ocrSpacedBlockAt(block, 0, line, 0, maxLength: 5000), isNotNull);
+    });
+  });
 }

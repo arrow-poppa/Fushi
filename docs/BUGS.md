@@ -33,10 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3150 条。点号进各自文件。
+> 共 3151 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-3521](bugs/BUG-3521-screen-ocr-spaced-script-line-join.md) | ✅ | ✅ | 截屏识字：拉丁 / 西里尔 / 希腊文折行拼回时丢空格，查词窗只给被点的那一行 |
 | [BUG-3520](bugs/BUG-3520-screen-ocr-wrapped-sentence-next-line.md) | ✅ | ✅ | 截屏识字查词窗：一句折到下一行时源文本条看不到下一行、跨行的词查不全 |
 | [BUG-3519](bugs/BUG-3519-screen-ocr-ai-sentence-missing.md) | ✅ | ✅ | 截屏识字查词窗不给 AI 解释传句子（首查只解释孤立的词） |
 | [BUG-3518](bugs/BUG-3518-ios-audio-lane-page-bleed.md) | ✅ | ✅ | iOS 竖排翻页：有声书当前句窄条越出页尾、画进下一页页顶 |

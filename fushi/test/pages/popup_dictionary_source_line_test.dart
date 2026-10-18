@@ -648,6 +648,58 @@ void main() {
   );
 
   testWidgets(
+    'a European screen-OCR block shows all its lines on the strip; the tapped '
+    'word on the second line is scanned and its sentence goes to Anki and AI',
+    (WidgetTester tester) async {
+      final _SourceLineAppModel appModel = _SourceLineAppModel();
+      final _RecordingAnkiRepo repo = _RecordingAnkiRepo();
+      // Três linhas do mesmo bloco do ML Kit; toque em 「canapé」 na segunda.
+      const String block =
+          'Le chat dort sur\nle canapé depuis\nce matin. Il rêve.';
+      const String line = 'le canapé depuis';
+      await tester.pumpWidget(
+        _buildApp(
+          appModel: appModel,
+          repo: repo,
+          text: line,
+          charIndex: line.indexOf('canapé'),
+          sourceBlock: block,
+          sourceBlockOffset: block.indexOf(line),
+        ),
+      );
+      await _settle(tester);
+
+      const String whole =
+          'Le chat dort sur le canapé depuis ce matin. Il rêve.';
+      final SourceLookupTextPanel panel = tester.widget(
+        find.byType(SourceLookupTextPanel),
+      );
+      expect(
+        panel.text,
+        whole,
+        reason: 'a faixa mostra todas as linhas do bloco',
+      );
+      expect(panel.highlight?.start, whole.indexOf('canapé'));
+      expect(appModel.searched.first, startsWith('canapé depuis ce matin'));
+      expect(
+        await _mineSentence(tester, repo),
+        'Le chat dort sur le canapé depuis ce matin.',
+      );
+      expect(
+        _baseLayer(tester).aiSentence,
+        'Le chat dort sur le canapé depuis ce matin.',
+      );
+
+      // Tocar na faixa uma palavra da outra frase do bloco.
+      await tester.tap(find.text('I').first);
+      await _settle(tester);
+      expect(appModel.searched.last, startsWith('Il rêve'));
+      expect(await _mineSentence(tester, repo), 'Il rêve.');
+      expect(_baseLayer(tester).aiSentence, 'Il rêve.');
+    },
+  );
+
+  testWidgets(
     'BUG-2899: PopupDictApp hands the whole line from the native channel to '
     'the page without cutting it into a word',
     (WidgetTester tester) async {

@@ -162,31 +162,65 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
     }
   }
 
-  /// 源文本条上的原文：被点的那一行；那一行最后一句折到下面几行时，把这句剩下的
-  /// 部分接上（[ocrLineWithSentenceContinuation]）——否则跨行的词查不全，条上也看不到
-  /// 下一行。接上的部分只在行尾之后，行内下标（[PopupDictionaryPage.sourceCharIndex]）
-  /// 原样有效。
-  static String _sourceTextOf(PopupDictionaryPage page) {
+  /// 源文本条上的原文与被点字在其中的 UTF-16 下标。
+  ///
+  /// - 靠空格分词的文字（拉丁、西里尔、希腊……）：被点那一行所在 OCR 块的**全部行**
+  ///   （[ocrSpacedBlockAt]），条上能点块里任何一行；句子从拼好的整块里截
+  ///   （[_OcrSourceText.wholeBlock]）。
+  /// - 其余（日文 / 中文等，或块太长）：被点的那一行；那一行最后一句折到下面几行时
+  ///   把这句剩下的部分接上（[ocrLineWithSentenceContinuation]），接上的部分只在行尾
+  ///   之后，行内下标原样有效。
+  static _OcrSourceText _sourceOf(PopupDictionaryPage page) {
     final String line = page.searchTerm;
+    final int unit = page.sourceCharIndex;
     final String? block = page.sourceBlock;
-    if (page.sourceCharIndex < 0 || block == null) return line;
-    return ocrLineWithSentenceContinuation(
-          block,
-          page.sourceBlockOffset,
-          line,
-        ) ??
-        line;
+    if (unit >= 0 && block != null) {
+      final ({String text, int unit})? whole = ocrSpacedBlockAt(
+        block,
+        page.sourceBlockOffset,
+        line,
+        unit,
+      );
+      if (whole != null) {
+        return _OcrSourceText(
+          text: whole.text,
+          unit: whole.unit,
+          wholeBlock: true,
+        );
+      }
+      final String? continued = ocrLineWithSentenceContinuation(
+        block,
+        page.sourceBlockOffset,
+        line,
+      );
+      if (continued != null) {
+        return _OcrSourceText(text: continued, unit: unit, wholeBlock: false);
+      }
+    }
+    return _OcrSourceText(text: line, unit: unit, wholeBlock: false);
   }
 
-  static String _sentenceOf(PopupDictionaryPage page) =>
-      page.sourceCharIndex >= 0
-      ? _sentenceAtLineUnit(page, page.sourceCharIndex)
-      : '';
+  static String _sentenceOf(PopupDictionaryPage page) {
+    if (page.sourceCharIndex < 0) return '';
+    final _OcrSourceText source = _sourceOf(page);
+    return _sentenceAtSourceUnit(page, source, source.unit);
+  }
+
+  /// [source] 上 UTF-16 下标 [unit] 那个字所在的整句。整块模式直接在拼好的整块上
+  /// 按句截（块里已无折行），截不出（超长无标点）时回落为被点的那一行。
+  static String _sentenceAtSourceUnit(
+    PopupDictionaryPage page,
+    _OcrSourceText source,
+    int unit,
+  ) {
+    if (!source.wholeBlock) return _sentenceAtLineUnit(page, unit);
+    return ocrBlockSentenceAt(source.text, unit) ?? page.searchTerm.trim();
+  }
 
   /// 行内 UTF-16 下标 [unitInLine] 那个字所在的整句（BUG-3487）：有所属块就从块里截，
   /// 块与行对不上 / 截不出（无标点的超长块）时回落为整行。
   ///
-  /// 下标落在行尾之后（源文本条接上的下一行部分，见 [_sourceTextOf]）时，那部分按
+  /// 下标落在行尾之后（源文本条接上的下一行部分，见 [_sourceOf]）时，那部分按
   /// 构造就属于行尾那一句，按行内最后一个非空白字取句子。
   static String _sentenceAtLineUnit(PopupDictionaryPage page, int unitInLine) {
     final String line = page.searchTerm;
@@ -209,8 +243,9 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
   /// 宿主推来的这一次查词：整串入口直接查整串；带被点字下标的整行入口（BUG-2899）
   /// 把整行放上源文本条，从被点字起扫描查词——与在条上点那个字同一条路径。
   void _lookupWidgetSource() {
-    final String text = _sourceTextOf(widget);
-    final int unitIndex = widget.sourceCharIndex;
+    final _OcrSourceText source = _sourceOf(widget);
+    final String text = source.text;
+    final int unitIndex = source.unit;
     final ({String suffix, int start})? scan = unitIndex < 0
         ? null
         : sourceLookupSuffixAt(
@@ -364,12 +399,14 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
   /// 记作「出自这一行」（BUG-2900 制卡句子的判据）。
   Future<void> _lookupFromSourceStrip(String query, Rect rect, int charIndex) {
     if (_sourceSentence.isNotEmpty && widget.sourceBlock != null) {
-      // BUG-3487：条上点的是同一行的别的字，它可能落在块里的另一句。
-      final String line = _sourceTextOf(widget);
+      // BUG-3487：条上点的是同一行（整块模式下是块里任一行）的别的字，它可能落在
+      // 块里的另一句。
+      final _OcrSourceText source = _sourceOf(widget);
+      final String line = source.text;
       final int leading = line.length - line.trimLeft().length;
       final int unit =
           leading + line.trim().characters.take(charIndex).toString().length;
-      _sourceSentence = _sentenceAtLineUnit(widget, unit);
+      _sourceSentence = _sentenceAtSourceUnit(widget, source, unit);
     }
     _sourceLineQuery = _sourceSentence.isEmpty ? '' : query.trim();
     return _pushSearch(
@@ -975,4 +1012,23 @@ class _CompactPopupCloseButton extends StatelessWidget {
       ),
     );
   }
+}
+
+/// 截屏识字查词窗源文本条的内容（见 `_PopupDictionaryPageState._sourceOf`）。
+class _OcrSourceText {
+  const _OcrSourceText({
+    required this.text,
+    required this.unit,
+    required this.wholeBlock,
+  });
+
+  /// 条上显示、扫描查词所用的原文。
+  final String text;
+
+  /// 被点字在 [text] 里的 UTF-16 下标；-1 = 整串入口。
+  final int unit;
+
+  /// [text] 是拼好的整块（靠空格分词的文字）：句子在 [text] 上截，而不是回到块
+  /// 原文按行截。
+  final bool wholeBlock;
 }

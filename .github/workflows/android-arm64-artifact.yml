@@ -36,6 +36,8 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    # 与 release.yml 的 Android release 构建同一上限；卡死时不占槽位到 360 分钟。
+    timeout-minutes: 90
     if: >-
       github.event_name == 'workflow_dispatch'
       || github.event.label.name == 'build-arm64'
@@ -64,8 +66,14 @@ jobs:
 
       - uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.44.0'
+          flutter-version: '3.47.6'
           channel: stable
+
+      # pdfium_dart 的 build hook 每个新 runner 都会去 GitHub 下 PDFium；与 main.yml
+      # 的 Android job 同一个缓存，下载抖一下不至于整次构建失败。
+      - uses: ./.github/actions/pdfium-hook-cache
+        with:
+          purpose: android
 
       - name: Remove local proxy from gradle.properties
         working-directory: fushi/android

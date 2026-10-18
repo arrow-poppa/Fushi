@@ -42,6 +42,7 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 90
     if: >-
       github.event_name == 'workflow_dispatch'
       || github.event.label.name == 'build-linux'
@@ -82,7 +83,7 @@ jobs:
 
       - uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.44.0'
+          flutter-version: '3.47.6'
           channel: stable
 
       # 烘进包里的密钥走同一个 composite action（BUG-1588：逐字抄进各 job 会漂）。

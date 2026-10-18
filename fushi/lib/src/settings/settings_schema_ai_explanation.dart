@@ -15,6 +15,7 @@ import 'package:fushi/src/ai/ai_provider_config.dart';
 import 'package:fushi/src/ai/ai_request_builder.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
 
 /// 当前选中的 provider。
@@ -97,7 +98,7 @@ SettingsSection buildAiExplanationSection() {
         id: 'lookup.ai_explain.provider',
         title: t.ai_explain_provider,
         subtitle: t.ai_explain_provider_hint,
-        icon: Icons.auto_awesome_outlined,
+        icon: FushiIcons.aiAssistant,
         dropdown: true,
         options: const <SettingsSegmentOption<AiProvider>>[
           SettingsSegmentOption<AiProvider>(
@@ -129,7 +130,7 @@ SettingsSection buildAiExplanationSection() {
         id: 'lookup.ai_explain.api_key',
         title: t.ai_explain_api_key,
         subtitle: t.ai_explain_api_key_hint,
-        icon: Icons.key_outlined,
+        icon: FushiIcons.key,
         secret: true,
         value: (SettingsContext c) =>
             c.appModel.aiCredentials.readApiKey(_provider(c)),
@@ -148,7 +149,7 @@ SettingsSection buildAiExplanationSection() {
         id: 'lookup.ai_explain.openai_model',
         title: t.ai_explain_model,
         subtitle: t.ai_explain_model_hint,
-        icon: Icons.memory_outlined,
+        icon: FushiIcons.modelTraining,
         visible: _isOpenAi,
         placeholder: AiDefaults.openaiModel,
         resetValue: (SettingsContext c) => AiDefaults.openaiModel,
@@ -162,7 +163,7 @@ SettingsSection buildAiExplanationSection() {
         id: 'lookup.ai_explain.gemini_model',
         title: t.ai_explain_model,
         subtitle: t.ai_explain_model_hint,
-        icon: Icons.memory_outlined,
+        icon: FushiIcons.modelTraining,
         visible: _isGemini,
         placeholder: AiDefaults.geminiModel,
         resetValue: (SettingsContext c) => AiDefaults.geminiModel,
@@ -176,7 +177,7 @@ SettingsSection buildAiExplanationSection() {
         id: 'lookup.ai_explain.deepseek_model',
         title: t.ai_explain_model,
         subtitle: t.ai_explain_model_hint,
-        icon: Icons.memory_outlined,
+        icon: FushiIcons.modelTraining,
         visible: _isDeepSeek,
         placeholder: 'deepseek-chat',
         value: (SettingsContext c) =>
@@ -190,7 +191,7 @@ SettingsSection buildAiExplanationSection() {
         id: 'lookup.ai_explain.custom_model',
         title: t.ai_explain_model,
         subtitle: t.ai_explain_model_hint,
-        icon: Icons.memory_outlined,
+        icon: FushiIcons.modelTraining,
         visible: _isCustom,
         placeholder: 'vendor/model',
         value: (SettingsContext c) => c.appModel.aiSettings.read().customModel,
@@ -204,7 +205,7 @@ SettingsSection buildAiExplanationSection() {
       SettingsSegmentedItem<AiGeminiThinkingLevel>(
         id: 'lookup.ai_explain.gemini_thinking',
         title: t.ai_explain_thinking_level,
-        icon: Icons.psychology_outlined,
+        icon: FushiIcons.lightbulb,
         visible: _isGemini,
         dropdown: true,
         options: <SettingsSegmentOption<AiGeminiThinkingLevel>>[
@@ -241,7 +242,7 @@ SettingsSection buildAiExplanationSection() {
       SettingsSegmentedItem<AiThinkingMode>(
         id: 'lookup.ai_explain.deepseek_thinking_mode',
         title: t.ai_explain_thinking_mode,
-        icon: Icons.psychology_outlined,
+        icon: FushiIcons.lightbulb,
         visible: _isDeepSeek,
         dropdown: true,
         options: _thinkingModeOptions(),
@@ -255,7 +256,7 @@ SettingsSection buildAiExplanationSection() {
       SettingsSegmentedItem<AiThinkingIntensity>(
         id: 'lookup.ai_explain.deepseek_thinking_intensity',
         title: t.ai_explain_thinking_intensity,
-        icon: Icons.tune_outlined,
+        icon: FushiIcons.trendingUp,
         visible: _isDeepSeek,
         dropdown: true,
         options: _thinkingIntensityOptions(withCustom: false),
@@ -272,7 +273,7 @@ SettingsSection buildAiExplanationSection() {
         id: 'lookup.ai_explain.endpoint',
         title: t.ai_explain_endpoint,
         subtitle: t.ai_explain_endpoint_hint,
-        icon: Icons.link_outlined,
+        icon: FushiIcons.link,
         visible: _isCustom,
         placeholder: 'https://api.example.com/v1/chat/completions',
         keyboardType: TextInputType.url,
@@ -289,7 +290,7 @@ SettingsSection buildAiExplanationSection() {
       SettingsSegmentedItem<AiProviderRoutingMode>(
         id: 'lookup.ai_explain.routing_mode',
         title: t.ai_explain_routing_mode,
-        icon: Icons.alt_route_outlined,
+        icon: FushiIcons.hub,
         visible: _isOpenRouter,
         dropdown: true,
         options: <SettingsSegmentOption<AiProviderRoutingMode>>[
@@ -321,7 +322,7 @@ SettingsSection buildAiExplanationSection() {
         id: 'lookup.ai_explain.routing_slugs',
         title: t.ai_explain_routing_slugs,
         subtitle: t.ai_explain_routing_slugs_hint,
-        icon: Icons.dns_outlined,
+        icon: FushiIcons.server,
         visible: _isOpenRouter,
         placeholder: 'deepinfra/turbo, fireworks',
         value: (SettingsContext c) =>
@@ -333,7 +334,7 @@ SettingsSection buildAiExplanationSection() {
       SettingsSwitchItem(
         id: 'lookup.ai_explain.allow_fallbacks',
         title: t.ai_explain_allow_fallbacks,
-        icon: Icons.backup_outlined,
+        icon: FushiIcons.backup,
         visible: _isOpenRouter,
         value: (SettingsContext c) =>
             c.appModel.aiSettings.read().customAllowFallbacks,
@@ -347,7 +348,7 @@ SettingsSection buildAiExplanationSection() {
       SettingsSegmentedItem<AiThinkingMode>(
         id: 'lookup.ai_explain.custom_thinking_mode',
         title: t.ai_explain_thinking_mode,
-        icon: Icons.psychology_outlined,
+        icon: FushiIcons.lightbulb,
         visible: _isCustom,
         dropdown: true,
         options: _thinkingModeOptions(),
@@ -361,7 +362,7 @@ SettingsSection buildAiExplanationSection() {
       SettingsSegmentedItem<AiThinkingIntensity>(
         id: 'lookup.ai_explain.custom_thinking_intensity',
         title: t.ai_explain_thinking_intensity,
-        icon: Icons.tune_outlined,
+        icon: FushiIcons.trendingUp,
         visible: _isCustom,
         dropdown: true,
         options: _thinkingIntensityOptions(withCustom: true),
@@ -377,7 +378,7 @@ SettingsSection buildAiExplanationSection() {
         id: 'lookup.ai_explain.custom_thinking_value',
         title: t.ai_explain_thinking_value,
         subtitle: t.ai_explain_thinking_value_hint,
-        icon: Icons.edit_outlined,
+        icon: FushiIcons.edit,
         visible: _needsThinkingValue,
         placeholder: 'medium, 2000, or {"max_tokens":2000}',
         value: (SettingsContext c) =>
@@ -395,7 +396,7 @@ SettingsSection buildAiExplanationSection() {
         id: 'lookup.ai_explain.request_body',
         title: t.ai_explain_request_body,
         subtitle: t.ai_explain_request_body_hint,
-        icon: Icons.data_object_outlined,
+        icon: FushiIcons.code,
         visible: _isCustom,
         placeholder: '{"reasoning":{"max_tokens":2000}}',
         value: (SettingsContext c) =>
@@ -406,7 +407,7 @@ SettingsSection buildAiExplanationSection() {
           if (error != null && c.context.mounted) {
             ScaffoldMessenger.maybeOf(
               c.context,
-            )?.showSnackBar(SnackBar(content: Text(error)));
+            )?.showSnackBar(FushiSnackBar(content: Text(error)));
           }
           c.refresh();
         },
@@ -417,7 +418,7 @@ SettingsSection buildAiExplanationSection() {
         id: 'lookup.ai_explain.auto_generate',
         title: t.ai_explain_auto_generate,
         subtitle: t.ai_explain_auto_generate_hint,
-        icon: Icons.play_circle_outline,
+        icon: FushiIcons.playCircle,
         value: (SettingsContext c) =>
             c.appModel.aiSettings.read().autoGenerateOnLookup,
         onChanged: (SettingsContext c, bool value) async {
@@ -429,7 +430,7 @@ SettingsSection buildAiExplanationSection() {
         id: 'lookup.ai_explain.stream',
         title: t.ai_explain_stream,
         subtitle: t.ai_explain_stream_hint,
-        icon: Icons.bolt_outlined,
+        icon: FushiIcons.speed,
         value: (SettingsContext c) =>
             c.appModel.aiSettings.read().streamResponse,
         onChanged: (SettingsContext c, bool value) async {
@@ -441,7 +442,7 @@ SettingsSection buildAiExplanationSection() {
         id: 'lookup.ai_explain.cancel_pending',
         title: t.ai_explain_cancel_pending,
         subtitle: t.ai_explain_cancel_pending_hint,
-        icon: Icons.cancel_outlined,
+        icon: FushiIcons.cancel,
         value: (SettingsContext c) =>
             c.appModel.aiSettings.read().cancelPendingRequests,
         onChanged: (SettingsContext c, bool value) async {
@@ -453,7 +454,7 @@ SettingsSection buildAiExplanationSection() {
         id: 'lookup.ai_explain.unknown_fallback',
         title: t.ai_explain_unknown_fallback,
         subtitle: t.ai_explain_unknown_fallback_hint,
-        icon: Icons.help_outline,
+        icon: FushiIcons.help,
         value: (SettingsContext c) =>
             c.appModel.aiSettings.read().unknownWordFallback,
         onChanged: (SettingsContext c, bool value) async {
@@ -467,7 +468,7 @@ SettingsSection buildAiExplanationSection() {
         id: 'lookup.ai_explain.prompt',
         title: t.ai_explain_prompt,
         subtitle: t.ai_explain_prompt_hint,
-        icon: Icons.chat_outlined,
+        icon: FushiIcons.forum,
         placeholder: kAiDefaultUserPrompt,
         // 提示词是多行长文本：单行框既看不全，也会把默认模板里的换行压没。
         minLines: 4,
@@ -482,7 +483,7 @@ SettingsSection buildAiExplanationSection() {
         id: 'lookup.ai_explain.system_prompt',
         title: t.ai_explain_system_prompt,
         subtitle: t.ai_explain_system_prompt_hint,
-        icon: Icons.rule_outlined,
+        icon: FushiIcons.checklist,
         minLines: 4,
         maxLines: 12,
         value: (SettingsContext c) => c.appModel.aiSettings.read().systemPrompt,
@@ -494,7 +495,7 @@ SettingsSection buildAiExplanationSection() {
         id: 'lookup.ai_explain.temperature',
         title: t.ai_explain_temperature,
         subtitle: t.ai_explain_temperature_hint,
-        icon: Icons.thermostat_outlined,
+        icon: FushiIcons.functions,
         placeholder: '0.7',
         keyboardType: const TextInputType.numberWithOptions(decimal: true),
         resetValue: (SettingsContext c) => AiDefaults.temperature.toString(),

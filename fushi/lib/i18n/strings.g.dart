@@ -1,7 +1,7 @@
 /// Generated file. Do not edit.
 ///
 /// Locales: 17
-/// Strings: 143514 (8442 per locale)
+/// Strings: 143565 (8445 per locale)
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -6077,6 +6077,11 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get lookup_popup_size_shared_hint =>
       'Shared with manga and video lookups. Dragging the popup\'s bottom-right corner changes it too.';
   String get lookup_recent_searches => 'Recent searches';
+  String get lookup_source_text_collapsed =>
+      'Collapse the source text by default';
+  String get lookup_source_text_collapsed_hint =>
+      'The sentence above the results in the lookup window starts as a one-line preview. Tap it to see it all.';
+  String get lookup_source_text_toggle => 'Show or hide the source text';
   String get low_memory_mode => 'Low memory mode';
   String get low_memory_mode_hint =>
       'Reduce cache and memory usage for low-end devices. Some changes take effect after restart.';
@@ -22066,6 +22071,14 @@ class _StringsAr extends _StringsEn {
       'Shared with manga and video lookups. Dragging the popup\'s bottom-right corner changes it too.';
   @override
   String get lookup_recent_searches => 'Recent searches';
+  @override
+  String get lookup_source_text_collapsed =>
+      'Collapse the source text by default';
+  @override
+  String get lookup_source_text_collapsed_hint =>
+      'The sentence above the results in the lookup window starts as a one-line preview. Tap it to see it all.';
+  @override
+  String get lookup_source_text_toggle => 'Show or hide the source text';
   @override
   String get low_memory_mode => 'وضع الذاكرة المنخفضة';
   @override
@@ -42656,6 +42669,14 @@ class _StringsDe extends _StringsEn {
       'Shared with manga and video lookups. Dragging the popup\'s bottom-right corner changes it too.';
   @override
   String get lookup_recent_searches => 'Recent searches';
+  @override
+  String get lookup_source_text_collapsed =>
+      'Collapse the source text by default';
+  @override
+  String get lookup_source_text_collapsed_hint =>
+      'The sentence above the results in the lookup window starts as a one-line preview. Tap it to see it all.';
+  @override
+  String get lookup_source_text_toggle => 'Show or hide the source text';
   @override
   String get low_memory_mode => 'Speichersparmodus';
   @override
@@ -63467,6 +63488,14 @@ class _StringsEs extends _StringsEn {
       'Shared with manga and video lookups. Dragging the popup\'s bottom-right corner changes it too.';
   @override
   String get lookup_recent_searches => 'Recent searches';
+  @override
+  String get lookup_source_text_collapsed =>
+      'Collapse the source text by default';
+  @override
+  String get lookup_source_text_collapsed_hint =>
+      'The sentence above the results in the lookup window starts as a one-line preview. Tap it to see it all.';
+  @override
+  String get lookup_source_text_toggle => 'Show or hide the source text';
   @override
   String get low_memory_mode => 'Modo de poca memoria';
   @override
@@ -84349,6 +84378,14 @@ class _StringsFr extends _StringsEn {
   @override
   String get lookup_recent_searches => 'Recent searches';
   @override
+  String get lookup_source_text_collapsed =>
+      'Collapse the source text by default';
+  @override
+  String get lookup_source_text_collapsed_hint =>
+      'The sentence above the results in the lookup window starts as a one-line preview. Tap it to see it all.';
+  @override
+  String get lookup_source_text_toggle => 'Show or hide the source text';
+  @override
   String get low_memory_mode => 'Mode mémoire réduite';
   @override
   String get low_memory_mode_hint =>
@@ -105112,6 +105149,14 @@ class _StringsId extends _StringsEn {
   @override
   String get lookup_recent_searches => 'Recent searches';
   @override
+  String get lookup_source_text_collapsed =>
+      'Collapse the source text by default';
+  @override
+  String get lookup_source_text_collapsed_hint =>
+      'The sentence above the results in the lookup window starts as a one-line preview. Tap it to see it all.';
+  @override
+  String get lookup_source_text_toggle => 'Show or hide the source text';
+  @override
   String get low_memory_mode => 'Mode Memori Rendah';
   @override
   String get low_memory_mode_hint =>
@@ -125766,6 +125811,14 @@ class _StringsIt extends _StringsEn {
   @override
   String get lookup_recent_searches => 'Recent searches';
   @override
+  String get lookup_source_text_collapsed =>
+      'Collapse the source text by default';
+  @override
+  String get lookup_source_text_collapsed_hint =>
+      'The sentence above the results in the lookup window starts as a one-line preview. Tap it to see it all.';
+  @override
+  String get lookup_source_text_toggle => 'Show or hide the source text';
+  @override
   String get low_memory_mode => 'Modalità memoria ridotta';
   @override
   String get low_memory_mode_hint =>
@@ -146034,6 +146087,14 @@ class _StringsJa extends _StringsEn {
   @override
   String get lookup_recent_searches => 'Recent searches';
   @override
+  String get lookup_source_text_collapsed =>
+      'Collapse the source text by default';
+  @override
+  String get lookup_source_text_collapsed_hint =>
+      'The sentence above the results in the lookup window starts as a one-line preview. Tap it to see it all.';
+  @override
+  String get lookup_source_text_toggle => 'Show or hide the source text';
+  @override
   String get low_memory_mode => '省メモリモード';
   @override
   String get low_memory_mode_hint => 'キャッシュとメモリ使用量を削減します。一部の変更は再起動後に反映されます。';
@@ -165767,6 +165828,14 @@ class _StringsKo extends _StringsEn {
       'Shared with manga and video lookups. Dragging the popup\'s bottom-right corner changes it too.';
   @override
   String get lookup_recent_searches => 'Recent searches';
+  @override
+  String get lookup_source_text_collapsed =>
+      'Collapse the source text by default';
+  @override
+  String get lookup_source_text_collapsed_hint =>
+      'The sentence above the results in the lookup window starts as a one-line preview. Tap it to see it all.';
+  @override
+  String get lookup_source_text_toggle => 'Show or hide the source text';
   @override
   String get low_memory_mode => '저메모리 모드';
   @override
@@ -185986,6 +186055,14 @@ class _StringsNl extends _StringsEn {
       'Shared with manga and video lookups. Dragging the popup\'s bottom-right corner changes it too.';
   @override
   String get lookup_recent_searches => 'Recent searches';
+  @override
+  String get lookup_source_text_collapsed =>
+      'Collapse the source text by default';
+  @override
+  String get lookup_source_text_collapsed_hint =>
+      'The sentence above the results in the lookup window starts as a one-line preview. Tap it to see it all.';
+  @override
+  String get lookup_source_text_toggle => 'Show or hide the source text';
   @override
   String get low_memory_mode => 'Geheugenspaarmodus';
   @override
@@ -206722,6 +206799,15 @@ class _StringsPtBr extends _StringsEn {
   @override
   String get lookup_recent_searches => 'Recent searches';
   @override
+  String get lookup_source_text_collapsed =>
+      'Recolher o texto de origem por padrão';
+  @override
+  String get lookup_source_text_collapsed_hint =>
+      'A frase acima dos resultados na janela de busca começa como uma prévia de uma linha. Toque nela para ver tudo.';
+  @override
+  String get lookup_source_text_toggle =>
+      'Mostrar ou ocultar o texto de origem';
+  @override
   String get low_memory_mode => 'Modo de pouca memória';
   @override
   String get low_memory_mode_hint =>
@@ -227441,6 +227527,14 @@ class _StringsRu extends _StringsEn {
   @override
   String get lookup_recent_searches => 'Recent searches';
   @override
+  String get lookup_source_text_collapsed =>
+      'Collapse the source text by default';
+  @override
+  String get lookup_source_text_collapsed_hint =>
+      'The sentence above the results in the lookup window starts as a one-line preview. Tap it to see it all.';
+  @override
+  String get lookup_source_text_toggle => 'Show or hide the source text';
+  @override
   String get low_memory_mode => 'Режим экономии памяти';
   @override
   String get low_memory_mode_hint =>
@@ -247996,6 +248090,14 @@ class _StringsTh extends _StringsEn {
   @override
   String get lookup_recent_searches => 'Recent searches';
   @override
+  String get lookup_source_text_collapsed =>
+      'Collapse the source text by default';
+  @override
+  String get lookup_source_text_collapsed_hint =>
+      'The sentence above the results in the lookup window starts as a one-line preview. Tap it to see it all.';
+  @override
+  String get lookup_source_text_toggle => 'Show or hide the source text';
+  @override
   String get low_memory_mode => 'โหมดประหยัดหน่วยความจำ';
   @override
   String get low_memory_mode_hint =>
@@ -268493,6 +268595,14 @@ class _StringsTr extends _StringsEn {
       'Shared with manga and video lookups. Dragging the popup\'s bottom-right corner changes it too.';
   @override
   String get lookup_recent_searches => 'Recent searches';
+  @override
+  String get lookup_source_text_collapsed =>
+      'Collapse the source text by default';
+  @override
+  String get lookup_source_text_collapsed_hint =>
+      'The sentence above the results in the lookup window starts as a one-line preview. Tap it to see it all.';
+  @override
+  String get lookup_source_text_toggle => 'Show or hide the source text';
   @override
   String get low_memory_mode => 'Düşük Bellek Modu';
   @override
@@ -289051,6 +289161,14 @@ class _StringsVi extends _StringsEn {
   @override
   String get lookup_recent_searches => 'Recent searches';
   @override
+  String get lookup_source_text_collapsed =>
+      'Collapse the source text by default';
+  @override
+  String get lookup_source_text_collapsed_hint =>
+      'The sentence above the results in the lookup window starts as a one-line preview. Tap it to see it all.';
+  @override
+  String get lookup_source_text_toggle => 'Show or hide the source text';
+  @override
   String get low_memory_mode => 'Chế độ tiết kiệm bộ nhớ';
   @override
   String get low_memory_mode_hint =>
@@ -308684,6 +308802,12 @@ class _StringsZhCn extends _StringsEn {
   @override
   String get lookup_recent_searches => '最近搜索';
   @override
+  String get lookup_source_text_collapsed => '默认折叠源文本';
+  @override
+  String get lookup_source_text_collapsed_hint => '查词窗结果上方的那句先显示为一行预览，点开查看整句。';
+  @override
+  String get lookup_source_text_toggle => '显示或隐藏源文本';
+  @override
   String get low_memory_mode => '小内存模式';
   @override
   String get low_memory_mode_hint => '减少缓存和内存使用，适合低端设备。部分更改需重启后生效。';
@@ -327631,6 +327755,14 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get lookup_recent_searches => 'Recent searches';
   @override
+  String get lookup_source_text_collapsed =>
+      'Collapse the source text by default';
+  @override
+  String get lookup_source_text_collapsed_hint =>
+      'The sentence above the results in the lookup window starts as a one-line preview. Tap it to see it all.';
+  @override
+  String get lookup_source_text_toggle => 'Show or hide the source text';
+  @override
   String get low_memory_mode => '低記憶體模式';
   @override
   String get low_memory_mode_hint => '減少快取和記憶體使用，適合低階裝置。部分變更需重啟後生效。';
@@ -345880,6 +346012,12 @@ extension on _StringsEn {
         return 'Shared with manga and video lookups. Dragging the popup\'s bottom-right corner changes it too.';
       case 'lookup_recent_searches':
         return 'Recent searches';
+      case 'lookup_source_text_collapsed':
+        return 'Collapse the source text by default';
+      case 'lookup_source_text_collapsed_hint':
+        return 'The sentence above the results in the lookup window starts as a one-line preview. Tap it to see it all.';
+      case 'lookup_source_text_toggle':
+        return 'Show or hide the source text';
       case 'low_memory_mode':
         return 'Low memory mode';
       case 'low_memory_mode_hint':
@@ -363393,6 +363531,12 @@ extension on _StringsAr {
         return 'Shared with manga and video lookups. Dragging the popup\'s bottom-right corner changes it too.';
       case 'lookup_recent_searches':
         return 'Recent searches';
+      case 'lookup_source_text_collapsed':
+        return 'Collapse the source text by default';
+      case 'lookup_source_text_collapsed_hint':
+        return 'The sentence above the results in the lookup window starts as a one-line preview. Tap it to see it all.';
+      case 'lookup_source_text_toggle':
+        return 'Show or hide the source text';
       case 'low_memory_mode':
         return 'وضع الذاكرة المنخفضة';
       case 'low_memory_mode_hint':
@@ -380947,6 +381091,12 @@ extension on _StringsDe {
         return 'Shared with manga and video lookups. Dragging the popup\'s bottom-right corner changes it too.';
       case 'lookup_recent_searches':
         return 'Recent searches';
+      case 'lookup_source_text_collapsed':
+        return 'Collapse the source text by default';
+      case 'lookup_source_text_collapsed_hint':
+        return 'The sentence above the results in the lookup window starts as a one-line preview. Tap it to see it all.';
+      case 'lookup_source_text_toggle':
+        return 'Show or hide the source text';
       case 'low_memory_mode':
         return 'Speichersparmodus';
       case 'low_memory_mode_hint':
@@ -398522,6 +398672,12 @@ extension on _StringsEs {
         return 'Shared with manga and video lookups. Dragging the popup\'s bottom-right corner changes it too.';
       case 'lookup_recent_searches':
         return 'Recent searches';
+      case 'lookup_source_text_collapsed':
+        return 'Collapse the source text by default';
+      case 'lookup_source_text_collapsed_hint':
+        return 'The sentence above the results in the lookup window starts as a one-line preview. Tap it to see it all.';
+      case 'lookup_source_text_toggle':
+        return 'Show or hide the source text';
       case 'low_memory_mode':
         return 'Modo de poca memoria';
       case 'low_memory_mode_hint':
@@ -416107,6 +416263,12 @@ extension on _StringsFr {
         return 'Shared with manga and video lookups. Dragging the popup\'s bottom-right corner changes it too.';
       case 'lookup_recent_searches':
         return 'Recent searches';
+      case 'lookup_source_text_collapsed':
+        return 'Collapse the source text by default';
+      case 'lookup_source_text_collapsed_hint':
+        return 'The sentence above the results in the lookup window starts as a one-line preview. Tap it to see it all.';
+      case 'lookup_source_text_toggle':
+        return 'Show or hide the source text';
       case 'low_memory_mode':
         return 'Mode mémoire réduite';
       case 'low_memory_mode_hint':
@@ -433667,6 +433829,12 @@ extension on _StringsId {
         return 'Shared with manga and video lookups. Dragging the popup\'s bottom-right corner changes it too.';
       case 'lookup_recent_searches':
         return 'Recent searches';
+      case 'lookup_source_text_collapsed':
+        return 'Collapse the source text by default';
+      case 'lookup_source_text_collapsed_hint':
+        return 'The sentence above the results in the lookup window starts as a one-line preview. Tap it to see it all.';
+      case 'lookup_source_text_toggle':
+        return 'Show or hide the source text';
       case 'low_memory_mode':
         return 'Mode Memori Rendah';
       case 'low_memory_mode_hint':
@@ -451211,6 +451379,12 @@ extension on _StringsIt {
         return 'Shared with manga and video lookups. Dragging the popup\'s bottom-right corner changes it too.';
       case 'lookup_recent_searches':
         return 'Recent searches';
+      case 'lookup_source_text_collapsed':
+        return 'Collapse the source text by default';
+      case 'lookup_source_text_collapsed_hint':
+        return 'The sentence above the results in the lookup window starts as a one-line preview. Tap it to see it all.';
+      case 'lookup_source_text_toggle':
+        return 'Show or hide the source text';
       case 'low_memory_mode':
         return 'Modalità memoria ridotta';
       case 'low_memory_mode_hint':
@@ -468719,6 +468893,12 @@ extension on _StringsJa {
         return 'Shared with manga and video lookups. Dragging the popup\'s bottom-right corner changes it too.';
       case 'lookup_recent_searches':
         return 'Recent searches';
+      case 'lookup_source_text_collapsed':
+        return 'Collapse the source text by default';
+      case 'lookup_source_text_collapsed_hint':
+        return 'The sentence above the results in the lookup window starts as a one-line preview. Tap it to see it all.';
+      case 'lookup_source_text_toggle':
+        return 'Show or hide the source text';
       case 'low_memory_mode':
         return '省メモリモード';
       case 'low_memory_mode_hint':
@@ -486163,6 +486343,12 @@ extension on _StringsKo {
         return 'Shared with manga and video lookups. Dragging the popup\'s bottom-right corner changes it too.';
       case 'lookup_recent_searches':
         return 'Recent searches';
+      case 'lookup_source_text_collapsed':
+        return 'Collapse the source text by default';
+      case 'lookup_source_text_collapsed_hint':
+        return 'The sentence above the results in the lookup window starts as a one-line preview. Tap it to see it all.';
+      case 'lookup_source_text_toggle':
+        return 'Show or hide the source text';
       case 'low_memory_mode':
         return '저메모리 모드';
       case 'low_memory_mode_hint':
@@ -503667,6 +503853,12 @@ extension on _StringsNl {
         return 'Shared with manga and video lookups. Dragging the popup\'s bottom-right corner changes it too.';
       case 'lookup_recent_searches':
         return 'Recent searches';
+      case 'lookup_source_text_collapsed':
+        return 'Collapse the source text by default';
+      case 'lookup_source_text_collapsed_hint':
+        return 'The sentence above the results in the lookup window starts as a one-line preview. Tap it to see it all.';
+      case 'lookup_source_text_toggle':
+        return 'Show or hide the source text';
       case 'low_memory_mode':
         return 'Geheugenspaarmodus';
       case 'low_memory_mode_hint':
@@ -521227,6 +521419,12 @@ extension on _StringsPtBr {
         return 'Shared with manga and video lookups. Dragging the popup\'s bottom-right corner changes it too.';
       case 'lookup_recent_searches':
         return 'Recent searches';
+      case 'lookup_source_text_collapsed':
+        return 'Recolher o texto de origem por padrão';
+      case 'lookup_source_text_collapsed_hint':
+        return 'A frase acima dos resultados na janela de busca começa como uma prévia de uma linha. Toque nela para ver tudo.';
+      case 'lookup_source_text_toggle':
+        return 'Mostrar ou ocultar o texto de origem';
       case 'low_memory_mode':
         return 'Modo de pouca memória';
       case 'low_memory_mode_hint':
@@ -538789,6 +538987,12 @@ extension on _StringsRu {
         return 'Shared with manga and video lookups. Dragging the popup\'s bottom-right corner changes it too.';
       case 'lookup_recent_searches':
         return 'Recent searches';
+      case 'lookup_source_text_collapsed':
+        return 'Collapse the source text by default';
+      case 'lookup_source_text_collapsed_hint':
+        return 'The sentence above the results in the lookup window starts as a one-line preview. Tap it to see it all.';
+      case 'lookup_source_text_toggle':
+        return 'Show or hide the source text';
       case 'low_memory_mode':
         return 'Режим экономии памяти';
       case 'low_memory_mode_hint':
@@ -556324,6 +556528,12 @@ extension on _StringsTh {
         return 'Shared with manga and video lookups. Dragging the popup\'s bottom-right corner changes it too.';
       case 'lookup_recent_searches':
         return 'Recent searches';
+      case 'lookup_source_text_collapsed':
+        return 'Collapse the source text by default';
+      case 'lookup_source_text_collapsed_hint':
+        return 'The sentence above the results in the lookup window starts as a one-line preview. Tap it to see it all.';
+      case 'lookup_source_text_toggle':
+        return 'Show or hide the source text';
       case 'low_memory_mode':
         return 'โหมดประหยัดหน่วยความจำ';
       case 'low_memory_mode_hint':
@@ -573859,6 +574069,12 @@ extension on _StringsTr {
         return 'Shared with manga and video lookups. Dragging the popup\'s bottom-right corner changes it too.';
       case 'lookup_recent_searches':
         return 'Recent searches';
+      case 'lookup_source_text_collapsed':
+        return 'Collapse the source text by default';
+      case 'lookup_source_text_collapsed_hint':
+        return 'The sentence above the results in the lookup window starts as a one-line preview. Tap it to see it all.';
+      case 'lookup_source_text_toggle':
+        return 'Show or hide the source text';
       case 'low_memory_mode':
         return 'Düşük Bellek Modu';
       case 'low_memory_mode_hint':
@@ -591396,6 +591612,12 @@ extension on _StringsVi {
         return 'Shared with manga and video lookups. Dragging the popup\'s bottom-right corner changes it too.';
       case 'lookup_recent_searches':
         return 'Recent searches';
+      case 'lookup_source_text_collapsed':
+        return 'Collapse the source text by default';
+      case 'lookup_source_text_collapsed_hint':
+        return 'The sentence above the results in the lookup window starts as a one-line preview. Tap it to see it all.';
+      case 'lookup_source_text_toggle':
+        return 'Show or hide the source text';
       case 'low_memory_mode':
         return 'Chế độ tiết kiệm bộ nhớ';
       case 'low_memory_mode_hint':
@@ -608815,6 +609037,12 @@ extension on _StringsZhCn {
         return '与漫画、视频的查词弹窗共用；拖动弹窗右下角也会修改。';
       case 'lookup_recent_searches':
         return '最近搜索';
+      case 'lookup_source_text_collapsed':
+        return '默认折叠源文本';
+      case 'lookup_source_text_collapsed_hint':
+        return '查词窗结果上方的那句先显示为一行预览，点开查看整句。';
+      case 'lookup_source_text_toggle':
+        return '显示或隐藏源文本';
       case 'low_memory_mode':
         return '小内存模式';
       case 'low_memory_mode_hint':
@@ -626164,6 +626392,12 @@ extension on _StringsZhHk {
         return '與漫畫、影片的查詞彈窗共用；拖動彈窗右下角也會修改。';
       case 'lookup_recent_searches':
         return 'Recent searches';
+      case 'lookup_source_text_collapsed':
+        return 'Collapse the source text by default';
+      case 'lookup_source_text_collapsed_hint':
+        return 'The sentence above the results in the lookup window starts as a one-line preview. Tap it to see it all.';
+      case 'lookup_source_text_toggle':
+        return 'Show or hide the source text';
       case 'low_memory_mode':
         return '低記憶體模式';
       case 'low_memory_mode_hint':

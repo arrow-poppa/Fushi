@@ -540,6 +540,21 @@ SettingsDestination buildLookupDestination() {
             },
             defaultValue: true,
           ),
+          // 独立查词窗（截屏识字 / 外部选中文本）顶部的源文本条开窗时先折成一行预览。
+          SettingsSwitchItem(
+            id: 'lookup.source_text_collapsed',
+            title: t.lookup_source_text_collapsed,
+            subtitle: t.lookup_source_text_collapsed_hint,
+            icon: FushiIcons.expandLess,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.sourceTextCollapsedByDefault,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.appModel
+                  .setSourceTextCollapsedByDefault(value);
+              settingsContext.refresh();
+            },
+            defaultValue: false,
+          ),
           // TODO-845: how many leading *rows* of dictionary blocks the popup
           // auto-expands even when "collapse dictionaries" is on. The unit is
           // rows so the expanded region always fills whole top rows of the

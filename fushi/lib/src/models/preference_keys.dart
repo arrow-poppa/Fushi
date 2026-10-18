@@ -319,6 +319,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // bool（默认 false，桌面端）：查词页按「返回上一级」直接最小化主窗（一键收窗
   // 回到之前的程序），不走关弹窗 → 清查询的阶梯。
   'lookup_page_escape_minimizes_window',
+  // bool（默认 false）：独立查词窗顶部的源文本条（截屏识字 / 外部选中的那一句）
+  // 开窗时先折成一行预览，点开再看整句。只管显示，不影响查什么、制卡用哪句。
+  'lookup_source_text_collapsed',
   'low_memory_mode',
   // String（`MangaBackground.key`，默认 `black`）：页图周围留白的底色。
   'manga_background',

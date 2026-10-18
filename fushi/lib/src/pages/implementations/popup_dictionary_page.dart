@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:material_ui/material_ui.dart';
+import 'package:flutter/rendering.dart' show ScrollDirection;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/models.dart';
 import 'package:fushi/src/lookup/lookup_ime_binding.dart';
@@ -15,6 +16,7 @@ import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart'
     show MinePopupResult;
 import 'package:fushi/src/utils/components/clipboard_lookup_text_panel.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
+import 'package:fushi/src/utils/components/source_lookup_strip.dart';
 import 'package:fushi/src/utils/misc/popup_channel.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/misc/swipe_dismiss_wrapper.dart';
@@ -111,6 +113,14 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
   /// 那个字素簇（见 [_pushSearch] 的 `scan`）。长度两种情形都要等引擎回报。
   SourceLookupHighlight? _sourceHighlight;
 
+  /// 源文本条折成一行预览（开窗时按「默认折叠源文本」偏好，之后由用户点开 / 收起）。
+  late bool _sourceCollapsed = _readSourceCollapsedDefault();
+
+  /// 结果正文往下滚时源文本条跟着滚走，回到顶部再出现。
+  final SourceStripScrollAway _sourceScrollAway = SourceStripScrollAway();
+  final GlobalKey _sourceStripKey = GlobalKey();
+  bool _resultScrollUserDriven = false;
+
   /// 迟到匹配长度的发号器（见首页词典 tab 的同名字段）。
   int _sourceHighlightGeneration = 0;
 
@@ -134,6 +144,36 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
     } on Object {
       return 1.0;
     }
+  }
+
+  bool _readSourceCollapsedDefault() {
+    try {
+      return appModel.sourceTextCollapsedByDefault;
+    } on Object {
+      // 偏好还没加载（早帧 / 测试桩）：照旧展开。
+      return false;
+    }
+  }
+
+  /// 基础层结果正文的滚动（[DictionaryPopupLayer.forwardScrollToHost] 冒泡上来的）。
+  /// 桥只在方向变化时发 [UserScrollNotification]，方向 idle = 程序滚动（换词归零、
+  /// 恢复滚动位），这种滚动不带走源文本条。
+  bool _onResultScroll(ScrollNotification notification) {
+    if (notification is UserScrollNotification) {
+      _resultScrollUserDriven =
+          notification.direction != ScrollDirection.idle;
+      return false;
+    }
+    if (notification is! ScrollUpdateNotification) return false;
+    if (_sourceLookupText.trim().isEmpty) return false;
+    final bool changed = _sourceScrollAway.update(
+      pixels: notification.metrics.pixels,
+      maxScrollExtent: notification.metrics.maxScrollExtent,
+      stripHeight: _sourceStripKey.currentContext?.size?.height ?? 0,
+      userDriven: _resultScrollUserDriven,
+    );
+    if (changed && mounted) setState(() {});
+    return false;
   }
 
   @override
@@ -712,17 +752,32 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
               color: tokens.surfaces.outline,
             ),
           if (_sourceLookupText.trim().isNotEmpty)
-            SourceLookupTextPanel(
+            SourceLookupStrip(
+              key: _sourceStripKey,
               text: _sourceLookupText,
-              tonalHighlight: m3e,
-              coordinateSpaceKey: _resultStackKey,
-              dictionaryHeadwordScale: _dictionaryHeadwordScale,
-              highlight: _sourceHighlight,
-              // 源文本面板点选 = 扫描查词：复用常驻热槽原地换结果（TODO-951 症状C），
-              // 条上的整句与搜索框里的整句都留着，只有高亮跨度跟着挪。
-              onLookup: _lookupFromSourceStrip,
+              collapsed: _sourceCollapsed,
+              scrolledAway: _sourceScrollAway.hidden,
+              // 整块识字的长句不能把结果挤出窗口：超过这个高度就在条内滚。
+              maxExpandedHeight: MediaQuery.sizeOf(context).height * 0.3,
+              onToggleCollapsed: () =>
+                  setState(() => _sourceCollapsed = !_sourceCollapsed),
+              panel: SourceLookupTextPanel(
+                text: _sourceLookupText,
+                tonalHighlight: m3e,
+                coordinateSpaceKey: _resultStackKey,
+                dictionaryHeadwordScale: _dictionaryHeadwordScale,
+                highlight: _sourceHighlight,
+                // 源文本面板点选 = 扫描查词：复用常驻热槽原地换结果（TODO-951 症状C），
+                // 条上的整句与搜索框里的整句都留着，只有高亮跨度跟着挪。
+                onLookup: _lookupFromSourceStrip,
+              ),
             ),
-          Expanded(child: _buildStack(context)),
+          Expanded(
+            child: NotificationListener<ScrollNotification>(
+              onNotification: _onResultScroll,
+              child: _buildStack(context),
+            ),
+          ),
         ],
       ),
     );
@@ -863,6 +918,8 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
       result: entry.result,
       restoreScrollTop: entry.restoreScrollTop,
       aiSentence: _aiSentenceFor(index, entry),
+      // 只有基础层的正文滚动带着源文本条走；嵌套层查的是释义里的词。
+      forwardScrollToHost: isBase,
       isSearching: entry.isSearching,
       // TODO-951 症状C：常驻热槽（isWarmSlot）的 WebView 全程挂载、冷加载一次后复用，
       // 消除「每次查词重建弹窗 WebView 露白屏一瞬」。与 reader/video/首页查词同口径。

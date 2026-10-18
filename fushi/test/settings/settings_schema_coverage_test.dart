@@ -75,6 +75,9 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'lookup/Collapse AI explanation by default':
       'test/ai/ai_settings_store_test.dart + '
           'test/js/popup_ai_explanation.test.mjs（收起 / 展开与开合）',
+  'lookup/Collapse the source text by default':
+      'test/pages/popup_dictionary_source_line_test.dart（独立查词窗的源文本条按偏好'
+      '开窗即折成一行预览，点开 / 收起只改显示）',
   'lookup/Fallback for unknown words':
       'test/ai/app_model_ai_fallback_test.dart（开关门、真结果不被顶替、'
           '有边界才合成）+ test/ai/ai_fallback_entry_test.dart（分词器与合成结果）',

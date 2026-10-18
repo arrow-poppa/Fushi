@@ -3454,6 +3454,15 @@ class PreferencesRepository extends ChangeNotifier
   bool get compactGlossaries =>
       getPref('popup_compact_glossaries', defaultValue: false) as bool;
 
+  // 独立查词窗顶部的源文本条开窗时先折成一行。只管显示。
+  bool get sourceTextCollapsedByDefault =>
+      getPref('lookup_source_text_collapsed', defaultValue: false) as bool;
+
+  Future<void> setSourceTextCollapsedByDefault(bool value) async {
+    await setPref('lookup_source_text_collapsed', value);
+    notifyListeners();
+  }
+
   void toggleCompactGlossaries() async {
     await setPref('popup_compact_glossaries', !compactGlossaries);
     notifyListeners();

@@ -1080,6 +1080,7 @@ class DictionaryPopupLayer extends StatelessWidget {
     this.onHostInputToken,
     this.debugHostOwnsPointer,
     this.aiSentence = '',
+    this.forwardScrollToHost = false,
     this.headerWidget,
     this.topBarScale = 1.0,
     this.overlayWidget,
@@ -1112,6 +1113,11 @@ class DictionaryPopupLayer extends StatelessWidget {
   /// 宿主给什么就是什么；空串是合法值（首页词典 tab、悬浮词典窗、嵌套子弹窗本来
   /// 就没有上下文）。见 docs/agent/ai-explanation.md §6.2。
   final String aiSentence;
+
+  /// 把正文滚动作为 Flutter 滚动通知冒泡给宿主（见
+  /// [DictionaryPopupWebView.forwardScrollToHost]）。独立查词窗靠它让源文本条随
+  /// 结果滚走。
+  final bool forwardScrollToHost;
   final bool isSearching;
 
   /// 透传给 [DictionaryPopupWebView.resourceSource]：结果来自别的设备时，词典样式 /
@@ -1905,6 +1911,7 @@ class DictionaryPopupLayer extends StatelessWidget {
               restoreScrollTop: restoreScrollTop,
               hasChildPopup: hasChildPopup,
               aiSentence: aiSentence,
+              forwardScrollToHost: forwardScrollToHost,
               onTapOutside: onTapOutside,
               onTextSelected: onTextSelected,
               onLinkClick: onLinkClick,

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:material_ui/material_ui.dart';
+import 'package:flutter/rendering.dart' show ScrollDirection;
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -32,6 +33,12 @@ class _SourceLineAppModel extends AppModel {
   /// 这些查询串返回一条汉字结果（其余一律空结果）：原地跳转（[navigatePopupInPlace]）
   /// 只在有结果时才换词，汉字结果不触发自动朗读，测试路径最短。
   final Set<String> kanjiHits = <String>{};
+
+  /// 「默认折叠源文本」偏好。
+  bool sourceCollapsedDefault = false;
+
+  @override
+  bool get sourceTextCollapsedByDefault => sourceCollapsedDefault;
 
   @override
   bool get isInitialised => true;
@@ -691,6 +698,9 @@ void main() {
       );
 
       // Tocar na faixa uma palavra da outra frase do bloco.
+      // A whole OCR block is taller than the strip: it scrolls inside it.
+      await tester.ensureVisible(find.text('I').first);
+      await tester.pumpAndSettle();
       await tester.tap(find.text('I').first);
       await _settle(tester);
       expect(appModel.searched.last, startsWith('Il rêve'));
@@ -778,6 +788,107 @@ void main() {
       page = tester.widget(find.byType(PopupDictionaryPage));
       expect(page.sourceBlock, isNull);
       expect(page.sourceBlockOffset, -1);
+    },
+  );
+
+  testWidgets(
+    'the source strip starts collapsed when the setting says so and the '
+    'toggle opens it',
+    (WidgetTester tester) async {
+      final _SourceLineAppModel appModel = _SourceLineAppModel()
+        ..sourceCollapsedDefault = true;
+      await tester.pumpWidget(
+        _buildApp(
+          appModel: appModel,
+          repo: _RecordingAnkiRepo(),
+          text: '今日は良い天気ですね',
+          charIndex: 5,
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+
+      expect(find.byType(SourceLookupTextPanel), findsNothing);
+      expect(
+        find.byKey(const ValueKey<String>('source_lookup_strip_preview')),
+        findsOneWidget,
+      );
+      // Collapsing is display only: the lookup still ran from the tapped glyph.
+      expect(appModel.searched, <String>['天気ですね']);
+
+      await tester.tap(
+        find.byKey(const ValueKey<String>('source_lookup_strip_toggle')),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byType(SourceLookupTextPanel), findsOneWidget);
+
+      await tester.tap(
+        find.byKey(const ValueKey<String>('source_lookup_strip_toggle')),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byType(SourceLookupTextPanel), findsNothing);
+    },
+  );
+
+  testWidgets(
+    'the source strip scrolls away with the results and comes back at their '
+    'top',
+    (WidgetTester tester) async {
+      final _SourceLineAppModel appModel = _SourceLineAppModel();
+      await tester.pumpWidget(
+        _buildApp(
+          appModel: appModel,
+          repo: _RecordingAnkiRepo(),
+          text: '今日は良い天気ですね',
+          charIndex: 5,
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+
+      final DictionaryPopupLayer base = tester.widget(
+        find.byType(DictionaryPopupLayer).first,
+      );
+      expect(
+        base.forwardScrollToHost,
+        isTrue,
+        reason: 'the base layer reports its scrolling to the page',
+      );
+      final BuildContext results = tester.element(
+        find.byType(DictionaryPopupLayer).first,
+      );
+      void scrollResultsTo(double pixels) {
+        final FixedScrollMetrics metrics = FixedScrollMetrics(
+          minScrollExtent: 0,
+          maxScrollExtent: 2000,
+          pixels: pixels,
+          viewportDimension: 400,
+          axisDirection: AxisDirection.down,
+          devicePixelRatio: 1,
+        );
+        UserScrollNotification(
+          metrics: metrics,
+          context: results,
+          direction: ScrollDirection.reverse,
+        ).dispatch(results);
+        ScrollUpdateNotification(
+          metrics: metrics,
+          context: results,
+          scrollDelta: 10,
+        ).dispatch(results);
+      }
+
+      scrollResultsTo(80);
+      await tester.pumpAndSettle();
+      expect(
+        find.byType(SourceLookupTextPanel),
+        findsNothing,
+        reason: 'scrolled down: the strip left with the results',
+      );
+
+      scrollResultsTo(0);
+      await tester.pumpAndSettle();
+      expect(find.byType(SourceLookupTextPanel), findsOneWidget);
     },
   );
 }

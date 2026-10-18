@@ -8685,6 +8685,10 @@ class AppModel with ChangeNotifier {
   bool get collapseDictionaries => prefsRepo.collapseDictionaries;
   void toggleCollapseDictionaries() => prefsRepo.toggleCollapseDictionaries();
   bool get compactGlossaries => prefsRepo.compactGlossaries;
+  bool get sourceTextCollapsedByDefault =>
+      prefsRepo.sourceTextCollapsedByDefault;
+  Future<void> setSourceTextCollapsedByDefault(bool value) =>
+      prefsRepo.setSourceTextCollapsedByDefault(value);
   void toggleCompactGlossaries() => prefsRepo.toggleCompactGlossaries();
   bool get dictionaryUnifiedStyle => prefsRepo.dictionaryUnifiedStyle;
   void toggleDictionaryUnifiedStyle() =>

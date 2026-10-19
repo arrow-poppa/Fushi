@@ -301,7 +301,6 @@ class GoogleLensMangaOcrService implements GoogleLensMangaOcrRunner {
       // 归一化坐标与 rotation 都是相对**送检图**的，宽高比必须取 prepared 尺寸。
       paragraphs = GoogleLensProtocol.decodeResponse(
         response,
-        language: language,
         imageWidth: prepared.width,
         imageHeight: prepared.height,
       );

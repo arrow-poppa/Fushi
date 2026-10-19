@@ -2587,6 +2587,7 @@
   "floating_ball_screen_ocr_lens_disclosure_body": "Screen and camera text recognition will send a reduced JPEG copy of the captured image to Google. Anything visible on screen at that moment is included. The endpoint is unofficial and may stop working. Nothing is uploaded unless you agree.",
   "floating_ball_screen_ocr_lens_disclosure_title": "Send screenshots to Google Lens?",
   "floating_ball_screen_ocr_lens_language": "Google Lens language",
+  "floating_ball_screen_ocr_lens_language_auto": "Automatic",
   "floating_ball_show_labels": "버튼 텍스트 표시",
   "floating_ball_show_labels_hint": "펼친 버튼 옆에 텍스트를 표시합니다. 끄면 아이콘만 표시합니다",
   "floating_ball_summary": "앱 안 또는 다른 앱 위에 플로팅 볼을 표시하고 장면별로 버튼을 선택합니다",

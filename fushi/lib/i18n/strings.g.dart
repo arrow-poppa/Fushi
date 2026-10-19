@@ -1,7 +1,7 @@
 /// Generated file. Do not edit.
 ///
 /// Locales: 17
-/// Strings: 143684 (8452 per locale)
+/// Strings: 143701 (8453 per locale)
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -4025,6 +4025,7 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get floating_ball_screen_ocr_lens_disclosure_title =>
       'Send screenshots to Google Lens?';
   String get floating_ball_screen_ocr_lens_language => 'Google Lens language';
+  String get floating_ball_screen_ocr_lens_language_auto => 'Automatic';
   String get floating_ball_show_labels => 'Show button labels';
   String get floating_ball_show_labels_hint =>
       'Show text beside expanded buttons. Turn off to show icons only';
@@ -18618,6 +18619,8 @@ class _StringsAr extends _StringsEn {
       'Send screenshots to Google Lens?';
   @override
   String get floating_ball_screen_ocr_lens_language => 'Google Lens language';
+  @override
+  String get floating_ball_screen_ocr_lens_language_auto => 'Automatic';
   @override
   String get floating_ball_show_labels => 'إظهار تسميات الأزرار';
   @override
@@ -39145,6 +39148,8 @@ class _StringsDe extends _StringsEn {
       'Send screenshots to Google Lens?';
   @override
   String get floating_ball_screen_ocr_lens_language => 'Google Lens language';
+  @override
+  String get floating_ball_screen_ocr_lens_language_auto => 'Automatic';
   @override
   String get floating_ball_show_labels => 'Schaltflächentexte anzeigen';
   @override
@@ -59974,6 +59979,8 @@ class _StringsEs extends _StringsEn {
       'Send screenshots to Google Lens?';
   @override
   String get floating_ball_screen_ocr_lens_language => 'Google Lens language';
+  @override
+  String get floating_ball_screen_ocr_lens_language_auto => 'Automatic';
   @override
   String get floating_ball_show_labels => 'Mostrar etiquetas de los botones';
   @override
@@ -80872,6 +80879,8 @@ class _StringsFr extends _StringsEn {
   @override
   String get floating_ball_screen_ocr_lens_language => 'Google Lens language';
   @override
+  String get floating_ball_screen_ocr_lens_language_auto => 'Automatic';
+  @override
   String get floating_ball_show_labels => 'Afficher le texte des boutons';
   @override
   String get floating_ball_show_labels_hint =>
@@ -101719,6 +101728,8 @@ class _StringsId extends _StringsEn {
   @override
   String get floating_ball_screen_ocr_lens_language => 'Google Lens language';
   @override
+  String get floating_ball_screen_ocr_lens_language_auto => 'Automatic';
+  @override
   String get floating_ball_show_labels => 'Tampilkan label tombol';
   @override
   String get floating_ball_show_labels_hint =>
@@ -122373,6 +122384,8 @@ class _StringsIt extends _StringsEn {
   @override
   String get floating_ball_screen_ocr_lens_language => 'Google Lens language';
   @override
+  String get floating_ball_screen_ocr_lens_language_auto => 'Automatic';
+  @override
   String get floating_ball_show_labels => 'Mostra le etichette dei pulsanti';
   @override
   String get floating_ball_show_labels_hint =>
@@ -142868,6 +142881,8 @@ class _StringsJa extends _StringsEn {
   @override
   String get floating_ball_screen_ocr_lens_language => 'Google Lens language';
   @override
+  String get floating_ball_screen_ocr_lens_language_auto => 'Automatic';
+  @override
   String get floating_ball_show_labels => 'ボタンの文字を表示';
   @override
   String get floating_ball_show_labels_hint =>
@@ -162628,6 +162643,8 @@ class _StringsKo extends _StringsEn {
       'Send screenshots to Google Lens?';
   @override
   String get floating_ball_screen_ocr_lens_language => 'Google Lens language';
+  @override
+  String get floating_ball_screen_ocr_lens_language_auto => 'Automatic';
   @override
   String get floating_ball_show_labels => '버튼 텍스트 표시';
   @override
@@ -182679,6 +182696,8 @@ class _StringsNl extends _StringsEn {
       'Send screenshots to Google Lens?';
   @override
   String get floating_ball_screen_ocr_lens_language => 'Google Lens language';
+  @override
+  String get floating_ball_screen_ocr_lens_language_auto => 'Automatic';
   @override
   String get floating_ball_show_labels => 'Knoplabels tonen';
   @override
@@ -203419,6 +203438,8 @@ class _StringsPtBr extends _StringsEn {
       'Enviar capturas de tela ao Google Lens?';
   @override
   String get floating_ball_screen_ocr_lens_language => 'Idioma do Google Lens';
+  @override
+  String get floating_ball_screen_ocr_lens_language_auto => 'Automático';
   @override
   String get floating_ball_show_labels => 'Mostrar rótulos dos botões';
   @override
@@ -224178,6 +224199,8 @@ class _StringsRu extends _StringsEn {
   @override
   String get floating_ball_screen_ocr_lens_language => 'Google Lens language';
   @override
+  String get floating_ball_screen_ocr_lens_language_auto => 'Automatic';
+  @override
   String get floating_ball_show_labels => 'Показывать подписи кнопок';
   @override
   String get floating_ball_show_labels_hint =>
@@ -244830,6 +244853,8 @@ class _StringsTh extends _StringsEn {
   @override
   String get floating_ball_screen_ocr_lens_language => 'Google Lens language';
   @override
+  String get floating_ball_screen_ocr_lens_language_auto => 'Automatic';
+  @override
   String get floating_ball_show_labels => 'แสดงข้อความบนปุ่ม';
   @override
   String get floating_ball_show_labels_hint =>
@@ -265300,6 +265325,8 @@ class _StringsTr extends _StringsEn {
       'Send screenshots to Google Lens?';
   @override
   String get floating_ball_screen_ocr_lens_language => 'Google Lens language';
+  @override
+  String get floating_ball_screen_ocr_lens_language_auto => 'Automatic';
   @override
   String get floating_ball_show_labels => 'Düğme etiketlerini göster';
   @override
@@ -285898,6 +285925,8 @@ class _StringsVi extends _StringsEn {
   @override
   String get floating_ball_screen_ocr_lens_language => 'Google Lens language';
   @override
+  String get floating_ball_screen_ocr_lens_language_auto => 'Automatic';
+  @override
   String get floating_ball_show_labels => 'Hiển thị nhãn nút';
   @override
   String get floating_ball_show_labels_hint =>
@@ -305888,6 +305917,8 @@ class _StringsZhCn extends _StringsEn {
   @override
   String get floating_ball_screen_ocr_lens_language => 'Google Lens 识别语言';
   @override
+  String get floating_ball_screen_ocr_lens_language_auto => '自动';
+  @override
   String get floating_ball_show_labels => '显示按钮文字';
   @override
   String get floating_ball_show_labels_hint => '展开时在按钮旁显示文字，关闭后只显示图标';
@@ -324827,6 +324858,8 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get floating_ball_screen_ocr_lens_language => 'Google Lens language';
   @override
+  String get floating_ball_screen_ocr_lens_language_auto => 'Automatic';
+  @override
   String get floating_ball_show_labels => '顯示按鈕文字';
   @override
   String get floating_ball_show_labels_hint => '展開時在按鈕旁顯示文字，關閉後只顯示圖示';
@@ -343365,6 +343398,8 @@ extension on _StringsEn {
         return 'Send screenshots to Google Lens?';
       case 'floating_ball_screen_ocr_lens_language':
         return 'Google Lens language';
+      case 'floating_ball_screen_ocr_lens_language_auto':
+        return 'Automatic';
       case 'floating_ball_show_labels':
         return 'Show button labels';
       case 'floating_ball_show_labels_hint':
@@ -360903,6 +360938,8 @@ extension on _StringsAr {
         return 'Send screenshots to Google Lens?';
       case 'floating_ball_screen_ocr_lens_language':
         return 'Google Lens language';
+      case 'floating_ball_screen_ocr_lens_language_auto':
+        return 'Automatic';
       case 'floating_ball_show_labels':
         return 'إظهار تسميات الأزرار';
       case 'floating_ball_show_labels_hint':
@@ -378467,6 +378504,8 @@ extension on _StringsDe {
         return 'Send screenshots to Google Lens?';
       case 'floating_ball_screen_ocr_lens_language':
         return 'Google Lens language';
+      case 'floating_ball_screen_ocr_lens_language_auto':
+        return 'Automatic';
       case 'floating_ball_show_labels':
         return 'Schaltflächentexte anzeigen';
       case 'floating_ball_show_labels_hint':
@@ -396065,6 +396104,8 @@ extension on _StringsEs {
         return 'Send screenshots to Google Lens?';
       case 'floating_ball_screen_ocr_lens_language':
         return 'Google Lens language';
+      case 'floating_ball_screen_ocr_lens_language_auto':
+        return 'Automatic';
       case 'floating_ball_show_labels':
         return 'Mostrar etiquetas de los botones';
       case 'floating_ball_show_labels_hint':
@@ -413668,6 +413709,8 @@ extension on _StringsFr {
         return 'Send screenshots to Google Lens?';
       case 'floating_ball_screen_ocr_lens_language':
         return 'Google Lens language';
+      case 'floating_ball_screen_ocr_lens_language_auto':
+        return 'Automatic';
       case 'floating_ball_show_labels':
         return 'Afficher le texte des boutons';
       case 'floating_ball_show_labels_hint':
@@ -431252,6 +431295,8 @@ extension on _StringsId {
         return 'Send screenshots to Google Lens?';
       case 'floating_ball_screen_ocr_lens_language':
         return 'Google Lens language';
+      case 'floating_ball_screen_ocr_lens_language_auto':
+        return 'Automatic';
       case 'floating_ball_show_labels':
         return 'Tampilkan label tombol';
       case 'floating_ball_show_labels_hint':
@@ -448814,6 +448859,8 @@ extension on _StringsIt {
         return 'Send screenshots to Google Lens?';
       case 'floating_ball_screen_ocr_lens_language':
         return 'Google Lens language';
+      case 'floating_ball_screen_ocr_lens_language_auto':
+        return 'Automatic';
       case 'floating_ball_show_labels':
         return 'Mostra le etichette dei pulsanti';
       case 'floating_ball_show_labels_hint':
@@ -466357,6 +466404,8 @@ extension on _StringsJa {
         return 'Send screenshots to Google Lens?';
       case 'floating_ball_screen_ocr_lens_language':
         return 'Google Lens language';
+      case 'floating_ball_screen_ocr_lens_language_auto':
+        return 'Automatic';
       case 'floating_ball_show_labels':
         return 'ボタンの文字を表示';
       case 'floating_ball_show_labels_hint':
@@ -483821,6 +483870,8 @@ extension on _StringsKo {
         return 'Send screenshots to Google Lens?';
       case 'floating_ball_screen_ocr_lens_language':
         return 'Google Lens language';
+      case 'floating_ball_screen_ocr_lens_language_auto':
+        return 'Automatic';
       case 'floating_ball_show_labels':
         return '버튼 텍스트 표시';
       case 'floating_ball_show_labels_hint':
@@ -501329,6 +501380,8 @@ extension on _StringsNl {
         return 'Send screenshots to Google Lens?';
       case 'floating_ball_screen_ocr_lens_language':
         return 'Google Lens language';
+      case 'floating_ball_screen_ocr_lens_language_auto':
+        return 'Automatic';
       case 'floating_ball_show_labels':
         return 'Knoplabels tonen';
       case 'floating_ball_show_labels_hint':
@@ -518911,6 +518964,8 @@ extension on _StringsPtBr {
         return 'Enviar capturas de tela ao Google Lens?';
       case 'floating_ball_screen_ocr_lens_language':
         return 'Idioma do Google Lens';
+      case 'floating_ball_screen_ocr_lens_language_auto':
+        return 'Automático';
       case 'floating_ball_show_labels':
         return 'Mostrar rótulos dos botões';
       case 'floating_ball_show_labels_hint':
@@ -536493,6 +536548,8 @@ extension on _StringsRu {
         return 'Send screenshots to Google Lens?';
       case 'floating_ball_screen_ocr_lens_language':
         return 'Google Lens language';
+      case 'floating_ball_screen_ocr_lens_language_auto':
+        return 'Automatic';
       case 'floating_ball_show_labels':
         return 'Показывать подписи кнопок';
       case 'floating_ball_show_labels_hint':
@@ -554049,6 +554106,8 @@ extension on _StringsTh {
         return 'Send screenshots to Google Lens?';
       case 'floating_ball_screen_ocr_lens_language':
         return 'Google Lens language';
+      case 'floating_ball_screen_ocr_lens_language_auto':
+        return 'Automatic';
       case 'floating_ball_show_labels':
         return 'แสดงข้อความบนปุ่ม';
       case 'floating_ball_show_labels_hint':
@@ -571602,6 +571661,8 @@ extension on _StringsTr {
         return 'Send screenshots to Google Lens?';
       case 'floating_ball_screen_ocr_lens_language':
         return 'Google Lens language';
+      case 'floating_ball_screen_ocr_lens_language_auto':
+        return 'Automatic';
       case 'floating_ball_show_labels':
         return 'Düğme etiketlerini göster';
       case 'floating_ball_show_labels_hint':
@@ -589162,6 +589223,8 @@ extension on _StringsVi {
         return 'Send screenshots to Google Lens?';
       case 'floating_ball_screen_ocr_lens_language':
         return 'Google Lens language';
+      case 'floating_ball_screen_ocr_lens_language_auto':
+        return 'Automatic';
       case 'floating_ball_show_labels':
         return 'Hiển thị nhãn nút';
       case 'floating_ball_show_labels_hint':
@@ -606618,6 +606681,8 @@ extension on _StringsZhCn {
         return '将截图发送到 Google Lens？';
       case 'floating_ball_screen_ocr_lens_language':
         return 'Google Lens 识别语言';
+      case 'floating_ball_screen_ocr_lens_language_auto':
+        return '自动';
       case 'floating_ball_show_labels':
         return '显示按钮文字';
       case 'floating_ball_show_labels_hint':
@@ -623986,6 +624051,8 @@ extension on _StringsZhHk {
         return 'Send screenshots to Google Lens?';
       case 'floating_ball_screen_ocr_lens_language':
         return 'Google Lens language';
+      case 'floating_ball_screen_ocr_lens_language_auto':
+        return 'Automatic';
       case 'floating_ball_show_labels':
         return '顯示按鈕文字';
       case 'floating_ball_show_labels_hint':

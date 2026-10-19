@@ -177,8 +177,25 @@ SystemOcrPageResult screenOcrPageFromLens(MokuroImage image) =>
       imageHeight: image.size.height.round(),
     );
 
+/// 截屏识字 Lens 语言偏好的「自动」值（默认）。
+const String kScreenOcrLensLanguageAuto = 'auto';
+
+/// 偏好值 → 请求里的 Lens 语言。Lens 不管提示语言都会认出画面上的文字，空白也
+/// 按文字本身处理（见 `GoogleLensProtocol.decodeResponse`），所以「自动」只是像
+/// Chrome 那样报设备语言；认不出的设备语言回退英语。
+String resolveScreenOcrLensLanguage(String stored, {Locale? deviceLocale}) {
+  if (stored != kScreenOcrLensLanguageAuto) {
+    return normalizeLensLanguage(stored);
+  }
+  return normalizeLensLanguage(
+    (deviceLocale ?? PlatformDispatcher.instance.locale).languageCode,
+    fallback: 'en',
+  );
+}
+
 /// 送一张截图给 Lens。失败（断网、接口变了、图解不开）记日志并返回 null，调用方
-/// 退回系统 OCR——联网引擎不该让截屏识字整个不可用。
+/// 退回系统 OCR——联网引擎不该让截屏识字整个不可用。[language] 是偏好值（可为
+/// [kScreenOcrLensLanguageAuto]）。
 Future<MokuroImage?> recognizeScreenWithLens(
   Uint8List bytes, {
   required String language,
@@ -188,7 +205,7 @@ Future<MokuroImage?> recognizeScreenWithLens(
     return await (runner ?? GoogleLensMangaOcrService()).recognizePageBytes(
       bytes,
       relativeUrl: 'screen_ocr.jpg',
-      language: normalizeLensLanguage(language),
+      language: resolveScreenOcrLensLanguage(language),
     );
   } catch (error, stack) {
     ErrorLogService.instance.log('floating_ball.screen_ocr_lens', error, stack);

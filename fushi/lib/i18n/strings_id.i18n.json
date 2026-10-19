@@ -2587,6 +2587,7 @@
   "floating_ball_screen_ocr_lens_disclosure_body": "Screen and camera text recognition will send a reduced JPEG copy of the captured image to Google. Anything visible on screen at that moment is included. The endpoint is unofficial and may stop working. Nothing is uploaded unless you agree.",
   "floating_ball_screen_ocr_lens_disclosure_title": "Send screenshots to Google Lens?",
   "floating_ball_screen_ocr_lens_language": "Google Lens language",
+  "floating_ball_screen_ocr_lens_language_auto": "Automatic",
   "floating_ball_show_labels": "Tampilkan label tombol",
   "floating_ball_show_labels_hint": "Tampilkan teks di samping tombol yang diperluas. Nonaktifkan untuk hanya menampilkan ikon",
   "floating_ball_summary": "Tampilkan bola mengambang di aplikasi atau di atas aplikasi lain dan pilih tombolnya untuk setiap adegan",

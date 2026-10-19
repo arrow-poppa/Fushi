@@ -54,7 +54,8 @@ String normalizeLensLanguage(String? raw, {String fallback = 'ja'}) {
   final String primary = trimmed.split(RegExp(r'[-_]')).first;
   final bool looksLikeLanguage = RegExp(r'^[a-z]{2,3}$').hasMatch(primary) &&
       primary != 'all' &&
-      primary != 'mul';
+      primary != 'mul' &&
+      primary != 'und';
   return looksLikeLanguage ? primary : fallback;
 }
 
@@ -321,9 +322,11 @@ class GoogleLensProtocol {
   /// 坐标按图宽/图高分别归一，而 `rotation` 是真实像素空间里的角度：任何把
   /// 「按宽归一的 width」和「按高归一的 height」混进同一组 sin/cos 的算法，只在
   /// 正方形页上成立。漫画页恒是竖长图，必须带着宽高比还原（BUG-1172）。
+  ///
+  /// 空白按文字本身处理、不看请求语言（Lens 不管提示语言都会认出别的文字）：
+  /// 挨着中日文字的空白去掉，其余词间空白压成一个空格，见 [_normalize]。
   static List<GoogleLensParagraph> decodeResponse(
     Uint8List data, {
-    required String language,
     required int imageWidth,
     required int imageHeight,
   }) {
@@ -352,7 +355,7 @@ class GoogleLensProtocol {
                 '${word.string(GoogleLensWireFields.wordPlainText)}'
                 '${word.string(GoogleLensWireFields.wordTextSeparator)}')
             .join();
-        final String text = _normalize(rawText, language);
+        final String text = _normalize(rawText);
         final _LensGeometry? geometry = line
             .firstMessage(GoogleLensWireFields.lineGeometry)
             ?.let((_ProtobufMessage box) => _readGeometry(box, aspect));
@@ -394,15 +397,17 @@ class GoogleLensProtocol {
         }
         return a.geometry.rect.left.compareTo(b.geometry.rect.left);
       });
-      // 各行已 trim：CJK 直接相接；用空格分词的语言行间补一个空格，否则上一行
-      // 末词与下一行首词粘成一个词（「world」+「again」→「worldagain」）。行尾是
-      // 连字符时不补，折行断开的词与带连字符的复合词都保持一个词。
+      // 各行已 trim。行间补一个空格，否则上一行末词与下一行首词粘成一个词
+      // （「world」+「again」→「worldagain」）；接缝挨着中日文字时直接相接，上一行
+      // 以连字符结尾时也不补（折行断词与带连字符的复合词保持一个词）。
       final StringBuffer sentenceBuffer = StringBuffer();
       final List<int> lineStarts = <int>[];
       for (final _RecognizedLine line in lines) {
-        if (sentenceBuffer.isNotEmpty &&
-            _separatesLinesWithSpace(language) &&
-            !sentenceBuffer.toString().endsWith('-')) {
+        final String previous = sentenceBuffer.toString();
+        if (previous.isNotEmpty &&
+            !previous.endsWith('-') &&
+            !_isSpacelessScript(previous.runes.last) &&
+            !_isSpacelessScript(line.text.runes.first)) {
           sentenceBuffer.write(' ');
         }
         lineStarts.add(sentenceBuffer.length);
@@ -648,16 +653,29 @@ class GoogleLensProtocol {
     );
   }
 
-  /// 行间要不要补空格：与 [_normalize] 去不去词间空白同一口径。
-  static bool _separatesLinesWithSpace(String language) =>
-      language != 'ja' && language != 'zh';
+  /// 不用空格分词的文字：假名、汉字、中日文标点与全角符号。韩文用空格分词，不在内。
+  static bool _isSpacelessScript(int rune) =>
+      (rune >= 0x3000 && rune <= 0x30FF) || // 中日文标点、平假名、片假名
+      (rune >= 0x31F0 && rune <= 0x31FF) || // 片假名音标扩展
+      (rune >= 0x3400 && rune <= 0x4DBF) || // 汉字扩展 A
+      (rune >= 0x4E00 && rune <= 0x9FFF) || // 汉字
+      (rune >= 0xF900 && rune <= 0xFAFF) || // 兼容汉字
+      (rune >= 0xFF00 && rune <= 0xFFEF) || // 全角符号、半角片假名
+      (rune >= 0x20000 && rune <= 0x3FFFF); // 汉字扩展 B 及以后
 
-  static String _normalize(String text, String language) {
+  /// 一行的空白：挨着中日文字的去掉（Lens 在字与字之间插的空格），其余压成一个
+  /// 空格（拉丁、西里尔、希腊、韩文的词间空格）。同一行混排时各自成立。
+  static String _normalize(String text) {
     final String trimmed = text.trim();
-    if (!_separatesLinesWithSpace(language)) {
-      return trimmed.replaceAll(RegExp(r'\s+'), '');
-    }
-    return trimmed.split(RegExp(r'\s+')).join(' ');
+    return trimmed.replaceAllMapped(RegExp(r'\s+'), (Match match) {
+      final bool touchesSpaceless = (match.start > 0 &&
+              _isSpacelessScript(
+                trimmed.substring(0, match.start).runes.last,
+              )) ||
+          (match.end < trimmed.length &&
+              _isSpacelessScript(trimmed.substring(match.end).runes.first));
+      return touchesSpaceless ? '' : ' ';
+    });
   }
 
   static int _randomRequestId() {

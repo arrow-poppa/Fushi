@@ -1,3 +1,5 @@
+import 'dart:ui' show Locale;
+
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/floating_ball/floating_ball_channel.dart';
@@ -179,6 +181,24 @@ void main() {
       'Hola',
       'mundo',
     ]);
+  });
+
+  test('「自动」报设备语言，认不出时回退英语；手选的语言原样', () {
+    expect(
+      resolveScreenOcrLensLanguage(
+        kScreenOcrLensLanguageAuto,
+        deviceLocale: const Locale('pt', 'BR'),
+      ),
+      'pt',
+    );
+    expect(
+      resolveScreenOcrLensLanguage(
+        kScreenOcrLensLanguageAuto,
+        deviceLocale: const Locale('und'),
+      ),
+      'en',
+    );
+    expect(resolveScreenOcrLensLanguage('ru'), 'ru');
   });
 
   test('Lens 出错返回 null（调用方退回系统 OCR）', () async {

@@ -172,7 +172,7 @@ Dart → 原生：
 | `openSync` | — | Android | 系统球「立即同步」，Fushi 随后被拉到前台；Dart 就绪后跑一轮手动同步。主引擎不在时改为排队，由 `takePendingSync` 取 |
 | `systemBallClosedByUser` | — | Android | 系统球 / 常驻通知上点了关闭；Dart 把「应用外」开关关掉 |
 | `screenOcrUsesLens` | — → bool | Android | 截屏 OCR 截到帧、识别前问：设置「截屏识字引擎」选了 Google Lens 且本设备同意过上传截图（`screen_ocr_google_lens_disclosure_version`）时回 true。主引擎不在 / 报错按 false，走 ML Kit |
-| `recognizeScreenOcrLens` | `{image: JPEG 字节}` → `{lines}` 或 null | Android | 上一条回 true 后发出。Dart 跑 Google Lens（语言取 `floating_ball.screen_ocr_lens_language`），把段落按逐字区拆回视觉行：每行 `text` / `left` / `top` / `right` / `bottom`（截图像素）/ `vertical` / `blockText` / `blockOffset` / `glyphs`（扁平 `[start, end, l, t, r, b, …]`，相对行文本）。null、出错或 20 秒没回话时原生退回 ML Kit |
+| `recognizeScreenOcrLens` | `{image: JPEG 字节}` → `{lines}` 或 null | Android | 上一条回 true 后发出。Dart 跑 Google Lens（报给 Lens 的语言取 `floating_ball.screen_ocr_lens_language`，默认 `auto` = 设备语言；只是提示，空白按文字本身处理），把段落按逐字区拆回视觉行：每行 `text` / `left` / `top` / `right` / `bottom`（截图像素）/ `vertical` / `blockText` / `blockOffset` / `glyphs`（扁平 `[start, end, l, t, r, b, …]`，相对行文本）。null、出错或 20 秒没回话时原生退回 ML Kit |
 | `sensorHousingEdgeChanged` | String?（同 `sensorHousingEdge` 的回话） | iOS | 界面方向变化（SceneDelegate 的 `windowScene(_:didUpdate:interfaceOrientation:traitCollection:)`）时主动推。横屏左 ↔ 右翻转窗口尺寸与对称安全区都不变，Dart 没有可靠的重查时机，必须由原生推（BUG-2911） |
 
 Android 系统球的按钮：

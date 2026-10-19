@@ -2587,6 +2587,7 @@
   "floating_ball_screen_ocr_lens_disclosure_body": "截屏和拍照识字会把截取的图片缩小为 JPEG 后发送给 Google，截取时屏幕上可见的一切都包含在内。该接口并非官方公开 API，可能随时失效。只有同意后才会上传。",
   "floating_ball_screen_ocr_lens_disclosure_title": "将截图发送到 Google Lens？",
   "floating_ball_screen_ocr_lens_language": "Google Lens 识别语言",
+  "floating_ball_screen_ocr_lens_language_auto": "自动",
   "floating_ball_show_labels": "显示按钮文字",
   "floating_ball_show_labels_hint": "展开时在按钮旁显示文字，关闭后只显示图标",
   "floating_ball_summary": "应用内或应用外的悬浮球，按场景自定义按钮",

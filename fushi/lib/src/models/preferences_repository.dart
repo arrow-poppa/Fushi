@@ -1006,10 +1006,11 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
-  /// 截屏 / 拍照识字走 Google Lens 时的识别语言（Lens 主子标签，见
-  /// `kGoogleLensLanguageOptions`）。系统 OCR 不读它。
+  /// 截屏 / 拍照识字走 Google Lens 时报给 Lens 的语言：`auto`（默认，报设备语言）
+  /// 或 Lens 主子标签（见 `kGoogleLensLanguageOptions`）。只是提示，Lens 照样认出
+  /// 别的文字。系统 OCR 不读它。
   String get floatingBallScreenOcrLensLanguage =>
-      getPref('floating_ball.screen_ocr_lens_language', defaultValue: 'ja')
+      getPref('floating_ball.screen_ocr_lens_language', defaultValue: 'auto')
           as String;
 
   Future<void> setFloatingBallScreenOcrLensLanguage(String value) async {

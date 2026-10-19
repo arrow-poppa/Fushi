@@ -208,7 +208,7 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'floating_ball.mode',
   // String：截屏 / 拍照识字引擎 `system`（默认）/ `lens`（Google Lens，联网）。
   'floating_ball.screen_ocr_engine',
-  // String：上一项为 `lens` 时的识别语言（Lens 主子标签），默认 `ja`。
+  // String：上一项为 `lens` 时报给 Lens 的语言：`auto`（默认，设备语言）或 Lens 主子标签。
   'floating_ball.screen_ocr_lens_language',
   // bool：展开按钮旁显示文字，默认 true；保留 tooltip / 无障碍名称。
   'floating_ball.show_labels',

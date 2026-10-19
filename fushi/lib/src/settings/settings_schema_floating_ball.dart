@@ -11,6 +11,8 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/floating_ball/floating_ball_channel.dart';
 import 'package:fushi/src/floating_ball/floating_ball_config.dart';
+import 'package:fushi/src/floating_ball/screen_ocr_lens.dart'
+    show kScreenOcrLensLanguageAuto;
 import 'package:fushi/src/media/manga/ocr/google_lens_disclosure.dart';
 import 'package:fushi/src/media/manga/ocr/google_lens_protocol.dart';
 import 'package:fushi/src/models/module_id.dart';
@@ -164,6 +166,10 @@ SettingsDestination buildFloatingBallDestination() {
                 !Platform.isLinux &&
                 _prefs(c).floatingBallScreenOcrEngine == kScreenOcrEngineLens,
             options: <SettingsSegmentOption<String>>[
+              SettingsSegmentOption<String>(
+                value: kScreenOcrLensLanguageAuto,
+                label: t.floating_ball_screen_ocr_lens_language_auto,
+              ),
               for (final (String tag, String label)
                   in kGoogleLensLanguageOptions)
                 SettingsSegmentOption<String>(value: tag, label: label),
@@ -174,7 +180,7 @@ SettingsDestination buildFloatingBallDestination() {
               await _prefs(c).setFloatingBallScreenOcrLensLanguage(value);
               c.refresh();
             },
-            defaultValue: 'ja',
+            defaultValue: kScreenOcrLensLanguageAuto,
           ),
         ],
       ),
@@ -186,16 +192,14 @@ SettingsDestination buildFloatingBallDestination() {
 
 PreferencesRepository _prefs(SettingsContext c) => c.appModel.prefsRepo;
 
-/// 存的标签不在可选列表里（旧值 / 手改）时按日语显示，与请求兜底一致。
+/// 存的标签不在可选列表里（旧值 / 手改）时按「自动」显示。
 String _screenOcrLensLanguageShown(PreferencesRepository prefs) {
-  final String stored = normalizeLensLanguage(
-    prefs.floatingBallScreenOcrLensLanguage,
-  );
+  final String stored = prefs.floatingBallScreenOcrLensLanguage;
   return kGoogleLensLanguageOptions.any(
         ((String, String) option) => option.$1 == stored,
       )
       ? stored
-      : 'ja';
+      : kScreenOcrLensLanguageAuto;
 }
 
 bool get _systemBallSupported => FloatingBallScope.systemBallSupported(

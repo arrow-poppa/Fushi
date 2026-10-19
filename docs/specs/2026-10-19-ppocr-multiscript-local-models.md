@@ -10,7 +10,9 @@
 
 - 漫画 OCR：设置 › 模型 › OCR 的本地模型下拉；
 - 视频图形字幕 OCR：沿用漫画 OCR 的引擎偏好与本地模型；
-- 截屏 / 拍照识字：「截屏识字引擎」新增「本地」档，另有本地模型下拉。
+- 截屏 / 拍照识字：「截屏识字引擎」下拉。
+
+三处的选择方式相同：一个引擎下拉，本地模型逐个列成引擎项，形如「本机 · PaddleOCR v5（韩文）」。旧引擎都保留：系统 OCR、Google Lens、外部 mokuro、配对主机，漫画 CTC 也还是默认本地模型。漫画阅读器的 OCR 设置面板、视频「整轨转文字」确认框里的「OCR 设置」，进的都是同一个下拉。截屏识字的偏好仍存为两个键：`floating_ball.screen_ocr_engine = local` 加 `floating_ball.screen_ocr_local_model`，下拉值 `local:<key>` 只在设置页内部使用。
 
 ## 模型
 
@@ -40,7 +42,16 @@
 done 事件之前逐个校验，不符的文件删掉并报错。设置页显示的大小用 `estimatedBytes`，
 按同一权重 FP16 转换产物的 2.003 倍估算；PP-OCRv6 small 两个已知文件的实测比例就是这个值。
 
-字典 `inference.yml` 没有钉哈希，只做非空检查。
+### 字典
+
+CTC 识别器输出的是类别下标，必须用与权重配套的字符表才能还原成文字：下标 0 是
+blank，接着是字典里的字符，最后一类是空格。每套权重的字典各不相同，tiny 6904 项、
+韩文 11945 项。字典就是同仓 `inference.yml` 里的 `PostProcess.character_dict`。有的
+实现会单独导出一份 `dict.txt` 或 `dict.json`，Fushi 下载 `inference.yml` 后用
+`parsePpOcrCharacterDict` 直接读，不需要另外的字典文件。
+
+`inference.yml` 没有钉哈希，只做非空检查。不过字典装错时识别不会悄悄出乱码：
+`PpOcrLineRecognizer` 会比对模型输出的类别数与「字典项数 + 2」，对不上就报错。
 
 ## 文字特征（`OcrScriptTraits`）
 

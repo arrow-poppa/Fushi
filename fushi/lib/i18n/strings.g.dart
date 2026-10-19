@@ -1,7 +1,7 @@
 /// Generated file. Do not edit.
 ///
 /// Locales: 17
-/// Strings: 144007 (8471 per locale)
+/// Strings: 143956 (8468 per locale)
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -4017,9 +4017,8 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get floating_ball_scope_video => 'Video player';
   String get floating_ball_screen_ocr_engine => 'Screen OCR engine';
   String get floating_ball_screen_ocr_engine_hint =>
-      'On-device reads text offline with PaddleOCR models you download once. Google Lens needs internet and sends the captured image to Google. The system engine needs nothing extra. If the chosen engine fails, the system engine is used.';
+      'Choose the system engine, an on-device PaddleOCR model for the script you read, or Google Lens. On-device models work offline, download once and are shared with manga and video subtitle OCR. Google Lens needs internet and sends the captured image to Google. If the chosen engine fails, the system engine is used.';
   String get floating_ball_screen_ocr_engine_lens => 'Google Lens (online)';
-  String get floating_ball_screen_ocr_engine_local => 'On-device';
   String get floating_ball_screen_ocr_engine_system => 'System (offline)';
   String get floating_ball_screen_ocr_lens_disclosure_body =>
       'Screen and camera text recognition will send a reduced JPEG copy of the captured image to Google. Anything visible on screen at that moment is included. The endpoint is unofficial and may stop working. Nothing is uploaded unless you agree.';
@@ -4036,9 +4035,6 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
       'Download the OCR model?';
   String get floating_ball_screen_ocr_local_missing =>
       'The on-device OCR model isn\'t downloaded yet, so system OCR was used.';
-  String get floating_ball_screen_ocr_local_model => 'On-device OCR model';
-  String get floating_ball_screen_ocr_local_model_hint =>
-      'Runs offline. Pick the model for the script you read; it is downloaded once and shared with manga and video subtitle OCR.';
   String get floating_ball_show_labels => 'Show button labels';
   String get floating_ball_show_labels_hint =>
       'Show text beside expanded buttons. Turn off to show icons only';
@@ -18642,8 +18638,6 @@ class _StringsAr extends _StringsEn {
   @override
   String get floating_ball_screen_ocr_engine_lens => 'Google Lens (online)';
   @override
-  String get floating_ball_screen_ocr_engine_local => 'On-device';
-  @override
   String get floating_ball_screen_ocr_engine_system => 'System (offline)';
   @override
   String get floating_ball_screen_ocr_lens_disclosure_body =>
@@ -18667,11 +18661,6 @@ class _StringsAr extends _StringsEn {
   @override
   String get floating_ball_screen_ocr_local_missing =>
       'The on-device OCR model isn\'t downloaded yet, so system OCR was used.';
-  @override
-  String get floating_ball_screen_ocr_local_model => 'On-device OCR model';
-  @override
-  String get floating_ball_screen_ocr_local_model_hint =>
-      'Runs offline. Pick the model for the script you read; it is downloaded once and shared with manga and video subtitle OCR.';
   @override
   String get floating_ball_show_labels => 'إظهار تسميات الأزرار';
   @override
@@ -39221,8 +39210,6 @@ class _StringsDe extends _StringsEn {
   @override
   String get floating_ball_screen_ocr_engine_lens => 'Google Lens (online)';
   @override
-  String get floating_ball_screen_ocr_engine_local => 'On-device';
-  @override
   String get floating_ball_screen_ocr_engine_system => 'System (offline)';
   @override
   String get floating_ball_screen_ocr_lens_disclosure_body =>
@@ -39246,11 +39233,6 @@ class _StringsDe extends _StringsEn {
   @override
   String get floating_ball_screen_ocr_local_missing =>
       'The on-device OCR model isn\'t downloaded yet, so system OCR was used.';
-  @override
-  String get floating_ball_screen_ocr_local_model => 'On-device OCR model';
-  @override
-  String get floating_ball_screen_ocr_local_model_hint =>
-      'Runs offline. Pick the model for the script you read; it is downloaded once and shared with manga and video subtitle OCR.';
   @override
   String get floating_ball_show_labels => 'Schaltflächentexte anzeigen';
   @override
@@ -60102,8 +60084,6 @@ class _StringsEs extends _StringsEn {
   @override
   String get floating_ball_screen_ocr_engine_lens => 'Google Lens (online)';
   @override
-  String get floating_ball_screen_ocr_engine_local => 'On-device';
-  @override
   String get floating_ball_screen_ocr_engine_system => 'System (offline)';
   @override
   String get floating_ball_screen_ocr_lens_disclosure_body =>
@@ -60127,11 +60107,6 @@ class _StringsEs extends _StringsEn {
   @override
   String get floating_ball_screen_ocr_local_missing =>
       'The on-device OCR model isn\'t downloaded yet, so system OCR was used.';
-  @override
-  String get floating_ball_screen_ocr_local_model => 'On-device OCR model';
-  @override
-  String get floating_ball_screen_ocr_local_model_hint =>
-      'Runs offline. Pick the model for the script you read; it is downloaded once and shared with manga and video subtitle OCR.';
   @override
   String get floating_ball_show_labels => 'Mostrar etiquetas de los botones';
   @override
@@ -81051,8 +81026,6 @@ class _StringsFr extends _StringsEn {
   @override
   String get floating_ball_screen_ocr_engine_lens => 'Google Lens (online)';
   @override
-  String get floating_ball_screen_ocr_engine_local => 'On-device';
-  @override
   String get floating_ball_screen_ocr_engine_system => 'System (offline)';
   @override
   String get floating_ball_screen_ocr_lens_disclosure_body =>
@@ -81076,11 +81049,6 @@ class _StringsFr extends _StringsEn {
   @override
   String get floating_ball_screen_ocr_local_missing =>
       'The on-device OCR model isn\'t downloaded yet, so system OCR was used.';
-  @override
-  String get floating_ball_screen_ocr_local_model => 'On-device OCR model';
-  @override
-  String get floating_ball_screen_ocr_local_model_hint =>
-      'Runs offline. Pick the model for the script you read; it is downloaded once and shared with manga and video subtitle OCR.';
   @override
   String get floating_ball_show_labels => 'Afficher le texte des boutons';
   @override
@@ -101950,8 +101918,6 @@ class _StringsId extends _StringsEn {
   @override
   String get floating_ball_screen_ocr_engine_lens => 'Google Lens (online)';
   @override
-  String get floating_ball_screen_ocr_engine_local => 'On-device';
-  @override
   String get floating_ball_screen_ocr_engine_system => 'System (offline)';
   @override
   String get floating_ball_screen_ocr_lens_disclosure_body =>
@@ -101975,11 +101941,6 @@ class _StringsId extends _StringsEn {
   @override
   String get floating_ball_screen_ocr_local_missing =>
       'The on-device OCR model isn\'t downloaded yet, so system OCR was used.';
-  @override
-  String get floating_ball_screen_ocr_local_model => 'On-device OCR model';
-  @override
-  String get floating_ball_screen_ocr_local_model_hint =>
-      'Runs offline. Pick the model for the script you read; it is downloaded once and shared with manga and video subtitle OCR.';
   @override
   String get floating_ball_show_labels => 'Tampilkan label tombol';
   @override
@@ -122656,8 +122617,6 @@ class _StringsIt extends _StringsEn {
   @override
   String get floating_ball_screen_ocr_engine_lens => 'Google Lens (online)';
   @override
-  String get floating_ball_screen_ocr_engine_local => 'On-device';
-  @override
   String get floating_ball_screen_ocr_engine_system => 'System (offline)';
   @override
   String get floating_ball_screen_ocr_lens_disclosure_body =>
@@ -122681,11 +122640,6 @@ class _StringsIt extends _StringsEn {
   @override
   String get floating_ball_screen_ocr_local_missing =>
       'The on-device OCR model isn\'t downloaded yet, so system OCR was used.';
-  @override
-  String get floating_ball_screen_ocr_local_model => 'On-device OCR model';
-  @override
-  String get floating_ball_screen_ocr_local_model_hint =>
-      'Runs offline. Pick the model for the script you read; it is downloaded once and shared with manga and video subtitle OCR.';
   @override
   String get floating_ball_show_labels => 'Mostra le etichette dei pulsanti';
   @override
@@ -143203,8 +143157,6 @@ class _StringsJa extends _StringsEn {
   @override
   String get floating_ball_screen_ocr_engine_lens => 'Google Lens (online)';
   @override
-  String get floating_ball_screen_ocr_engine_local => 'On-device';
-  @override
   String get floating_ball_screen_ocr_engine_system => 'System (offline)';
   @override
   String get floating_ball_screen_ocr_lens_disclosure_body =>
@@ -143228,11 +143180,6 @@ class _StringsJa extends _StringsEn {
   @override
   String get floating_ball_screen_ocr_local_missing =>
       'The on-device OCR model isn\'t downloaded yet, so system OCR was used.';
-  @override
-  String get floating_ball_screen_ocr_local_model => 'On-device OCR model';
-  @override
-  String get floating_ball_screen_ocr_local_model_hint =>
-      'Runs offline. Pick the model for the script you read; it is downloaded once and shared with manga and video subtitle OCR.';
   @override
   String get floating_ball_show_labels => 'ボタンの文字を表示';
   @override
@@ -163016,8 +162963,6 @@ class _StringsKo extends _StringsEn {
   @override
   String get floating_ball_screen_ocr_engine_lens => 'Google Lens (online)';
   @override
-  String get floating_ball_screen_ocr_engine_local => 'On-device';
-  @override
   String get floating_ball_screen_ocr_engine_system => 'System (offline)';
   @override
   String get floating_ball_screen_ocr_lens_disclosure_body =>
@@ -163041,11 +162986,6 @@ class _StringsKo extends _StringsEn {
   @override
   String get floating_ball_screen_ocr_local_missing =>
       'The on-device OCR model isn\'t downloaded yet, so system OCR was used.';
-  @override
-  String get floating_ball_screen_ocr_local_model => 'On-device OCR model';
-  @override
-  String get floating_ball_screen_ocr_local_model_hint =>
-      'Runs offline. Pick the model for the script you read; it is downloaded once and shared with manga and video subtitle OCR.';
   @override
   String get floating_ball_show_labels => '버튼 텍스트 표시';
   @override
@@ -183119,8 +183059,6 @@ class _StringsNl extends _StringsEn {
   @override
   String get floating_ball_screen_ocr_engine_lens => 'Google Lens (online)';
   @override
-  String get floating_ball_screen_ocr_engine_local => 'On-device';
-  @override
   String get floating_ball_screen_ocr_engine_system => 'System (offline)';
   @override
   String get floating_ball_screen_ocr_lens_disclosure_body =>
@@ -183144,11 +183082,6 @@ class _StringsNl extends _StringsEn {
   @override
   String get floating_ball_screen_ocr_local_missing =>
       'The on-device OCR model isn\'t downloaded yet, so system OCR was used.';
-  @override
-  String get floating_ball_screen_ocr_local_model => 'On-device OCR model';
-  @override
-  String get floating_ball_screen_ocr_local_model_hint =>
-      'Runs offline. Pick the model for the script you read; it is downloaded once and shared with manga and video subtitle OCR.';
   @override
   String get floating_ball_show_labels => 'Knoplabels tonen';
   @override
@@ -203907,11 +203840,9 @@ class _StringsPtBr extends _StringsEn {
   String get floating_ball_screen_ocr_engine => 'Mecanismo de OCR de tela';
   @override
   String get floating_ball_screen_ocr_engine_hint =>
-      '"No aparelho" lê o texto offline com modelos PaddleOCR baixados uma vez. O Google Lens precisa de internet e envia a imagem capturada ao Google. O mecanismo do sistema não precisa de nada extra. Se o mecanismo escolhido falhar, o do sistema é usado.';
+      'Escolha o mecanismo do sistema, um modelo PaddleOCR local para a escrita que você lê, ou o Google Lens. Os modelos locais funcionam offline, são baixados uma vez e compartilhados com o OCR de mangá e de legendas de vídeo. O Google Lens precisa de internet e envia a imagem capturada ao Google. Se o mecanismo escolhido falhar, o do sistema é usado.';
   @override
   String get floating_ball_screen_ocr_engine_lens => 'Google Lens (online)';
-  @override
-  String get floating_ball_screen_ocr_engine_local => 'No aparelho';
   @override
   String get floating_ball_screen_ocr_engine_system => 'Sistema (offline)';
   @override
@@ -203936,12 +203867,6 @@ class _StringsPtBr extends _StringsEn {
   @override
   String get floating_ball_screen_ocr_local_missing =>
       'O modelo de OCR no aparelho ainda não foi baixado, então foi usado o OCR do sistema.';
-  @override
-  String get floating_ball_screen_ocr_local_model =>
-      'Modelo de OCR no aparelho';
-  @override
-  String get floating_ball_screen_ocr_local_model_hint =>
-      'Funciona offline. Escolha o modelo da escrita que você lê; ele é baixado uma vez e compartilhado com o OCR de mangá e de legendas de vídeo.';
   @override
   String get floating_ball_show_labels => 'Mostrar rótulos dos botões';
   @override
@@ -224722,8 +224647,6 @@ class _StringsRu extends _StringsEn {
   @override
   String get floating_ball_screen_ocr_engine_lens => 'Google Lens (online)';
   @override
-  String get floating_ball_screen_ocr_engine_local => 'On-device';
-  @override
   String get floating_ball_screen_ocr_engine_system => 'System (offline)';
   @override
   String get floating_ball_screen_ocr_lens_disclosure_body =>
@@ -224747,11 +224670,6 @@ class _StringsRu extends _StringsEn {
   @override
   String get floating_ball_screen_ocr_local_missing =>
       'The on-device OCR model isn\'t downloaded yet, so system OCR was used.';
-  @override
-  String get floating_ball_screen_ocr_local_model => 'On-device OCR model';
-  @override
-  String get floating_ball_screen_ocr_local_model_hint =>
-      'Runs offline. Pick the model for the script you read; it is downloaded once and shared with manga and video subtitle OCR.';
   @override
   String get floating_ball_show_labels => 'Показывать подписи кнопок';
   @override
@@ -245426,8 +245344,6 @@ class _StringsTh extends _StringsEn {
   @override
   String get floating_ball_screen_ocr_engine_lens => 'Google Lens (online)';
   @override
-  String get floating_ball_screen_ocr_engine_local => 'On-device';
-  @override
   String get floating_ball_screen_ocr_engine_system => 'System (offline)';
   @override
   String get floating_ball_screen_ocr_lens_disclosure_body =>
@@ -245451,11 +245367,6 @@ class _StringsTh extends _StringsEn {
   @override
   String get floating_ball_screen_ocr_local_missing =>
       'The on-device OCR model isn\'t downloaded yet, so system OCR was used.';
-  @override
-  String get floating_ball_screen_ocr_local_model => 'On-device OCR model';
-  @override
-  String get floating_ball_screen_ocr_local_model_hint =>
-      'Runs offline. Pick the model for the script you read; it is downloaded once and shared with manga and video subtitle OCR.';
   @override
   String get floating_ball_show_labels => 'แสดงข้อความบนปุ่ม';
   @override
@@ -265949,8 +265860,6 @@ class _StringsTr extends _StringsEn {
   @override
   String get floating_ball_screen_ocr_engine_lens => 'Google Lens (online)';
   @override
-  String get floating_ball_screen_ocr_engine_local => 'On-device';
-  @override
   String get floating_ball_screen_ocr_engine_system => 'System (offline)';
   @override
   String get floating_ball_screen_ocr_lens_disclosure_body =>
@@ -265974,11 +265883,6 @@ class _StringsTr extends _StringsEn {
   @override
   String get floating_ball_screen_ocr_local_missing =>
       'The on-device OCR model isn\'t downloaded yet, so system OCR was used.';
-  @override
-  String get floating_ball_screen_ocr_local_model => 'On-device OCR model';
-  @override
-  String get floating_ball_screen_ocr_local_model_hint =>
-      'Runs offline. Pick the model for the script you read; it is downloaded once and shared with manga and video subtitle OCR.';
   @override
   String get floating_ball_show_labels => 'Düğme etiketlerini göster';
   @override
@@ -286598,8 +286502,6 @@ class _StringsVi extends _StringsEn {
   @override
   String get floating_ball_screen_ocr_engine_lens => 'Google Lens (online)';
   @override
-  String get floating_ball_screen_ocr_engine_local => 'On-device';
-  @override
   String get floating_ball_screen_ocr_engine_system => 'System (offline)';
   @override
   String get floating_ball_screen_ocr_lens_disclosure_body =>
@@ -286623,11 +286525,6 @@ class _StringsVi extends _StringsEn {
   @override
   String get floating_ball_screen_ocr_local_missing =>
       'The on-device OCR model isn\'t downloaded yet, so system OCR was used.';
-  @override
-  String get floating_ball_screen_ocr_local_model => 'On-device OCR model';
-  @override
-  String get floating_ball_screen_ocr_local_model_hint =>
-      'Runs offline. Pick the model for the script you read; it is downloaded once and shared with manga and video subtitle OCR.';
   @override
   String get floating_ball_show_labels => 'Hiển thị nhãn nút';
   @override
@@ -306636,11 +306533,9 @@ class _StringsZhCn extends _StringsEn {
   String get floating_ball_screen_ocr_engine => '截屏识字引擎';
   @override
   String get floating_ball_screen_ocr_engine_hint =>
-      '「本地」用下载一次的 PaddleOCR 模型离线识别；Google Lens 需要联网，会把截取的图片发给 Google；系统引擎不需要额外下载。所选引擎失败时改用系统引擎。';
+      '可选系统引擎、按要读的文字选一个本地 PaddleOCR 模型，或 Google Lens。本地模型离线运行，下载一次，与漫画、视频字幕 OCR 共用；Google Lens 需要联网，会把截取的图片发给 Google。所选引擎失败时改用系统引擎。';
   @override
   String get floating_ball_screen_ocr_engine_lens => 'Google Lens（联网）';
-  @override
-  String get floating_ball_screen_ocr_engine_local => '本地';
   @override
   String get floating_ball_screen_ocr_engine_system => '系统（离线）';
   @override
@@ -306662,11 +306557,6 @@ class _StringsZhCn extends _StringsEn {
   String get floating_ball_screen_ocr_local_download_title => '下载识别模型？';
   @override
   String get floating_ball_screen_ocr_local_missing => '本地识别模型还没下载，这次用了系统 OCR。';
-  @override
-  String get floating_ball_screen_ocr_local_model => '本地识别模型';
-  @override
-  String get floating_ball_screen_ocr_local_model_hint =>
-      '离线运行。按要读的文字选模型；模型只下载一次，与漫画、视频字幕 OCR 共用。';
   @override
   String get floating_ball_show_labels => '显示按钮文字';
   @override
@@ -325627,8 +325517,6 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get floating_ball_screen_ocr_engine_lens => 'Google Lens (online)';
   @override
-  String get floating_ball_screen_ocr_engine_local => 'On-device';
-  @override
   String get floating_ball_screen_ocr_engine_system => 'System (offline)';
   @override
   String get floating_ball_screen_ocr_lens_disclosure_body =>
@@ -325652,11 +325540,6 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get floating_ball_screen_ocr_local_missing =>
       'The on-device OCR model isn\'t downloaded yet, so system OCR was used.';
-  @override
-  String get floating_ball_screen_ocr_local_model => 'On-device OCR model';
-  @override
-  String get floating_ball_screen_ocr_local_model_hint =>
-      'Runs offline. Pick the model for the script you read; it is downloaded once and shared with manga and video subtitle OCR.';
   @override
   String get floating_ball_show_labels => '顯示按鈕文字';
   @override
@@ -344216,11 +344099,9 @@ extension on _StringsEn {
       case 'floating_ball_screen_ocr_engine':
         return 'Screen OCR engine';
       case 'floating_ball_screen_ocr_engine_hint':
-        return 'On-device reads text offline with PaddleOCR models you download once. Google Lens needs internet and sends the captured image to Google. The system engine needs nothing extra. If the chosen engine fails, the system engine is used.';
+        return 'Choose the system engine, an on-device PaddleOCR model for the script you read, or Google Lens. On-device models work offline, download once and are shared with manga and video subtitle OCR. Google Lens needs internet and sends the captured image to Google. If the chosen engine fails, the system engine is used.';
       case 'floating_ball_screen_ocr_engine_lens':
         return 'Google Lens (online)';
-      case 'floating_ball_screen_ocr_engine_local':
-        return 'On-device';
       case 'floating_ball_screen_ocr_engine_system':
         return 'System (offline)';
       case 'floating_ball_screen_ocr_lens_disclosure_body':
@@ -344238,10 +344119,6 @@ extension on _StringsEn {
         return 'Download the OCR model?';
       case 'floating_ball_screen_ocr_local_missing':
         return 'The on-device OCR model isn\'t downloaded yet, so system OCR was used.';
-      case 'floating_ball_screen_ocr_local_model':
-        return 'On-device OCR model';
-      case 'floating_ball_screen_ocr_local_model_hint':
-        return 'Runs offline. Pick the model for the script you read; it is downloaded once and shared with manga and video subtitle OCR.';
       case 'floating_ball_show_labels':
         return 'Show button labels';
       case 'floating_ball_show_labels_hint':
@@ -361796,8 +361673,6 @@ extension on _StringsAr {
         return 'Google Lens reads scripts the system engine can\'t, such as Russian and Greek, but needs internet and sends the captured image to Google. If it fails, the system engine is used.';
       case 'floating_ball_screen_ocr_engine_lens':
         return 'Google Lens (online)';
-      case 'floating_ball_screen_ocr_engine_local':
-        return 'On-device';
       case 'floating_ball_screen_ocr_engine_system':
         return 'System (offline)';
       case 'floating_ball_screen_ocr_lens_disclosure_body':
@@ -361815,10 +361690,6 @@ extension on _StringsAr {
         return 'Download the OCR model?';
       case 'floating_ball_screen_ocr_local_missing':
         return 'The on-device OCR model isn\'t downloaded yet, so system OCR was used.';
-      case 'floating_ball_screen_ocr_local_model':
-        return 'On-device OCR model';
-      case 'floating_ball_screen_ocr_local_model_hint':
-        return 'Runs offline. Pick the model for the script you read; it is downloaded once and shared with manga and video subtitle OCR.';
       case 'floating_ball_show_labels':
         return 'إظهار تسميات الأزرار';
       case 'floating_ball_show_labels_hint':
@@ -379399,8 +379270,6 @@ extension on _StringsDe {
         return 'Google Lens reads scripts the system engine can\'t, such as Russian and Greek, but needs internet and sends the captured image to Google. If it fails, the system engine is used.';
       case 'floating_ball_screen_ocr_engine_lens':
         return 'Google Lens (online)';
-      case 'floating_ball_screen_ocr_engine_local':
-        return 'On-device';
       case 'floating_ball_screen_ocr_engine_system':
         return 'System (offline)';
       case 'floating_ball_screen_ocr_lens_disclosure_body':
@@ -379418,10 +379287,6 @@ extension on _StringsDe {
         return 'Download the OCR model?';
       case 'floating_ball_screen_ocr_local_missing':
         return 'The on-device OCR model isn\'t downloaded yet, so system OCR was used.';
-      case 'floating_ball_screen_ocr_local_model':
-        return 'On-device OCR model';
-      case 'floating_ball_screen_ocr_local_model_hint':
-        return 'Runs offline. Pick the model for the script you read; it is downloaded once and shared with manga and video subtitle OCR.';
       case 'floating_ball_show_labels':
         return 'Schaltflächentexte anzeigen';
       case 'floating_ball_show_labels_hint':
@@ -397036,8 +396901,6 @@ extension on _StringsEs {
         return 'Google Lens reads scripts the system engine can\'t, such as Russian and Greek, but needs internet and sends the captured image to Google. If it fails, the system engine is used.';
       case 'floating_ball_screen_ocr_engine_lens':
         return 'Google Lens (online)';
-      case 'floating_ball_screen_ocr_engine_local':
-        return 'On-device';
       case 'floating_ball_screen_ocr_engine_system':
         return 'System (offline)';
       case 'floating_ball_screen_ocr_lens_disclosure_body':
@@ -397055,10 +396918,6 @@ extension on _StringsEs {
         return 'Download the OCR model?';
       case 'floating_ball_screen_ocr_local_missing':
         return 'The on-device OCR model isn\'t downloaded yet, so system OCR was used.';
-      case 'floating_ball_screen_ocr_local_model':
-        return 'On-device OCR model';
-      case 'floating_ball_screen_ocr_local_model_hint':
-        return 'Runs offline. Pick the model for the script you read; it is downloaded once and shared with manga and video subtitle OCR.';
       case 'floating_ball_show_labels':
         return 'Mostrar etiquetas de los botones';
       case 'floating_ball_show_labels_hint':
@@ -414678,8 +414537,6 @@ extension on _StringsFr {
         return 'Google Lens reads scripts the system engine can\'t, such as Russian and Greek, but needs internet and sends the captured image to Google. If it fails, the system engine is used.';
       case 'floating_ball_screen_ocr_engine_lens':
         return 'Google Lens (online)';
-      case 'floating_ball_screen_ocr_engine_local':
-        return 'On-device';
       case 'floating_ball_screen_ocr_engine_system':
         return 'System (offline)';
       case 'floating_ball_screen_ocr_lens_disclosure_body':
@@ -414697,10 +414554,6 @@ extension on _StringsFr {
         return 'Download the OCR model?';
       case 'floating_ball_screen_ocr_local_missing':
         return 'The on-device OCR model isn\'t downloaded yet, so system OCR was used.';
-      case 'floating_ball_screen_ocr_local_model':
-        return 'On-device OCR model';
-      case 'floating_ball_screen_ocr_local_model_hint':
-        return 'Runs offline. Pick the model for the script you read; it is downloaded once and shared with manga and video subtitle OCR.';
       case 'floating_ball_show_labels':
         return 'Afficher le texte des boutons';
       case 'floating_ball_show_labels_hint':
@@ -432301,8 +432154,6 @@ extension on _StringsId {
         return 'Google Lens reads scripts the system engine can\'t, such as Russian and Greek, but needs internet and sends the captured image to Google. If it fails, the system engine is used.';
       case 'floating_ball_screen_ocr_engine_lens':
         return 'Google Lens (online)';
-      case 'floating_ball_screen_ocr_engine_local':
-        return 'On-device';
       case 'floating_ball_screen_ocr_engine_system':
         return 'System (offline)';
       case 'floating_ball_screen_ocr_lens_disclosure_body':
@@ -432320,10 +432171,6 @@ extension on _StringsId {
         return 'Download the OCR model?';
       case 'floating_ball_screen_ocr_local_missing':
         return 'The on-device OCR model isn\'t downloaded yet, so system OCR was used.';
-      case 'floating_ball_screen_ocr_local_model':
-        return 'On-device OCR model';
-      case 'floating_ball_screen_ocr_local_model_hint':
-        return 'Runs offline. Pick the model for the script you read; it is downloaded once and shared with manga and video subtitle OCR.';
       case 'floating_ball_show_labels':
         return 'Tampilkan label tombol';
       case 'floating_ball_show_labels_hint':
@@ -449902,8 +449749,6 @@ extension on _StringsIt {
         return 'Google Lens reads scripts the system engine can\'t, such as Russian and Greek, but needs internet and sends the captured image to Google. If it fails, the system engine is used.';
       case 'floating_ball_screen_ocr_engine_lens':
         return 'Google Lens (online)';
-      case 'floating_ball_screen_ocr_engine_local':
-        return 'On-device';
       case 'floating_ball_screen_ocr_engine_system':
         return 'System (offline)';
       case 'floating_ball_screen_ocr_lens_disclosure_body':
@@ -449921,10 +449766,6 @@ extension on _StringsIt {
         return 'Download the OCR model?';
       case 'floating_ball_screen_ocr_local_missing':
         return 'The on-device OCR model isn\'t downloaded yet, so system OCR was used.';
-      case 'floating_ball_screen_ocr_local_model':
-        return 'On-device OCR model';
-      case 'floating_ball_screen_ocr_local_model_hint':
-        return 'Runs offline. Pick the model for the script you read; it is downloaded once and shared with manga and video subtitle OCR.';
       case 'floating_ball_show_labels':
         return 'Mostra le etichette dei pulsanti';
       case 'floating_ball_show_labels_hint':
@@ -467484,8 +467325,6 @@ extension on _StringsJa {
         return 'Google Lens reads scripts the system engine can\'t, such as Russian and Greek, but needs internet and sends the captured image to Google. If it fails, the system engine is used.';
       case 'floating_ball_screen_ocr_engine_lens':
         return 'Google Lens (online)';
-      case 'floating_ball_screen_ocr_engine_local':
-        return 'On-device';
       case 'floating_ball_screen_ocr_engine_system':
         return 'System (offline)';
       case 'floating_ball_screen_ocr_lens_disclosure_body':
@@ -467503,10 +467342,6 @@ extension on _StringsJa {
         return 'Download the OCR model?';
       case 'floating_ball_screen_ocr_local_missing':
         return 'The on-device OCR model isn\'t downloaded yet, so system OCR was used.';
-      case 'floating_ball_screen_ocr_local_model':
-        return 'On-device OCR model';
-      case 'floating_ball_screen_ocr_local_model_hint':
-        return 'Runs offline. Pick the model for the script you read; it is downloaded once and shared with manga and video subtitle OCR.';
       case 'floating_ball_show_labels':
         return 'ボタンの文字を表示';
       case 'floating_ball_show_labels_hint':
@@ -484987,8 +484822,6 @@ extension on _StringsKo {
         return 'Google Lens reads scripts the system engine can\'t, such as Russian and Greek, but needs internet and sends the captured image to Google. If it fails, the system engine is used.';
       case 'floating_ball_screen_ocr_engine_lens':
         return 'Google Lens (online)';
-      case 'floating_ball_screen_ocr_engine_local':
-        return 'On-device';
       case 'floating_ball_screen_ocr_engine_system':
         return 'System (offline)';
       case 'floating_ball_screen_ocr_lens_disclosure_body':
@@ -485006,10 +484839,6 @@ extension on _StringsKo {
         return 'Download the OCR model?';
       case 'floating_ball_screen_ocr_local_missing':
         return 'The on-device OCR model isn\'t downloaded yet, so system OCR was used.';
-      case 'floating_ball_screen_ocr_local_model':
-        return 'On-device OCR model';
-      case 'floating_ball_screen_ocr_local_model_hint':
-        return 'Runs offline. Pick the model for the script you read; it is downloaded once and shared with manga and video subtitle OCR.';
       case 'floating_ball_show_labels':
         return '버튼 텍스트 표시';
       case 'floating_ball_show_labels_hint':
@@ -502534,8 +502363,6 @@ extension on _StringsNl {
         return 'Google Lens reads scripts the system engine can\'t, such as Russian and Greek, but needs internet and sends the captured image to Google. If it fails, the system engine is used.';
       case 'floating_ball_screen_ocr_engine_lens':
         return 'Google Lens (online)';
-      case 'floating_ball_screen_ocr_engine_local':
-        return 'On-device';
       case 'floating_ball_screen_ocr_engine_system':
         return 'System (offline)';
       case 'floating_ball_screen_ocr_lens_disclosure_body':
@@ -502553,10 +502380,6 @@ extension on _StringsNl {
         return 'Download the OCR model?';
       case 'floating_ball_screen_ocr_local_missing':
         return 'The on-device OCR model isn\'t downloaded yet, so system OCR was used.';
-      case 'floating_ball_screen_ocr_local_model':
-        return 'On-device OCR model';
-      case 'floating_ball_screen_ocr_local_model_hint':
-        return 'Runs offline. Pick the model for the script you read; it is downloaded once and shared with manga and video subtitle OCR.';
       case 'floating_ball_show_labels':
         return 'Knoplabels tonen';
       case 'floating_ball_show_labels_hint':
@@ -520152,11 +519975,9 @@ extension on _StringsPtBr {
       case 'floating_ball_screen_ocr_engine':
         return 'Mecanismo de OCR de tela';
       case 'floating_ball_screen_ocr_engine_hint':
-        return '"No aparelho" lê o texto offline com modelos PaddleOCR baixados uma vez. O Google Lens precisa de internet e envia a imagem capturada ao Google. O mecanismo do sistema não precisa de nada extra. Se o mecanismo escolhido falhar, o do sistema é usado.';
+        return 'Escolha o mecanismo do sistema, um modelo PaddleOCR local para a escrita que você lê, ou o Google Lens. Os modelos locais funcionam offline, são baixados uma vez e compartilhados com o OCR de mangá e de legendas de vídeo. O Google Lens precisa de internet e envia a imagem capturada ao Google. Se o mecanismo escolhido falhar, o do sistema é usado.';
       case 'floating_ball_screen_ocr_engine_lens':
         return 'Google Lens (online)';
-      case 'floating_ball_screen_ocr_engine_local':
-        return 'No aparelho';
       case 'floating_ball_screen_ocr_engine_system':
         return 'Sistema (offline)';
       case 'floating_ball_screen_ocr_lens_disclosure_body':
@@ -520174,10 +519995,6 @@ extension on _StringsPtBr {
         return 'Baixar o modelo de OCR?';
       case 'floating_ball_screen_ocr_local_missing':
         return 'O modelo de OCR no aparelho ainda não foi baixado, então foi usado o OCR do sistema.';
-      case 'floating_ball_screen_ocr_local_model':
-        return 'Modelo de OCR no aparelho';
-      case 'floating_ball_screen_ocr_local_model_hint':
-        return 'Funciona offline. Escolha o modelo da escrita que você lê; ele é baixado uma vez e compartilhado com o OCR de mangá e de legendas de vídeo.';
       case 'floating_ball_show_labels':
         return 'Mostrar rótulos dos botões';
       case 'floating_ball_show_labels_hint':
@@ -537776,8 +537593,6 @@ extension on _StringsRu {
         return 'Google Lens reads scripts the system engine can\'t, such as Russian and Greek, but needs internet and sends the captured image to Google. If it fails, the system engine is used.';
       case 'floating_ball_screen_ocr_engine_lens':
         return 'Google Lens (online)';
-      case 'floating_ball_screen_ocr_engine_local':
-        return 'On-device';
       case 'floating_ball_screen_ocr_engine_system':
         return 'System (offline)';
       case 'floating_ball_screen_ocr_lens_disclosure_body':
@@ -537795,10 +537610,6 @@ extension on _StringsRu {
         return 'Download the OCR model?';
       case 'floating_ball_screen_ocr_local_missing':
         return 'The on-device OCR model isn\'t downloaded yet, so system OCR was used.';
-      case 'floating_ball_screen_ocr_local_model':
-        return 'On-device OCR model';
-      case 'floating_ball_screen_ocr_local_model_hint':
-        return 'Runs offline. Pick the model for the script you read; it is downloaded once and shared with manga and video subtitle OCR.';
       case 'floating_ball_show_labels':
         return 'Показывать подписи кнопок';
       case 'floating_ball_show_labels_hint':
@@ -555371,8 +555182,6 @@ extension on _StringsTh {
         return 'Google Lens reads scripts the system engine can\'t, such as Russian and Greek, but needs internet and sends the captured image to Google. If it fails, the system engine is used.';
       case 'floating_ball_screen_ocr_engine_lens':
         return 'Google Lens (online)';
-      case 'floating_ball_screen_ocr_engine_local':
-        return 'On-device';
       case 'floating_ball_screen_ocr_engine_system':
         return 'System (offline)';
       case 'floating_ball_screen_ocr_lens_disclosure_body':
@@ -555390,10 +555199,6 @@ extension on _StringsTh {
         return 'Download the OCR model?';
       case 'floating_ball_screen_ocr_local_missing':
         return 'The on-device OCR model isn\'t downloaded yet, so system OCR was used.';
-      case 'floating_ball_screen_ocr_local_model':
-        return 'On-device OCR model';
-      case 'floating_ball_screen_ocr_local_model_hint':
-        return 'Runs offline. Pick the model for the script you read; it is downloaded once and shared with manga and video subtitle OCR.';
       case 'floating_ball_show_labels':
         return 'แสดงข้อความบนปุ่ม';
       case 'floating_ball_show_labels_hint':
@@ -572963,8 +572768,6 @@ extension on _StringsTr {
         return 'Google Lens reads scripts the system engine can\'t, such as Russian and Greek, but needs internet and sends the captured image to Google. If it fails, the system engine is used.';
       case 'floating_ball_screen_ocr_engine_lens':
         return 'Google Lens (online)';
-      case 'floating_ball_screen_ocr_engine_local':
-        return 'On-device';
       case 'floating_ball_screen_ocr_engine_system':
         return 'System (offline)';
       case 'floating_ball_screen_ocr_lens_disclosure_body':
@@ -572982,10 +572785,6 @@ extension on _StringsTr {
         return 'Download the OCR model?';
       case 'floating_ball_screen_ocr_local_missing':
         return 'The on-device OCR model isn\'t downloaded yet, so system OCR was used.';
-      case 'floating_ball_screen_ocr_local_model':
-        return 'On-device OCR model';
-      case 'floating_ball_screen_ocr_local_model_hint':
-        return 'Runs offline. Pick the model for the script you read; it is downloaded once and shared with manga and video subtitle OCR.';
       case 'floating_ball_show_labels':
         return 'Düğme etiketlerini göster';
       case 'floating_ball_show_labels_hint':
@@ -590562,8 +590361,6 @@ extension on _StringsVi {
         return 'Google Lens reads scripts the system engine can\'t, such as Russian and Greek, but needs internet and sends the captured image to Google. If it fails, the system engine is used.';
       case 'floating_ball_screen_ocr_engine_lens':
         return 'Google Lens (online)';
-      case 'floating_ball_screen_ocr_engine_local':
-        return 'On-device';
       case 'floating_ball_screen_ocr_engine_system':
         return 'System (offline)';
       case 'floating_ball_screen_ocr_lens_disclosure_body':
@@ -590581,10 +590378,6 @@ extension on _StringsVi {
         return 'Download the OCR model?';
       case 'floating_ball_screen_ocr_local_missing':
         return 'The on-device OCR model isn\'t downloaded yet, so system OCR was used.';
-      case 'floating_ball_screen_ocr_local_model':
-        return 'On-device OCR model';
-      case 'floating_ball_screen_ocr_local_model_hint':
-        return 'Runs offline. Pick the model for the script you read; it is downloaded once and shared with manga and video subtitle OCR.';
       case 'floating_ball_show_labels':
         return 'Hiển thị nhãn nút';
       case 'floating_ball_show_labels_hint':
@@ -608054,11 +607847,9 @@ extension on _StringsZhCn {
       case 'floating_ball_screen_ocr_engine':
         return '截屏识字引擎';
       case 'floating_ball_screen_ocr_engine_hint':
-        return '「本地」用下载一次的 PaddleOCR 模型离线识别；Google Lens 需要联网，会把截取的图片发给 Google；系统引擎不需要额外下载。所选引擎失败时改用系统引擎。';
+        return '可选系统引擎、按要读的文字选一个本地 PaddleOCR 模型，或 Google Lens。本地模型离线运行，下载一次，与漫画、视频字幕 OCR 共用；Google Lens 需要联网，会把截取的图片发给 Google。所选引擎失败时改用系统引擎。';
       case 'floating_ball_screen_ocr_engine_lens':
         return 'Google Lens（联网）';
-      case 'floating_ball_screen_ocr_engine_local':
-        return '本地';
       case 'floating_ball_screen_ocr_engine_system':
         return '系统（离线）';
       case 'floating_ball_screen_ocr_lens_disclosure_body':
@@ -608076,10 +607867,6 @@ extension on _StringsZhCn {
         return '下载识别模型？';
       case 'floating_ball_screen_ocr_local_missing':
         return '本地识别模型还没下载，这次用了系统 OCR。';
-      case 'floating_ball_screen_ocr_local_model':
-        return '本地识别模型';
-      case 'floating_ball_screen_ocr_local_model_hint':
-        return '离线运行。按要读的文字选模型；模型只下载一次，与漫画、视频字幕 OCR 共用。';
       case 'floating_ball_show_labels':
         return '显示按钮文字';
       case 'floating_ball_show_labels_hint':
@@ -625464,8 +625251,6 @@ extension on _StringsZhHk {
         return 'Google Lens reads scripts the system engine can\'t, such as Russian and Greek, but needs internet and sends the captured image to Google. If it fails, the system engine is used.';
       case 'floating_ball_screen_ocr_engine_lens':
         return 'Google Lens (online)';
-      case 'floating_ball_screen_ocr_engine_local':
-        return 'On-device';
       case 'floating_ball_screen_ocr_engine_system':
         return 'System (offline)';
       case 'floating_ball_screen_ocr_lens_disclosure_body':
@@ -625483,10 +625268,6 @@ extension on _StringsZhHk {
         return 'Download the OCR model?';
       case 'floating_ball_screen_ocr_local_missing':
         return 'The on-device OCR model isn\'t downloaded yet, so system OCR was used.';
-      case 'floating_ball_screen_ocr_local_model':
-        return 'On-device OCR model';
-      case 'floating_ball_screen_ocr_local_model_hint':
-        return 'Runs offline. Pick the model for the script you read; it is downloaded once and shared with manga and video subtitle OCR.';
       case 'floating_ball_show_labels':
         return '顯示按鈕文字';
       case 'floating_ball_show_labels_hint':

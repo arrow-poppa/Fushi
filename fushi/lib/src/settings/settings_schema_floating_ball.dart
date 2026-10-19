@@ -124,11 +124,14 @@ SettingsDestination buildFloatingBallDestination() {
                 },
             defaultValue: FloatingBallAutoRestore.fallback,
           ),
+          // 与漫画 OCR 的引擎下拉同构：本地模型逐个列成引擎项（每种文字一个），
+          // 选中即是「本地引擎 + 这个模型」，不再另起一个模型下拉。
           SettingsSegmentedItem<String>(
             id: 'floating_ball.screen_ocr_engine',
             title: t.floating_ball_screen_ocr_engine,
             subtitle: t.floating_ball_screen_ocr_engine_hint,
             icon: FushiIcons.textFields,
+            dropdown: true,
             // 截屏 / 拍照识字只有 Android、iOS、Windows、macOS 有。
             visible: (SettingsContext c) => !Platform.isLinux,
             options: <SettingsSegmentOption<String>>[
@@ -136,22 +139,19 @@ SettingsDestination buildFloatingBallDestination() {
                 value: kScreenOcrEngineSystem,
                 label: t.floating_ball_screen_ocr_engine_system,
               ),
-              SettingsSegmentOption<String>(
-                value: kScreenOcrEngineLocal,
-                label: t.floating_ball_screen_ocr_engine_local,
-              ),
+              for (final MangaOcrLocalModel model in MangaOcrLocalModel.values)
+                SettingsSegmentOption<String>(
+                  value: _screenOcrLocalChoice(model),
+                  label: t.manga_ocr_engine_local_model(
+                    model: localModelLabel(model),
+                  ),
+                ),
               SettingsSegmentOption<String>(
                 value: kScreenOcrEngineLens,
                 label: t.floating_ball_screen_ocr_engine_lens,
               ),
             ],
-            selected: (SettingsContext c) => switch (_prefs(
-              c,
-            ).floatingBallScreenOcrEngine) {
-              kScreenOcrEngineLens => kScreenOcrEngineLens,
-              kScreenOcrEngineLocal => kScreenOcrEngineLocal,
-              _ => kScreenOcrEngineSystem,
-            },
+            selected: (SettingsContext c) => _screenOcrEngineShown(_prefs(c)),
             onChanged: (SettingsContext c, String value) async {
               // 同意在这里收：截屏时 Fushi 可能在后台，弹不了同意框。
               if (value == kScreenOcrEngineLens &&
@@ -162,49 +162,20 @@ SettingsDestination buildFloatingBallDestination() {
                 c.refresh();
                 return;
               }
-              await _prefs(c).setFloatingBallScreenOcrEngine(value);
+              final MangaOcrLocalModel? local = _screenOcrLocalModelOf(value);
+              if (local != null) {
+                await _prefs(c).setFloatingBallScreenOcrLocalModel(local.key);
+              }
+              await _prefs(c).setFloatingBallScreenOcrEngine(
+                local != null ? kScreenOcrEngineLocal : value,
+              );
               c.refresh();
               // 模型下载同理：截屏时弹不了确认，在选的这一刻问。
-              if (value == kScreenOcrEngineLocal && c.context.mounted) {
-                await offerScreenOcrLocalModelDownload(
-                  c.context,
-                  c.ref,
-                  _screenOcrLocalModel(_prefs(c)),
-                );
+              if (local != null && c.context.mounted) {
+                await offerScreenOcrLocalModelDownload(c.context, c.ref, local);
               }
             },
             defaultValue: kScreenOcrEngineSystem,
-          ),
-          SettingsSegmentedItem<String>(
-            id: 'floating_ball.screen_ocr_local_model',
-            title: t.floating_ball_screen_ocr_local_model,
-            subtitle: t.floating_ball_screen_ocr_local_model_hint,
-            icon: FushiIcons.language,
-            dropdown: true,
-            visible: (SettingsContext c) =>
-                !Platform.isLinux &&
-                _prefs(c).floatingBallScreenOcrEngine == kScreenOcrEngineLocal,
-            options: <SettingsSegmentOption<String>>[
-              for (final MangaOcrLocalModel model in MangaOcrLocalModel.values)
-                SettingsSegmentOption<String>(
-                  value: model.key,
-                  label: localModelLabel(model),
-                ),
-            ],
-            selected: (SettingsContext c) =>
-                _screenOcrLocalModel(_prefs(c)).key,
-            onChanged: (SettingsContext c, String value) async {
-              await _prefs(c).setFloatingBallScreenOcrLocalModel(value);
-              c.refresh();
-              if (c.context.mounted) {
-                await offerScreenOcrLocalModelDownload(
-                  c.context,
-                  c.ref,
-                  MangaOcrLocalModel.fromKey(value),
-                );
-              }
-            },
-            defaultValue: kDefaultScreenOcrLocalModel,
           ),
           SettingsSegmentedItem<String>(
             id: 'floating_ball.screen_ocr_lens_language',
@@ -252,13 +223,37 @@ String _screenOcrLensLanguageShown(PreferencesRepository prefs) {
 }
 
 /// 存着的本地模型 key 认不出（旧备份 / 删掉的模型）时回退 PP-OCRv6 small。
-MangaOcrLocalModel _screenOcrLocalModel(PreferencesRepository prefs) {
-  final String stored = prefs.floatingBallScreenOcrLocalModel;
+MangaOcrLocalModel _screenOcrLocalModel(PreferencesRepository prefs) =>
+    _knownScreenOcrLocalModel(prefs.floatingBallScreenOcrLocalModel);
+
+MangaOcrLocalModel _knownScreenOcrLocalModel(String key) {
   for (final MangaOcrLocalModel model in MangaOcrLocalModel.values) {
-    if (model.key == stored) return model;
+    if (model.key == key) return model;
   }
   return MangaOcrLocalModel.fromKey(kDefaultScreenOcrLocalModel);
 }
+
+/// 引擎下拉里「本地 + [model]」那一项的值。
+String _screenOcrLocalChoice(MangaOcrLocalModel model) =>
+    '$kScreenOcrEngineLocal:${model.key}';
+
+/// 下拉值 → 本地模型；不是本地项时为 null。
+MangaOcrLocalModel? _screenOcrLocalModelOf(String choice) {
+  const String prefix = '$kScreenOcrEngineLocal:';
+  return choice.startsWith(prefix)
+      ? _knownScreenOcrLocalModel(choice.substring(prefix.length))
+      : null;
+}
+
+/// 引擎下拉的当前项：本地引擎带上存着的模型；不认识的引擎值按系统 OCR。
+String _screenOcrEngineShown(PreferencesRepository prefs) =>
+    switch (prefs.floatingBallScreenOcrEngine) {
+      kScreenOcrEngineLens => kScreenOcrEngineLens,
+      kScreenOcrEngineLocal => _screenOcrLocalChoice(
+        _screenOcrLocalModel(prefs),
+      ),
+      _ => kScreenOcrEngineSystem,
+    };
 
 bool get _systemBallSupported => FloatingBallScope.systemBallSupported(
   isAndroid: Platform.isAndroid,

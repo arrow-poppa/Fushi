@@ -55,6 +55,7 @@ import com.google.mlkit.common.MlKitException;
 import com.google.mlkit.vision.common.InputImage;
 import com.google.mlkit.vision.text.Text;
 
+import java.io.ByteArrayOutputStream;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -106,6 +107,7 @@ public class ScreenOcrService extends Service {
     static final String LABEL_NO_TEXT = "ocr_no_text";
     static final String LABEL_MODEL_UNAVAILABLE = "ocr_model_unavailable";
     static final String LABEL_FAILED = "ocr_failed";
+    static final String LABEL_RECOGNIZING = "ocr_recognizing";
     static final String LABEL_NOTIFICATION = "ocr_notification";
 
     // 查词窗（:popup 进程）→ 本服务的会话回报，经 setPackage 定向、接收端不导出。
@@ -120,6 +122,10 @@ public class ScreenOcrService extends Service {
     private static final long SETTLE_MS = 250;
     /** 等帧封顶：持续变化的画面取此刻最新一帧；此刻仍无帧则判失败。 */
     private static final long MAX_WAIT_MS = 1500;
+    /** Google Lens 回话最长等多久；超时当作失败，退回 ML Kit。 */
+    private static final long LENS_TIMEOUT_MS = 20_000;
+    /** 送 Lens 的截图 JPEG 质量；Dart 侧还会按 Lens 上限缩图重编码。 */
+    private static final int LENS_JPEG_QUALITY = 90;
     /** 点在行框外这么多 dp 以内仍算点到该行（手指比字框粗）。 */
     private static final int LINE_SLOP_DP = 12;
 
@@ -449,7 +455,100 @@ public class ScreenOcrService extends Service {
 
     // ── 识别 ──────────────────────────────────────────────────────────────────
 
+    /**
+     * 设置里选了 Google Lens（Dart 判，见 {@link FloatingBallChannel#queryScreenOcrUsesLens}）
+     * 先走 Lens：能读 ML Kit 没有识别器的文字（俄文、希腊文……）。Lens 失败一律退回 ML Kit。
+     */
     private void recognize(@NonNull Bitmap bitmap) {
+        FloatingBallChannel.queryScreenOcrUsesLens(useLens -> {
+            if (finished) {
+                bitmap.recycle();
+                return;
+            }
+            if (Boolean.TRUE.equals(useLens)) {
+                recognizeWithLens(bitmap);
+            } else {
+                recognizeOnDevice(bitmap);
+            }
+        });
+    }
+
+    private void recognizeWithLens(@NonNull Bitmap bitmap) {
+        // Lens 是一次联网往返，要等几秒：先说一声，免得以为点了没反应。
+        toast(label(LABEL_RECOGNIZING, "Recognizing text…"));
+        // 整屏 JPEG 编码要上百毫秒，不放主线程。编码期间没人动这张位图：流程收尾只回收
+        // frozenFrame，而它要等识别出结果才指向这张图。
+        new Thread(() -> {
+            byte[] jpeg = encodeJpeg(bitmap);
+            mainHandler.post(() -> {
+                if (finished) {
+                    bitmap.recycle();
+                    return;
+                }
+                if (jpeg == null) {
+                    recognizeOnDevice(bitmap);
+                    return;
+                }
+                final boolean[] settled = {false};
+                // Dart 侧是一次 HTTP 往返；主引擎在途中被杀时回话永远不来，不能让选取层
+                // 一直等下去。
+                final Runnable timeout = () -> {
+                    if (settled[0]) return;
+                    settled[0] = true;
+                    Log.w(TAG, "Google Lens timed out; falling back to on-device OCR");
+                    if (finished) {
+                        bitmap.recycle();
+                        return;
+                    }
+                    recognizeOnDevice(bitmap);
+                };
+                mainHandler.postDelayed(timeout, LENS_TIMEOUT_MS);
+                FloatingBallChannel.recognizeScreenOcrLens(jpeg, raw -> {
+                    if (settled[0]) return;
+                    settled[0] = true;
+                    mainHandler.removeCallbacks(timeout);
+                    if (finished) {
+                        bitmap.recycle();
+                        return;
+                    }
+                    if (raw == null) {
+                        recognizeOnDevice(bitmap);
+                        return;
+                    }
+                    showRecognized(bitmap, ScreenOcrLayout.linesFromWire(raw));
+                });
+            });
+        }, "ScreenOcrLensEncode").start();
+    }
+
+    @Nullable
+    private static byte[] encodeJpeg(@NonNull Bitmap bitmap) {
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        try {
+            if (!bitmap.compress(Bitmap.CompressFormat.JPEG, LENS_JPEG_QUALITY, out)) {
+                return null;
+            }
+        } catch (RuntimeException e) {
+            Log.w(TAG, "screenshot JPEG encoding failed", e);
+            return null;
+        }
+        return out.toByteArray();
+    }
+
+    /** 识别出的行 → 选取层；一行没有就提示并收尾。主线程。 */
+    private void showRecognized(@NonNull Bitmap bitmap, @NonNull List<ScreenOcrLayout.Line> lines) {
+        if (lines.isEmpty()) {
+            bitmap.recycle();
+            toast(label(LABEL_NO_TEXT, "No text recognized"));
+            finishFlow();
+            return;
+        }
+        // 框是在这一帧上识别出来的：选取层就画这一帧，框与画面恒对齐。
+        frozenFrame = bitmap;
+        showSelection(lines);
+    }
+
+    private void recognizeOnDevice(@NonNull Bitmap bitmap) {
         SystemOcrChannel.recognizerFor(language)
                 .process(InputImage.fromBitmap(bitmap, 0))
                 .addOnSuccessListener(text -> {
@@ -458,16 +557,7 @@ public class ScreenOcrService extends Service {
                         bitmap.recycle();
                         return;
                     }
-                    List<ScreenOcrLayout.Line> lines = toLines(text);
-                    if (lines.isEmpty()) {
-                        bitmap.recycle();
-                        toast(label(LABEL_NO_TEXT, "No text recognized"));
-                        finishFlow();
-                        return;
-                    }
-                    // 框是在这一帧上识别出来的：选取层就画这一帧，框与画面恒对齐。
-                    frozenFrame = bitmap;
-                    showSelection(lines);
+                    showRecognized(bitmap, toLines(text));
                 })
                 .addOnFailureListener(error -> {
                     bitmap.recycle();

@@ -994,6 +994,29 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  /// 截屏 / 拍照识字用的识别引擎：[kScreenOcrEngineSystem]（系统 OCR，离线，默认）
+  /// 或 [kScreenOcrEngineLens]（Google Lens，联网；能读系统 OCR 没有识别器的文字，
+  /// 如俄文、希腊文）。不认识的值按系统 OCR。
+  String get floatingBallScreenOcrEngine =>
+      getPref('floating_ball.screen_ocr_engine',
+          defaultValue: kScreenOcrEngineSystem) as String;
+
+  Future<void> setFloatingBallScreenOcrEngine(String value) async {
+    await setPref('floating_ball.screen_ocr_engine', value);
+    notifyListeners();
+  }
+
+  /// 截屏 / 拍照识字走 Google Lens 时的识别语言（Lens 主子标签，见
+  /// `kGoogleLensLanguageOptions`）。系统 OCR 不读它。
+  String get floatingBallScreenOcrLensLanguage =>
+      getPref('floating_ball.screen_ocr_lens_language', defaultValue: 'ja')
+          as String;
+
+  Future<void> setFloatingBallScreenOcrLensLanguage(String value) async {
+    await setPref('floating_ball.screen_ocr_lens_language', value);
+    notifyListeners();
+  }
+
   /// 应用外悬浮球（Android 悬浮窗服务 / Windows、macOS 置顶窗口）。默认关。旧版
   /// 选过 `system` 的用户保持开。不支持的平台（iOS / Linux）读到 true 也不起球。
   bool get floatingBallSystem {

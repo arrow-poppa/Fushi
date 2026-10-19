@@ -1,7 +1,7 @@
 /// Generated file. Do not edit.
 ///
 /// Locales: 17
-/// Strings: 143565 (8445 per locale)
+/// Strings: 143684 (8452 per locale)
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -4015,6 +4015,16 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get floating_ball_scope_reader => 'Book reader';
   String get floating_ball_scope_system => 'Outside the app';
   String get floating_ball_scope_video => 'Video player';
+  String get floating_ball_screen_ocr_engine => 'Screen OCR engine';
+  String get floating_ball_screen_ocr_engine_hint =>
+      'Google Lens reads scripts the system engine can\'t, such as Russian and Greek, but needs internet and sends the captured image to Google. If it fails, the system engine is used.';
+  String get floating_ball_screen_ocr_engine_lens => 'Google Lens (online)';
+  String get floating_ball_screen_ocr_engine_system => 'System (offline)';
+  String get floating_ball_screen_ocr_lens_disclosure_body =>
+      'Screen and camera text recognition will send a reduced JPEG copy of the captured image to Google. Anything visible on screen at that moment is included. The endpoint is unofficial and may stop working. Nothing is uploaded unless you agree.';
+  String get floating_ball_screen_ocr_lens_disclosure_title =>
+      'Send screenshots to Google Lens?';
+  String get floating_ball_screen_ocr_lens_language => 'Google Lens language';
   String get floating_ball_show_labels => 'Show button labels';
   String get floating_ball_show_labels_hint =>
       'Show text beside expanded buttons. Turn off to show icons only';
@@ -18591,6 +18601,23 @@ class _StringsAr extends _StringsEn {
   String get floating_ball_scope_system => 'خارج التطبيق';
   @override
   String get floating_ball_scope_video => 'مشغّل الفيديو';
+  @override
+  String get floating_ball_screen_ocr_engine => 'Screen OCR engine';
+  @override
+  String get floating_ball_screen_ocr_engine_hint =>
+      'Google Lens reads scripts the system engine can\'t, such as Russian and Greek, but needs internet and sends the captured image to Google. If it fails, the system engine is used.';
+  @override
+  String get floating_ball_screen_ocr_engine_lens => 'Google Lens (online)';
+  @override
+  String get floating_ball_screen_ocr_engine_system => 'System (offline)';
+  @override
+  String get floating_ball_screen_ocr_lens_disclosure_body =>
+      'Screen and camera text recognition will send a reduced JPEG copy of the captured image to Google. Anything visible on screen at that moment is included. The endpoint is unofficial and may stop working. Nothing is uploaded unless you agree.';
+  @override
+  String get floating_ball_screen_ocr_lens_disclosure_title =>
+      'Send screenshots to Google Lens?';
+  @override
+  String get floating_ball_screen_ocr_lens_language => 'Google Lens language';
   @override
   String get floating_ball_show_labels => 'إظهار تسميات الأزرار';
   @override
@@ -39101,6 +39128,23 @@ class _StringsDe extends _StringsEn {
   String get floating_ball_scope_system => 'Außerhalb der App';
   @override
   String get floating_ball_scope_video => 'Videoplayer';
+  @override
+  String get floating_ball_screen_ocr_engine => 'Screen OCR engine';
+  @override
+  String get floating_ball_screen_ocr_engine_hint =>
+      'Google Lens reads scripts the system engine can\'t, such as Russian and Greek, but needs internet and sends the captured image to Google. If it fails, the system engine is used.';
+  @override
+  String get floating_ball_screen_ocr_engine_lens => 'Google Lens (online)';
+  @override
+  String get floating_ball_screen_ocr_engine_system => 'System (offline)';
+  @override
+  String get floating_ball_screen_ocr_lens_disclosure_body =>
+      'Screen and camera text recognition will send a reduced JPEG copy of the captured image to Google. Anything visible on screen at that moment is included. The endpoint is unofficial and may stop working. Nothing is uploaded unless you agree.';
+  @override
+  String get floating_ball_screen_ocr_lens_disclosure_title =>
+      'Send screenshots to Google Lens?';
+  @override
+  String get floating_ball_screen_ocr_lens_language => 'Google Lens language';
   @override
   String get floating_ball_show_labels => 'Schaltflächentexte anzeigen';
   @override
@@ -59913,6 +59957,23 @@ class _StringsEs extends _StringsEn {
   String get floating_ball_scope_system => 'Fuera de la app';
   @override
   String get floating_ball_scope_video => 'Reproductor de vídeo';
+  @override
+  String get floating_ball_screen_ocr_engine => 'Screen OCR engine';
+  @override
+  String get floating_ball_screen_ocr_engine_hint =>
+      'Google Lens reads scripts the system engine can\'t, such as Russian and Greek, but needs internet and sends the captured image to Google. If it fails, the system engine is used.';
+  @override
+  String get floating_ball_screen_ocr_engine_lens => 'Google Lens (online)';
+  @override
+  String get floating_ball_screen_ocr_engine_system => 'System (offline)';
+  @override
+  String get floating_ball_screen_ocr_lens_disclosure_body =>
+      'Screen and camera text recognition will send a reduced JPEG copy of the captured image to Google. Anything visible on screen at that moment is included. The endpoint is unofficial and may stop working. Nothing is uploaded unless you agree.';
+  @override
+  String get floating_ball_screen_ocr_lens_disclosure_title =>
+      'Send screenshots to Google Lens?';
+  @override
+  String get floating_ball_screen_ocr_lens_language => 'Google Lens language';
   @override
   String get floating_ball_show_labels => 'Mostrar etiquetas de los botones';
   @override
@@ -80794,6 +80855,23 @@ class _StringsFr extends _StringsEn {
   @override
   String get floating_ball_scope_video => 'Lecteur vidéo';
   @override
+  String get floating_ball_screen_ocr_engine => 'Screen OCR engine';
+  @override
+  String get floating_ball_screen_ocr_engine_hint =>
+      'Google Lens reads scripts the system engine can\'t, such as Russian and Greek, but needs internet and sends the captured image to Google. If it fails, the system engine is used.';
+  @override
+  String get floating_ball_screen_ocr_engine_lens => 'Google Lens (online)';
+  @override
+  String get floating_ball_screen_ocr_engine_system => 'System (offline)';
+  @override
+  String get floating_ball_screen_ocr_lens_disclosure_body =>
+      'Screen and camera text recognition will send a reduced JPEG copy of the captured image to Google. Anything visible on screen at that moment is included. The endpoint is unofficial and may stop working. Nothing is uploaded unless you agree.';
+  @override
+  String get floating_ball_screen_ocr_lens_disclosure_title =>
+      'Send screenshots to Google Lens?';
+  @override
+  String get floating_ball_screen_ocr_lens_language => 'Google Lens language';
+  @override
   String get floating_ball_show_labels => 'Afficher le texte des boutons';
   @override
   String get floating_ball_show_labels_hint =>
@@ -101624,6 +101702,23 @@ class _StringsId extends _StringsEn {
   @override
   String get floating_ball_scope_video => 'Pemutar video';
   @override
+  String get floating_ball_screen_ocr_engine => 'Screen OCR engine';
+  @override
+  String get floating_ball_screen_ocr_engine_hint =>
+      'Google Lens reads scripts the system engine can\'t, such as Russian and Greek, but needs internet and sends the captured image to Google. If it fails, the system engine is used.';
+  @override
+  String get floating_ball_screen_ocr_engine_lens => 'Google Lens (online)';
+  @override
+  String get floating_ball_screen_ocr_engine_system => 'System (offline)';
+  @override
+  String get floating_ball_screen_ocr_lens_disclosure_body =>
+      'Screen and camera text recognition will send a reduced JPEG copy of the captured image to Google. Anything visible on screen at that moment is included. The endpoint is unofficial and may stop working. Nothing is uploaded unless you agree.';
+  @override
+  String get floating_ball_screen_ocr_lens_disclosure_title =>
+      'Send screenshots to Google Lens?';
+  @override
+  String get floating_ball_screen_ocr_lens_language => 'Google Lens language';
+  @override
   String get floating_ball_show_labels => 'Tampilkan label tombol';
   @override
   String get floating_ball_show_labels_hint =>
@@ -122261,6 +122356,23 @@ class _StringsIt extends _StringsEn {
   @override
   String get floating_ball_scope_video => 'Lettore video';
   @override
+  String get floating_ball_screen_ocr_engine => 'Screen OCR engine';
+  @override
+  String get floating_ball_screen_ocr_engine_hint =>
+      'Google Lens reads scripts the system engine can\'t, such as Russian and Greek, but needs internet and sends the captured image to Google. If it fails, the system engine is used.';
+  @override
+  String get floating_ball_screen_ocr_engine_lens => 'Google Lens (online)';
+  @override
+  String get floating_ball_screen_ocr_engine_system => 'System (offline)';
+  @override
+  String get floating_ball_screen_ocr_lens_disclosure_body =>
+      'Screen and camera text recognition will send a reduced JPEG copy of the captured image to Google. Anything visible on screen at that moment is included. The endpoint is unofficial and may stop working. Nothing is uploaded unless you agree.';
+  @override
+  String get floating_ball_screen_ocr_lens_disclosure_title =>
+      'Send screenshots to Google Lens?';
+  @override
+  String get floating_ball_screen_ocr_lens_language => 'Google Lens language';
+  @override
   String get floating_ball_show_labels => 'Mostra le etichette dei pulsanti';
   @override
   String get floating_ball_show_labels_hint =>
@@ -142739,6 +142851,23 @@ class _StringsJa extends _StringsEn {
   @override
   String get floating_ball_scope_video => '動画プレーヤー';
   @override
+  String get floating_ball_screen_ocr_engine => 'Screen OCR engine';
+  @override
+  String get floating_ball_screen_ocr_engine_hint =>
+      'Google Lens reads scripts the system engine can\'t, such as Russian and Greek, but needs internet and sends the captured image to Google. If it fails, the system engine is used.';
+  @override
+  String get floating_ball_screen_ocr_engine_lens => 'Google Lens (online)';
+  @override
+  String get floating_ball_screen_ocr_engine_system => 'System (offline)';
+  @override
+  String get floating_ball_screen_ocr_lens_disclosure_body =>
+      'Screen and camera text recognition will send a reduced JPEG copy of the captured image to Google. Anything visible on screen at that moment is included. The endpoint is unofficial and may stop working. Nothing is uploaded unless you agree.';
+  @override
+  String get floating_ball_screen_ocr_lens_disclosure_title =>
+      'Send screenshots to Google Lens?';
+  @override
+  String get floating_ball_screen_ocr_lens_language => 'Google Lens language';
+  @override
   String get floating_ball_show_labels => 'ボタンの文字を表示';
   @override
   String get floating_ball_show_labels_hint =>
@@ -162482,6 +162611,23 @@ class _StringsKo extends _StringsEn {
   String get floating_ball_scope_system => '앱 밖';
   @override
   String get floating_ball_scope_video => '비디오 플레이어';
+  @override
+  String get floating_ball_screen_ocr_engine => 'Screen OCR engine';
+  @override
+  String get floating_ball_screen_ocr_engine_hint =>
+      'Google Lens reads scripts the system engine can\'t, such as Russian and Greek, but needs internet and sends the captured image to Google. If it fails, the system engine is used.';
+  @override
+  String get floating_ball_screen_ocr_engine_lens => 'Google Lens (online)';
+  @override
+  String get floating_ball_screen_ocr_engine_system => 'System (offline)';
+  @override
+  String get floating_ball_screen_ocr_lens_disclosure_body =>
+      'Screen and camera text recognition will send a reduced JPEG copy of the captured image to Google. Anything visible on screen at that moment is included. The endpoint is unofficial and may stop working. Nothing is uploaded unless you agree.';
+  @override
+  String get floating_ball_screen_ocr_lens_disclosure_title =>
+      'Send screenshots to Google Lens?';
+  @override
+  String get floating_ball_screen_ocr_lens_language => 'Google Lens language';
   @override
   String get floating_ball_show_labels => '버튼 텍스트 표시';
   @override
@@ -182516,6 +182662,23 @@ class _StringsNl extends _StringsEn {
   String get floating_ball_scope_system => 'Buiten de app';
   @override
   String get floating_ball_scope_video => 'Videospeler';
+  @override
+  String get floating_ball_screen_ocr_engine => 'Screen OCR engine';
+  @override
+  String get floating_ball_screen_ocr_engine_hint =>
+      'Google Lens reads scripts the system engine can\'t, such as Russian and Greek, but needs internet and sends the captured image to Google. If it fails, the system engine is used.';
+  @override
+  String get floating_ball_screen_ocr_engine_lens => 'Google Lens (online)';
+  @override
+  String get floating_ball_screen_ocr_engine_system => 'System (offline)';
+  @override
+  String get floating_ball_screen_ocr_lens_disclosure_body =>
+      'Screen and camera text recognition will send a reduced JPEG copy of the captured image to Google. Anything visible on screen at that moment is included. The endpoint is unofficial and may stop working. Nothing is uploaded unless you agree.';
+  @override
+  String get floating_ball_screen_ocr_lens_disclosure_title =>
+      'Send screenshots to Google Lens?';
+  @override
+  String get floating_ball_screen_ocr_lens_language => 'Google Lens language';
   @override
   String get floating_ball_show_labels => 'Knoplabels tonen';
   @override
@@ -203239,6 +203402,23 @@ class _StringsPtBr extends _StringsEn {
   String get floating_ball_scope_system => 'Fora do app';
   @override
   String get floating_ball_scope_video => 'Player de vídeo';
+  @override
+  String get floating_ball_screen_ocr_engine => 'Mecanismo de OCR de tela';
+  @override
+  String get floating_ball_screen_ocr_engine_hint =>
+      'O Google Lens lê escritas que o mecanismo do sistema não lê, como russo e grego, mas precisa de internet e envia a imagem capturada ao Google. Se falhar, o mecanismo do sistema é usado.';
+  @override
+  String get floating_ball_screen_ocr_engine_lens => 'Google Lens (online)';
+  @override
+  String get floating_ball_screen_ocr_engine_system => 'Sistema (offline)';
+  @override
+  String get floating_ball_screen_ocr_lens_disclosure_body =>
+      'O reconhecimento de texto da tela e da câmera envia uma cópia JPEG reduzida da imagem capturada ao Google. Tudo o que estiver visível na tela nesse momento é incluído. O serviço não é oficial e pode parar de funcionar. Nada é enviado sem a sua concordância.';
+  @override
+  String get floating_ball_screen_ocr_lens_disclosure_title =>
+      'Enviar capturas de tela ao Google Lens?';
+  @override
+  String get floating_ball_screen_ocr_lens_language => 'Idioma do Google Lens';
   @override
   String get floating_ball_show_labels => 'Mostrar rótulos dos botões';
   @override
@@ -223981,6 +224161,23 @@ class _StringsRu extends _StringsEn {
   @override
   String get floating_ball_scope_video => 'Видеоплеер';
   @override
+  String get floating_ball_screen_ocr_engine => 'Screen OCR engine';
+  @override
+  String get floating_ball_screen_ocr_engine_hint =>
+      'Google Lens reads scripts the system engine can\'t, such as Russian and Greek, but needs internet and sends the captured image to Google. If it fails, the system engine is used.';
+  @override
+  String get floating_ball_screen_ocr_engine_lens => 'Google Lens (online)';
+  @override
+  String get floating_ball_screen_ocr_engine_system => 'System (offline)';
+  @override
+  String get floating_ball_screen_ocr_lens_disclosure_body =>
+      'Screen and camera text recognition will send a reduced JPEG copy of the captured image to Google. Anything visible on screen at that moment is included. The endpoint is unofficial and may stop working. Nothing is uploaded unless you agree.';
+  @override
+  String get floating_ball_screen_ocr_lens_disclosure_title =>
+      'Send screenshots to Google Lens?';
+  @override
+  String get floating_ball_screen_ocr_lens_language => 'Google Lens language';
+  @override
   String get floating_ball_show_labels => 'Показывать подписи кнопок';
   @override
   String get floating_ball_show_labels_hint =>
@@ -244616,6 +244813,23 @@ class _StringsTh extends _StringsEn {
   @override
   String get floating_ball_scope_video => 'เครื่องเล่นวิดีโอ';
   @override
+  String get floating_ball_screen_ocr_engine => 'Screen OCR engine';
+  @override
+  String get floating_ball_screen_ocr_engine_hint =>
+      'Google Lens reads scripts the system engine can\'t, such as Russian and Greek, but needs internet and sends the captured image to Google. If it fails, the system engine is used.';
+  @override
+  String get floating_ball_screen_ocr_engine_lens => 'Google Lens (online)';
+  @override
+  String get floating_ball_screen_ocr_engine_system => 'System (offline)';
+  @override
+  String get floating_ball_screen_ocr_lens_disclosure_body =>
+      'Screen and camera text recognition will send a reduced JPEG copy of the captured image to Google. Anything visible on screen at that moment is included. The endpoint is unofficial and may stop working. Nothing is uploaded unless you agree.';
+  @override
+  String get floating_ball_screen_ocr_lens_disclosure_title =>
+      'Send screenshots to Google Lens?';
+  @override
+  String get floating_ball_screen_ocr_lens_language => 'Google Lens language';
+  @override
   String get floating_ball_show_labels => 'แสดงข้อความบนปุ่ม';
   @override
   String get floating_ball_show_labels_hint =>
@@ -265069,6 +265283,23 @@ class _StringsTr extends _StringsEn {
   String get floating_ball_scope_system => 'Uygulamanın dışında';
   @override
   String get floating_ball_scope_video => 'Video oynatıcı';
+  @override
+  String get floating_ball_screen_ocr_engine => 'Screen OCR engine';
+  @override
+  String get floating_ball_screen_ocr_engine_hint =>
+      'Google Lens reads scripts the system engine can\'t, such as Russian and Greek, but needs internet and sends the captured image to Google. If it fails, the system engine is used.';
+  @override
+  String get floating_ball_screen_ocr_engine_lens => 'Google Lens (online)';
+  @override
+  String get floating_ball_screen_ocr_engine_system => 'System (offline)';
+  @override
+  String get floating_ball_screen_ocr_lens_disclosure_body =>
+      'Screen and camera text recognition will send a reduced JPEG copy of the captured image to Google. Anything visible on screen at that moment is included. The endpoint is unofficial and may stop working. Nothing is uploaded unless you agree.';
+  @override
+  String get floating_ball_screen_ocr_lens_disclosure_title =>
+      'Send screenshots to Google Lens?';
+  @override
+  String get floating_ball_screen_ocr_lens_language => 'Google Lens language';
   @override
   String get floating_ball_show_labels => 'Düğme etiketlerini göster';
   @override
@@ -285650,6 +285881,23 @@ class _StringsVi extends _StringsEn {
   @override
   String get floating_ball_scope_video => 'Trình phát video';
   @override
+  String get floating_ball_screen_ocr_engine => 'Screen OCR engine';
+  @override
+  String get floating_ball_screen_ocr_engine_hint =>
+      'Google Lens reads scripts the system engine can\'t, such as Russian and Greek, but needs internet and sends the captured image to Google. If it fails, the system engine is used.';
+  @override
+  String get floating_ball_screen_ocr_engine_lens => 'Google Lens (online)';
+  @override
+  String get floating_ball_screen_ocr_engine_system => 'System (offline)';
+  @override
+  String get floating_ball_screen_ocr_lens_disclosure_body =>
+      'Screen and camera text recognition will send a reduced JPEG copy of the captured image to Google. Anything visible on screen at that moment is included. The endpoint is unofficial and may stop working. Nothing is uploaded unless you agree.';
+  @override
+  String get floating_ball_screen_ocr_lens_disclosure_title =>
+      'Send screenshots to Google Lens?';
+  @override
+  String get floating_ball_screen_ocr_lens_language => 'Google Lens language';
+  @override
   String get floating_ball_show_labels => 'Hiển thị nhãn nút';
   @override
   String get floating_ball_show_labels_hint =>
@@ -305623,6 +305871,23 @@ class _StringsZhCn extends _StringsEn {
   @override
   String get floating_ball_scope_video => '视频';
   @override
+  String get floating_ball_screen_ocr_engine => '截屏识字引擎';
+  @override
+  String get floating_ball_screen_ocr_engine_hint =>
+      'Google Lens 能读系统引擎读不了的文字（如俄文、希腊文），但需要联网，并会把截取的图片发送给 Google。识别失败时改用系统引擎。';
+  @override
+  String get floating_ball_screen_ocr_engine_lens => 'Google Lens（联网）';
+  @override
+  String get floating_ball_screen_ocr_engine_system => '系统（离线）';
+  @override
+  String get floating_ball_screen_ocr_lens_disclosure_body =>
+      '截屏和拍照识字会把截取的图片缩小为 JPEG 后发送给 Google，截取时屏幕上可见的一切都包含在内。该接口并非官方公开 API，可能随时失效。只有同意后才会上传。';
+  @override
+  String get floating_ball_screen_ocr_lens_disclosure_title =>
+      '将截图发送到 Google Lens？';
+  @override
+  String get floating_ball_screen_ocr_lens_language => 'Google Lens 识别语言';
+  @override
   String get floating_ball_show_labels => '显示按钮文字';
   @override
   String get floating_ball_show_labels_hint => '展开时在按钮旁显示文字，关闭后只显示图标';
@@ -324545,6 +324810,23 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get floating_ball_scope_video => '影片';
   @override
+  String get floating_ball_screen_ocr_engine => 'Screen OCR engine';
+  @override
+  String get floating_ball_screen_ocr_engine_hint =>
+      'Google Lens reads scripts the system engine can\'t, such as Russian and Greek, but needs internet and sends the captured image to Google. If it fails, the system engine is used.';
+  @override
+  String get floating_ball_screen_ocr_engine_lens => 'Google Lens (online)';
+  @override
+  String get floating_ball_screen_ocr_engine_system => 'System (offline)';
+  @override
+  String get floating_ball_screen_ocr_lens_disclosure_body =>
+      'Screen and camera text recognition will send a reduced JPEG copy of the captured image to Google. Anything visible on screen at that moment is included. The endpoint is unofficial and may stop working. Nothing is uploaded unless you agree.';
+  @override
+  String get floating_ball_screen_ocr_lens_disclosure_title =>
+      'Send screenshots to Google Lens?';
+  @override
+  String get floating_ball_screen_ocr_lens_language => 'Google Lens language';
+  @override
   String get floating_ball_show_labels => '顯示按鈕文字';
   @override
   String get floating_ball_show_labels_hint => '展開時在按鈕旁顯示文字，關閉後只顯示圖示';
@@ -343069,6 +343351,20 @@ extension on _StringsEn {
         return 'Outside the app';
       case 'floating_ball_scope_video':
         return 'Video player';
+      case 'floating_ball_screen_ocr_engine':
+        return 'Screen OCR engine';
+      case 'floating_ball_screen_ocr_engine_hint':
+        return 'Google Lens reads scripts the system engine can\'t, such as Russian and Greek, but needs internet and sends the captured image to Google. If it fails, the system engine is used.';
+      case 'floating_ball_screen_ocr_engine_lens':
+        return 'Google Lens (online)';
+      case 'floating_ball_screen_ocr_engine_system':
+        return 'System (offline)';
+      case 'floating_ball_screen_ocr_lens_disclosure_body':
+        return 'Screen and camera text recognition will send a reduced JPEG copy of the captured image to Google. Anything visible on screen at that moment is included. The endpoint is unofficial and may stop working. Nothing is uploaded unless you agree.';
+      case 'floating_ball_screen_ocr_lens_disclosure_title':
+        return 'Send screenshots to Google Lens?';
+      case 'floating_ball_screen_ocr_lens_language':
+        return 'Google Lens language';
       case 'floating_ball_show_labels':
         return 'Show button labels';
       case 'floating_ball_show_labels_hint':
@@ -360593,6 +360889,20 @@ extension on _StringsAr {
         return 'خارج التطبيق';
       case 'floating_ball_scope_video':
         return 'مشغّل الفيديو';
+      case 'floating_ball_screen_ocr_engine':
+        return 'Screen OCR engine';
+      case 'floating_ball_screen_ocr_engine_hint':
+        return 'Google Lens reads scripts the system engine can\'t, such as Russian and Greek, but needs internet and sends the captured image to Google. If it fails, the system engine is used.';
+      case 'floating_ball_screen_ocr_engine_lens':
+        return 'Google Lens (online)';
+      case 'floating_ball_screen_ocr_engine_system':
+        return 'System (offline)';
+      case 'floating_ball_screen_ocr_lens_disclosure_body':
+        return 'Screen and camera text recognition will send a reduced JPEG copy of the captured image to Google. Anything visible on screen at that moment is included. The endpoint is unofficial and may stop working. Nothing is uploaded unless you agree.';
+      case 'floating_ball_screen_ocr_lens_disclosure_title':
+        return 'Send screenshots to Google Lens?';
+      case 'floating_ball_screen_ocr_lens_language':
+        return 'Google Lens language';
       case 'floating_ball_show_labels':
         return 'إظهار تسميات الأزرار';
       case 'floating_ball_show_labels_hint':
@@ -378143,6 +378453,20 @@ extension on _StringsDe {
         return 'Außerhalb der App';
       case 'floating_ball_scope_video':
         return 'Videoplayer';
+      case 'floating_ball_screen_ocr_engine':
+        return 'Screen OCR engine';
+      case 'floating_ball_screen_ocr_engine_hint':
+        return 'Google Lens reads scripts the system engine can\'t, such as Russian and Greek, but needs internet and sends the captured image to Google. If it fails, the system engine is used.';
+      case 'floating_ball_screen_ocr_engine_lens':
+        return 'Google Lens (online)';
+      case 'floating_ball_screen_ocr_engine_system':
+        return 'System (offline)';
+      case 'floating_ball_screen_ocr_lens_disclosure_body':
+        return 'Screen and camera text recognition will send a reduced JPEG copy of the captured image to Google. Anything visible on screen at that moment is included. The endpoint is unofficial and may stop working. Nothing is uploaded unless you agree.';
+      case 'floating_ball_screen_ocr_lens_disclosure_title':
+        return 'Send screenshots to Google Lens?';
+      case 'floating_ball_screen_ocr_lens_language':
+        return 'Google Lens language';
       case 'floating_ball_show_labels':
         return 'Schaltflächentexte anzeigen';
       case 'floating_ball_show_labels_hint':
@@ -395727,6 +396051,20 @@ extension on _StringsEs {
         return 'Fuera de la app';
       case 'floating_ball_scope_video':
         return 'Reproductor de vídeo';
+      case 'floating_ball_screen_ocr_engine':
+        return 'Screen OCR engine';
+      case 'floating_ball_screen_ocr_engine_hint':
+        return 'Google Lens reads scripts the system engine can\'t, such as Russian and Greek, but needs internet and sends the captured image to Google. If it fails, the system engine is used.';
+      case 'floating_ball_screen_ocr_engine_lens':
+        return 'Google Lens (online)';
+      case 'floating_ball_screen_ocr_engine_system':
+        return 'System (offline)';
+      case 'floating_ball_screen_ocr_lens_disclosure_body':
+        return 'Screen and camera text recognition will send a reduced JPEG copy of the captured image to Google. Anything visible on screen at that moment is included. The endpoint is unofficial and may stop working. Nothing is uploaded unless you agree.';
+      case 'floating_ball_screen_ocr_lens_disclosure_title':
+        return 'Send screenshots to Google Lens?';
+      case 'floating_ball_screen_ocr_lens_language':
+        return 'Google Lens language';
       case 'floating_ball_show_labels':
         return 'Mostrar etiquetas de los botones';
       case 'floating_ball_show_labels_hint':
@@ -413316,6 +413654,20 @@ extension on _StringsFr {
         return 'Hors de l\'application';
       case 'floating_ball_scope_video':
         return 'Lecteur vidéo';
+      case 'floating_ball_screen_ocr_engine':
+        return 'Screen OCR engine';
+      case 'floating_ball_screen_ocr_engine_hint':
+        return 'Google Lens reads scripts the system engine can\'t, such as Russian and Greek, but needs internet and sends the captured image to Google. If it fails, the system engine is used.';
+      case 'floating_ball_screen_ocr_engine_lens':
+        return 'Google Lens (online)';
+      case 'floating_ball_screen_ocr_engine_system':
+        return 'System (offline)';
+      case 'floating_ball_screen_ocr_lens_disclosure_body':
+        return 'Screen and camera text recognition will send a reduced JPEG copy of the captured image to Google. Anything visible on screen at that moment is included. The endpoint is unofficial and may stop working. Nothing is uploaded unless you agree.';
+      case 'floating_ball_screen_ocr_lens_disclosure_title':
+        return 'Send screenshots to Google Lens?';
+      case 'floating_ball_screen_ocr_lens_language':
+        return 'Google Lens language';
       case 'floating_ball_show_labels':
         return 'Afficher le texte des boutons';
       case 'floating_ball_show_labels_hint':
@@ -430886,6 +431238,20 @@ extension on _StringsId {
         return 'Di luar aplikasi';
       case 'floating_ball_scope_video':
         return 'Pemutar video';
+      case 'floating_ball_screen_ocr_engine':
+        return 'Screen OCR engine';
+      case 'floating_ball_screen_ocr_engine_hint':
+        return 'Google Lens reads scripts the system engine can\'t, such as Russian and Greek, but needs internet and sends the captured image to Google. If it fails, the system engine is used.';
+      case 'floating_ball_screen_ocr_engine_lens':
+        return 'Google Lens (online)';
+      case 'floating_ball_screen_ocr_engine_system':
+        return 'System (offline)';
+      case 'floating_ball_screen_ocr_lens_disclosure_body':
+        return 'Screen and camera text recognition will send a reduced JPEG copy of the captured image to Google. Anything visible on screen at that moment is included. The endpoint is unofficial and may stop working. Nothing is uploaded unless you agree.';
+      case 'floating_ball_screen_ocr_lens_disclosure_title':
+        return 'Send screenshots to Google Lens?';
+      case 'floating_ball_screen_ocr_lens_language':
+        return 'Google Lens language';
       case 'floating_ball_show_labels':
         return 'Tampilkan label tombol';
       case 'floating_ball_show_labels_hint':
@@ -448434,6 +448800,20 @@ extension on _StringsIt {
         return 'Fuori dall\'app';
       case 'floating_ball_scope_video':
         return 'Lettore video';
+      case 'floating_ball_screen_ocr_engine':
+        return 'Screen OCR engine';
+      case 'floating_ball_screen_ocr_engine_hint':
+        return 'Google Lens reads scripts the system engine can\'t, such as Russian and Greek, but needs internet and sends the captured image to Google. If it fails, the system engine is used.';
+      case 'floating_ball_screen_ocr_engine_lens':
+        return 'Google Lens (online)';
+      case 'floating_ball_screen_ocr_engine_system':
+        return 'System (offline)';
+      case 'floating_ball_screen_ocr_lens_disclosure_body':
+        return 'Screen and camera text recognition will send a reduced JPEG copy of the captured image to Google. Anything visible on screen at that moment is included. The endpoint is unofficial and may stop working. Nothing is uploaded unless you agree.';
+      case 'floating_ball_screen_ocr_lens_disclosure_title':
+        return 'Send screenshots to Google Lens?';
+      case 'floating_ball_screen_ocr_lens_language':
+        return 'Google Lens language';
       case 'floating_ball_show_labels':
         return 'Mostra le etichette dei pulsanti';
       case 'floating_ball_show_labels_hint':
@@ -465963,6 +466343,20 @@ extension on _StringsJa {
         return 'アプリの外';
       case 'floating_ball_scope_video':
         return '動画プレーヤー';
+      case 'floating_ball_screen_ocr_engine':
+        return 'Screen OCR engine';
+      case 'floating_ball_screen_ocr_engine_hint':
+        return 'Google Lens reads scripts the system engine can\'t, such as Russian and Greek, but needs internet and sends the captured image to Google. If it fails, the system engine is used.';
+      case 'floating_ball_screen_ocr_engine_lens':
+        return 'Google Lens (online)';
+      case 'floating_ball_screen_ocr_engine_system':
+        return 'System (offline)';
+      case 'floating_ball_screen_ocr_lens_disclosure_body':
+        return 'Screen and camera text recognition will send a reduced JPEG copy of the captured image to Google. Anything visible on screen at that moment is included. The endpoint is unofficial and may stop working. Nothing is uploaded unless you agree.';
+      case 'floating_ball_screen_ocr_lens_disclosure_title':
+        return 'Send screenshots to Google Lens?';
+      case 'floating_ball_screen_ocr_lens_language':
+        return 'Google Lens language';
       case 'floating_ball_show_labels':
         return 'ボタンの文字を表示';
       case 'floating_ball_show_labels_hint':
@@ -483413,6 +483807,20 @@ extension on _StringsKo {
         return '앱 밖';
       case 'floating_ball_scope_video':
         return '비디오 플레이어';
+      case 'floating_ball_screen_ocr_engine':
+        return 'Screen OCR engine';
+      case 'floating_ball_screen_ocr_engine_hint':
+        return 'Google Lens reads scripts the system engine can\'t, such as Russian and Greek, but needs internet and sends the captured image to Google. If it fails, the system engine is used.';
+      case 'floating_ball_screen_ocr_engine_lens':
+        return 'Google Lens (online)';
+      case 'floating_ball_screen_ocr_engine_system':
+        return 'System (offline)';
+      case 'floating_ball_screen_ocr_lens_disclosure_body':
+        return 'Screen and camera text recognition will send a reduced JPEG copy of the captured image to Google. Anything visible on screen at that moment is included. The endpoint is unofficial and may stop working. Nothing is uploaded unless you agree.';
+      case 'floating_ball_screen_ocr_lens_disclosure_title':
+        return 'Send screenshots to Google Lens?';
+      case 'floating_ball_screen_ocr_lens_language':
+        return 'Google Lens language';
       case 'floating_ball_show_labels':
         return '버튼 텍스트 표시';
       case 'floating_ball_show_labels_hint':
@@ -500907,6 +501315,20 @@ extension on _StringsNl {
         return 'Buiten de app';
       case 'floating_ball_scope_video':
         return 'Videospeler';
+      case 'floating_ball_screen_ocr_engine':
+        return 'Screen OCR engine';
+      case 'floating_ball_screen_ocr_engine_hint':
+        return 'Google Lens reads scripts the system engine can\'t, such as Russian and Greek, but needs internet and sends the captured image to Google. If it fails, the system engine is used.';
+      case 'floating_ball_screen_ocr_engine_lens':
+        return 'Google Lens (online)';
+      case 'floating_ball_screen_ocr_engine_system':
+        return 'System (offline)';
+      case 'floating_ball_screen_ocr_lens_disclosure_body':
+        return 'Screen and camera text recognition will send a reduced JPEG copy of the captured image to Google. Anything visible on screen at that moment is included. The endpoint is unofficial and may stop working. Nothing is uploaded unless you agree.';
+      case 'floating_ball_screen_ocr_lens_disclosure_title':
+        return 'Send screenshots to Google Lens?';
+      case 'floating_ball_screen_ocr_lens_language':
+        return 'Google Lens language';
       case 'floating_ball_show_labels':
         return 'Knoplabels tonen';
       case 'floating_ball_show_labels_hint':
@@ -518475,6 +518897,20 @@ extension on _StringsPtBr {
         return 'Fora do app';
       case 'floating_ball_scope_video':
         return 'Player de vídeo';
+      case 'floating_ball_screen_ocr_engine':
+        return 'Mecanismo de OCR de tela';
+      case 'floating_ball_screen_ocr_engine_hint':
+        return 'O Google Lens lê escritas que o mecanismo do sistema não lê, como russo e grego, mas precisa de internet e envia a imagem capturada ao Google. Se falhar, o mecanismo do sistema é usado.';
+      case 'floating_ball_screen_ocr_engine_lens':
+        return 'Google Lens (online)';
+      case 'floating_ball_screen_ocr_engine_system':
+        return 'Sistema (offline)';
+      case 'floating_ball_screen_ocr_lens_disclosure_body':
+        return 'O reconhecimento de texto da tela e da câmera envia uma cópia JPEG reduzida da imagem capturada ao Google. Tudo o que estiver visível na tela nesse momento é incluído. O serviço não é oficial e pode parar de funcionar. Nada é enviado sem a sua concordância.';
+      case 'floating_ball_screen_ocr_lens_disclosure_title':
+        return 'Enviar capturas de tela ao Google Lens?';
+      case 'floating_ball_screen_ocr_lens_language':
+        return 'Idioma do Google Lens';
       case 'floating_ball_show_labels':
         return 'Mostrar rótulos dos botões';
       case 'floating_ball_show_labels_hint':
@@ -536043,6 +536479,20 @@ extension on _StringsRu {
         return 'Вне приложения';
       case 'floating_ball_scope_video':
         return 'Видеоплеер';
+      case 'floating_ball_screen_ocr_engine':
+        return 'Screen OCR engine';
+      case 'floating_ball_screen_ocr_engine_hint':
+        return 'Google Lens reads scripts the system engine can\'t, such as Russian and Greek, but needs internet and sends the captured image to Google. If it fails, the system engine is used.';
+      case 'floating_ball_screen_ocr_engine_lens':
+        return 'Google Lens (online)';
+      case 'floating_ball_screen_ocr_engine_system':
+        return 'System (offline)';
+      case 'floating_ball_screen_ocr_lens_disclosure_body':
+        return 'Screen and camera text recognition will send a reduced JPEG copy of the captured image to Google. Anything visible on screen at that moment is included. The endpoint is unofficial and may stop working. Nothing is uploaded unless you agree.';
+      case 'floating_ball_screen_ocr_lens_disclosure_title':
+        return 'Send screenshots to Google Lens?';
+      case 'floating_ball_screen_ocr_lens_language':
+        return 'Google Lens language';
       case 'floating_ball_show_labels':
         return 'Показывать подписи кнопок';
       case 'floating_ball_show_labels_hint':
@@ -553585,6 +554035,20 @@ extension on _StringsTh {
         return 'นอกแอป';
       case 'floating_ball_scope_video':
         return 'เครื่องเล่นวิดีโอ';
+      case 'floating_ball_screen_ocr_engine':
+        return 'Screen OCR engine';
+      case 'floating_ball_screen_ocr_engine_hint':
+        return 'Google Lens reads scripts the system engine can\'t, such as Russian and Greek, but needs internet and sends the captured image to Google. If it fails, the system engine is used.';
+      case 'floating_ball_screen_ocr_engine_lens':
+        return 'Google Lens (online)';
+      case 'floating_ball_screen_ocr_engine_system':
+        return 'System (offline)';
+      case 'floating_ball_screen_ocr_lens_disclosure_body':
+        return 'Screen and camera text recognition will send a reduced JPEG copy of the captured image to Google. Anything visible on screen at that moment is included. The endpoint is unofficial and may stop working. Nothing is uploaded unless you agree.';
+      case 'floating_ball_screen_ocr_lens_disclosure_title':
+        return 'Send screenshots to Google Lens?';
+      case 'floating_ball_screen_ocr_lens_language':
+        return 'Google Lens language';
       case 'floating_ball_show_labels':
         return 'แสดงข้อความบนปุ่ม';
       case 'floating_ball_show_labels_hint':
@@ -571124,6 +571588,20 @@ extension on _StringsTr {
         return 'Uygulamanın dışında';
       case 'floating_ball_scope_video':
         return 'Video oynatıcı';
+      case 'floating_ball_screen_ocr_engine':
+        return 'Screen OCR engine';
+      case 'floating_ball_screen_ocr_engine_hint':
+        return 'Google Lens reads scripts the system engine can\'t, such as Russian and Greek, but needs internet and sends the captured image to Google. If it fails, the system engine is used.';
+      case 'floating_ball_screen_ocr_engine_lens':
+        return 'Google Lens (online)';
+      case 'floating_ball_screen_ocr_engine_system':
+        return 'System (offline)';
+      case 'floating_ball_screen_ocr_lens_disclosure_body':
+        return 'Screen and camera text recognition will send a reduced JPEG copy of the captured image to Google. Anything visible on screen at that moment is included. The endpoint is unofficial and may stop working. Nothing is uploaded unless you agree.';
+      case 'floating_ball_screen_ocr_lens_disclosure_title':
+        return 'Send screenshots to Google Lens?';
+      case 'floating_ball_screen_ocr_lens_language':
+        return 'Google Lens language';
       case 'floating_ball_show_labels':
         return 'Düğme etiketlerini göster';
       case 'floating_ball_show_labels_hint':
@@ -588670,6 +589148,20 @@ extension on _StringsVi {
         return 'Ngoài ứng dụng';
       case 'floating_ball_scope_video':
         return 'Trình phát video';
+      case 'floating_ball_screen_ocr_engine':
+        return 'Screen OCR engine';
+      case 'floating_ball_screen_ocr_engine_hint':
+        return 'Google Lens reads scripts the system engine can\'t, such as Russian and Greek, but needs internet and sends the captured image to Google. If it fails, the system engine is used.';
+      case 'floating_ball_screen_ocr_engine_lens':
+        return 'Google Lens (online)';
+      case 'floating_ball_screen_ocr_engine_system':
+        return 'System (offline)';
+      case 'floating_ball_screen_ocr_lens_disclosure_body':
+        return 'Screen and camera text recognition will send a reduced JPEG copy of the captured image to Google. Anything visible on screen at that moment is included. The endpoint is unofficial and may stop working. Nothing is uploaded unless you agree.';
+      case 'floating_ball_screen_ocr_lens_disclosure_title':
+        return 'Send screenshots to Google Lens?';
+      case 'floating_ball_screen_ocr_lens_language':
+        return 'Google Lens language';
       case 'floating_ball_show_labels':
         return 'Hiển thị nhãn nút';
       case 'floating_ball_show_labels_hint':
@@ -606112,6 +606604,20 @@ extension on _StringsZhCn {
         return '应用外';
       case 'floating_ball_scope_video':
         return '视频';
+      case 'floating_ball_screen_ocr_engine':
+        return '截屏识字引擎';
+      case 'floating_ball_screen_ocr_engine_hint':
+        return 'Google Lens 能读系统引擎读不了的文字（如俄文、希腊文），但需要联网，并会把截取的图片发送给 Google。识别失败时改用系统引擎。';
+      case 'floating_ball_screen_ocr_engine_lens':
+        return 'Google Lens（联网）';
+      case 'floating_ball_screen_ocr_engine_system':
+        return '系统（离线）';
+      case 'floating_ball_screen_ocr_lens_disclosure_body':
+        return '截屏和拍照识字会把截取的图片缩小为 JPEG 后发送给 Google，截取时屏幕上可见的一切都包含在内。该接口并非官方公开 API，可能随时失效。只有同意后才会上传。';
+      case 'floating_ball_screen_ocr_lens_disclosure_title':
+        return '将截图发送到 Google Lens？';
+      case 'floating_ball_screen_ocr_lens_language':
+        return 'Google Lens 识别语言';
       case 'floating_ball_show_labels':
         return '显示按钮文字';
       case 'floating_ball_show_labels_hint':
@@ -623466,6 +623972,20 @@ extension on _StringsZhHk {
         return '應用外';
       case 'floating_ball_scope_video':
         return '影片';
+      case 'floating_ball_screen_ocr_engine':
+        return 'Screen OCR engine';
+      case 'floating_ball_screen_ocr_engine_hint':
+        return 'Google Lens reads scripts the system engine can\'t, such as Russian and Greek, but needs internet and sends the captured image to Google. If it fails, the system engine is used.';
+      case 'floating_ball_screen_ocr_engine_lens':
+        return 'Google Lens (online)';
+      case 'floating_ball_screen_ocr_engine_system':
+        return 'System (offline)';
+      case 'floating_ball_screen_ocr_lens_disclosure_body':
+        return 'Screen and camera text recognition will send a reduced JPEG copy of the captured image to Google. Anything visible on screen at that moment is included. The endpoint is unofficial and may stop working. Nothing is uploaded unless you agree.';
+      case 'floating_ball_screen_ocr_lens_disclosure_title':
+        return 'Send screenshots to Google Lens?';
+      case 'floating_ball_screen_ocr_lens_language':
+        return 'Google Lens language';
       case 'floating_ball_show_labels':
         return '顯示按鈕文字';
       case 'floating_ball_show_labels_hint':

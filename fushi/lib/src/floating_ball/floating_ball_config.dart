@@ -12,6 +12,13 @@ import 'dart:ui' show AppLifecycleState;
 import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:fushi/src/reader/reader_control_layout.dart';
 
+/// 截屏 / 拍照识字引擎（偏好 `floating_ball.screen_ocr_engine` 的值域）：系统 OCR
+/// （离线，默认）。
+const String kScreenOcrEngineSystem = 'system';
+
+/// 同上：Google Lens（联网，上传截图前要同意书）。识别失败时退回系统 OCR。
+const String kScreenOcrEngineLens = 'lens';
+
 /// 测试缝，与 `GlobalLookupController.platformOverride` 同形：「这台机器有没有
 /// 桌面应用外球」与起停 / 按钮过滤 / 动作分发这些 Dart 逻辑正交。不覆盖的话，
 /// 覆盖桌面分支的宿主测试只能在 Windows / macOS 上跑，Linux CI 恒跳过。

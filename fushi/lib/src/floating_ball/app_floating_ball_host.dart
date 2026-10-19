@@ -31,10 +31,13 @@ import 'package:fushi/src/feedback/feedback_diagnostics.dart';
 import 'package:fushi/src/floating_ball/floating_ball_config.dart';
 import 'package:fushi/src/pages/implementations/feedback/feedback_common.dart';
 import 'package:fushi/src/floating_ball/floating_ball_scene.dart';
+import 'package:fushi/src/floating_ball/screen_ocr_lens.dart';
+import 'package:fushi_engine/media/manga/mokuro_payload.dart' show MokuroImage;
 import 'package:fushi/src/floating_ball/screen_ocr_picker.dart';
 import 'package:fushi/src/lookup/global_lookup_channel.dart';
 import 'package:fushi/src/lookup/global_lookup_controller.dart';
 import 'package:fushi/src/media/audiobook/floating_lyric_lookup_host.dart';
+import 'package:fushi/src/media/manga/ocr/google_lens_disclosure.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/ocr/system_ocr_channel.dart';
@@ -124,6 +127,7 @@ Map<String, String> floatingBallNativeLabels() => <String, String>{
   'ocr_no_text': t.floating_ball_ocr_empty,
   'ocr_model_unavailable': t.floating_ball_ocr_model_unavailable,
   'ocr_failed': t.floating_ball_ocr_failed,
+  'ocr_recognizing': t.floating_ball_ocr_recognizing,
 };
 
 /// 全局按钮的图标：应用内球与原生系统球共用这一张表（FushiIcons 语义图标；
@@ -432,6 +436,8 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
           onScreenOcrTap: _onDesktopScreenOcrTap,
           onScreenOcrDismissed: _onDesktopScreenOcrDismissed,
           onSensorHousingEdgeChanged: _onSensorHousingEdge,
+          onScreenOcrUsesLens: _screenOcrUsesLens,
+          onRecognizeScreenOcrLens: _recognizeScreenOcrLensForNative,
         ),
       );
     }
@@ -1144,29 +1150,74 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
     await _recognizeAndPick(bytes, fit: ScreenOcrImageFit.contain);
   }
 
-  /// 送检图 → 系统 OCR → 全屏选取页（点字查词）。截屏与拍照共用。
+  /// 设置里选了 Google Lens、且本设备同意过上传截图。同意只在设置页切到 Lens 时
+  /// 收集：截屏发生时 Fushi 可能在后台，不能当场弹同意框。
+  Future<bool> _screenOcrUsesLens() async {
+    final AppModel appModel = ref.read(appProvider);
+    if (!appModel.isPreferencesReady) return false;
+    if (appModel.prefsRepo.floatingBallScreenOcrEngine !=
+        kScreenOcrEngineLens) {
+      return false;
+    }
+    return hasGoogleLensDisclosure(
+      scene: GoogleLensDisclosureScene.screenCaptures,
+    );
+  }
+
+  Future<MokuroImage?> _recognizeWithLens(Uint8List bytes) =>
+      recognizeScreenWithLens(
+        bytes,
+        language: ref.read(appProvider).prefsRepo
+            .floatingBallScreenOcrLensLanguage,
+      );
+
+  /// Android 原生截屏 OCR 的 Lens 识别（见 [FloatingBallChannel.installHandler]）。
+  /// 返回 null 时原生退回 ML Kit。
+  Future<Map<String, Object?>?> _recognizeScreenOcrLensForNative(
+    Uint8List image,
+  ) async {
+    if (!await _screenOcrUsesLens()) return null;
+    final MokuroImage? result = await _recognizeWithLens(image);
+    if (result == null) return null;
+    return <String, Object?>{
+      'lines': <Map<String, Object?>>[
+        for (final ScreenOcrLensLine line in screenOcrLinesFromLens(result))
+          line.toWire(),
+      ],
+    };
+  }
+
+  /// 送检图 → OCR（设置选了 Lens 先走 Lens，失败退回系统 OCR）→ 全屏选取页
+  /// （点字查词）。截屏与拍照共用。
   Future<void> _recognizeAndPick(
     Uint8List bytes, {
     required ScreenOcrImageFit fit,
   }) async {
+    final MokuroImage? lens = await _screenOcrUsesLens()
+        ? await _recognizeWithLens(bytes)
+        : null;
     final SystemOcrPageResult result;
-    try {
-      result = await const MethodChannelSystemOcr().recognize(
-        bytes,
-        language: kFloatingBallOcrLanguage,
-      );
-    } on SystemOcrUnavailableException catch (error) {
-      if (error.reason == kSystemOcrModelUnavailableReason) {
-        // 不只提示「没就绪」：直接带用户去把模型配好（BUG-2906）。
-        pendingSystemOcrSetup.value = true;
-      } else {
+    if (lens != null) {
+      result = screenOcrPageFromLens(lens);
+    } else {
+      try {
+        result = await const MethodChannelSystemOcr().recognize(
+          bytes,
+          language: kFloatingBallOcrLanguage,
+        );
+      } on SystemOcrUnavailableException catch (error) {
+        if (error.reason == kSystemOcrModelUnavailableReason) {
+          // 不只提示「没就绪」：直接带用户去把模型配好（BUG-2906）。
+          pendingSystemOcrSetup.value = true;
+        } else {
+          _toast(t.floating_ball_ocr_failed);
+        }
+        return;
+      } catch (error, stack) {
+        ErrorLogService.instance.log('floating_ball.screen_ocr', error, stack);
         _toast(t.floating_ball_ocr_failed);
+        return;
       }
-      return;
-    } catch (error, stack) {
-      ErrorLogService.instance.log('floating_ball.screen_ocr', error, stack);
-      _toast(t.floating_ball_ocr_failed);
-      return;
     }
     if (result.isEmpty) {
       _toast(t.floating_ball_ocr_empty);

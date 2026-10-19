@@ -143,6 +143,54 @@ object ScreenOcrLayout {
     }
 
     /**
+     * Dart 回来的 Google Lens 行（`ScreenOcrLensLine.toWire`）→ [Line]。字段缺、类型不对或
+     * 框是空的行跳过；越界的逐字框丢掉，一个都不剩时按行框均分。块全文对不上本行文本
+     * 时退回本行自身（偏移 0），制卡句子不会截错位置。
+     */
+    @JvmStatic
+    fun linesFromWire(raw: List<*>): List<Line> {
+        val out = ArrayList<Line>(raw.size)
+        for (entry in raw) {
+            val m = entry as? Map<*, *> ?: continue
+            val text = m["text"] as? String ?: continue
+            if (text.isBlank()) continue
+            val left = (m["left"] as? Number)?.toInt() ?: continue
+            val top = (m["top"] as? Number)?.toInt() ?: continue
+            val right = (m["right"] as? Number)?.toInt() ?: continue
+            val bottom = (m["bottom"] as? Number)?.toInt() ?: continue
+            if (right <= left || bottom <= top) continue
+            val vertical = m["vertical"] as? Boolean ?: false
+            val flat = m["glyphs"] as? List<*> ?: emptyList<Any>()
+            val glyphs = ArrayList<Glyph>(flat.size / 6)
+            var i = 0
+            while (i + 5 < flat.size) {
+                val v = IntArray(6) { (flat[i + it] as? Number)?.toInt() ?: -1 }
+                if (v[0] >= 0 && v[1] > v[0] && v[1] <= text.length && v[4] > v[2] && v[5] > v[3]) {
+                    glyphs.add(Glyph(v[0], v[1], v[2], v[3], v[4], v[5]))
+                }
+                i += 6
+            }
+            val lineGlyphs = if (glyphs.isEmpty()) {
+                proportionalGlyphs(text, left, top, right, bottom, vertical)
+            } else {
+                glyphs
+            }
+            val blockOffset = (m["blockOffset"] as? Number)?.toInt() ?: -1
+            val blockText = (m["blockText"] as? String)?.takeIf {
+                blockOffset >= 0 && it.regionMatches(blockOffset, text, 0, text.length)
+            }
+            out.add(
+                Line(
+                    text, left, top, right, bottom, lineGlyphs, vertical,
+                    blockText ?: text,
+                    if (blockText != null) blockOffset else 0,
+                ),
+            )
+        }
+        return out
+    }
+
+    /**
      * 点 ([x], [y]) 落在哪一行：先找严格包含的行（多行重叠时取面积最小的，贴字最紧）；
      * 都不包含时在 [slop] 容差内取离得最近的行；再没有就 -1（= 点在行外，关闭选取层）。
      */

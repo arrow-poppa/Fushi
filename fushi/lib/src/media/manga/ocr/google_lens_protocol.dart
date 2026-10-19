@@ -40,6 +40,8 @@ const List<(String, String)> kGoogleLensLanguageOptions = <(String, String)>[
   ('it', 'Italiano'),
   ('pt', 'Português'),
   ('ru', 'Русский'),
+  ('el', 'Ελληνικά'),
+  ('la', 'Latina'),
   ('id', 'Bahasa Indonesia'),
   ('ar', 'العربية'),
 ];
@@ -392,12 +394,26 @@ class GoogleLensProtocol {
         }
         return a.geometry.rect.left.compareTo(b.geometry.rect.left);
       });
-      final String sentence =
-          lines.map((_RecognizedLine line) => line.text).join();
-      final List<GoogleLensTextRegion> regions = <GoogleLensTextRegion>[];
-      int utf16Base = 0;
-      Rect? paragraphRect;
+      // 各行已 trim：CJK 直接相接；用空格分词的语言行间补一个空格，否则上一行
+      // 末词与下一行首词粘成一个词（「world」+「again」→「worldagain」）。行尾是
+      // 连字符时不补，折行断开的词与带连字符的复合词都保持一个词。
+      final StringBuffer sentenceBuffer = StringBuffer();
+      final List<int> lineStarts = <int>[];
       for (final _RecognizedLine line in lines) {
+        if (sentenceBuffer.isNotEmpty &&
+            _separatesLinesWithSpace(language) &&
+            !sentenceBuffer.toString().endsWith('-')) {
+          sentenceBuffer.write(' ');
+        }
+        lineStarts.add(sentenceBuffer.length);
+        sentenceBuffer.write(line.text);
+      }
+      final String sentence = sentenceBuffer.toString();
+      final List<GoogleLensTextRegion> regions = <GoogleLensTextRegion>[];
+      Rect? paragraphRect;
+      for (int lineIndex = 0; lineIndex < lines.length; lineIndex++) {
+        final _RecognizedLine line = lines[lineIndex];
+        final int utf16Base = lineStarts[lineIndex];
         paragraphRect = paragraphRect == null
             ? line.geometry.rect
             : paragraphRect.expandToInclude(line.geometry.rect);
@@ -413,7 +429,6 @@ class GoogleLensProtocol {
           throw const GoogleLensProtocolException('too many text regions');
         }
         regions.addAll(lineRegions);
-        utf16Base += line.text.length;
       }
       if (regions.isEmpty || paragraphRect == null) {
         continue;
@@ -633,9 +648,13 @@ class GoogleLensProtocol {
     );
   }
 
+  /// 行间要不要补空格：与 [_normalize] 去不去词间空白同一口径。
+  static bool _separatesLinesWithSpace(String language) =>
+      language != 'ja' && language != 'zh';
+
   static String _normalize(String text, String language) {
     final String trimmed = text.trim();
-    if (language == 'ja' || language == 'zh') {
+    if (!_separatesLinesWithSpace(language)) {
       return trimmed.replaceAll(RegExp(r'\s+'), '');
     }
     return trimmed.split(RegExp(r'\s+')).join(' ');

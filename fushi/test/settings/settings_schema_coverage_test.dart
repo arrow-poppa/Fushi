@@ -618,6 +618,12 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 应用外开关（2026-09-30 起桌面也可见）：生效点是宿主起停原生系统球。
   'floatingBall/Show over other apps':
       'test/floating_ball/app_floating_ball_host_test.dart: 桌面应用外球：打开开关即起原生球…；Android 原生服务见 BUG-2793 真机记录',
+  // 截屏 / 拍照识字引擎与 Lens 语言：生效点是宿主识别截图时选引擎（Android 在
+  // 原生服务里经通道问 Dart），harness 里没有截屏。
+  'floatingBall/Screen OCR engine':
+      'test/floating_ball/screen_ocr_lens_test.dart: 原生截屏 OCR 经通道向 Dart 要 Lens 结果',
+  'floatingBall/Google Lens language':
+      'test/floating_ball/screen_ocr_lens_test.dart: 一段折成两行：按逐字区拆回视觉行',
   // 关闭后自动恢复三态：生效点是宿主处理「关闭」与回到前台。
   'floatingBall/Auto-restore floating ball':
       'test/floating_ball/app_floating_ball_host_test.dart: 自动恢复含应用内 / 不自动恢复 / 桌面应用外球「应用内外」三条',

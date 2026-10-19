@@ -13,6 +13,11 @@ const String kGoogleLensDisclosurePreferenceKey =
 const String kVideoGoogleLensDisclosurePreferenceKey =
     'video_google_lens_disclosure_version';
 
+/// 截屏 / 拍照识字上传同意的设备本地键。与漫画、视频分开：截屏拍下的是此刻整块
+/// 屏幕（可能是别的 app），用户同意过上传漫画页不等于同意上传屏幕。
+const String kScreenOcrGoogleLensDisclosurePreferenceKey =
+    'screen_ocr_google_lens_disclosure_version';
+
 typedef GoogleLensDisclosureGate = Future<bool> Function(BuildContext context);
 
 /// 要上传给 Google Lens 的是什么。决定同意框文案与同意记录的键。
@@ -21,7 +26,10 @@ enum GoogleLensDisclosureScene {
   mangaPages(kGoogleLensDisclosurePreferenceKey),
 
   /// 视频画面（暂停帧识别、图片字幕整轨转文字）。
-  videoFrames(kVideoGoogleLensDisclosurePreferenceKey);
+  videoFrames(kVideoGoogleLensDisclosurePreferenceKey),
+
+  /// 截屏 / 拍照识字（悬浮球、系统球）。
+  screenCaptures(kScreenOcrGoogleLensDisclosurePreferenceKey);
 
   const GoogleLensDisclosureScene(this.preferenceKey);
 
@@ -33,12 +41,16 @@ enum GoogleLensDisclosureScene {
       t.manga_google_lens_disclosure_title,
     GoogleLensDisclosureScene.videoFrames =>
       t.video_google_lens_disclosure_title,
+    GoogleLensDisclosureScene.screenCaptures =>
+      t.floating_ball_screen_ocr_lens_disclosure_title,
   };
 
   String get body => switch (this) {
     GoogleLensDisclosureScene.mangaPages => t.manga_google_lens_disclosure_body,
     GoogleLensDisclosureScene.videoFrames =>
       t.video_google_lens_disclosure_body,
+    GoogleLensDisclosureScene.screenCaptures =>
+      t.floating_ball_screen_ocr_lens_disclosure_body,
   };
 }
 

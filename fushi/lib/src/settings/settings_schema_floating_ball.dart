@@ -11,6 +11,8 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/floating_ball/floating_ball_channel.dart';
 import 'package:fushi/src/floating_ball/floating_ball_config.dart';
+import 'package:fushi/src/media/manga/ocr/google_lens_disclosure.dart';
+import 'package:fushi/src/media/manga/ocr/google_lens_protocol.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/reader/reader_control_layout.dart';
@@ -117,6 +119,63 @@ SettingsDestination buildFloatingBallDestination() {
                 },
             defaultValue: FloatingBallAutoRestore.fallback,
           ),
+          SettingsSegmentedItem<String>(
+            id: 'floating_ball.screen_ocr_engine',
+            title: t.floating_ball_screen_ocr_engine,
+            subtitle: t.floating_ball_screen_ocr_engine_hint,
+            icon: FushiIcons.textFields,
+            // 截屏 / 拍照识字只有 Android、iOS、Windows、macOS 有。
+            visible: (SettingsContext c) => !Platform.isLinux,
+            options: <SettingsSegmentOption<String>>[
+              SettingsSegmentOption<String>(
+                value: kScreenOcrEngineSystem,
+                label: t.floating_ball_screen_ocr_engine_system,
+              ),
+              SettingsSegmentOption<String>(
+                value: kScreenOcrEngineLens,
+                label: t.floating_ball_screen_ocr_engine_lens,
+              ),
+            ],
+            selected: (SettingsContext c) =>
+                _prefs(c).floatingBallScreenOcrEngine == kScreenOcrEngineLens
+                ? kScreenOcrEngineLens
+                : kScreenOcrEngineSystem,
+            onChanged: (SettingsContext c, String value) async {
+              // 同意在这里收：截屏时 Fushi 可能在后台，弹不了同意框。
+              if (value == kScreenOcrEngineLens &&
+                  !await ensureGoogleLensDisclosure(
+                    c.context,
+                    scene: GoogleLensDisclosureScene.screenCaptures,
+                  )) {
+                c.refresh();
+                return;
+              }
+              await _prefs(c).setFloatingBallScreenOcrEngine(value);
+              c.refresh();
+            },
+            defaultValue: kScreenOcrEngineSystem,
+          ),
+          SettingsSegmentedItem<String>(
+            id: 'floating_ball.screen_ocr_lens_language',
+            title: t.floating_ball_screen_ocr_lens_language,
+            icon: FushiIcons.language,
+            dropdown: true,
+            visible: (SettingsContext c) =>
+                !Platform.isLinux &&
+                _prefs(c).floatingBallScreenOcrEngine == kScreenOcrEngineLens,
+            options: <SettingsSegmentOption<String>>[
+              for (final (String tag, String label)
+                  in kGoogleLensLanguageOptions)
+                SettingsSegmentOption<String>(value: tag, label: label),
+            ],
+            selected: (SettingsContext c) =>
+                _screenOcrLensLanguageShown(_prefs(c)),
+            onChanged: (SettingsContext c, String value) async {
+              await _prefs(c).setFloatingBallScreenOcrLensLanguage(value);
+              c.refresh();
+            },
+            defaultValue: 'ja',
+          ),
         ],
       ),
       for (final FloatingBallScope scope in FloatingBallScope.values)
@@ -126,6 +185,18 @@ SettingsDestination buildFloatingBallDestination() {
 }
 
 PreferencesRepository _prefs(SettingsContext c) => c.appModel.prefsRepo;
+
+/// 存的标签不在可选列表里（旧值 / 手改）时按日语显示，与请求兜底一致。
+String _screenOcrLensLanguageShown(PreferencesRepository prefs) {
+  final String stored = normalizeLensLanguage(
+    prefs.floatingBallScreenOcrLensLanguage,
+  );
+  return kGoogleLensLanguageOptions.any(
+        ((String, String) option) => option.$1 == stored,
+      )
+      ? stored
+      : 'ja';
+}
 
 bool get _systemBallSupported => FloatingBallScope.systemBallSupported(
   isAndroid: Platform.isAndroid,

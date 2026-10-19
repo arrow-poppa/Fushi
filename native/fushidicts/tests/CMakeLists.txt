@@ -150,6 +150,18 @@ add_test(NAME en_inflection_lookup_test
                  "${FUSHI_ROOT}/../../fushi/assets/transforms/en.json"
                  "${FUSHI_ROOT}/../../fushi/assets/transforms/en_irregular.json")
 
+# 德语 / 拉丁语 / 现代希腊语 / 俄语词形还原（真 *_extended.json / ru.json，与 manifest 全部变换表一起装载）。
+add_executable(european_inflection_lookup_test
+    "${CMAKE_CURRENT_SOURCE_DIR}/european_inflection_lookup_test.cpp")
+target_link_libraries(european_inflection_lookup_test PRIVATE fushidicts)
+target_include_directories(european_inflection_lookup_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+if(MSVC)
+  target_compile_options(european_inflection_lookup_test PRIVATE /utf-8 /Zc:__cplusplus /permissive-)
+endif()
+add_test(NAME european_inflection_lookup_test
+         COMMAND european_inflection_lookup_test
+                 "${FUSHI_ROOT}/../../fushi/assets/transforms")
+
 # 葡萄牙语 / 意大利语词形还原（真 pt.json / it.json，与 manifest 里全部变换表一起装载）。
 add_executable(romance_inflection_lookup_test
     "${CMAKE_CURRENT_SOURCE_DIR}/romance_inflection_lookup_test.cpp")

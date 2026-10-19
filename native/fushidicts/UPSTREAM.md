@@ -107,6 +107,8 @@
 - **FFI / JNI 桥**：`fushidicts_ffi.cpp`（Dart FFI）+ `fushidicts_jni.cpp`（Android JNI）。**不用上游 `c-bindings` 分支**。
   - 注意：`score` / `get_freq_value(s)_for_dict` / `Dictionary` 均为引擎内部符号，FFI/JNI 桥与 Dart binding 均未暴露——本批三处改动**不影响 FFI 签名**。
 - **变形还原按语言接龙**（`fushidicts_src/deinflector.cpp`）：条件位按语言各自从 0 分配，链上的下一条规则必须与上一条同语言（`DeinflectionResult::language`），否则位布局相同的两门语言（pt / it）会互相接龙到递归上限。单字只套整词规则（pt `é` → `ser`、it `è` → `essere`）。词性过滤（`pos_to_conditions`）仍按裸标签跨语言合并，只会偏宽、不会误拒。测试 `tests/romance_inflection_lookup_test.cpp`。
+- **同一语言多份变换表可各自新增条件**（`deinflector.cpp` 的 `next_bit_by_language_`）：后加载的文件（`de_extended` 等）接着这门语言已用到的位往下分，不再从 0 重来。
+- **欧洲语言拼写变体**（`text_processor.cpp` 的 `get_european_spelling_processors`，对齐 Yomitan 的 eszettPreprocessor / processDiphtongs / yoToE）：ß ↔ ss、æ/œ ↔ ae/oe、ё ↔ е；P3 预合成去变音补上 Latin Extended-A（拉丁文长音符 ā ē ī ō ū 等）。测试 `tests/european_inflection_lookup_test.cpp`。
 - **额外吸收的 sibling commit**：`feb48f5`（`ImportResult.detected_type`，自动词典类型检测），非 origin/main 主线。
 
 ## 依赖差异

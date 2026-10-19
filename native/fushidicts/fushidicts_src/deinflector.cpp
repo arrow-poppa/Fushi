@@ -169,8 +169,10 @@ void Deinflector::load_transforms_json(const std::string& json) {
 
   const std::string& lang = descriptor.language;
 
-  // Per-language bit allocation
-  int next_bit = 0;
+  // Per-language bit allocation. 同一门语言可以分几份文件（en + en_irregular，de +
+  // de_extended）：后来的文件新增条件时要接着这门语言已用到的位往下分，不能从 0 重来，
+  // 否则新条件会与前一份文件的条件同位、词性过滤与接龙全部串掉。
+  int& next_bit = next_bit_by_language_[lang];
   auto allocate_bit = [&]() -> uint64_t {
     if (next_bit >= 64) {
       LOGW("language '%s' exceeds 64 condition bits, extra conditions ignored", lang.c_str());

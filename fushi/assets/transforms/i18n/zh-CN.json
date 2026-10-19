@@ -234,5 +234,13 @@
   "Verb with an attached object or reflexive pronoun": "附着了宾语代词或自反代词的动词",
   "Irregular form of a verb": "动词的不规则形式",
   "Elided article or preposition before a word": "词前省音的冠词或介词",
-  "Shortened infinitive of a verb": "动词的截短不定式"
+  "Shortened infinitive of a verb": "动词的截短不定式",
+  "Aorist (simple past) form of a verb": "动词的不定过去时（简单过去时）形式",
+  "Conjugated form of a verb": "动词的变位形式",
+  "Dative plural form of a noun": "名词的复数与格形式",
+  "Declined form of a noun": "名词的变格形式",
+  "Genitive form of a noun": "名词的属格形式",
+  "Inflected form of an adjective": "形容词的屈折形式",
+  "Present tense form of a verb": "动词的现在时形式",
+  "Short form of an adjective": "形容词的短尾形式"
 }

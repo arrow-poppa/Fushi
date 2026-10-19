@@ -14,15 +14,21 @@ import 'dart:io';
 typedef Rule = Map<String, Object>;
 
 class TransformTable {
-  TransformTable(this.language, this.conditions);
+  TransformTable(this.language, this.conditions, {String? fileName})
+    : fileName = fileName ?? language;
 
   final String language;
+
+  /// The asset file name without `.json`. A table that extends an existing
+  /// language's rules (de_extended) keeps that language but lives in its own
+  /// file, like en_irregular.
+  final String fileName;
   final Map<String, Object> conditions;
   final Map<String, Map<String, Object>> _transforms =
       <String, Map<String, Object>>{};
 
-  _Transform transform(String name, String description) {
-    final _Transform t = _Transform();
+  TransformRules transform(String name, String description) {
+    final TransformRules t = TransformRules();
     _transforms[name] = <String, Object>{
       'name': name,
       'description': description,
@@ -38,7 +44,7 @@ class TransformTable {
   });
 }
 
-class _Transform {
+class TransformRules {
   final List<Rule> rules = <Rule>[];
   final Set<String> _seen = <String>{};
 
@@ -145,11 +151,14 @@ TransformTable portuguese() {
     ('ases', 'ás'),
     ('oses', 'ós'),
   ];
-  final _Transform plural = table.transform('plural', 'Plural form of a noun');
+  final TransformRules plural = table.transform(
+    'plural',
+    'Plural form of a noun',
+  );
   for (final (String from, String to) in plurals) {
     plural.suffix(from, to, const <String>['np'], const <String>['ns']);
   }
-  final _Transform pluralAdj = table.transform(
+  final TransformRules pluralAdj = table.transform(
     'plural adjective',
     'Plural form of an adjective',
   );
@@ -157,7 +166,7 @@ TransformTable portuguese() {
     pluralAdj.suffix(from, to, _adj, _adj);
   }
 
-  final _Transform feminine =
+  final TransformRules feminine =
       table.transform('feminine adjective', 'feminine form of an adjective')
         ..suffix('a', 'o', _adj, _adj)
         ..suffix('a', '', _adj, _adj)
@@ -299,8 +308,11 @@ TransformTable portuguese() {
     ..endings('er', <String>['era', 'eras', 'êramos', 'êreis', 'eram'], 'v_er')
     ..endings('ir', <String>['ira', 'iras', 'íramos', 'íreis', 'iram'], 'v_ir');
 
-  final _Transform future = table.transform('future', 'Future form of a verb');
-  final _Transform conditional = table.transform(
+  final TransformRules future = table.transform(
+    'future',
+    'Future form of a verb',
+  );
+  final TransformRules conditional = table.transform(
     'conditional',
     'Conditional form of a verb',
   );
@@ -472,7 +484,7 @@ TransformTable portuguese() {
     ..whole('pondo', 'pôr', _v, _v)
     ..suffix('pondo', 'por', _v, _v);
 
-  final _Transform participle =
+  final TransformRules participle =
       table.transform('participle', 'Participle form of a verb')
         ..suffix('ado', 'ar', _adj, const <String>['v_ar'])
         ..suffix('ido', 'er', _adj, const <String>['v_er'])
@@ -514,7 +526,7 @@ TransformTable portuguese() {
   }
 
   // Hyphenated object and reflexive pronouns (disse-me, chama-se, fazê-lo).
-  final _Transform clitic = table.transform(
+  final TransformRules clitic = table.transform(
     'attached pronoun',
     'Verb with an attached object or reflexive pronoun',
   );
@@ -539,7 +551,7 @@ TransformTable portuguese() {
   return table;
 }
 
-void _portugueseIrregulars(_Transform t) {
+void _portugueseIrregulars(TransformRules t) {
   t
     ..irregular('ser', <String>[
       'sou', 'és', 'é', 'somos', 'sois', 'são', //
@@ -738,7 +750,7 @@ TransformTable italian() {
   });
 
   // l'uomo, dell'anno, un'amica, quest'anno, c'è.
-  final _Transform elision = table.transform(
+  final TransformRules elision = table.transform(
     'elision',
     'Elided article or preposition before a word',
   );
@@ -755,7 +767,10 @@ TransformTable italian() {
     ]);
   }
 
-  final _Transform plural = table.transform('plural', 'Plural form of a noun');
+  final TransformRules plural = table.transform(
+    'plural',
+    'Plural form of a noun',
+  );
   for (final (String from, String to) in const <(String, String)>[
     ('i', 'o'),
     ('i', 'e'),
@@ -779,7 +794,7 @@ TransformTable italian() {
     ..whole('uomini', 'uomo', const <String>['np'], const <String>['ns'])
     ..whole('dei', 'dio', const <String>['np'], const <String>['ns']);
 
-  final _Transform pluralAdj = table.transform(
+  final TransformRules pluralAdj = table.transform(
     'plural adjective',
     'Plural form of an adjective',
   );
@@ -870,8 +885,11 @@ TransformTable italian() {
       'irono',
     ], 'v_ire');
 
-  final _Transform future = table.transform('future', 'Future form of a verb');
-  final _Transform conditional = table.transform(
+  final TransformRules future = table.transform(
+    'future',
+    'Future form of a verb',
+  );
+  final TransformRules conditional = table.transform(
     'conditional',
     'Conditional form of a verb',
   );
@@ -943,7 +961,7 @@ TransformTable italian() {
     ..suffix('ente', 'ere', _adj, const <String>['v_ere'])
     ..suffix('ente', 'ire', _adj, const <String>['v_ire']);
 
-  final _Transform participle =
+  final TransformRules participle =
       table.transform('participle', 'Participle form of a verb')
         ..suffix('ato', 'are', _adj, const <String>['v_are'])
         ..suffix('uto', 'ere', _adj, const <String>['v_ere'])
@@ -1004,7 +1022,7 @@ TransformTable italian() {
   // Pronouns written onto the verb: infinitive (parlarmi, dirglielo),
   // gerund (parlandogli), imperative (guardalo, prendili, facciamolo) and the
   // doubled monosyllabic imperatives (dimmi, fallo, dammi).
-  final _Transform clitic = table.transform(
+  final TransformRules clitic = table.transform(
     'attached pronoun',
     'Verb with an attached object or reflexive pronoun',
   );
@@ -1042,7 +1060,7 @@ TransformTable italian() {
   return table;
 }
 
-void _italianIrregulars(_Transform t) {
+void _italianIrregulars(TransformRules t) {
   t
     ..irregular('essere', <String>[
       'sono', 'sei', 'è', 'siamo', 'siete', //
@@ -1273,7 +1291,7 @@ void main() {
     italian(),
   ]) {
     File(
-      '${dir.path}/${table.language}.json',
+      '${dir.path}/${table.fileName}.json',
     ).writeAsStringSync('${table.encode()}\n');
   }
 }

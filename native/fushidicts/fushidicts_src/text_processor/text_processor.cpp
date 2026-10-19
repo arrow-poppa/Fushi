@@ -223,7 +223,8 @@ std::u32string strip_combining(const std::u32string& text) {
 
 // P3：预合成拉丁变音字母 → ASCII 基字母（curated，覆盖 Latin-1 Supplement）。
 // 处理“预合成”文本（实际文本主流）；P2 处理“已分解”文本。两者互补、互不依赖。
-// 不折叠 ß/Æ/Œ 等会改变长度的连字，保留原样。Latin Extended-A 暂未覆盖（见计划风险节）。
+// 不折叠 ß/Æ/Œ 等会改变长度的连字，保留原样。Latin Extended-A 另见下方的表（带横杠的
+// Đ Ł Ħ Ŧ Ŀ 也折成基字母：它们没有 NFD 分解，P2 去不掉）。
 char32_t precomposed_base(char32_t c) {
   switch (c) {
     case 0x00C0: case 0x00C1: case 0x00C2: case 0x00C3: case 0x00C4: case 0x00C5: return U'A';
@@ -242,8 +243,17 @@ char32_t precomposed_base(char32_t c) {
     case 0x00F2: case 0x00F3: case 0x00F4: case 0x00F5: case 0x00F6: case 0x00F8: return U'o';
     case 0x00F9: case 0x00FA: case 0x00FB: case 0x00FC: return U'u';
     case 0x00FD: case 0x00FF: return U'y';
-    default: return c;
+    default: break;
   }
+  // Latin Extended-A（U+0100–U+017F）：拉丁文的长音符（ā ē ī ō ū）、中东欧字母等。
+  // 下标 = c - 0x100；'\0' = 不是可去变音的字母（ı ĸ ŉ ſ / 连字 Ĳ Œ 等改长度的不折）。
+  static constexpr char kLatinExtendedA[] =
+      "AaAaAaCcCcCcCcDdDdEeEeEeEeEeGgGgGgGgHhHhIiIiIiIiI\0\0\0JjKk\0LlLlLlLlLlNnNnNn\0\0\0OoOoOo\0\0RrRrRrSsSsSsSsTtTtTtUuUuUuUuUuUuWwYyYZzZzZz\0";
+  if (c >= 0x0100 && c <= 0x017F) {
+    const char base = kLatinExtendedA[c - 0x0100];
+    if (base != '\0') return static_cast<char32_t>(base);
+  }
+  return c;
 }
 
 std::u32string strip_precomposed(const std::u32string& text) {
@@ -265,6 +275,57 @@ std::vector<TextProcessor> get_diacritic_removal_processors() {
       {.options = {0, 1}, .process = [](const std::u32string& text, int opt) -> std::u32string {
          return opt == 1 ? strip_precomposed(text) : text;
        }},
+  };
+}
+
+// 欧洲语言的拼写变体（对齐 Yomitan 的同名预处理器）。每个处理器 option 0 保留原文，
+// 其余两路「全换成 A」「全换成 B」；文本里没有相关字母时三路同串，变体表原地折叠。
+//   德语 ß ↔ ss（eszettPreprocessor）；拉丁 æ/œ ↔ ae/oe（processDiphtongs）；
+//   俄语 ё ↔ е（yoToE：文本与词典各自写或不写 ё）。
+std::u32string replace_all(const std::u32string& text, const std::u32string& from, const std::u32string& to) {
+  if (from.empty()) return text;
+  std::u32string result;
+  size_t i = 0;
+  while (i < text.size()) {
+    if (text.compare(i, from.size(), from) == 0) {
+      result += to;
+      i += from.size();
+    } else {
+      result += text[i++];
+    }
+  }
+  return result;
+}
+
+std::vector<TextProcessor> get_european_spelling_processors() {
+  return {
+      {.options = {0, 1, 2},
+       .process =
+           [](const std::u32string& text, int opt) -> std::u32string {
+             if (opt == 1) return replace_all(replace_all(text, U"ẞ", U"SS"), U"ß", U"ss");
+             if (opt == 2) return replace_all(replace_all(text, U"SS", U"ẞ"), U"ss", U"ß");
+             return text;
+           }},
+      {.options = {0, 1, 2},
+       .process =
+           [](const std::u32string& text, int opt) -> std::u32string {
+             if (opt == 1) {
+               return replace_all(replace_all(replace_all(replace_all(text, U"æ", U"ae"), U"Æ", U"AE"), U"œ", U"oe"),
+                                  U"Œ", U"OE");
+             }
+             if (opt == 2) {
+               return replace_all(replace_all(replace_all(replace_all(text, U"ae", U"æ"), U"AE", U"Æ"), U"oe", U"œ"),
+                                  U"OE", U"Œ");
+             }
+             return text;
+           }},
+      {.options = {0, 1, 2},
+       .process =
+           [](const std::u32string& text, int opt) -> std::u32string {
+             if (opt == 1) return replace_all(replace_all(text, U"ё", U"е"), U"Ё", U"Е");
+             if (opt == 2) return replace_all(replace_all(text, U"е", U"ё"), U"Е", U"Ё");
+             return text;
+           }},
   };
 }
 
@@ -709,6 +770,8 @@ std::vector<TextVariant> text_processor::process(const std::string& src) {
   all_processors.insert(all_processors.end(), en_processors.begin(), en_processors.end());
   auto dia_processors = get_diacritic_removal_processors();
   all_processors.insert(all_processors.end(), dia_processors.begin(), dia_processors.end());
+  auto spelling_processors = get_european_spelling_processors();
+  all_processors.insert(all_processors.end(), spelling_processors.begin(), spelling_processors.end());
   // 韩语拆字**必须挂在链尾**，这是一条隐式但要命的顺序不变式：链首附近的 nfkc
   // （get_japanese_processors 里那条）会把兼容字母兼容分解再规范合成回预合成音节，
   // NFKC("ㅂㅜㄷㅡ") == "부드"。把 get_korean_processors 前移到 nfkc 之前，拆字会被

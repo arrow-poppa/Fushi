@@ -98,6 +98,7 @@ class Deinflector {
   std::unordered_map<std::string, std::vector<PrefixRule>> prefix_transforms_;
   std::vector<PhrasalLanguage> phrasal_langs_;
   std::vector<std::string> languages_;
+  std::unordered_map<std::string, int> next_bit_by_language_;
   std::vector<TransformGroup> groups_;
   size_t max_suffix_length_;
   size_t max_prefix_length_;

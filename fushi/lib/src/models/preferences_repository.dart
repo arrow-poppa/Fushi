@@ -37,7 +37,11 @@ import 'package:fushi/src/media/manga/ocr/manga_ocr_engine.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_job_registry.dart'
     show kMangaOcrMaxSelectableTasks;
 import 'package:fushi_engine/ocr/manga_ocr_local_model.dart'
-    show kDefaultMangaOcrLocalModel, MangaOcrLocalModel;
+    show
+        kDefaultMangaOcrLocalModel,
+        MangaOcrLocalModel,
+        PpOcrLineDetectorModel,
+        mangaOcrLineDetectorChoice;
 import 'package:fushi_engine/media/torrent/anime_download_config.dart';
 import 'package:fushi_engine/media/torrent/torznab_client.dart';
 import 'package:fushi_engine/media/video/download/video_resource_prefs.dart';
@@ -238,6 +242,11 @@ class PreferencesRepository extends ChangeNotifier
     // AI 多 key 轮换的冷却记录（引擎全局装配点）：落偏好表，app 重启后被拒 /
     // 限流的 key 仍在冷却里，不会一启动就把同一把坏 key 再打一遍。
     aiKeyHealthStore = _PrefsAiKeyHealthStore(this);
+    // 通用 PaddleOCR 权重的行检测器（引擎全局装配点）：漫画 / 视频字幕 / 截屏识字
+    // 建会话时读它。
+    mangaOcrLineDetectorChoice = PpOcrLineDetectorModel.fromKey(
+      mangaOcrLineDetector,
+    );
   }
 
   /// BUG-2429 的存量数据修复标记。跑过一次就再也不跑。
@@ -4524,6 +4533,22 @@ class PreferencesRepository extends ChangeNotifier
 
   Future<void> setMangaOcrLocalModel(String value) async {
     await setPref('manga_ocr_local_model', value);
+    notifyListeners();
+  }
+
+  /// 通用 PaddleOCR 识别权重用的行检测器（`PpOcrLineDetectorModel.key`）：默认
+  /// PP-OCRv6 small，可换 tiny（小而快）。漫画 CTC 权重不读它。漫画、视频字幕与
+  /// 截屏识字共用这一个选择。
+  String get mangaOcrLineDetector =>
+      getPref(
+            'manga_ocr_line_detector',
+            defaultValue: PpOcrLineDetectorModel.small.key,
+          )
+          as String;
+
+  Future<void> setMangaOcrLineDetector(String value) async {
+    await setPref('manga_ocr_line_detector', value);
+    mangaOcrLineDetectorChoice = PpOcrLineDetectorModel.fromKey(value);
     notifyListeners();
   }
 

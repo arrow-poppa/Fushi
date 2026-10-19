@@ -60,9 +60,10 @@ class ScreenOcrLocalRead {
 }
 
 class _LoadedReader {
-  _LoadedReader(this.model, this.reader, this._sessions);
+  _LoadedReader(this.model, this.detector, this.reader, this._sessions);
 
   final MangaOcrLocalModel model;
+  final PpOcrLineDetectorModel detector;
   final PpOcrScreenReader reader;
   final List<OcrSession> _sessions;
 
@@ -141,13 +142,19 @@ class ScreenOcrLocalEngine {
   }
 
   Future<_LoadedReader> _readerFor(MangaOcrLocalModel model) async {
+    // 行检测器是全局选择（[mangaOcrLineDetectorChoice]），设置页改了下一张就换。
+    final PpOcrLineDetectorModel detector = mangaOcrLineDetectorChoice;
     final _LoadedReader? loaded = _loaded;
-    if (loaded != null && loaded.model == model) return loaded;
+    if (loaded != null &&
+        loaded.model == model &&
+        loaded.detector == detector) {
+      return loaded;
+    }
     if (loaded != null) {
       _loaded = null;
       await loaded.close();
     }
-    final Future<_LoadedReader> loading = _loading ??= _open(model);
+    final Future<_LoadedReader> loading = _loading ??= _open(model, detector);
     try {
       return _loaded = await loading;
     } finally {
@@ -155,7 +162,10 @@ class ScreenOcrLocalEngine {
     }
   }
 
-  Future<_LoadedReader> _open(MangaOcrLocalModel model) async {
+  Future<_LoadedReader> _open(
+    MangaOcrLocalModel model,
+    PpOcrLineDetectorModel detector,
+  ) async {
     if (!await isScreenOcrLocalModelReady(model)) {
       throw ScreenOcrLocalModelMissing(model);
     }
@@ -178,7 +188,7 @@ class ScreenOcrLocalEngine {
         );
     final Directory dir = await model.modelsDirectory();
     final OcrSession det = await factory.createSession(
-      p.join(dir.path, kPpOcrDetFileName),
+      p.join(dir.path, model.lineDetectorFileName(detector)),
       providers: providers(OcrModelKind.detection),
     );
     OcrSession? rec;
@@ -192,6 +202,7 @@ class ScreenOcrLocalEngine {
       ).readAsString();
       return _LoadedReader(
         model,
+        detector,
         PpOcrScreenReader.fromModels(
           detector: PpOcrLineDetector(det),
           recognizer: PpOcrLineRecognizer(

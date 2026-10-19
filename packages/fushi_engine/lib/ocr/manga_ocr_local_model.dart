@@ -17,6 +17,38 @@ import 'package:fushi_engine/ocr/manga_ocr_folder_job.dart';
 import 'package:fushi_engine/ocr/manga_ocr_model_fingerprint.dart' as model_fp;
 import 'package:fushi_engine/ocr/ocr_script_traits.dart';
 
+/// 通用 PaddleOCR 识别权重块内切行 / 切列用的行检测器，全局选一次、所有通用权重
+/// 共用。漫画微调权重（[MangaOcrLocalModel.mangaCtc]）不受它影响，恒用 small：它的
+/// 列检测与去注音口径是在 small 上调出来的。
+enum PpOcrLineDetectorModel {
+  /// PP-OCRv6 small det（默认，约 9.9 MB）：框更准。
+  small('ppocr_v6_small_det'),
+
+  /// PP-OCRv6 tiny det（约 1.7 MB）：小而快，CPU 吃紧的手机上用。
+  tiny('ppocr_v6_tiny_det');
+
+  const PpOcrLineDetectorModel(this.key);
+  final String key;
+
+  /// 不认识的值（旧备份 / 别的版本）回退 small。
+  static PpOcrLineDetectorModel fromKey(String key) {
+    for (final PpOcrLineDetectorModel model in values) {
+      if (model.key == key) return model;
+    }
+    return small;
+  }
+
+  String get fileName => switch (this) {
+    small => kPpOcrDetFileName,
+    tiny => kPpOcrTinyDetFileName,
+  };
+}
+
+/// 本机当前选中的行检测器（装配点：app 在偏好就绪 / 改动时赋值，无头服务端保持
+/// 默认）。只在根 isolate 读：送进 OCR isolate 的是解析好的文件路径与
+/// [MangaOcrModelPaths] 上的 key，不靠这个全局。
+PpOcrLineDetectorModel mangaOcrLineDetectorChoice = PpOcrLineDetectorModel.small;
+
 /// 默认本地模型：逐列 CTC（五端都能跑、约 42 MB）。
 const MangaOcrLocalModel kDefaultMangaOcrLocalModel =
     MangaOcrLocalModel.mangaCtc;
@@ -88,6 +120,14 @@ enum MangaOcrLocalModel {
   /// 装饰字读得可靠；别的权重不建补检。
   bool get sweepsMissedText => this == mangaCtc;
 
+  /// 行检测器可选（[PpOcrLineDetectorModel]）：通用 PaddleOCR 权重都可以，漫画
+  /// 微调权重恒用 small。
+  bool get usesLineDetectorChoice => this != mangaCtc;
+
+  /// 选 [detector] 时实际用的行检测器文件名。
+  String lineDetectorFileName(PpOcrLineDetectorModel detector) =>
+      usesLineDetectorChoice ? detector.fileName : kPpOcrDetFileName;
+
   /// 块识别权重的落盘名（逐列 CTC 与横排行路径共用这一个会话）。
   String get recognizerFileName => switch (this) {
     mangaCtc => kMangaCtcRecFileName,
@@ -127,18 +167,29 @@ enum MangaOcrLocalModel {
     _ => <MangaOcrModelFile>[..._kPpOcrSharedDetectors, ..._ppOcrSpec.files],
   };
 
-  String get cacheSignature => switch (this) {
-    // 不能以 kLocalMangaOcrEngineSignature 开头：那样已删除的 manga-ocr 留下的 v4
-    // 旧缓存会被当成可补几何的来源，把 manga-ocr 的文字冒充成 CTC 的结果
-    // （BUG-2813 的升级路径）。
-    mangaCtc => 'local-onnx-ctc-kellenok-v0.2-$kMangaOcrPipelineRevision',
-    ppocrV6Small =>
-      'local-onnx-ctc-ppocrv6-small-${kPpOcrRecRevision.substring(0, 8)}'
-          '-$kMangaOcrPipelineRevision',
-    _ =>
-      'local-onnx-ctc-$key-${_ppOcrSpec.revision.substring(0, 8)}'
-          '-$kMangaOcrPipelineRevision',
-  };
+  /// 根 isolate 里按当前选中的行检测器（[mangaOcrLineDetectorChoice]）求签名；
+  /// OCR isolate 里一律用 [cacheSignatureFor]。
+  String get cacheSignature => cacheSignatureFor(mangaOcrLineDetectorChoice);
+
+  /// 逐页缓存签名。换行检测器会换出不同的行框与文字，所以 tiny 另带后缀；small
+  /// 的签名与加入这个选择之前相同，存量缓存照常命中。
+  String cacheSignatureFor(PpOcrLineDetectorModel detector) {
+    final String base = switch (this) {
+      // 不能以 kLocalMangaOcrEngineSignature 开头：那样已删除的 manga-ocr 留下的
+      // v4 旧缓存会被当成可补几何的来源，把 manga-ocr 的文字冒充成 CTC 的结果
+      // （BUG-2813 的升级路径）。
+      mangaCtc => 'local-onnx-ctc-kellenok-v0.2-$kMangaOcrPipelineRevision',
+      ppocrV6Small =>
+        'local-onnx-ctc-ppocrv6-small-${kPpOcrRecRevision.substring(0, 8)}'
+            '-$kMangaOcrPipelineRevision',
+      _ =>
+        'local-onnx-ctc-$key-${_ppOcrSpec.revision.substring(0, 8)}'
+            '-$kMangaOcrPipelineRevision',
+    };
+    return usesLineDetectorChoice && detector != PpOcrLineDetectorModel.small
+        ? '$base-${detector.key}'
+        : base;
+  }
 
   /// 每个模型一个兄弟目录（`<support>/ocr_models/<name>`），删一个不波及另一个。
   /// 父目录由 [model_fp.defaultMangaOcrModelsDir]（旧 manga-ocr 目录）的 parent
@@ -319,8 +370,12 @@ const List<MangaOcrModelFile> kMangaCtcOcrModelManifest = <MangaOcrModelFile>[
   ),
 ];
 
-/// 通用 PP-OCR 识别权重共用的两个检测器（与 [kMangaCtcOcrModelManifest] 前两项
-/// 同一份文件）：漫画页的文字块检测 + 块内行 / 列检测。
+/// PP-OCRv6 tiny det 的落盘名。
+const String kPpOcrTinyDetFileName = 'ppocrv6_tiny_det.onnx';
+
+/// 通用 PP-OCR 识别权重共用的检测器：漫画页的文字块检测 + 块内行 / 列检测（small
+/// 与 tiny 都下，两个都在才能随时切换，tiny 只多 1.7 MB）。前两项与
+/// [kMangaCtcOcrModelManifest] 前两项同一份文件。
 const List<MangaOcrModelFile> _kPpOcrSharedDetectors = <MangaOcrModelFile>[
   MangaOcrModelFile(
     fileName: 'detector-v4-s_int8.onnx',
@@ -336,6 +391,18 @@ const List<MangaOcrModelFile> _kPpOcrSharedDetectors = <MangaOcrModelFile>[
         'https://huggingface.co/PaddlePaddle/PP-OCRv6_small_det_onnx/'
         'resolve/$kPpOcrDetRevision/inference.onnx',
     expectedBytes: 9880512,
+    role: MangaOcrModelRole.recognizer,
+  ),
+  // 精确字节数同下面几套识别权重一样没核实过：钉 LFS sha256，展示大小按 FP16
+  // 转换产物的 2.003 倍估。
+  MangaOcrModelFile(
+    fileName: kPpOcrTinyDetFileName,
+    url:
+        'https://huggingface.co/PaddlePaddle/PP-OCRv6_tiny_det_onnx/'
+        'resolve/2ba1506c0380b8f0b03dd142459aac66d4421f6c/inference.onnx',
+    expectedBytes: 0,
+    estimatedBytes: 1736000,
+    sha256: '193bab7a04fca699a6c82e6abb5b81bdb28177f0abd4062552b04908dafb19f8',
     role: MangaOcrModelRole.recognizer,
   ),
 ];

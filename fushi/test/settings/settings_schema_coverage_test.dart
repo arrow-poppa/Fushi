@@ -622,6 +622,8 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // （Android 在原生服务里经通道问 Dart），harness 里没有截屏。
   'floatingBall/Screen OCR engine':
       'test/floating_ball/screen_ocr_lens_test.dart: 原生截屏 OCR 经通道向 Dart 要 Lens 结果',
+  'floatingBall/Line detector':
+      'test/ocr/manga_ocr_local_model_test.dart: the cache signature follows the selected line detector',
   'floatingBall/Google Lens language':
       'test/floating_ball/screen_ocr_lens_test.dart: 一段折成两行：按逐字区拆回视觉行',
   // 关闭后自动恢复三态：生效点是宿主处理「关闭」与回到前台。

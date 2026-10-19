@@ -35,6 +35,22 @@
   两个检测器（约 21 MB）在每个目录里各存一份。
 - 语言 → 模型的映射是 `localMangaOcrModelForLanguage`，对齐 Lookupper 的语言表。
 
+### 行检测器（small / tiny）
+
+通用 PaddleOCR 权重在每个文字块里切行 / 切列时，可以选用 PP-OCRv6 small det（默认，
+约 9.9 MB，更准）或 PP-OCRv6 tiny det（PaddlePaddle/PP-OCRv6_tiny_det_onnx @ 2ba1506，
+约 1.7 MB，更快）。这是一个全局选择，偏好键 `manga_ocr_line_detector`：
+
+- 漫画、视频字幕与截屏识字共用。漫画 OCR 设置（含阅读器面板）与截屏识字设置里都有
+  「行检测器」行，只在当前用的是通用 PaddleOCR 模型时出现。
+- 漫画 CTC 权重不受影响，恒用 small：它的列检测与去注音阈值是在 small 上调的。
+- 两个检测器都在通用模型的清单里，切换不需要再下载；tiny 只多 1.7 MB。
+- 偏好在根 isolate 里同步到引擎全局 `mangaOcrLineDetectorChoice`（`loadFromDb` 时和
+  设置时各同步一次）。送进 OCR isolate 的是解析好的 `ppDetPath`，外加
+  `MangaOcrModelPaths.lineDetectorKey`。
+- 逐页缓存签名：选 tiny 时带 `-ppocr_v6_tiny_det` 后缀，与 small 的结果分开存；small
+  的签名与加入这个选择之前一样，已有缓存照常命中。
+
 ### 完整性
 
 新加的五套权重没能核实精确字节数（开发环境访问不了 HF API），所以

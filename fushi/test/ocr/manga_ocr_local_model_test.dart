@@ -90,6 +90,68 @@ void main() {
     },
   );
 
+  test('the line detector choice only applies to the generic models', () {
+    expect(
+      PpOcrLineDetectorModel.fromKey('ppocr_v6_tiny_det'),
+      PpOcrLineDetectorModel.tiny,
+    );
+    expect(
+      PpOcrLineDetectorModel.fromKey('unknown'),
+      PpOcrLineDetectorModel.small,
+    );
+    const MangaOcrLocalModel manga = MangaOcrLocalModel.mangaCtc;
+    expect(manga.usesLineDetectorChoice, isFalse);
+    expect(
+      manga.lineDetectorFileName(PpOcrLineDetectorModel.tiny),
+      kPpOcrDetFileName,
+    );
+    expect(
+      manga.cacheSignatureFor(PpOcrLineDetectorModel.tiny),
+      manga.cacheSignatureFor(PpOcrLineDetectorModel.small),
+    );
+    for (final MangaOcrLocalModel model in MangaOcrLocalModel.values) {
+      if (model == manga) continue;
+      expect(model.usesLineDetectorChoice, isTrue, reason: model.key);
+      expect(
+        model.lineDetectorFileName(PpOcrLineDetectorModel.tiny),
+        kPpOcrTinyDetFileName,
+      );
+      // Both detectors are downloaded, so switching never needs a download.
+      final Set<String> names = <String>{
+        for (final MangaOcrModelFile file in model.manifest) file.fileName,
+      };
+      expect(
+        names,
+        containsAll(<String>[kPpOcrDetFileName, kPpOcrTinyDetFileName]),
+      );
+      // Tiny results are cached apart; small keeps the signature it had.
+      expect(
+        model.cacheSignatureFor(PpOcrLineDetectorModel.tiny),
+        isNot(model.cacheSignatureFor(PpOcrLineDetectorModel.small)),
+      );
+      expect(
+        model.cacheSignatureFor(PpOcrLineDetectorModel.small),
+        isNot(contains('det')),
+      );
+    }
+  });
+
+  test('the cache signature follows the selected line detector', () {
+    final PpOcrLineDetectorModel previous = mangaOcrLineDetectorChoice;
+    addTearDown(() => mangaOcrLineDetectorChoice = previous);
+    const MangaOcrLocalModel model = MangaOcrLocalModel.ppocrV5Korean;
+    mangaOcrLineDetectorChoice = PpOcrLineDetectorModel.tiny;
+    expect(
+      model.cacheSignature,
+      model.cacheSignatureFor(PpOcrLineDetectorModel.tiny),
+    );
+    mangaOcrLineDetectorChoice = PpOcrLineDetectorModel.small;
+    expect(
+      model.cacheSignature,
+      model.cacheSignatureFor(PpOcrLineDetectorModel.small),
+    );
+  });
+
   test('a language code picks the model for its script', () {
     expect(localMangaOcrModelForLanguage('ja'), MangaOcrLocalModel.mangaCtc);
     expect(

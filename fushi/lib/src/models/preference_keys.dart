@@ -351,6 +351,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'manga_ocr_ai_mode',
   'manga_ocr_engine_preference',
   'manga_ocr_lens_language',
+  // String：通用 PaddleOCR 权重的行检测器 `ppocr_v6_small_det`（默认）/
+  // `ppocr_v6_tiny_det`。
+  'manga_ocr_line_detector',
   'manga_ocr_local_model',
   'manga_ocr_paired_host_model',
   'manga_ocr_parallel_tasks',

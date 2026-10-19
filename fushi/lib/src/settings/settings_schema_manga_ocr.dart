@@ -59,6 +59,8 @@ SettingsDestination buildOcrSettingsPage(SettingsDestinationId owner) {
       localModelSetter: c.appModel.setMangaOcrLocalModel,
       lensLanguageGetter: () => c.appModel.mangaOcrLensLanguage,
       lensLanguageSetter: c.appModel.setMangaOcrLensLanguage,
+      lineDetectorGetter: () => c.appModel.mangaOcrLineDetector,
+      lineDetectorSetter: c.appModel.setMangaOcrLineDetector,
       pairedHostModelGetter: () => c.appModel.mangaOcrPairedHostModel,
       pairedHostModelSetter: c.appModel.setMangaOcrPairedHostModel,
       // AI 档位面板按 aiModeGetter 是否为 null 自我门控：AI 模块关掉时不传。

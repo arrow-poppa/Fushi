@@ -9874,6 +9874,9 @@ class AppModel with ChangeNotifier {
   String get mangaOcrLensLanguage => prefsRepo.mangaOcrLensLanguage;
   Future<void> setMangaOcrLensLanguage(String value) =>
       prefsRepo.setMangaOcrLensLanguage(value);
+  String get mangaOcrLineDetector => prefsRepo.mangaOcrLineDetector;
+  Future<void> setMangaOcrLineDetector(String value) =>
+      prefsRepo.setMangaOcrLineDetector(value);
 
   String get asrTranscribeLanguage => prefsRepo.asrTranscribeLanguage;
   Future<void> setAsrTranscribeLanguage(String value) =>

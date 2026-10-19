@@ -1,7 +1,7 @@
 /// Generated file. Do not edit.
 ///
 /// Locales: 17
-/// Strings: 143956 (8468 per locale)
+/// Strings: 144024 (8472 per locale)
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -6352,6 +6352,11 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get manga_ocr_import_title => 'Import a downloaded model';
   String get manga_ocr_import_urls_copied => 'Download links copied';
   String get manga_ocr_lens_language_label => 'Recognition language';
+  String get manga_ocr_line_detector => 'Line detector';
+  String get manga_ocr_line_detector_desc =>
+      'Finds the text lines inside each block for the PaddleOCR models. Small is more accurate; tiny is smaller and faster on slow phones. The manga model always uses small. Shared by manga, video subtitle and screen OCR.';
+  String get manga_ocr_line_detector_small => 'PP-OCRv6 small (more accurate)';
+  String get manga_ocr_line_detector_tiny => 'PP-OCRv6 tiny (faster)';
   String get manga_ocr_local_model => 'Local OCR model';
   String get manga_ocr_mobile_note =>
       'On mobile, these models power the local engine for whole-volume, tap and selected-area OCR in the manga reader.';
@@ -22572,6 +22577,15 @@ class _StringsAr extends _StringsEn {
   String get manga_ocr_import_urls_copied => 'تم نسخ روابط التحميل';
   @override
   String get manga_ocr_lens_language_label => 'لغة التعرّف';
+  @override
+  String get manga_ocr_line_detector => 'Line detector';
+  @override
+  String get manga_ocr_line_detector_desc =>
+      'Finds the text lines inside each block for the PaddleOCR models. Small is more accurate; tiny is smaller and faster on slow phones. The manga model always uses small. Shared by manga, video subtitle and screen OCR.';
+  @override
+  String get manga_ocr_line_detector_small => 'PP-OCRv6 small (more accurate)';
+  @override
+  String get manga_ocr_line_detector_tiny => 'PP-OCRv6 tiny (faster)';
   @override
   String get manga_ocr_local_model => 'نموذج OCR المحلي';
   @override
@@ -43240,6 +43254,15 @@ class _StringsDe extends _StringsEn {
   String get manga_ocr_import_urls_copied => 'Download-Links kopiert';
   @override
   String get manga_ocr_lens_language_label => 'Erkennungssprache';
+  @override
+  String get manga_ocr_line_detector => 'Line detector';
+  @override
+  String get manga_ocr_line_detector_desc =>
+      'Finds the text lines inside each block for the PaddleOCR models. Small is more accurate; tiny is smaller and faster on slow phones. The manga model always uses small. Shared by manga, video subtitle and screen OCR.';
+  @override
+  String get manga_ocr_line_detector_small => 'PP-OCRv6 small (more accurate)';
+  @override
+  String get manga_ocr_line_detector_tiny => 'PP-OCRv6 tiny (faster)';
   @override
   String get manga_ocr_local_model => 'Lokales OCR-Modell';
   @override
@@ -64119,6 +64142,15 @@ class _StringsEs extends _StringsEn {
   String get manga_ocr_import_urls_copied => 'Enlaces de descarga copiados';
   @override
   String get manga_ocr_lens_language_label => 'Idioma de reconocimiento';
+  @override
+  String get manga_ocr_line_detector => 'Line detector';
+  @override
+  String get manga_ocr_line_detector_desc =>
+      'Finds the text lines inside each block for the PaddleOCR models. Small is more accurate; tiny is smaller and faster on slow phones. The manga model always uses small. Shared by manga, video subtitle and screen OCR.';
+  @override
+  String get manga_ocr_line_detector_small => 'PP-OCRv6 small (more accurate)';
+  @override
+  String get manga_ocr_line_detector_tiny => 'PP-OCRv6 tiny (faster)';
   @override
   String get manga_ocr_local_model => 'Modelo de OCR local';
   @override
@@ -85075,6 +85107,15 @@ class _StringsFr extends _StringsEn {
   @override
   String get manga_ocr_lens_language_label => 'Langue de reconnaissance';
   @override
+  String get manga_ocr_line_detector => 'Line detector';
+  @override
+  String get manga_ocr_line_detector_desc =>
+      'Finds the text lines inside each block for the PaddleOCR models. Small is more accurate; tiny is smaller and faster on slow phones. The manga model always uses small. Shared by manga, video subtitle and screen OCR.';
+  @override
+  String get manga_ocr_line_detector_small => 'PP-OCRv6 small (more accurate)';
+  @override
+  String get manga_ocr_line_detector_tiny => 'PP-OCRv6 tiny (faster)';
+  @override
   String get manga_ocr_local_model => 'Modèle OCR local';
   @override
   String get manga_ocr_mobile_note =>
@@ -105902,6 +105943,15 @@ class _StringsId extends _StringsEn {
   @override
   String get manga_ocr_lens_language_label => 'Bahasa pengenalan';
   @override
+  String get manga_ocr_line_detector => 'Line detector';
+  @override
+  String get manga_ocr_line_detector_desc =>
+      'Finds the text lines inside each block for the PaddleOCR models. Small is more accurate; tiny is smaller and faster on slow phones. The manga model always uses small. Shared by manga, video subtitle and screen OCR.';
+  @override
+  String get manga_ocr_line_detector_small => 'PP-OCRv6 small (more accurate)';
+  @override
+  String get manga_ocr_line_detector_tiny => 'PP-OCRv6 tiny (faster)';
+  @override
   String get manga_ocr_local_model => 'Model OCR lokal';
   @override
   String get manga_ocr_mobile_note =>
@@ -126629,6 +126679,15 @@ class _StringsIt extends _StringsEn {
   @override
   String get manga_ocr_lens_language_label => 'Lingua di riconoscimento';
   @override
+  String get manga_ocr_line_detector => 'Line detector';
+  @override
+  String get manga_ocr_line_detector_desc =>
+      'Finds the text lines inside each block for the PaddleOCR models. Small is more accurate; tiny is smaller and faster on slow phones. The manga model always uses small. Shared by manga, video subtitle and screen OCR.';
+  @override
+  String get manga_ocr_line_detector_small => 'PP-OCRv6 small (more accurate)';
+  @override
+  String get manga_ocr_line_detector_tiny => 'PP-OCRv6 tiny (faster)';
+  @override
   String get manga_ocr_local_model => 'Modello OCR locale';
   @override
   String get manga_ocr_mobile_note =>
@@ -146947,6 +147006,15 @@ class _StringsJa extends _StringsEn {
   @override
   String get manga_ocr_lens_language_label => '認識する言語';
   @override
+  String get manga_ocr_line_detector => 'Line detector';
+  @override
+  String get manga_ocr_line_detector_desc =>
+      'Finds the text lines inside each block for the PaddleOCR models. Small is more accurate; tiny is smaller and faster on slow phones. The manga model always uses small. Shared by manga, video subtitle and screen OCR.';
+  @override
+  String get manga_ocr_line_detector_small => 'PP-OCRv6 small (more accurate)';
+  @override
+  String get manga_ocr_line_detector_tiny => 'PP-OCRv6 tiny (faster)';
+  @override
   String get manga_ocr_local_model => 'ローカル OCR モデル';
   @override
   String get manga_ocr_mobile_note =>
@@ -166757,6 +166825,15 @@ class _StringsKo extends _StringsEn {
   String get manga_ocr_import_urls_copied => '다운로드 링크를 복사했어요';
   @override
   String get manga_ocr_lens_language_label => '인식 언어';
+  @override
+  String get manga_ocr_line_detector => 'Line detector';
+  @override
+  String get manga_ocr_line_detector_desc =>
+      'Finds the text lines inside each block for the PaddleOCR models. Small is more accurate; tiny is smaller and faster on slow phones. The manga model always uses small. Shared by manga, video subtitle and screen OCR.';
+  @override
+  String get manga_ocr_line_detector_small => 'PP-OCRv6 small (more accurate)';
+  @override
+  String get manga_ocr_line_detector_tiny => 'PP-OCRv6 tiny (faster)';
   @override
   String get manga_ocr_local_model => '로컬 OCR 모델';
   @override
@@ -187058,6 +187135,15 @@ class _StringsNl extends _StringsEn {
   String get manga_ocr_import_urls_copied => 'Downloadlinks gekopieerd';
   @override
   String get manga_ocr_lens_language_label => 'Herkenningstaal';
+  @override
+  String get manga_ocr_line_detector => 'Line detector';
+  @override
+  String get manga_ocr_line_detector_desc =>
+      'Finds the text lines inside each block for the PaddleOCR models. Small is more accurate; tiny is smaller and faster on slow phones. The manga model always uses small. Shared by manga, video subtitle and screen OCR.';
+  @override
+  String get manga_ocr_line_detector_small => 'PP-OCRv6 small (more accurate)';
+  @override
+  String get manga_ocr_line_detector_tiny => 'PP-OCRv6 tiny (faster)';
   @override
   String get manga_ocr_local_model => 'Lokaal OCR-model';
   @override
@@ -207864,6 +207950,15 @@ class _StringsPtBr extends _StringsEn {
   @override
   String get manga_ocr_lens_language_label => 'Idioma de reconhecimento';
   @override
+  String get manga_ocr_line_detector => 'Detector de linhas';
+  @override
+  String get manga_ocr_line_detector_desc =>
+      'Encontra as linhas de texto dentro de cada bloco para os modelos PaddleOCR. O small é mais preciso; o tiny é menor e mais rápido em celulares lentos. O modelo de mangá sempre usa o small. Vale para o OCR de mangá, de legendas de vídeo e de tela.';
+  @override
+  String get manga_ocr_line_detector_small => 'PP-OCRv6 small (mais preciso)';
+  @override
+  String get manga_ocr_line_detector_tiny => 'PP-OCRv6 tiny (mais rápido)';
+  @override
   String get manga_ocr_local_model => 'Modelo de OCR local';
   @override
   String get manga_ocr_mobile_note =>
@@ -228651,6 +228746,15 @@ class _StringsRu extends _StringsEn {
   @override
   String get manga_ocr_lens_language_label => 'Язык распознавания';
   @override
+  String get manga_ocr_line_detector => 'Line detector';
+  @override
+  String get manga_ocr_line_detector_desc =>
+      'Finds the text lines inside each block for the PaddleOCR models. Small is more accurate; tiny is smaller and faster on slow phones. The manga model always uses small. Shared by manga, video subtitle and screen OCR.';
+  @override
+  String get manga_ocr_line_detector_small => 'PP-OCRv6 small (more accurate)';
+  @override
+  String get manga_ocr_line_detector_tiny => 'PP-OCRv6 tiny (faster)';
+  @override
   String get manga_ocr_local_model => 'Локальная модель OCR';
   @override
   String get manga_ocr_mobile_note =>
@@ -249273,6 +249377,15 @@ class _StringsTh extends _StringsEn {
   @override
   String get manga_ocr_lens_language_label => 'ภาษาที่ใช้จดจำ';
   @override
+  String get manga_ocr_line_detector => 'Line detector';
+  @override
+  String get manga_ocr_line_detector_desc =>
+      'Finds the text lines inside each block for the PaddleOCR models. Small is more accurate; tiny is smaller and faster on slow phones. The manga model always uses small. Shared by manga, video subtitle and screen OCR.';
+  @override
+  String get manga_ocr_line_detector_small => 'PP-OCRv6 small (more accurate)';
+  @override
+  String get manga_ocr_line_detector_tiny => 'PP-OCRv6 tiny (faster)';
+  @override
   String get manga_ocr_local_model => 'โมเดล OCR ในเครื่อง';
   @override
   String get manga_ocr_mobile_note =>
@@ -269844,6 +269957,15 @@ class _StringsTr extends _StringsEn {
   String get manga_ocr_import_urls_copied => 'İndirme bağlantıları kopyalandı';
   @override
   String get manga_ocr_lens_language_label => 'Tanıma dili';
+  @override
+  String get manga_ocr_line_detector => 'Line detector';
+  @override
+  String get manga_ocr_line_detector_desc =>
+      'Finds the text lines inside each block for the PaddleOCR models. Small is more accurate; tiny is smaller and faster on slow phones. The manga model always uses small. Shared by manga, video subtitle and screen OCR.';
+  @override
+  String get manga_ocr_line_detector_small => 'PP-OCRv6 small (more accurate)';
+  @override
+  String get manga_ocr_line_detector_tiny => 'PP-OCRv6 tiny (faster)';
   @override
   String get manga_ocr_local_model => 'Yerel OCR modeli';
   @override
@@ -290470,6 +290592,15 @@ class _StringsVi extends _StringsEn {
   @override
   String get manga_ocr_lens_language_label => 'Ngôn ngữ nhận dạng';
   @override
+  String get manga_ocr_line_detector => 'Line detector';
+  @override
+  String get manga_ocr_line_detector_desc =>
+      'Finds the text lines inside each block for the PaddleOCR models. Small is more accurate; tiny is smaller and faster on slow phones. The manga model always uses small. Shared by manga, video subtitle and screen OCR.';
+  @override
+  String get manga_ocr_line_detector_small => 'PP-OCRv6 small (more accurate)';
+  @override
+  String get manga_ocr_line_detector_tiny => 'PP-OCRv6 tiny (faster)';
+  @override
   String get manga_ocr_local_model => 'Mô hình OCR cục bộ';
   @override
   String get manga_ocr_mobile_note =>
@@ -310136,6 +310267,15 @@ class _StringsZhCn extends _StringsEn {
   @override
   String get manga_ocr_lens_language_label => '识别语言';
   @override
+  String get manga_ocr_line_detector => '行检测器';
+  @override
+  String get manga_ocr_line_detector_desc =>
+      'PaddleOCR 模型在每个文字块里找出文字行用的检测器。small 更准；tiny 更小，在慢手机上更快。漫画模型恒用 small。漫画、视频字幕与截屏识字共用这一个选择。';
+  @override
+  String get manga_ocr_line_detector_small => 'PP-OCRv6 small（更准）';
+  @override
+  String get manga_ocr_line_detector_tiny => 'PP-OCRv6 tiny（更快）';
+  @override
   String get manga_ocr_local_model => '本机 OCR 模型';
   @override
   String get manga_ocr_mobile_note => '移动端下载的模型供漫画阅读页的本地引擎使用：整卷、点击、框选区域识别都走它。';
@@ -329156,6 +329296,15 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get manga_ocr_lens_language_label => '識別語言';
   @override
+  String get manga_ocr_line_detector => 'Line detector';
+  @override
+  String get manga_ocr_line_detector_desc =>
+      'Finds the text lines inside each block for the PaddleOCR models. Small is more accurate; tiny is smaller and faster on slow phones. The manga model always uses small. Shared by manga, video subtitle and screen OCR.';
+  @override
+  String get manga_ocr_line_detector_small => 'PP-OCRv6 small (more accurate)';
+  @override
+  String get manga_ocr_line_detector_tiny => 'PP-OCRv6 tiny (faster)';
+  @override
   String get manga_ocr_local_model => '本機 OCR 模型';
   @override
   String get manga_ocr_mobile_note => '移動端下載的模型供漫畫閱讀頁的本地引擎使用：整卷、點擊、框選區域識別都走它。';
@@ -347431,6 +347580,14 @@ extension on _StringsEn {
         return 'Download links copied';
       case 'manga_ocr_lens_language_label':
         return 'Recognition language';
+      case 'manga_ocr_line_detector':
+        return 'Line detector';
+      case 'manga_ocr_line_detector_desc':
+        return 'Finds the text lines inside each block for the PaddleOCR models. Small is more accurate; tiny is smaller and faster on slow phones. The manga model always uses small. Shared by manga, video subtitle and screen OCR.';
+      case 'manga_ocr_line_detector_small':
+        return 'PP-OCRv6 small (more accurate)';
+      case 'manga_ocr_line_detector_tiny':
+        return 'PP-OCRv6 tiny (faster)';
       case 'manga_ocr_local_model':
         return 'Local OCR model';
       case 'manga_ocr_mobile_note':
@@ -364997,6 +365154,14 @@ extension on _StringsAr {
         return 'تم نسخ روابط التحميل';
       case 'manga_ocr_lens_language_label':
         return 'لغة التعرّف';
+      case 'manga_ocr_line_detector':
+        return 'Line detector';
+      case 'manga_ocr_line_detector_desc':
+        return 'Finds the text lines inside each block for the PaddleOCR models. Small is more accurate; tiny is smaller and faster on slow phones. The manga model always uses small. Shared by manga, video subtitle and screen OCR.';
+      case 'manga_ocr_line_detector_small':
+        return 'PP-OCRv6 small (more accurate)';
+      case 'manga_ocr_line_detector_tiny':
+        return 'PP-OCRv6 tiny (faster)';
       case 'manga_ocr_local_model':
         return 'نموذج OCR المحلي';
       case 'manga_ocr_mobile_note':
@@ -382608,6 +382773,14 @@ extension on _StringsDe {
         return 'Download-Links kopiert';
       case 'manga_ocr_lens_language_label':
         return 'Erkennungssprache';
+      case 'manga_ocr_line_detector':
+        return 'Line detector';
+      case 'manga_ocr_line_detector_desc':
+        return 'Finds the text lines inside each block for the PaddleOCR models. Small is more accurate; tiny is smaller and faster on slow phones. The manga model always uses small. Shared by manga, video subtitle and screen OCR.';
+      case 'manga_ocr_line_detector_small':
+        return 'PP-OCRv6 small (more accurate)';
+      case 'manga_ocr_line_detector_tiny':
+        return 'PP-OCRv6 tiny (faster)';
       case 'manga_ocr_local_model':
         return 'Lokales OCR-Modell';
       case 'manga_ocr_mobile_note':
@@ -400236,6 +400409,14 @@ extension on _StringsEs {
         return 'Enlaces de descarga copiados';
       case 'manga_ocr_lens_language_label':
         return 'Idioma de reconocimiento';
+      case 'manga_ocr_line_detector':
+        return 'Line detector';
+      case 'manga_ocr_line_detector_desc':
+        return 'Finds the text lines inside each block for the PaddleOCR models. Small is more accurate; tiny is smaller and faster on slow phones. The manga model always uses small. Shared by manga, video subtitle and screen OCR.';
+      case 'manga_ocr_line_detector_small':
+        return 'PP-OCRv6 small (more accurate)';
+      case 'manga_ocr_line_detector_tiny':
+        return 'PP-OCRv6 tiny (faster)';
       case 'manga_ocr_local_model':
         return 'Modelo de OCR local';
       case 'manga_ocr_mobile_note':
@@ -417872,6 +418053,14 @@ extension on _StringsFr {
         return 'Liens de téléchargement copiés';
       case 'manga_ocr_lens_language_label':
         return 'Langue de reconnaissance';
+      case 'manga_ocr_line_detector':
+        return 'Line detector';
+      case 'manga_ocr_line_detector_desc':
+        return 'Finds the text lines inside each block for the PaddleOCR models. Small is more accurate; tiny is smaller and faster on slow phones. The manga model always uses small. Shared by manga, video subtitle and screen OCR.';
+      case 'manga_ocr_line_detector_small':
+        return 'PP-OCRv6 small (more accurate)';
+      case 'manga_ocr_line_detector_tiny':
+        return 'PP-OCRv6 tiny (faster)';
       case 'manga_ocr_local_model':
         return 'Modèle OCR local';
       case 'manga_ocr_mobile_note':
@@ -435484,6 +435673,14 @@ extension on _StringsId {
         return 'Tautan unduhan disalin';
       case 'manga_ocr_lens_language_label':
         return 'Bahasa pengenalan';
+      case 'manga_ocr_line_detector':
+        return 'Line detector';
+      case 'manga_ocr_line_detector_desc':
+        return 'Finds the text lines inside each block for the PaddleOCR models. Small is more accurate; tiny is smaller and faster on slow phones. The manga model always uses small. Shared by manga, video subtitle and screen OCR.';
+      case 'manga_ocr_line_detector_small':
+        return 'PP-OCRv6 small (more accurate)';
+      case 'manga_ocr_line_detector_tiny':
+        return 'PP-OCRv6 tiny (faster)';
       case 'manga_ocr_local_model':
         return 'Model OCR lokal';
       case 'manga_ocr_mobile_note':
@@ -453082,6 +453279,14 @@ extension on _StringsIt {
         return 'Link di download copiati';
       case 'manga_ocr_lens_language_label':
         return 'Lingua di riconoscimento';
+      case 'manga_ocr_line_detector':
+        return 'Line detector';
+      case 'manga_ocr_line_detector_desc':
+        return 'Finds the text lines inside each block for the PaddleOCR models. Small is more accurate; tiny is smaller and faster on slow phones. The manga model always uses small. Shared by manga, video subtitle and screen OCR.';
+      case 'manga_ocr_line_detector_small':
+        return 'PP-OCRv6 small (more accurate)';
+      case 'manga_ocr_line_detector_tiny':
+        return 'PP-OCRv6 tiny (faster)';
       case 'manga_ocr_local_model':
         return 'Modello OCR locale';
       case 'manga_ocr_mobile_note':
@@ -470641,6 +470846,14 @@ extension on _StringsJa {
         return 'ダウンロードリンクをコピーしました';
       case 'manga_ocr_lens_language_label':
         return '認識する言語';
+      case 'manga_ocr_line_detector':
+        return 'Line detector';
+      case 'manga_ocr_line_detector_desc':
+        return 'Finds the text lines inside each block for the PaddleOCR models. Small is more accurate; tiny is smaller and faster on slow phones. The manga model always uses small. Shared by manga, video subtitle and screen OCR.';
+      case 'manga_ocr_line_detector_small':
+        return 'PP-OCRv6 small (more accurate)';
+      case 'manga_ocr_line_detector_tiny':
+        return 'PP-OCRv6 tiny (faster)';
       case 'manga_ocr_local_model':
         return 'ローカル OCR モデル';
       case 'manga_ocr_mobile_note':
@@ -488138,6 +488351,14 @@ extension on _StringsKo {
         return '다운로드 링크를 복사했어요';
       case 'manga_ocr_lens_language_label':
         return '인식 언어';
+      case 'manga_ocr_line_detector':
+        return 'Line detector';
+      case 'manga_ocr_line_detector_desc':
+        return 'Finds the text lines inside each block for the PaddleOCR models. Small is more accurate; tiny is smaller and faster on slow phones. The manga model always uses small. Shared by manga, video subtitle and screen OCR.';
+      case 'manga_ocr_line_detector_small':
+        return 'PP-OCRv6 small (more accurate)';
+      case 'manga_ocr_line_detector_tiny':
+        return 'PP-OCRv6 tiny (faster)';
       case 'manga_ocr_local_model':
         return '로컬 OCR 모델';
       case 'manga_ocr_mobile_note':
@@ -505699,6 +505920,14 @@ extension on _StringsNl {
         return 'Downloadlinks gekopieerd';
       case 'manga_ocr_lens_language_label':
         return 'Herkenningstaal';
+      case 'manga_ocr_line_detector':
+        return 'Line detector';
+      case 'manga_ocr_line_detector_desc':
+        return 'Finds the text lines inside each block for the PaddleOCR models. Small is more accurate; tiny is smaller and faster on slow phones. The manga model always uses small. Shared by manga, video subtitle and screen OCR.';
+      case 'manga_ocr_line_detector_small':
+        return 'PP-OCRv6 small (more accurate)';
+      case 'manga_ocr_line_detector_tiny':
+        return 'PP-OCRv6 tiny (faster)';
       case 'manga_ocr_local_model':
         return 'Lokaal OCR-model';
       case 'manga_ocr_mobile_note':
@@ -523311,6 +523540,14 @@ extension on _StringsPtBr {
         return 'Links de download copiados';
       case 'manga_ocr_lens_language_label':
         return 'Idioma de reconhecimento';
+      case 'manga_ocr_line_detector':
+        return 'Detector de linhas';
+      case 'manga_ocr_line_detector_desc':
+        return 'Encontra as linhas de texto dentro de cada bloco para os modelos PaddleOCR. O small é mais preciso; o tiny é menor e mais rápido em celulares lentos. O modelo de mangá sempre usa o small. Vale para o OCR de mangá, de legendas de vídeo e de tela.';
+      case 'manga_ocr_line_detector_small':
+        return 'PP-OCRv6 small (mais preciso)';
+      case 'manga_ocr_line_detector_tiny':
+        return 'PP-OCRv6 tiny (mais rápido)';
       case 'manga_ocr_local_model':
         return 'Modelo de OCR local';
       case 'manga_ocr_mobile_note':
@@ -540926,6 +541163,14 @@ extension on _StringsRu {
         return 'Ссылки скопированы';
       case 'manga_ocr_lens_language_label':
         return 'Язык распознавания';
+      case 'manga_ocr_line_detector':
+        return 'Line detector';
+      case 'manga_ocr_line_detector_desc':
+        return 'Finds the text lines inside each block for the PaddleOCR models. Small is more accurate; tiny is smaller and faster on slow phones. The manga model always uses small. Shared by manga, video subtitle and screen OCR.';
+      case 'manga_ocr_line_detector_small':
+        return 'PP-OCRv6 small (more accurate)';
+      case 'manga_ocr_line_detector_tiny':
+        return 'PP-OCRv6 tiny (faster)';
       case 'manga_ocr_local_model':
         return 'Локальная модель OCR';
       case 'manga_ocr_mobile_note':
@@ -558511,6 +558756,14 @@ extension on _StringsTh {
         return 'คัดลอกลิงก์ดาวน์โหลดแล้ว';
       case 'manga_ocr_lens_language_label':
         return 'ภาษาที่ใช้จดจำ';
+      case 'manga_ocr_line_detector':
+        return 'Line detector';
+      case 'manga_ocr_line_detector_desc':
+        return 'Finds the text lines inside each block for the PaddleOCR models. Small is more accurate; tiny is smaller and faster on slow phones. The manga model always uses small. Shared by manga, video subtitle and screen OCR.';
+      case 'manga_ocr_line_detector_small':
+        return 'PP-OCRv6 small (more accurate)';
+      case 'manga_ocr_line_detector_tiny':
+        return 'PP-OCRv6 tiny (faster)';
       case 'manga_ocr_local_model':
         return 'โมเดล OCR ในเครื่อง';
       case 'manga_ocr_mobile_note':
@@ -576101,6 +576354,14 @@ extension on _StringsTr {
         return 'İndirme bağlantıları kopyalandı';
       case 'manga_ocr_lens_language_label':
         return 'Tanıma dili';
+      case 'manga_ocr_line_detector':
+        return 'Line detector';
+      case 'manga_ocr_line_detector_desc':
+        return 'Finds the text lines inside each block for the PaddleOCR models. Small is more accurate; tiny is smaller and faster on slow phones. The manga model always uses small. Shared by manga, video subtitle and screen OCR.';
+      case 'manga_ocr_line_detector_small':
+        return 'PP-OCRv6 small (more accurate)';
+      case 'manga_ocr_line_detector_tiny':
+        return 'PP-OCRv6 tiny (faster)';
       case 'manga_ocr_local_model':
         return 'Yerel OCR modeli';
       case 'manga_ocr_mobile_note':
@@ -593689,6 +593950,14 @@ extension on _StringsVi {
         return 'Đã sao chép liên kết tải';
       case 'manga_ocr_lens_language_label':
         return 'Ngôn ngữ nhận dạng';
+      case 'manga_ocr_line_detector':
+        return 'Line detector';
+      case 'manga_ocr_line_detector_desc':
+        return 'Finds the text lines inside each block for the PaddleOCR models. Small is more accurate; tiny is smaller and faster on slow phones. The manga model always uses small. Shared by manga, video subtitle and screen OCR.';
+      case 'manga_ocr_line_detector_small':
+        return 'PP-OCRv6 small (more accurate)';
+      case 'manga_ocr_line_detector_tiny':
+        return 'PP-OCRv6 tiny (faster)';
       case 'manga_ocr_local_model':
         return 'Mô hình OCR cục bộ';
       case 'manga_ocr_mobile_note':
@@ -611159,6 +611428,14 @@ extension on _StringsZhCn {
         return '下载链接已复制';
       case 'manga_ocr_lens_language_label':
         return '识别语言';
+      case 'manga_ocr_line_detector':
+        return '行检测器';
+      case 'manga_ocr_line_detector_desc':
+        return 'PaddleOCR 模型在每个文字块里找出文字行用的检测器。small 更准；tiny 更小，在慢手机上更快。漫画模型恒用 small。漫画、视频字幕与截屏识字共用这一个选择。';
+      case 'manga_ocr_line_detector_small':
+        return 'PP-OCRv6 small（更准）';
+      case 'manga_ocr_line_detector_tiny':
+        return 'PP-OCRv6 tiny（更快）';
       case 'manga_ocr_local_model':
         return '本机 OCR 模型';
       case 'manga_ocr_mobile_note':
@@ -628562,6 +628839,14 @@ extension on _StringsZhHk {
         return '已複製下載連結';
       case 'manga_ocr_lens_language_label':
         return '識別語言';
+      case 'manga_ocr_line_detector':
+        return 'Line detector';
+      case 'manga_ocr_line_detector_desc':
+        return 'Finds the text lines inside each block for the PaddleOCR models. Small is more accurate; tiny is smaller and faster on slow phones. The manga model always uses small. Shared by manga, video subtitle and screen OCR.';
+      case 'manga_ocr_line_detector_small':
+        return 'PP-OCRv6 small (more accurate)';
+      case 'manga_ocr_line_detector_tiny':
+        return 'PP-OCRv6 tiny (faster)';
       case 'manga_ocr_local_model':
         return '本機 OCR 模型';
       case 'manga_ocr_mobile_note':

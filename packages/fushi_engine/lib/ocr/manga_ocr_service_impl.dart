@@ -82,6 +82,7 @@ class MangaOcrModelPaths {
     this.ppRecDictPath = '',
     this.ctcRecPath = '',
     this.modelKey = 'manga_ctc',
+    this.lineDetectorKey = 'ppocr_v6_small_det',
   });
 
   final String detectorPath;
@@ -89,6 +90,10 @@ class MangaOcrModelPaths {
   /// 这组文件属于哪个本地模型（[MangaOcrLocalModel.key]）：isolate 据此取文字
   /// 特征（[MangaOcrLocalModel.scriptTraits]）与缓存签名。String 才能跨 isolate。
   final String modelKey;
+
+  /// [ppDetPath] 是哪个行检测器（[PpOcrLineDetectorModel.key]）：isolate 据此求缓存
+  /// 签名（根 isolate 的 [mangaOcrLineDetectorChoice] 带不过 isolate 边界）。
+  final String lineDetectorKey;
 
   /// 逐列 CTC 的列识别 rec（漫画微调的 PP-OCRv6）；空 = 不是 CTC 模型。
   final String ctcRecPath;
@@ -627,7 +632,9 @@ Future<void> _volumeJobIsolateMain(_JobIsolateArgs args) async {
         await model_fp.resolveLocalMangaOcrEngineSignature(
           Directory(p.dirname(args.modelPaths.detectorPath)),
           manifest: jobModel.manifest,
-          baseSignature: jobModel.cacheSignature,
+          baseSignature: jobModel.cacheSignatureFor(
+            PpOcrLineDetectorModel.fromKey(args.modelPaths.lineDetectorKey),
+          ),
         );
     final String mangaJsonPath = await runMangaOcrFolderJob(
       imageDirPath: args.imageDirPath,
@@ -1439,9 +1446,13 @@ class MangaOcrServiceImpl
       MangaOcrModelRole.recognizer,
       localModel.recognizerFileName,
     );
+    final PpOcrLineDetectorModel lineDetector = mangaOcrLineDetectorChoice;
     return MangaOcrModelPaths(
       detectorPath: pathOf(MangaOcrModelRole.detector, '.onnx'),
-      ppDetPath: pathOf(MangaOcrModelRole.recognizer, kPpOcrDetFileName),
+      ppDetPath: pathOf(
+        MangaOcrModelRole.recognizer,
+        localModel.lineDetectorFileName(lineDetector),
+      ),
       ppRecPath: ctcRecPath,
       ppRecDictPath: pathOf(
         MangaOcrModelRole.recognizer,
@@ -1449,6 +1460,9 @@ class MangaOcrServiceImpl
       ),
       ctcRecPath: ctcRecPath,
       modelKey: localModel.key,
+      lineDetectorKey: localModel.usesLineDetectorChoice
+          ? lineDetector.key
+          : PpOcrLineDetectorModel.small.key,
     );
   }
 

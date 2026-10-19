@@ -177,6 +177,37 @@ SettingsDestination buildFloatingBallDestination() {
             },
             defaultValue: kScreenOcrEngineSystem,
           ),
+          // 与漫画 OCR 共用同一个行检测器偏好（`manga_ocr_line_detector`）：只对通用
+          // PaddleOCR 模型有意义，漫画 CTC 模型恒用 small。
+          SettingsSegmentedItem<String>(
+            id: 'floating_ball.screen_ocr_line_detector',
+            title: t.manga_ocr_line_detector,
+            subtitle: t.manga_ocr_line_detector_desc,
+            icon: FushiIcons.textFields,
+            visible: (SettingsContext c) =>
+                !Platform.isLinux &&
+                _prefs(c).floatingBallScreenOcrEngine ==
+                    kScreenOcrEngineLocal &&
+                _screenOcrLocalModel(_prefs(c)).usesLineDetectorChoice,
+            options: <SettingsSegmentOption<String>>[
+              SettingsSegmentOption<String>(
+                value: PpOcrLineDetectorModel.small.key,
+                label: t.manga_ocr_line_detector_small,
+              ),
+              SettingsSegmentOption<String>(
+                value: PpOcrLineDetectorModel.tiny.key,
+                label: t.manga_ocr_line_detector_tiny,
+              ),
+            ],
+            selected: (SettingsContext c) => PpOcrLineDetectorModel.fromKey(
+              _prefs(c).mangaOcrLineDetector,
+            ).key,
+            onChanged: (SettingsContext c, String value) async {
+              await _prefs(c).setMangaOcrLineDetector(value);
+              c.refresh();
+            },
+            defaultValue: PpOcrLineDetectorModel.small.key,
+          ),
           SettingsSegmentedItem<String>(
             id: 'floating_ball.screen_ocr_lens_language',
             title: t.floating_ball_screen_ocr_lens_language,

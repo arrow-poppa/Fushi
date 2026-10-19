@@ -65,6 +65,8 @@ class MangaOcrSettingsPage extends ConsumerWidget {
               localModelSetter: appModel.setMangaOcrLocalModel,
               lensLanguageGetter: () => appModel.mangaOcrLensLanguage,
               lensLanguageSetter: appModel.setMangaOcrLensLanguage,
+              lineDetectorGetter: () => appModel.mangaOcrLineDetector,
+              lineDetectorSetter: appModel.setMangaOcrLineDetector,
               pairedHostModelGetter: () => appModel.mangaOcrPairedHostModel,
               pairedHostModelSetter: appModel.setMangaOcrPairedHostModel,
               // AI 档位面板按 aiModeGetter 是否为 null 自我门控：AI 模块关掉时不传。

@@ -59,6 +59,8 @@ class MangaOcrSettingsSection extends ConsumerStatefulWidget {
     this.localModelSetter,
     this.lensLanguageGetter,
     this.lensLanguageSetter,
+    this.lineDetectorGetter,
+    this.lineDetectorSetter,
     this.modelsDirProvider,
     this.modelImporter,
     this.pickImportPaths,
@@ -104,6 +106,11 @@ class MangaOcrSettingsSection extends ConsumerStatefulWidget {
   /// Google Lens 识别语言偏好读写（可选：省略时下拉不出现）。
   final String Function()? lensLanguageGetter;
   final Future<void> Function(String value)? lensLanguageSetter;
+
+  /// 通用 PaddleOCR 模型的行检测器（`PpOcrLineDetectorModel.key`）读写；省略时
+  /// 选择行不出现。漫画 CTC 模型恒用 small，选它时这一行也不出现。
+  final String Function()? lineDetectorGetter;
+  final Future<void> Function(String value)? lineDetectorSetter;
 
   /// 手动导入的落地目录；null = 真实模型目录。
   final Future<Directory> Function()? modelsDirProvider;
@@ -153,6 +160,7 @@ class _MangaOcrSettingsSectionState
   late int _maxParallelTasks;
   late MangaOcrLocalModel _localModel;
   late String _lensLanguage;
+  late PpOcrLineDetectorModel _lineDetector;
   late MangaAiOcrMode _aiMode;
 
   /// 用户亲手选过档位（偏好非空）。
@@ -210,6 +218,9 @@ class _MangaOcrSettingsSectionState
       _readEnginePreference(),
     );
     _lensLanguage = normalizeLensLanguage(widget.lensLanguageGetter?.call());
+    _lineDetector = PpOcrLineDetectorModel.fromKey(
+      widget.lineDetectorGetter?.call() ?? PpOcrLineDetectorModel.small.key,
+    );
     final String? storedAiMode = widget.aiModeGetter?.call();
     // 没选过 = 默认意图「低置信度」（首次使用前确认一次）；显示默认意图，但不因
     // 「还没配提供商」去提示——那时根本不会问也不会发。
@@ -666,6 +677,7 @@ class _MangaOcrSettingsSectionState
       title: t.manga_reader_group_ocr_engine,
       children: <Widget>[
         _buildEngineRow(theme),
+        if (_showLineDetector) _buildPanelLineDetector(),
         if (widget.lensLanguageGetter != null) _buildPanelLensLanguage(),
       ],
     );
@@ -1150,6 +1162,7 @@ class _MangaOcrSettingsSectionState
     final List<Widget> options = <Widget>[
       if (isDesktopPlatform && widget.parallelTasksGetter != null)
         _buildPanelParallelTasks(),
+      if (_showLineDetector) _buildPanelLineDetector(),
       if (widget.lensLanguageGetter != null) _buildPanelLensLanguage(),
       if (widget.aiModeGetter != null) _buildPanelAiMode(theme),
     ];
@@ -1231,6 +1244,40 @@ class _MangaOcrSettingsSectionState
           : (int value) async {
               await widget.parallelTasksSetter!(value);
               if (mounted) setState(() => _parallelTasks = value);
+            },
+    );
+  }
+
+  /// 行检测器只对通用 PaddleOCR 模型有意义，且只在会用到本机模型的引擎（本地 /
+  /// 自动）下出现。
+  bool get _showLineDetector =>
+      widget.lineDetectorGetter != null &&
+      _localModel.usesLineDetectorChoice &&
+      (_enginePreference == MangaOcrEnginePreference.localOnnx ||
+          _enginePreference == MangaOcrEnginePreference.auto);
+
+  Widget _buildPanelLineDetector() {
+    return MangaPanelChoiceRow<PpOcrLineDetectorModel>(
+      key: const ValueKey<String>('manga_ocr_line_detector'),
+      title: t.manga_ocr_line_detector,
+      icon: FushiIcons.textFields,
+      info: t.manga_ocr_line_detector_desc,
+      options: <MangaPanelOption<PpOcrLineDetectorModel>>[
+        MangaPanelOption<PpOcrLineDetectorModel>(
+          value: PpOcrLineDetectorModel.small,
+          label: t.manga_ocr_line_detector_small,
+        ),
+        MangaPanelOption<PpOcrLineDetectorModel>(
+          value: PpOcrLineDetectorModel.tiny,
+          label: t.manga_ocr_line_detector_tiny,
+        ),
+      ],
+      selected: _lineDetector,
+      onChanged: widget.lineDetectorSetter == null
+          ? null
+          : (PpOcrLineDetectorModel value) {
+              setState(() => _lineDetector = value);
+              unawaited(widget.lineDetectorSetter!(value.key));
             },
     );
   }

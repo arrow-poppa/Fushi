@@ -8,6 +8,10 @@
 library;
 
 import 'dart:io';
+
+import 'package:crypto/crypto.dart';
+import 'package:path/path.dart' as p;
+
 import 'package:fushi_engine/ocr/manga_ocr_model_manifest.dart';
 import 'package:fushi_engine/ocr/manga_ocr_service.dart';
 import 'package:fushi_asr_core/asr_core.dart';
@@ -47,23 +51,53 @@ class MangaOcrModelDownloader {
 
   /// 下载清单里所有未就绪文件到 [targetDir]（契约见共享层
   /// [ModelFileDownloader.downloadAll]；就绪判定用 [isMangaOcrModelFileReady]）。
+  ///
+  /// 清单钉了 [MangaOcrModelFile.sha256] 的文件在最后那条 done 事件之前逐个校验：
+  /// 不符的删掉并以 [StateError] 结束，下次重下。没有精确字节数的文件
+  /// （[MangaOcrModelFile.expectedBytes] 为 0）只能靠这一步拦住截断与上游换档。
   Stream<MangaOcrDownloadEvent> downloadAll({
     required List<MangaOcrModelFile> files,
     required Directory targetDir,
-  }) {
-    return _inner
-        .downloadAll(
-          files: files,
-          targetDir: targetDir,
-          isReady: isMangaOcrModelFileReady,
-        )
-        .map(
-          (ModelDownloadEvent event) => MangaOcrDownloadEvent(
-            fileName: event.fileName,
-            receivedBytes: event.receivedBytes,
-            totalBytes: event.totalBytes,
-            done: event.done,
-          ),
-        );
+  }) async* {
+    await for (final ModelDownloadEvent event in _inner.downloadAll(
+      files: files,
+      targetDir: targetDir,
+      isReady: isMangaOcrModelFileReady,
+    )) {
+      if (event.done) {
+        await verifyMangaOcrModelHashes(files: files, targetDir: targetDir);
+      }
+      yield MangaOcrDownloadEvent(
+        fileName: event.fileName,
+        receivedBytes: event.receivedBytes,
+        totalBytes: event.totalBytes,
+        done: event.done,
+      );
+    }
+  }
+}
+
+/// 按清单的 sha256 校验 [targetDir] 里已下好的文件；不符的删掉并抛 [StateError]。
+/// 没钉 sha256 或文件不在的跳过（就绪判定另有 [isMangaOcrModelFileReady]）。
+Future<void> verifyMangaOcrModelHashes({
+  required List<MangaOcrModelFile> files,
+  required Directory targetDir,
+}) async {
+  for (final MangaOcrModelFile file in files) {
+    final String? expected = file.sha256;
+    if (expected == null) continue;
+    final File target = File(p.join(targetDir.path, file.fileName));
+    if (!await target.exists()) continue;
+    final Digest actual = await sha256.bind(target.openRead()).first;
+    if (actual.toString() == expected.toLowerCase()) continue;
+    try {
+      await target.delete();
+    } on FileSystemException {
+      // 删不掉也要报错：坏档不能被当成可用模型。
+    }
+    throw StateError(
+      'download ${file.fileName} sha256 mismatch: got $actual, '
+      'expected $expected',
+    );
   }
 }

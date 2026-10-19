@@ -81,9 +81,14 @@ class MangaOcrModelPaths {
     this.ppRecPath = '',
     this.ppRecDictPath = '',
     this.ctcRecPath = '',
+    this.modelKey = 'manga_ctc',
   });
 
   final String detectorPath;
+
+  /// 这组文件属于哪个本地模型（[MangaOcrLocalModel.key]）：isolate 据此取文字
+  /// 特征（[MangaOcrLocalModel.scriptTraits]）与缓存签名。String 才能跨 isolate。
+  final String modelKey;
 
   /// 逐列 CTC 的列识别 rec（漫画微调的 PP-OCRv6）；空 = 不是 CTC 模型。
   final String ctcRecPath;
@@ -513,6 +518,9 @@ Future<void> _openIsolateOcrEngine(
     ),
   );
 
+  final MangaOcrLocalModel model = MangaOcrLocalModel.fromKey(
+    modelPaths.modelKey,
+  );
   if (modelPaths.ctcRecPath.isEmpty) {
     throw StateError(
       'manga OCR model paths name no block recognizer '
@@ -537,6 +545,7 @@ Future<void> _openIsolateOcrEngine(
   final OcrRecognizer primary = CtcColumnOcrRecognizer(
     lineDetector: await openLineDetector(),
     lineRecognizer: columns,
+    traits: model.scriptTraits,
   );
   // 横排行路径：PP-OCRv6 small det/rec 与块识别器同一组 provider（都是识别侧）；
   // 建会话时的降级同样经 record 留痕。
@@ -559,11 +568,12 @@ Future<void> _openIsolateOcrEngine(
     mangaOcr: primary,
     lineDetector: lineDetector,
     lineRecognizer: lineRecognizer,
+    traits: model.scriptTraits,
   );
   // 补检用逐列 CTC 的漫画 rec：补回的块靠识别置信度把关，只有漫画 CTC 权重对装饰字
   // 读得可靠（用户真实页的「オキテ」，通用 PP rec 以高置信度读成「才半元」）。
   // 文字图会话没有检测器候选可复核，不建。
-  if (!textImagesOnly) {
+  if (!textImagesOnly && model.sweepsMissedText) {
     engine.sweeper = PpOcrPageTextSweeper(
       lineDetector: lineDetector,
       lineRecognizer: columns,
@@ -607,8 +617,11 @@ Future<void> _volumeJobIsolateMain(_JobIsolateArgs args) async {
     // 缓存目录带上本机已安装模型的内容指纹：上游换模型后旧页缓存自然失效，
     // 不会与新模型的结果混进同一卷（BUG-1173）。指纹按 (size, mtime) 记忆化，
     // 常态只做几次 stat。
-    // 块识别器只剩逐列 CTC（[_openIsolateOcrEngine] 已拒绝没有 CTC rec 的路径）。
-    const MangaOcrLocalModel jobModel = MangaOcrLocalModel.mangaCtc;
+    // 块识别器只有逐列 CTC（[_openIsolateOcrEngine] 已拒绝没有 CTC rec 的路径），
+    // 用哪套权重看路径组属于哪个模型。
+    final MangaOcrLocalModel jobModel = MangaOcrLocalModel.fromKey(
+      args.modelPaths.modelKey,
+    );
     final String engineSignature =
         args.engineSignature ??
         await model_fp.resolveLocalMangaOcrEngineSignature(
@@ -1362,7 +1375,7 @@ class MangaOcrServiceImpl
     int totalBytes = 0;
     int obtainedBytes = 0;
     for (final MangaOcrModelFile model in _manifest) {
-      totalBytes += model.expectedBytes;
+      totalBytes += model.displayBytes;
       final File file = File(p.join(dir.path, model.fileName));
       if (isMangaOcrModelFileReady(file)) {
         obtainedBytes += file.lengthSync();
@@ -1421,23 +1434,22 @@ class MangaOcrServiceImpl
       return p.join(dir.path, model.fileName);
     }
 
-    switch (localModel) {
-      case MangaOcrLocalModel.mangaCtc:
-        final String ctcRecPath = pathOf(
-          MangaOcrModelRole.recognizer,
-          kMangaCtcRecFileName,
-        );
-        return MangaOcrModelPaths(
-          detectorPath: pathOf(MangaOcrModelRole.detector, '.onnx'),
-          ppDetPath: pathOf(MangaOcrModelRole.recognizer, kPpOcrDetFileName),
-          ppRecPath: ctcRecPath,
-          ppRecDictPath: pathOf(
-            MangaOcrModelRole.recognizer,
-            kPpOcrRecDictFileName,
-          ),
-          ctcRecPath: ctcRecPath,
-        );
-    }
+    // 逐列 CTC 与横排行路径共用同一套识别权重（一个会话）。
+    final String ctcRecPath = pathOf(
+      MangaOcrModelRole.recognizer,
+      localModel.recognizerFileName,
+    );
+    return MangaOcrModelPaths(
+      detectorPath: pathOf(MangaOcrModelRole.detector, '.onnx'),
+      ppDetPath: pathOf(MangaOcrModelRole.recognizer, kPpOcrDetFileName),
+      ppRecPath: ctcRecPath,
+      ppRecDictPath: pathOf(
+        MangaOcrModelRole.recognizer,
+        localModel.dictFileName,
+      ),
+      ctcRecPath: ctcRecPath,
+      modelKey: localModel.key,
+    );
   }
 
   /// 跑本地 OCR 前的共同闸门：平台支持 + 模型齐全，返回各模型文件的绝对路径。

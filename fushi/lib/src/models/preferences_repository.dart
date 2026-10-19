@@ -994,9 +994,10 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
-  /// 截屏 / 拍照识字用的识别引擎：[kScreenOcrEngineSystem]（系统 OCR，离线，默认）
-  /// 或 [kScreenOcrEngineLens]（Google Lens，联网；能读系统 OCR 没有识别器的文字，
-  /// 如俄文、希腊文）。不认识的值按系统 OCR。
+  /// 截屏 / 拍照识字用的识别引擎：[kScreenOcrEngineSystem]（系统 OCR，离线，默认）、
+  /// [kScreenOcrEngineLens]（Google Lens，联网；能读系统 OCR 没有识别器的文字，
+  /// 如俄文、希腊文）或 [kScreenOcrEngineLocal]（本地 PaddleOCR，离线，模型见
+  /// [floatingBallScreenOcrLocalModel]）。不认识的值按系统 OCR。
   String get floatingBallScreenOcrEngine =>
       getPref('floating_ball.screen_ocr_engine',
           defaultValue: kScreenOcrEngineSystem) as String;
@@ -1015,6 +1016,18 @@ class PreferencesRepository extends ChangeNotifier
 
   Future<void> setFloatingBallScreenOcrLensLanguage(String value) async {
     await setPref('floating_ball.screen_ocr_lens_language', value);
+    notifyListeners();
+  }
+
+  /// 截屏 / 拍照识字走本地引擎时用的识别模型（`MangaOcrLocalModel.key`）：默认
+  /// PP-OCRv6 small（中日文 + 拉丁文，屏幕上的界面字比漫画字规整，通用权重更合适）。
+  /// 模型文件与漫画 / 视频字幕 OCR 共用同一份下载。
+  String get floatingBallScreenOcrLocalModel =>
+      getPref('floating_ball.screen_ocr_local_model',
+          defaultValue: kDefaultScreenOcrLocalModel) as String;
+
+  Future<void> setFloatingBallScreenOcrLocalModel(String value) async {
+    await setPref('floating_ball.screen_ocr_local_model', value);
     notifyListeners();
   }
 

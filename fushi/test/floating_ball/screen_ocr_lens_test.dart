@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/floating_ball/floating_ball_channel.dart';
 import 'package:fushi/src/floating_ball/screen_ocr_lens.dart';
+import 'package:fushi/src/floating_ball/screen_ocr_lines.dart';
 import 'package:fushi/src/media/manga/ocr/google_lens_ocr_service.dart';
 import 'package:fushi/src/ocr/system_ocr_channel.dart';
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';
@@ -82,7 +83,7 @@ void main() {
   test('一段折成两行：按逐字区拆回视觉行，带段落全文与偏移', () {
     // 「Привет мир」在第 0 行，「снова」折到第 1 行。
     const String sentence = 'Привет мир снова';
-    final List<ScreenOcrLensLine> lines = screenOcrLinesFromLens(
+    final List<ScreenOcrLine> lines = screenOcrLinesFromLens(
       _image(<MokuroBlock>[
         _block(sentence, <List<double>>[
           ..._row(6, row: 0),
@@ -91,7 +92,7 @@ void main() {
         ]),
       ]),
     );
-    expect(lines.map((ScreenOcrLensLine l) => l.text), <String>[
+    expect(lines.map((ScreenOcrLine l) => l.text), <String>[
       'Привет мир',
       'снова',
     ]);
@@ -115,7 +116,7 @@ void main() {
 
   test('竖排按列折行', () {
     // 右列「日本」，左列「語」。
-    final List<ScreenOcrLensLine> lines = screenOcrLinesFromLens(
+    final List<ScreenOcrLine> lines = screenOcrLinesFromLens(
       _image(<MokuroBlock>[
         _block('日本語', <List<double>>[
           <double>[100, 0, 120, 20],
@@ -124,13 +125,13 @@ void main() {
         ], vertical: true),
       ]),
     );
-    expect(lines.map((ScreenOcrLensLine l) => l.text), <String>['日本', '語']);
-    expect(lines.every((ScreenOcrLensLine l) => l.isVertical), isTrue);
+    expect(lines.map((ScreenOcrLine l) => l.text), <String>['日本', '語']);
+    expect(lines.every((ScreenOcrLine l) => l.isVertical), isTrue);
     expect(lines[1].blockOffset, 2);
   });
 
   test('没有逐字区的段落整段当一行，用段落框', () {
-    final List<ScreenOcrLensLine> lines = screenOcrLinesFromLens(
+    final List<ScreenOcrLine> lines = screenOcrLinesFromLens(
       _image(<MokuroBlock>[
         const MokuroBlock(
           rectangle: MokuroRect.fromLTRB(5, 6, 105, 26),
@@ -147,7 +148,7 @@ void main() {
   });
 
   test('toWire：坐标取整、逐字框扁平成六元组', () {
-    final ScreenOcrLensLine line = screenOcrLinesFromLens(
+    final ScreenOcrLine line = screenOcrLinesFromLens(
       _image(<MokuroBlock>[
         _block('ab', <List<double>>[
           <double>[0.4, 0.6, 10.4, 20.6],
@@ -241,9 +242,9 @@ void main() {
         onLookup: (_) {},
         onScreenOcrFinished: () {},
       );
-      expect(await call('screenOcrUsesLens'), isFalse);
+      expect(await call('screenOcrUsesDartEngine'), isFalse);
       expect(
-        await call('recognizeScreenOcrLens', <String, Object?>{
+        await call('recognizeScreenOcrInDart', <String, Object?>{
           'image': Uint8List(4),
         }),
         isNull,
@@ -255,21 +256,21 @@ void main() {
       await FloatingBallChannel.installHandler(
         onLookup: (_) {},
         onScreenOcrFinished: () {},
-        onScreenOcrUsesLens: () async => true,
-        onRecognizeScreenOcrLens: (Uint8List image) async {
+        onScreenOcrUsesDartEngine: () async => true,
+        onRecognizeScreenOcrInDart: (Uint8List image) async {
           seen.add(image.length);
           return <String, Object?>{'lines': <Object?>[]};
         },
       );
-      expect(await call('screenOcrUsesLens'), isTrue);
+      expect(await call('screenOcrUsesDartEngine'), isTrue);
       expect(
-        await call('recognizeScreenOcrLens', <String, Object?>{
+        await call('recognizeScreenOcrInDart', <String, Object?>{
           'image': Uint8List(3),
         }),
         <String, Object?>{'lines': <Object?>[]},
       );
       expect(
-        await call('recognizeScreenOcrLens', <String, Object?>{'image': 'x'}),
+        await call('recognizeScreenOcrInDart', <String, Object?>{'image': 'x'}),
         isNull,
       );
       expect(seen, <int>[3]);

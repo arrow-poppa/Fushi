@@ -36,6 +36,7 @@ class MangaOcrModelFile implements DownloadableModelFile {
     required this.expectedBytes,
     required this.role,
     this.sha256,
+    this.estimatedBytes = 0,
   });
 
   /// 落盘文件名（与远端 basename 一致，Range 续传直接复用同 URL）。
@@ -54,6 +55,13 @@ class MangaOcrModelFile implements DownloadableModelFile {
 
   /// 钉住的 sha256（release asset 可被覆盖上传，下载后按它校验）；null = 不校验。
   final String? sha256;
+
+  /// [expectedBytes] 未知（0）时设置页展示用的估计字节数。不参与校验：完整性靠
+  /// [sha256]。
+  final int estimatedBytes;
+
+  /// 展示用的大小：有精确值用精确值，否则用估计值。
+  int get displayBytes => expectedBytes > 0 ? expectedBytes : estimatedBytes;
 }
 
 /// PP-OCRv6 small 三文件的落盘名（清单与 `MangaOcrModelPaths` 解析共用）。

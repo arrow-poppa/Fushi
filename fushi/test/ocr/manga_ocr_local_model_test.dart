@@ -5,6 +5,7 @@ import 'package:fushi_engine/foundation/engine_paths.dart';
 import 'package:fushi_engine/ocr/manga_ocr_folder_job.dart';
 import 'package:fushi_engine/ocr/manga_ocr_local_model.dart';
 import 'package:fushi_engine/ocr/manga_ocr_model_manifest.dart';
+import 'package:fushi_engine/ocr/ocr_script_traits.dart';
 import 'package:path/path.dart' as p;
 
 void main() {
@@ -30,7 +31,96 @@ void main() {
     expect(kDefaultMangaOcrLocalModel, MangaOcrLocalModel.mangaCtc);
     expect(MangaOcrLocalModel.values, <MangaOcrLocalModel>[
       MangaOcrLocalModel.mangaCtc,
+      MangaOcrLocalModel.ppocrV6Small,
+      MangaOcrLocalModel.ppocrV6Tiny,
+      MangaOcrLocalModel.ppocrV5Korean,
+      MangaOcrLocalModel.ppocrV5Cyrillic,
+      MangaOcrLocalModel.ppocrV5Greek,
+      MangaOcrLocalModel.ppocrV5Arabic,
     ]);
+  });
+
+  test(
+    'the generic PaddleOCR models keep the Japanese manga behaviour off',
+    () {
+      final OcrScriptTraits manga = MangaOcrLocalModel.mangaCtc.scriptTraits;
+      expect(manga.verticalText, isTrue);
+      expect(manga.dropRuby, isTrue);
+      expect(manga.spaceBetweenLines, isFalse);
+      expect(MangaOcrLocalModel.mangaCtc.sweepsMissedText, isTrue);
+
+      // PP-OCRv6 small still reads vertical Japanese and Chinese.
+      expect(MangaOcrLocalModel.ppocrV6Small.scriptTraits.verticalText, isTrue);
+      for (final MangaOcrLocalModel model in MangaOcrLocalModel.values) {
+        if (model == MangaOcrLocalModel.mangaCtc) continue;
+        expect(model.scriptTraits.spaceBetweenLines, isTrue, reason: model.key);
+        expect(model.sweepsMissedText, isFalse, reason: model.key);
+      }
+      for (final MangaOcrLocalModel model in <MangaOcrLocalModel>[
+        MangaOcrLocalModel.ppocrV6Tiny,
+        MangaOcrLocalModel.ppocrV5Korean,
+        MangaOcrLocalModel.ppocrV5Cyrillic,
+        MangaOcrLocalModel.ppocrV5Greek,
+        MangaOcrLocalModel.ppocrV5Arabic,
+      ]) {
+        expect(model.scriptTraits.verticalText, isFalse, reason: model.key);
+        expect(model.scriptTraits.dropRuby, isFalse, reason: model.key);
+      }
+      expect(MangaOcrLocalModel.ppocrV5Arabic.scriptTraits.rightToLeft, isTrue);
+    },
+  );
+
+  test(
+    'every model resolves its recognizer and dictionary from its manifest',
+    () {
+      for (final MangaOcrLocalModel model in MangaOcrLocalModel.values) {
+        final Set<String> names = <String>{
+          for (final MangaOcrModelFile file in model.manifest) file.fileName,
+        };
+        expect(names, contains(model.recognizerFileName), reason: model.key);
+        expect(names, contains(model.dictFileName), reason: model.key);
+        expect(names, contains(kPpOcrDetFileName), reason: model.key);
+      }
+      // Each model downloads into its own directory, so deleting one keeps the
+      // others, and its cache signature tells their results apart.
+      expect(<String>{
+        for (final MangaOcrLocalModel model in MangaOcrLocalModel.values)
+          model.cacheSignature,
+      }, hasLength(MangaOcrLocalModel.values.length));
+    },
+  );
+
+  test('a language code picks the model for its script', () {
+    expect(localMangaOcrModelForLanguage('ja'), MangaOcrLocalModel.mangaCtc);
+    expect(
+      localMangaOcrModelForLanguage('zh-Hant'),
+      MangaOcrLocalModel.ppocrV6Small,
+    );
+    expect(
+      localMangaOcrModelForLanguage('ro'),
+      MangaOcrLocalModel.ppocrV6Small,
+    );
+    expect(
+      localMangaOcrModelForLanguage('pt_BR'),
+      MangaOcrLocalModel.ppocrV6Tiny,
+    );
+    expect(
+      localMangaOcrModelForLanguage('ko'),
+      MangaOcrLocalModel.ppocrV5Korean,
+    );
+    expect(
+      localMangaOcrModelForLanguage('uk'),
+      MangaOcrLocalModel.ppocrV5Cyrillic,
+    );
+    expect(
+      localMangaOcrModelForLanguage('el'),
+      MangaOcrLocalModel.ppocrV5Greek,
+    );
+    expect(
+      localMangaOcrModelForLanguage('ar'),
+      MangaOcrLocalModel.ppocrV5Arabic,
+    );
+    expect(localMangaOcrModelForLanguage('xx'), MangaOcrLocalModel.ppocrV6Tiny);
   });
 
   test('removed model keys fall back to the default model', () {

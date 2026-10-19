@@ -1,7 +1,7 @@
 /// Generated file. Do not edit.
 ///
 /// Locales: 17
-/// Strings: 143701 (8453 per locale)
+/// Strings: 144007 (8471 per locale)
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -4017,8 +4017,9 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get floating_ball_scope_video => 'Video player';
   String get floating_ball_screen_ocr_engine => 'Screen OCR engine';
   String get floating_ball_screen_ocr_engine_hint =>
-      'Google Lens reads scripts the system engine can\'t, such as Russian and Greek, but needs internet and sends the captured image to Google. If it fails, the system engine is used.';
+      'On-device reads text offline with PaddleOCR models you download once. Google Lens needs internet and sends the captured image to Google. The system engine needs nothing extra. If the chosen engine fails, the system engine is used.';
   String get floating_ball_screen_ocr_engine_lens => 'Google Lens (online)';
+  String get floating_ball_screen_ocr_engine_local => 'On-device';
   String get floating_ball_screen_ocr_engine_system => 'System (offline)';
   String get floating_ball_screen_ocr_lens_disclosure_body =>
       'Screen and camera text recognition will send a reduced JPEG copy of the captured image to Google. Anything visible on screen at that moment is included. The endpoint is unofficial and may stop working. Nothing is uploaded unless you agree.';
@@ -4026,6 +4027,18 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
       'Send screenshots to Google Lens?';
   String get floating_ball_screen_ocr_lens_language => 'Google Lens language';
   String get floating_ball_screen_ocr_lens_language_auto => 'Automatic';
+  String floating_ball_screen_ocr_local_download_body({
+    required Object name,
+    required Object size,
+  }) =>
+      '${name} needs about ${size}. It is downloaded once and then works offline.';
+  String get floating_ball_screen_ocr_local_download_title =>
+      'Download the OCR model?';
+  String get floating_ball_screen_ocr_local_missing =>
+      'The on-device OCR model isn\'t downloaded yet, so system OCR was used.';
+  String get floating_ball_screen_ocr_local_model => 'On-device OCR model';
+  String get floating_ball_screen_ocr_local_model_hint =>
+      'Runs offline. Pick the model for the script you read; it is downloaded once and shared with manga and video subtitle OCR.';
   String get floating_ball_show_labels => 'Show button labels';
   String get floating_ball_show_labels_hint =>
       'Show text beside expanded buttons. Turn off to show icons only';
@@ -6368,6 +6381,25 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get manga_ocr_parallel_tasks => 'Parallel OCR tasks';
   String get manga_ocr_parallel_tasks_desc =>
       'Recognize different books at once. Chapters of the same book stay in order. Higher values use more memory; low-memory mode limits this to one.';
+  String get manga_ocr_ppocr_arabic_desc =>
+      'Reads Arabic, right to left. Horizontal text only; tapping picks words by line position. Model: PaddlePaddle/arabic_PP-OCRv5_mobile_rec.';
+  String get manga_ocr_ppocr_arabic_model => 'PaddleOCR v5 (Arabic)';
+  String get manga_ocr_ppocr_cyrillic_desc =>
+      'Reads Russian, Ukrainian, Bulgarian and other Cyrillic-script languages. Horizontal text only. Model: PaddlePaddle/cyrillic_PP-OCRv5_mobile_rec.';
+  String get manga_ocr_ppocr_cyrillic_model => 'PaddleOCR v5 (Cyrillic)';
+  String get manga_ocr_ppocr_greek_desc =>
+      'Reads Greek. Horizontal text only; accents are not always recognised. Model: PaddlePaddle/el_PP-OCRv5_mobile_rec.';
+  String get manga_ocr_ppocr_greek_model => 'PaddleOCR v5 (Greek)';
+  String get manga_ocr_ppocr_korean_desc =>
+      'Reads Korean (Hangul) for manhwa and webtoons. Horizontal text only. Model: PaddlePaddle/korean_PP-OCRv5_mobile_rec.';
+  String get manga_ocr_ppocr_korean_model => 'PaddleOCR v5 (Korean)';
+  String get manga_ocr_ppocr_small_desc =>
+      'Stock PP-OCRv6 small recognizer. Reads Chinese and Japanese, including vertical text, plus Latin scripts with diacritics. Pick it for Romanian (ș, ț). Model: PaddlePaddle/PP-OCRv6_small_rec.';
+  String get manga_ocr_ppocr_small_model =>
+      'PaddleOCR v6 (Chinese, Japanese, Latin)';
+  String get manga_ocr_ppocr_tiny_desc =>
+      'Small, fast recognizer for Latin-script languages such as English, Portuguese, Spanish, French, German and Polish. Horizontal text only. Model: PaddlePaddle/PP-OCRv6_tiny_rec.';
+  String get manga_ocr_ppocr_tiny_model => 'PaddleOCR v6 (Latin, tiny)';
   String get manga_ocr_section => 'Manga OCR';
   String get manga_ocr_section_summary =>
       'Built-in OCR models and external mokuro CLI';
@@ -18610,6 +18642,8 @@ class _StringsAr extends _StringsEn {
   @override
   String get floating_ball_screen_ocr_engine_lens => 'Google Lens (online)';
   @override
+  String get floating_ball_screen_ocr_engine_local => 'On-device';
+  @override
   String get floating_ball_screen_ocr_engine_system => 'System (offline)';
   @override
   String get floating_ball_screen_ocr_lens_disclosure_body =>
@@ -18621,6 +18655,23 @@ class _StringsAr extends _StringsEn {
   String get floating_ball_screen_ocr_lens_language => 'Google Lens language';
   @override
   String get floating_ball_screen_ocr_lens_language_auto => 'Automatic';
+  @override
+  String floating_ball_screen_ocr_local_download_body({
+    required Object name,
+    required Object size,
+  }) =>
+      '${name} needs about ${size}. It is downloaded once and then works offline.';
+  @override
+  String get floating_ball_screen_ocr_local_download_title =>
+      'Download the OCR model?';
+  @override
+  String get floating_ball_screen_ocr_local_missing =>
+      'The on-device OCR model isn\'t downloaded yet, so system OCR was used.';
+  @override
+  String get floating_ball_screen_ocr_local_model => 'On-device OCR model';
+  @override
+  String get floating_ball_screen_ocr_local_model_hint =>
+      'Runs offline. Pick the model for the script you read; it is downloaded once and shared with manga and video subtitle OCR.';
   @override
   String get floating_ball_show_labels => 'إظهار تسميات الأزرار';
   @override
@@ -22574,6 +22625,37 @@ class _StringsAr extends _StringsEn {
   @override
   String get manga_ocr_parallel_tasks_desc =>
       'التعرف على كتب مختلفة في وقت واحد. تبقى فصول الكتاب الواحد بالترتيب. القيم الأعلى تستهلك ذاكرة أكثر؛ ووضع الذاكرة المنخفضة يحدّها بمهمة واحدة.';
+  @override
+  String get manga_ocr_ppocr_arabic_desc =>
+      'Reads Arabic, right to left. Horizontal text only; tapping picks words by line position. Model: PaddlePaddle/arabic_PP-OCRv5_mobile_rec.';
+  @override
+  String get manga_ocr_ppocr_arabic_model => 'PaddleOCR v5 (Arabic)';
+  @override
+  String get manga_ocr_ppocr_cyrillic_desc =>
+      'Reads Russian, Ukrainian, Bulgarian and other Cyrillic-script languages. Horizontal text only. Model: PaddlePaddle/cyrillic_PP-OCRv5_mobile_rec.';
+  @override
+  String get manga_ocr_ppocr_cyrillic_model => 'PaddleOCR v5 (Cyrillic)';
+  @override
+  String get manga_ocr_ppocr_greek_desc =>
+      'Reads Greek. Horizontal text only; accents are not always recognised. Model: PaddlePaddle/el_PP-OCRv5_mobile_rec.';
+  @override
+  String get manga_ocr_ppocr_greek_model => 'PaddleOCR v5 (Greek)';
+  @override
+  String get manga_ocr_ppocr_korean_desc =>
+      'Reads Korean (Hangul) for manhwa and webtoons. Horizontal text only. Model: PaddlePaddle/korean_PP-OCRv5_mobile_rec.';
+  @override
+  String get manga_ocr_ppocr_korean_model => 'PaddleOCR v5 (Korean)';
+  @override
+  String get manga_ocr_ppocr_small_desc =>
+      'Stock PP-OCRv6 small recognizer. Reads Chinese and Japanese, including vertical text, plus Latin scripts with diacritics. Pick it for Romanian (ș, ț). Model: PaddlePaddle/PP-OCRv6_small_rec.';
+  @override
+  String get manga_ocr_ppocr_small_model =>
+      'PaddleOCR v6 (Chinese, Japanese, Latin)';
+  @override
+  String get manga_ocr_ppocr_tiny_desc =>
+      'Small, fast recognizer for Latin-script languages such as English, Portuguese, Spanish, French, German and Polish. Horizontal text only. Model: PaddlePaddle/PP-OCRv6_tiny_rec.';
+  @override
+  String get manga_ocr_ppocr_tiny_model => 'PaddleOCR v6 (Latin, tiny)';
   @override
   String get manga_ocr_section => 'OCR المانغا';
   @override
@@ -39139,6 +39221,8 @@ class _StringsDe extends _StringsEn {
   @override
   String get floating_ball_screen_ocr_engine_lens => 'Google Lens (online)';
   @override
+  String get floating_ball_screen_ocr_engine_local => 'On-device';
+  @override
   String get floating_ball_screen_ocr_engine_system => 'System (offline)';
   @override
   String get floating_ball_screen_ocr_lens_disclosure_body =>
@@ -39150,6 +39234,23 @@ class _StringsDe extends _StringsEn {
   String get floating_ball_screen_ocr_lens_language => 'Google Lens language';
   @override
   String get floating_ball_screen_ocr_lens_language_auto => 'Automatic';
+  @override
+  String floating_ball_screen_ocr_local_download_body({
+    required Object name,
+    required Object size,
+  }) =>
+      '${name} needs about ${size}. It is downloaded once and then works offline.';
+  @override
+  String get floating_ball_screen_ocr_local_download_title =>
+      'Download the OCR model?';
+  @override
+  String get floating_ball_screen_ocr_local_missing =>
+      'The on-device OCR model isn\'t downloaded yet, so system OCR was used.';
+  @override
+  String get floating_ball_screen_ocr_local_model => 'On-device OCR model';
+  @override
+  String get floating_ball_screen_ocr_local_model_hint =>
+      'Runs offline. Pick the model for the script you read; it is downloaded once and shared with manga and video subtitle OCR.';
   @override
   String get floating_ball_show_labels => 'Schaltflächentexte anzeigen';
   @override
@@ -43200,6 +43301,37 @@ class _StringsDe extends _StringsEn {
   @override
   String get manga_ocr_parallel_tasks_desc =>
       'Verschiedene Bücher gleichzeitig erkennen. Kapitel desselben Buchs bleiben in Reihenfolge. Höhere Werte benötigen mehr Speicher; der Modus für wenig Speicher beschränkt dies auf eine Aufgabe.';
+  @override
+  String get manga_ocr_ppocr_arabic_desc =>
+      'Reads Arabic, right to left. Horizontal text only; tapping picks words by line position. Model: PaddlePaddle/arabic_PP-OCRv5_mobile_rec.';
+  @override
+  String get manga_ocr_ppocr_arabic_model => 'PaddleOCR v5 (Arabic)';
+  @override
+  String get manga_ocr_ppocr_cyrillic_desc =>
+      'Reads Russian, Ukrainian, Bulgarian and other Cyrillic-script languages. Horizontal text only. Model: PaddlePaddle/cyrillic_PP-OCRv5_mobile_rec.';
+  @override
+  String get manga_ocr_ppocr_cyrillic_model => 'PaddleOCR v5 (Cyrillic)';
+  @override
+  String get manga_ocr_ppocr_greek_desc =>
+      'Reads Greek. Horizontal text only; accents are not always recognised. Model: PaddlePaddle/el_PP-OCRv5_mobile_rec.';
+  @override
+  String get manga_ocr_ppocr_greek_model => 'PaddleOCR v5 (Greek)';
+  @override
+  String get manga_ocr_ppocr_korean_desc =>
+      'Reads Korean (Hangul) for manhwa and webtoons. Horizontal text only. Model: PaddlePaddle/korean_PP-OCRv5_mobile_rec.';
+  @override
+  String get manga_ocr_ppocr_korean_model => 'PaddleOCR v5 (Korean)';
+  @override
+  String get manga_ocr_ppocr_small_desc =>
+      'Stock PP-OCRv6 small recognizer. Reads Chinese and Japanese, including vertical text, plus Latin scripts with diacritics. Pick it for Romanian (ș, ț). Model: PaddlePaddle/PP-OCRv6_small_rec.';
+  @override
+  String get manga_ocr_ppocr_small_model =>
+      'PaddleOCR v6 (Chinese, Japanese, Latin)';
+  @override
+  String get manga_ocr_ppocr_tiny_desc =>
+      'Small, fast recognizer for Latin-script languages such as English, Portuguese, Spanish, French, German and Polish. Horizontal text only. Model: PaddlePaddle/PP-OCRv6_tiny_rec.';
+  @override
+  String get manga_ocr_ppocr_tiny_model => 'PaddleOCR v6 (Latin, tiny)';
   @override
   String get manga_ocr_section => 'Manga-OCR';
   @override
@@ -59970,6 +60102,8 @@ class _StringsEs extends _StringsEn {
   @override
   String get floating_ball_screen_ocr_engine_lens => 'Google Lens (online)';
   @override
+  String get floating_ball_screen_ocr_engine_local => 'On-device';
+  @override
   String get floating_ball_screen_ocr_engine_system => 'System (offline)';
   @override
   String get floating_ball_screen_ocr_lens_disclosure_body =>
@@ -59981,6 +60115,23 @@ class _StringsEs extends _StringsEn {
   String get floating_ball_screen_ocr_lens_language => 'Google Lens language';
   @override
   String get floating_ball_screen_ocr_lens_language_auto => 'Automatic';
+  @override
+  String floating_ball_screen_ocr_local_download_body({
+    required Object name,
+    required Object size,
+  }) =>
+      '${name} needs about ${size}. It is downloaded once and then works offline.';
+  @override
+  String get floating_ball_screen_ocr_local_download_title =>
+      'Download the OCR model?';
+  @override
+  String get floating_ball_screen_ocr_local_missing =>
+      'The on-device OCR model isn\'t downloaded yet, so system OCR was used.';
+  @override
+  String get floating_ball_screen_ocr_local_model => 'On-device OCR model';
+  @override
+  String get floating_ball_screen_ocr_local_model_hint =>
+      'Runs offline. Pick the model for the script you read; it is downloaded once and shared with manga and video subtitle OCR.';
   @override
   String get floating_ball_show_labels => 'Mostrar etiquetas de los botones';
   @override
@@ -64035,6 +64186,37 @@ class _StringsEs extends _StringsEn {
   @override
   String get manga_ocr_parallel_tasks_desc =>
       'Reconoce varios libros a la vez. Los capítulos de un mismo libro se mantienen en orden. Valores más altos usan más memoria; el modo de poca memoria lo limita a uno.';
+  @override
+  String get manga_ocr_ppocr_arabic_desc =>
+      'Reads Arabic, right to left. Horizontal text only; tapping picks words by line position. Model: PaddlePaddle/arabic_PP-OCRv5_mobile_rec.';
+  @override
+  String get manga_ocr_ppocr_arabic_model => 'PaddleOCR v5 (Arabic)';
+  @override
+  String get manga_ocr_ppocr_cyrillic_desc =>
+      'Reads Russian, Ukrainian, Bulgarian and other Cyrillic-script languages. Horizontal text only. Model: PaddlePaddle/cyrillic_PP-OCRv5_mobile_rec.';
+  @override
+  String get manga_ocr_ppocr_cyrillic_model => 'PaddleOCR v5 (Cyrillic)';
+  @override
+  String get manga_ocr_ppocr_greek_desc =>
+      'Reads Greek. Horizontal text only; accents are not always recognised. Model: PaddlePaddle/el_PP-OCRv5_mobile_rec.';
+  @override
+  String get manga_ocr_ppocr_greek_model => 'PaddleOCR v5 (Greek)';
+  @override
+  String get manga_ocr_ppocr_korean_desc =>
+      'Reads Korean (Hangul) for manhwa and webtoons. Horizontal text only. Model: PaddlePaddle/korean_PP-OCRv5_mobile_rec.';
+  @override
+  String get manga_ocr_ppocr_korean_model => 'PaddleOCR v5 (Korean)';
+  @override
+  String get manga_ocr_ppocr_small_desc =>
+      'Stock PP-OCRv6 small recognizer. Reads Chinese and Japanese, including vertical text, plus Latin scripts with diacritics. Pick it for Romanian (ș, ț). Model: PaddlePaddle/PP-OCRv6_small_rec.';
+  @override
+  String get manga_ocr_ppocr_small_model =>
+      'PaddleOCR v6 (Chinese, Japanese, Latin)';
+  @override
+  String get manga_ocr_ppocr_tiny_desc =>
+      'Small, fast recognizer for Latin-script languages such as English, Portuguese, Spanish, French, German and Polish. Horizontal text only. Model: PaddlePaddle/PP-OCRv6_tiny_rec.';
+  @override
+  String get manga_ocr_ppocr_tiny_model => 'PaddleOCR v6 (Latin, tiny)';
   @override
   String get manga_ocr_section => 'OCR de manga';
   @override
@@ -80869,6 +81051,8 @@ class _StringsFr extends _StringsEn {
   @override
   String get floating_ball_screen_ocr_engine_lens => 'Google Lens (online)';
   @override
+  String get floating_ball_screen_ocr_engine_local => 'On-device';
+  @override
   String get floating_ball_screen_ocr_engine_system => 'System (offline)';
   @override
   String get floating_ball_screen_ocr_lens_disclosure_body =>
@@ -80880,6 +81064,23 @@ class _StringsFr extends _StringsEn {
   String get floating_ball_screen_ocr_lens_language => 'Google Lens language';
   @override
   String get floating_ball_screen_ocr_lens_language_auto => 'Automatic';
+  @override
+  String floating_ball_screen_ocr_local_download_body({
+    required Object name,
+    required Object size,
+  }) =>
+      '${name} needs about ${size}. It is downloaded once and then works offline.';
+  @override
+  String get floating_ball_screen_ocr_local_download_title =>
+      'Download the OCR model?';
+  @override
+  String get floating_ball_screen_ocr_local_missing =>
+      'The on-device OCR model isn\'t downloaded yet, so system OCR was used.';
+  @override
+  String get floating_ball_screen_ocr_local_model => 'On-device OCR model';
+  @override
+  String get floating_ball_screen_ocr_local_model_hint =>
+      'Runs offline. Pick the model for the script you read; it is downloaded once and shared with manga and video subtitle OCR.';
   @override
   String get floating_ball_show_labels => 'Afficher le texte des boutons';
   @override
@@ -84947,6 +85148,37 @@ class _StringsFr extends _StringsEn {
   @override
   String get manga_ocr_parallel_tasks_desc =>
       'Reconnaît plusieurs livres à la fois. Les chapitres d\'un même livre restent dans l\'ordre. Des valeurs plus élevées utilisent plus de mémoire ; le mode mémoire faible limite à une.';
+  @override
+  String get manga_ocr_ppocr_arabic_desc =>
+      'Reads Arabic, right to left. Horizontal text only; tapping picks words by line position. Model: PaddlePaddle/arabic_PP-OCRv5_mobile_rec.';
+  @override
+  String get manga_ocr_ppocr_arabic_model => 'PaddleOCR v5 (Arabic)';
+  @override
+  String get manga_ocr_ppocr_cyrillic_desc =>
+      'Reads Russian, Ukrainian, Bulgarian and other Cyrillic-script languages. Horizontal text only. Model: PaddlePaddle/cyrillic_PP-OCRv5_mobile_rec.';
+  @override
+  String get manga_ocr_ppocr_cyrillic_model => 'PaddleOCR v5 (Cyrillic)';
+  @override
+  String get manga_ocr_ppocr_greek_desc =>
+      'Reads Greek. Horizontal text only; accents are not always recognised. Model: PaddlePaddle/el_PP-OCRv5_mobile_rec.';
+  @override
+  String get manga_ocr_ppocr_greek_model => 'PaddleOCR v5 (Greek)';
+  @override
+  String get manga_ocr_ppocr_korean_desc =>
+      'Reads Korean (Hangul) for manhwa and webtoons. Horizontal text only. Model: PaddlePaddle/korean_PP-OCRv5_mobile_rec.';
+  @override
+  String get manga_ocr_ppocr_korean_model => 'PaddleOCR v5 (Korean)';
+  @override
+  String get manga_ocr_ppocr_small_desc =>
+      'Stock PP-OCRv6 small recognizer. Reads Chinese and Japanese, including vertical text, plus Latin scripts with diacritics. Pick it for Romanian (ș, ț). Model: PaddlePaddle/PP-OCRv6_small_rec.';
+  @override
+  String get manga_ocr_ppocr_small_model =>
+      'PaddleOCR v6 (Chinese, Japanese, Latin)';
+  @override
+  String get manga_ocr_ppocr_tiny_desc =>
+      'Small, fast recognizer for Latin-script languages such as English, Portuguese, Spanish, French, German and Polish. Horizontal text only. Model: PaddlePaddle/PP-OCRv6_tiny_rec.';
+  @override
+  String get manga_ocr_ppocr_tiny_model => 'PaddleOCR v6 (Latin, tiny)';
   @override
   String get manga_ocr_section => 'OCR de manga';
   @override
@@ -101718,6 +101950,8 @@ class _StringsId extends _StringsEn {
   @override
   String get floating_ball_screen_ocr_engine_lens => 'Google Lens (online)';
   @override
+  String get floating_ball_screen_ocr_engine_local => 'On-device';
+  @override
   String get floating_ball_screen_ocr_engine_system => 'System (offline)';
   @override
   String get floating_ball_screen_ocr_lens_disclosure_body =>
@@ -101729,6 +101963,23 @@ class _StringsId extends _StringsEn {
   String get floating_ball_screen_ocr_lens_language => 'Google Lens language';
   @override
   String get floating_ball_screen_ocr_lens_language_auto => 'Automatic';
+  @override
+  String floating_ball_screen_ocr_local_download_body({
+    required Object name,
+    required Object size,
+  }) =>
+      '${name} needs about ${size}. It is downloaded once and then works offline.';
+  @override
+  String get floating_ball_screen_ocr_local_download_title =>
+      'Download the OCR model?';
+  @override
+  String get floating_ball_screen_ocr_local_missing =>
+      'The on-device OCR model isn\'t downloaded yet, so system OCR was used.';
+  @override
+  String get floating_ball_screen_ocr_local_model => 'On-device OCR model';
+  @override
+  String get floating_ball_screen_ocr_local_model_hint =>
+      'Runs offline. Pick the model for the script you read; it is downloaded once and shared with manga and video subtitle OCR.';
   @override
   String get floating_ball_show_labels => 'Tampilkan label tombol';
   @override
@@ -105731,6 +105982,37 @@ class _StringsId extends _StringsEn {
   @override
   String get manga_ocr_parallel_tasks_desc =>
       'Kenali buku berbeda sekaligus. Bab dari buku yang sama tetap berurutan. Nilai lebih tinggi memakai lebih banyak memori; mode memori rendah membatasi ke satu.';
+  @override
+  String get manga_ocr_ppocr_arabic_desc =>
+      'Reads Arabic, right to left. Horizontal text only; tapping picks words by line position. Model: PaddlePaddle/arabic_PP-OCRv5_mobile_rec.';
+  @override
+  String get manga_ocr_ppocr_arabic_model => 'PaddleOCR v5 (Arabic)';
+  @override
+  String get manga_ocr_ppocr_cyrillic_desc =>
+      'Reads Russian, Ukrainian, Bulgarian and other Cyrillic-script languages. Horizontal text only. Model: PaddlePaddle/cyrillic_PP-OCRv5_mobile_rec.';
+  @override
+  String get manga_ocr_ppocr_cyrillic_model => 'PaddleOCR v5 (Cyrillic)';
+  @override
+  String get manga_ocr_ppocr_greek_desc =>
+      'Reads Greek. Horizontal text only; accents are not always recognised. Model: PaddlePaddle/el_PP-OCRv5_mobile_rec.';
+  @override
+  String get manga_ocr_ppocr_greek_model => 'PaddleOCR v5 (Greek)';
+  @override
+  String get manga_ocr_ppocr_korean_desc =>
+      'Reads Korean (Hangul) for manhwa and webtoons. Horizontal text only. Model: PaddlePaddle/korean_PP-OCRv5_mobile_rec.';
+  @override
+  String get manga_ocr_ppocr_korean_model => 'PaddleOCR v5 (Korean)';
+  @override
+  String get manga_ocr_ppocr_small_desc =>
+      'Stock PP-OCRv6 small recognizer. Reads Chinese and Japanese, including vertical text, plus Latin scripts with diacritics. Pick it for Romanian (ș, ț). Model: PaddlePaddle/PP-OCRv6_small_rec.';
+  @override
+  String get manga_ocr_ppocr_small_model =>
+      'PaddleOCR v6 (Chinese, Japanese, Latin)';
+  @override
+  String get manga_ocr_ppocr_tiny_desc =>
+      'Small, fast recognizer for Latin-script languages such as English, Portuguese, Spanish, French, German and Polish. Horizontal text only. Model: PaddlePaddle/PP-OCRv6_tiny_rec.';
+  @override
+  String get manga_ocr_ppocr_tiny_model => 'PaddleOCR v6 (Latin, tiny)';
   @override
   String get manga_ocr_section => 'OCR Manga';
   @override
@@ -122374,6 +122656,8 @@ class _StringsIt extends _StringsEn {
   @override
   String get floating_ball_screen_ocr_engine_lens => 'Google Lens (online)';
   @override
+  String get floating_ball_screen_ocr_engine_local => 'On-device';
+  @override
   String get floating_ball_screen_ocr_engine_system => 'System (offline)';
   @override
   String get floating_ball_screen_ocr_lens_disclosure_body =>
@@ -122385,6 +122669,23 @@ class _StringsIt extends _StringsEn {
   String get floating_ball_screen_ocr_lens_language => 'Google Lens language';
   @override
   String get floating_ball_screen_ocr_lens_language_auto => 'Automatic';
+  @override
+  String floating_ball_screen_ocr_local_download_body({
+    required Object name,
+    required Object size,
+  }) =>
+      '${name} needs about ${size}. It is downloaded once and then works offline.';
+  @override
+  String get floating_ball_screen_ocr_local_download_title =>
+      'Download the OCR model?';
+  @override
+  String get floating_ball_screen_ocr_local_missing =>
+      'The on-device OCR model isn\'t downloaded yet, so system OCR was used.';
+  @override
+  String get floating_ball_screen_ocr_local_model => 'On-device OCR model';
+  @override
+  String get floating_ball_screen_ocr_local_model_hint =>
+      'Runs offline. Pick the model for the script you read; it is downloaded once and shared with manga and video subtitle OCR.';
   @override
   String get floating_ball_show_labels => 'Mostra le etichette dei pulsanti';
   @override
@@ -126415,6 +126716,37 @@ class _StringsIt extends _StringsEn {
   @override
   String get manga_ocr_parallel_tasks_desc =>
       'Riconosci libri diversi contemporaneamente. I capitoli dello stesso libro restano in ordine. Valori più alti usano più memoria; la modalità a bassa memoria lo limita a uno.';
+  @override
+  String get manga_ocr_ppocr_arabic_desc =>
+      'Reads Arabic, right to left. Horizontal text only; tapping picks words by line position. Model: PaddlePaddle/arabic_PP-OCRv5_mobile_rec.';
+  @override
+  String get manga_ocr_ppocr_arabic_model => 'PaddleOCR v5 (Arabic)';
+  @override
+  String get manga_ocr_ppocr_cyrillic_desc =>
+      'Reads Russian, Ukrainian, Bulgarian and other Cyrillic-script languages. Horizontal text only. Model: PaddlePaddle/cyrillic_PP-OCRv5_mobile_rec.';
+  @override
+  String get manga_ocr_ppocr_cyrillic_model => 'PaddleOCR v5 (Cyrillic)';
+  @override
+  String get manga_ocr_ppocr_greek_desc =>
+      'Reads Greek. Horizontal text only; accents are not always recognised. Model: PaddlePaddle/el_PP-OCRv5_mobile_rec.';
+  @override
+  String get manga_ocr_ppocr_greek_model => 'PaddleOCR v5 (Greek)';
+  @override
+  String get manga_ocr_ppocr_korean_desc =>
+      'Reads Korean (Hangul) for manhwa and webtoons. Horizontal text only. Model: PaddlePaddle/korean_PP-OCRv5_mobile_rec.';
+  @override
+  String get manga_ocr_ppocr_korean_model => 'PaddleOCR v5 (Korean)';
+  @override
+  String get manga_ocr_ppocr_small_desc =>
+      'Stock PP-OCRv6 small recognizer. Reads Chinese and Japanese, including vertical text, plus Latin scripts with diacritics. Pick it for Romanian (ș, ț). Model: PaddlePaddle/PP-OCRv6_small_rec.';
+  @override
+  String get manga_ocr_ppocr_small_model =>
+      'PaddleOCR v6 (Chinese, Japanese, Latin)';
+  @override
+  String get manga_ocr_ppocr_tiny_desc =>
+      'Small, fast recognizer for Latin-script languages such as English, Portuguese, Spanish, French, German and Polish. Horizontal text only. Model: PaddlePaddle/PP-OCRv6_tiny_rec.';
+  @override
+  String get manga_ocr_ppocr_tiny_model => 'PaddleOCR v6 (Latin, tiny)';
   @override
   String get manga_ocr_section => 'OCR manga';
   @override
@@ -142871,6 +143203,8 @@ class _StringsJa extends _StringsEn {
   @override
   String get floating_ball_screen_ocr_engine_lens => 'Google Lens (online)';
   @override
+  String get floating_ball_screen_ocr_engine_local => 'On-device';
+  @override
   String get floating_ball_screen_ocr_engine_system => 'System (offline)';
   @override
   String get floating_ball_screen_ocr_lens_disclosure_body =>
@@ -142882,6 +143216,23 @@ class _StringsJa extends _StringsEn {
   String get floating_ball_screen_ocr_lens_language => 'Google Lens language';
   @override
   String get floating_ball_screen_ocr_lens_language_auto => 'Automatic';
+  @override
+  String floating_ball_screen_ocr_local_download_body({
+    required Object name,
+    required Object size,
+  }) =>
+      '${name} needs about ${size}. It is downloaded once and then works offline.';
+  @override
+  String get floating_ball_screen_ocr_local_download_title =>
+      'Download the OCR model?';
+  @override
+  String get floating_ball_screen_ocr_local_missing =>
+      'The on-device OCR model isn\'t downloaded yet, so system OCR was used.';
+  @override
+  String get floating_ball_screen_ocr_local_model => 'On-device OCR model';
+  @override
+  String get floating_ball_screen_ocr_local_model_hint =>
+      'Runs offline. Pick the model for the script you read; it is downloaded once and shared with manga and video subtitle OCR.';
   @override
   String get floating_ball_show_labels => 'ボタンの文字を表示';
   @override
@@ -146689,6 +147040,37 @@ class _StringsJa extends _StringsEn {
   @override
   String get manga_ocr_parallel_tasks_desc =>
       '異なる本を同時に認識します。同じ本の章は順番どおりに処理されます。値を大きくするとメモリ使用量が増え、低メモリモードでは 1 に制限されます。';
+  @override
+  String get manga_ocr_ppocr_arabic_desc =>
+      'Reads Arabic, right to left. Horizontal text only; tapping picks words by line position. Model: PaddlePaddle/arabic_PP-OCRv5_mobile_rec.';
+  @override
+  String get manga_ocr_ppocr_arabic_model => 'PaddleOCR v5 (Arabic)';
+  @override
+  String get manga_ocr_ppocr_cyrillic_desc =>
+      'Reads Russian, Ukrainian, Bulgarian and other Cyrillic-script languages. Horizontal text only. Model: PaddlePaddle/cyrillic_PP-OCRv5_mobile_rec.';
+  @override
+  String get manga_ocr_ppocr_cyrillic_model => 'PaddleOCR v5 (Cyrillic)';
+  @override
+  String get manga_ocr_ppocr_greek_desc =>
+      'Reads Greek. Horizontal text only; accents are not always recognised. Model: PaddlePaddle/el_PP-OCRv5_mobile_rec.';
+  @override
+  String get manga_ocr_ppocr_greek_model => 'PaddleOCR v5 (Greek)';
+  @override
+  String get manga_ocr_ppocr_korean_desc =>
+      'Reads Korean (Hangul) for manhwa and webtoons. Horizontal text only. Model: PaddlePaddle/korean_PP-OCRv5_mobile_rec.';
+  @override
+  String get manga_ocr_ppocr_korean_model => 'PaddleOCR v5 (Korean)';
+  @override
+  String get manga_ocr_ppocr_small_desc =>
+      'Stock PP-OCRv6 small recognizer. Reads Chinese and Japanese, including vertical text, plus Latin scripts with diacritics. Pick it for Romanian (ș, ț). Model: PaddlePaddle/PP-OCRv6_small_rec.';
+  @override
+  String get manga_ocr_ppocr_small_model =>
+      'PaddleOCR v6 (Chinese, Japanese, Latin)';
+  @override
+  String get manga_ocr_ppocr_tiny_desc =>
+      'Small, fast recognizer for Latin-script languages such as English, Portuguese, Spanish, French, German and Polish. Horizontal text only. Model: PaddlePaddle/PP-OCRv6_tiny_rec.';
+  @override
+  String get manga_ocr_ppocr_tiny_model => 'PaddleOCR v6 (Latin, tiny)';
   @override
   String get manga_ocr_section => 'マンガOCR';
   @override
@@ -162634,6 +163016,8 @@ class _StringsKo extends _StringsEn {
   @override
   String get floating_ball_screen_ocr_engine_lens => 'Google Lens (online)';
   @override
+  String get floating_ball_screen_ocr_engine_local => 'On-device';
+  @override
   String get floating_ball_screen_ocr_engine_system => 'System (offline)';
   @override
   String get floating_ball_screen_ocr_lens_disclosure_body =>
@@ -162645,6 +163029,23 @@ class _StringsKo extends _StringsEn {
   String get floating_ball_screen_ocr_lens_language => 'Google Lens language';
   @override
   String get floating_ball_screen_ocr_lens_language_auto => 'Automatic';
+  @override
+  String floating_ball_screen_ocr_local_download_body({
+    required Object name,
+    required Object size,
+  }) =>
+      '${name} needs about ${size}. It is downloaded once and then works offline.';
+  @override
+  String get floating_ball_screen_ocr_local_download_title =>
+      'Download the OCR model?';
+  @override
+  String get floating_ball_screen_ocr_local_missing =>
+      'The on-device OCR model isn\'t downloaded yet, so system OCR was used.';
+  @override
+  String get floating_ball_screen_ocr_local_model => 'On-device OCR model';
+  @override
+  String get floating_ball_screen_ocr_local_model_hint =>
+      'Runs offline. Pick the model for the script you read; it is downloaded once and shared with manga and video subtitle OCR.';
   @override
   String get floating_ball_show_labels => '버튼 텍스트 표시';
   @override
@@ -166457,6 +166858,37 @@ class _StringsKo extends _StringsEn {
   @override
   String get manga_ocr_parallel_tasks_desc =>
       '서로 다른 책을 동시에 인식합니다. 같은 책의 챕터는 순서를 유지합니다. 값이 높을수록 메모리를 더 사용하며, 저메모리 모드에서는 1개로 제한됩니다.';
+  @override
+  String get manga_ocr_ppocr_arabic_desc =>
+      'Reads Arabic, right to left. Horizontal text only; tapping picks words by line position. Model: PaddlePaddle/arabic_PP-OCRv5_mobile_rec.';
+  @override
+  String get manga_ocr_ppocr_arabic_model => 'PaddleOCR v5 (Arabic)';
+  @override
+  String get manga_ocr_ppocr_cyrillic_desc =>
+      'Reads Russian, Ukrainian, Bulgarian and other Cyrillic-script languages. Horizontal text only. Model: PaddlePaddle/cyrillic_PP-OCRv5_mobile_rec.';
+  @override
+  String get manga_ocr_ppocr_cyrillic_model => 'PaddleOCR v5 (Cyrillic)';
+  @override
+  String get manga_ocr_ppocr_greek_desc =>
+      'Reads Greek. Horizontal text only; accents are not always recognised. Model: PaddlePaddle/el_PP-OCRv5_mobile_rec.';
+  @override
+  String get manga_ocr_ppocr_greek_model => 'PaddleOCR v5 (Greek)';
+  @override
+  String get manga_ocr_ppocr_korean_desc =>
+      'Reads Korean (Hangul) for manhwa and webtoons. Horizontal text only. Model: PaddlePaddle/korean_PP-OCRv5_mobile_rec.';
+  @override
+  String get manga_ocr_ppocr_korean_model => 'PaddleOCR v5 (Korean)';
+  @override
+  String get manga_ocr_ppocr_small_desc =>
+      'Stock PP-OCRv6 small recognizer. Reads Chinese and Japanese, including vertical text, plus Latin scripts with diacritics. Pick it for Romanian (ș, ț). Model: PaddlePaddle/PP-OCRv6_small_rec.';
+  @override
+  String get manga_ocr_ppocr_small_model =>
+      'PaddleOCR v6 (Chinese, Japanese, Latin)';
+  @override
+  String get manga_ocr_ppocr_tiny_desc =>
+      'Small, fast recognizer for Latin-script languages such as English, Portuguese, Spanish, French, German and Polish. Horizontal text only. Model: PaddlePaddle/PP-OCRv6_tiny_rec.';
+  @override
+  String get manga_ocr_ppocr_tiny_model => 'PaddleOCR v6 (Latin, tiny)';
   @override
   String get manga_ocr_section => '만화 OCR';
   @override
@@ -182687,6 +183119,8 @@ class _StringsNl extends _StringsEn {
   @override
   String get floating_ball_screen_ocr_engine_lens => 'Google Lens (online)';
   @override
+  String get floating_ball_screen_ocr_engine_local => 'On-device';
+  @override
   String get floating_ball_screen_ocr_engine_system => 'System (offline)';
   @override
   String get floating_ball_screen_ocr_lens_disclosure_body =>
@@ -182698,6 +183132,23 @@ class _StringsNl extends _StringsEn {
   String get floating_ball_screen_ocr_lens_language => 'Google Lens language';
   @override
   String get floating_ball_screen_ocr_lens_language_auto => 'Automatic';
+  @override
+  String floating_ball_screen_ocr_local_download_body({
+    required Object name,
+    required Object size,
+  }) =>
+      '${name} needs about ${size}. It is downloaded once and then works offline.';
+  @override
+  String get floating_ball_screen_ocr_local_download_title =>
+      'Download the OCR model?';
+  @override
+  String get floating_ball_screen_ocr_local_missing =>
+      'The on-device OCR model isn\'t downloaded yet, so system OCR was used.';
+  @override
+  String get floating_ball_screen_ocr_local_model => 'On-device OCR model';
+  @override
+  String get floating_ball_screen_ocr_local_model_hint =>
+      'Runs offline. Pick the model for the script you read; it is downloaded once and shared with manga and video subtitle OCR.';
   @override
   String get floating_ball_show_labels => 'Knoplabels tonen';
   @override
@@ -186716,6 +187167,37 @@ class _StringsNl extends _StringsEn {
   @override
   String get manga_ocr_parallel_tasks_desc =>
       'Herken verschillende boeken tegelijk. Hoofdstukken van hetzelfde boek blijven op volgorde. Hogere waarden gebruiken meer geheugen; de modus voor weinig geheugen beperkt dit tot één.';
+  @override
+  String get manga_ocr_ppocr_arabic_desc =>
+      'Reads Arabic, right to left. Horizontal text only; tapping picks words by line position. Model: PaddlePaddle/arabic_PP-OCRv5_mobile_rec.';
+  @override
+  String get manga_ocr_ppocr_arabic_model => 'PaddleOCR v5 (Arabic)';
+  @override
+  String get manga_ocr_ppocr_cyrillic_desc =>
+      'Reads Russian, Ukrainian, Bulgarian and other Cyrillic-script languages. Horizontal text only. Model: PaddlePaddle/cyrillic_PP-OCRv5_mobile_rec.';
+  @override
+  String get manga_ocr_ppocr_cyrillic_model => 'PaddleOCR v5 (Cyrillic)';
+  @override
+  String get manga_ocr_ppocr_greek_desc =>
+      'Reads Greek. Horizontal text only; accents are not always recognised. Model: PaddlePaddle/el_PP-OCRv5_mobile_rec.';
+  @override
+  String get manga_ocr_ppocr_greek_model => 'PaddleOCR v5 (Greek)';
+  @override
+  String get manga_ocr_ppocr_korean_desc =>
+      'Reads Korean (Hangul) for manhwa and webtoons. Horizontal text only. Model: PaddlePaddle/korean_PP-OCRv5_mobile_rec.';
+  @override
+  String get manga_ocr_ppocr_korean_model => 'PaddleOCR v5 (Korean)';
+  @override
+  String get manga_ocr_ppocr_small_desc =>
+      'Stock PP-OCRv6 small recognizer. Reads Chinese and Japanese, including vertical text, plus Latin scripts with diacritics. Pick it for Romanian (ș, ț). Model: PaddlePaddle/PP-OCRv6_small_rec.';
+  @override
+  String get manga_ocr_ppocr_small_model =>
+      'PaddleOCR v6 (Chinese, Japanese, Latin)';
+  @override
+  String get manga_ocr_ppocr_tiny_desc =>
+      'Small, fast recognizer for Latin-script languages such as English, Portuguese, Spanish, French, German and Polish. Horizontal text only. Model: PaddlePaddle/PP-OCRv6_tiny_rec.';
+  @override
+  String get manga_ocr_ppocr_tiny_model => 'PaddleOCR v6 (Latin, tiny)';
   @override
   String get manga_ocr_section => 'Manga-OCR';
   @override
@@ -203425,9 +203907,11 @@ class _StringsPtBr extends _StringsEn {
   String get floating_ball_screen_ocr_engine => 'Mecanismo de OCR de tela';
   @override
   String get floating_ball_screen_ocr_engine_hint =>
-      'O Google Lens lê escritas que o mecanismo do sistema não lê, como russo e grego, mas precisa de internet e envia a imagem capturada ao Google. Se falhar, o mecanismo do sistema é usado.';
+      '"No aparelho" lê o texto offline com modelos PaddleOCR baixados uma vez. O Google Lens precisa de internet e envia a imagem capturada ao Google. O mecanismo do sistema não precisa de nada extra. Se o mecanismo escolhido falhar, o do sistema é usado.';
   @override
   String get floating_ball_screen_ocr_engine_lens => 'Google Lens (online)';
+  @override
+  String get floating_ball_screen_ocr_engine_local => 'No aparelho';
   @override
   String get floating_ball_screen_ocr_engine_system => 'Sistema (offline)';
   @override
@@ -203440,6 +203924,24 @@ class _StringsPtBr extends _StringsEn {
   String get floating_ball_screen_ocr_lens_language => 'Idioma do Google Lens';
   @override
   String get floating_ball_screen_ocr_lens_language_auto => 'Automático';
+  @override
+  String floating_ball_screen_ocr_local_download_body({
+    required Object name,
+    required Object size,
+  }) =>
+      '${name} precisa de cerca de ${size}. Ele é baixado uma vez e depois funciona offline.';
+  @override
+  String get floating_ball_screen_ocr_local_download_title =>
+      'Baixar o modelo de OCR?';
+  @override
+  String get floating_ball_screen_ocr_local_missing =>
+      'O modelo de OCR no aparelho ainda não foi baixado, então foi usado o OCR do sistema.';
+  @override
+  String get floating_ball_screen_ocr_local_model =>
+      'Modelo de OCR no aparelho';
+  @override
+  String get floating_ball_screen_ocr_local_model_hint =>
+      'Funciona offline. Escolha o modelo da escrita que você lê; ele é baixado uma vez e compartilhado com o OCR de mangá e de legendas de vídeo.';
   @override
   String get floating_ball_show_labels => 'Mostrar rótulos dos botões';
   @override
@@ -207478,6 +207980,37 @@ class _StringsPtBr extends _StringsEn {
   @override
   String get manga_ocr_parallel_tasks_desc =>
       'Reconhece livros diferentes ao mesmo tempo. Os capítulos do mesmo livro permanecem em ordem. Valores maiores usam mais memória; o modo de pouca memória limita isso a um.';
+  @override
+  String get manga_ocr_ppocr_arabic_desc =>
+      'Lê árabe, da direita para a esquerda. Só texto horizontal; o toque escolhe a palavra pela posição na linha. Modelo: PaddlePaddle/arabic_PP-OCRv5_mobile_rec.';
+  @override
+  String get manga_ocr_ppocr_arabic_model => 'PaddleOCR v5 (árabe)';
+  @override
+  String get manga_ocr_ppocr_cyrillic_desc =>
+      'Lê russo, ucraniano, búlgaro e outros idiomas de escrita cirílica. Só texto horizontal. Modelo: PaddlePaddle/cyrillic_PP-OCRv5_mobile_rec.';
+  @override
+  String get manga_ocr_ppocr_cyrillic_model => 'PaddleOCR v5 (cirílico)';
+  @override
+  String get manga_ocr_ppocr_greek_desc =>
+      'Lê grego. Só texto horizontal; os acentos nem sempre são reconhecidos. Modelo: PaddlePaddle/el_PP-OCRv5_mobile_rec.';
+  @override
+  String get manga_ocr_ppocr_greek_model => 'PaddleOCR v5 (grego)';
+  @override
+  String get manga_ocr_ppocr_korean_desc =>
+      'Lê coreano (hangul), para manhwa e webtoons. Só texto horizontal. Modelo: PaddlePaddle/korean_PP-OCRv5_mobile_rec.';
+  @override
+  String get manga_ocr_ppocr_korean_model => 'PaddleOCR v5 (coreano)';
+  @override
+  String get manga_ocr_ppocr_small_desc =>
+      'Reconhecedor PP-OCRv6 small oficial. Lê chinês e japonês, inclusive texto vertical, e escritas latinas com diacríticos. Escolha-o para romeno (ș, ț). Modelo: PaddlePaddle/PP-OCRv6_small_rec.';
+  @override
+  String get manga_ocr_ppocr_small_model =>
+      'PaddleOCR v6 (chinês, japonês, latino)';
+  @override
+  String get manga_ocr_ppocr_tiny_desc =>
+      'Reconhecedor pequeno e rápido para idiomas de escrita latina, como inglês, português, espanhol, francês, alemão e polonês. Só texto horizontal. Modelo: PaddlePaddle/PP-OCRv6_tiny_rec.';
+  @override
+  String get manga_ocr_ppocr_tiny_model => 'PaddleOCR v6 (latino, tiny)';
   @override
   String get manga_ocr_section => 'OCR de mangá';
   @override
@@ -224189,6 +224722,8 @@ class _StringsRu extends _StringsEn {
   @override
   String get floating_ball_screen_ocr_engine_lens => 'Google Lens (online)';
   @override
+  String get floating_ball_screen_ocr_engine_local => 'On-device';
+  @override
   String get floating_ball_screen_ocr_engine_system => 'System (offline)';
   @override
   String get floating_ball_screen_ocr_lens_disclosure_body =>
@@ -224200,6 +224735,23 @@ class _StringsRu extends _StringsEn {
   String get floating_ball_screen_ocr_lens_language => 'Google Lens language';
   @override
   String get floating_ball_screen_ocr_lens_language_auto => 'Automatic';
+  @override
+  String floating_ball_screen_ocr_local_download_body({
+    required Object name,
+    required Object size,
+  }) =>
+      '${name} needs about ${size}. It is downloaded once and then works offline.';
+  @override
+  String get floating_ball_screen_ocr_local_download_title =>
+      'Download the OCR model?';
+  @override
+  String get floating_ball_screen_ocr_local_missing =>
+      'The on-device OCR model isn\'t downloaded yet, so system OCR was used.';
+  @override
+  String get floating_ball_screen_ocr_local_model => 'On-device OCR model';
+  @override
+  String get floating_ball_screen_ocr_local_model_hint =>
+      'Runs offline. Pick the model for the script you read; it is downloaded once and shared with manga and video subtitle OCR.';
   @override
   String get floating_ball_show_labels => 'Показывать подписи кнопок';
   @override
@@ -228222,6 +228774,37 @@ class _StringsRu extends _StringsEn {
   @override
   String get manga_ocr_parallel_tasks_desc =>
       'Распознавать разные книги одновременно. Главы одной книги остаются по порядку. Большие значения расходуют больше памяти; режим малой памяти ограничивает это одной задачей.';
+  @override
+  String get manga_ocr_ppocr_arabic_desc =>
+      'Reads Arabic, right to left. Horizontal text only; tapping picks words by line position. Model: PaddlePaddle/arabic_PP-OCRv5_mobile_rec.';
+  @override
+  String get manga_ocr_ppocr_arabic_model => 'PaddleOCR v5 (Arabic)';
+  @override
+  String get manga_ocr_ppocr_cyrillic_desc =>
+      'Reads Russian, Ukrainian, Bulgarian and other Cyrillic-script languages. Horizontal text only. Model: PaddlePaddle/cyrillic_PP-OCRv5_mobile_rec.';
+  @override
+  String get manga_ocr_ppocr_cyrillic_model => 'PaddleOCR v5 (Cyrillic)';
+  @override
+  String get manga_ocr_ppocr_greek_desc =>
+      'Reads Greek. Horizontal text only; accents are not always recognised. Model: PaddlePaddle/el_PP-OCRv5_mobile_rec.';
+  @override
+  String get manga_ocr_ppocr_greek_model => 'PaddleOCR v5 (Greek)';
+  @override
+  String get manga_ocr_ppocr_korean_desc =>
+      'Reads Korean (Hangul) for manhwa and webtoons. Horizontal text only. Model: PaddlePaddle/korean_PP-OCRv5_mobile_rec.';
+  @override
+  String get manga_ocr_ppocr_korean_model => 'PaddleOCR v5 (Korean)';
+  @override
+  String get manga_ocr_ppocr_small_desc =>
+      'Stock PP-OCRv6 small recognizer. Reads Chinese and Japanese, including vertical text, plus Latin scripts with diacritics. Pick it for Romanian (ș, ț). Model: PaddlePaddle/PP-OCRv6_small_rec.';
+  @override
+  String get manga_ocr_ppocr_small_model =>
+      'PaddleOCR v6 (Chinese, Japanese, Latin)';
+  @override
+  String get manga_ocr_ppocr_tiny_desc =>
+      'Small, fast recognizer for Latin-script languages such as English, Portuguese, Spanish, French, German and Polish. Horizontal text only. Model: PaddlePaddle/PP-OCRv6_tiny_rec.';
+  @override
+  String get manga_ocr_ppocr_tiny_model => 'PaddleOCR v6 (Latin, tiny)';
   @override
   String get manga_ocr_section => 'OCR манги';
   @override
@@ -244843,6 +245426,8 @@ class _StringsTh extends _StringsEn {
   @override
   String get floating_ball_screen_ocr_engine_lens => 'Google Lens (online)';
   @override
+  String get floating_ball_screen_ocr_engine_local => 'On-device';
+  @override
   String get floating_ball_screen_ocr_engine_system => 'System (offline)';
   @override
   String get floating_ball_screen_ocr_lens_disclosure_body =>
@@ -244854,6 +245439,23 @@ class _StringsTh extends _StringsEn {
   String get floating_ball_screen_ocr_lens_language => 'Google Lens language';
   @override
   String get floating_ball_screen_ocr_lens_language_auto => 'Automatic';
+  @override
+  String floating_ball_screen_ocr_local_download_body({
+    required Object name,
+    required Object size,
+  }) =>
+      '${name} needs about ${size}. It is downloaded once and then works offline.';
+  @override
+  String get floating_ball_screen_ocr_local_download_title =>
+      'Download the OCR model?';
+  @override
+  String get floating_ball_screen_ocr_local_missing =>
+      'The on-device OCR model isn\'t downloaded yet, so system OCR was used.';
+  @override
+  String get floating_ball_screen_ocr_local_model => 'On-device OCR model';
+  @override
+  String get floating_ball_screen_ocr_local_model_hint =>
+      'Runs offline. Pick the model for the script you read; it is downloaded once and shared with manga and video subtitle OCR.';
   @override
   String get floating_ball_show_labels => 'แสดงข้อความบนปุ่ม';
   @override
@@ -248801,6 +249403,37 @@ class _StringsTh extends _StringsEn {
   @override
   String get manga_ocr_parallel_tasks_desc =>
       'จดจำหนังสือต่างเล่มพร้อมกัน ตอนของหนังสือเล่มเดียวกันยังเรียงตามลำดับ ค่าสูงใช้หน่วยความจำมากขึ้น โหมดหน่วยความจำต่ำจำกัดไว้ที่หนึ่งงาน';
+  @override
+  String get manga_ocr_ppocr_arabic_desc =>
+      'Reads Arabic, right to left. Horizontal text only; tapping picks words by line position. Model: PaddlePaddle/arabic_PP-OCRv5_mobile_rec.';
+  @override
+  String get manga_ocr_ppocr_arabic_model => 'PaddleOCR v5 (Arabic)';
+  @override
+  String get manga_ocr_ppocr_cyrillic_desc =>
+      'Reads Russian, Ukrainian, Bulgarian and other Cyrillic-script languages. Horizontal text only. Model: PaddlePaddle/cyrillic_PP-OCRv5_mobile_rec.';
+  @override
+  String get manga_ocr_ppocr_cyrillic_model => 'PaddleOCR v5 (Cyrillic)';
+  @override
+  String get manga_ocr_ppocr_greek_desc =>
+      'Reads Greek. Horizontal text only; accents are not always recognised. Model: PaddlePaddle/el_PP-OCRv5_mobile_rec.';
+  @override
+  String get manga_ocr_ppocr_greek_model => 'PaddleOCR v5 (Greek)';
+  @override
+  String get manga_ocr_ppocr_korean_desc =>
+      'Reads Korean (Hangul) for manhwa and webtoons. Horizontal text only. Model: PaddlePaddle/korean_PP-OCRv5_mobile_rec.';
+  @override
+  String get manga_ocr_ppocr_korean_model => 'PaddleOCR v5 (Korean)';
+  @override
+  String get manga_ocr_ppocr_small_desc =>
+      'Stock PP-OCRv6 small recognizer. Reads Chinese and Japanese, including vertical text, plus Latin scripts with diacritics. Pick it for Romanian (ș, ț). Model: PaddlePaddle/PP-OCRv6_small_rec.';
+  @override
+  String get manga_ocr_ppocr_small_model =>
+      'PaddleOCR v6 (Chinese, Japanese, Latin)';
+  @override
+  String get manga_ocr_ppocr_tiny_desc =>
+      'Small, fast recognizer for Latin-script languages such as English, Portuguese, Spanish, French, German and Polish. Horizontal text only. Model: PaddlePaddle/PP-OCRv6_tiny_rec.';
+  @override
+  String get manga_ocr_ppocr_tiny_model => 'PaddleOCR v6 (Latin, tiny)';
   @override
   String get manga_ocr_section => 'OCR มังงะ';
   @override
@@ -265316,6 +265949,8 @@ class _StringsTr extends _StringsEn {
   @override
   String get floating_ball_screen_ocr_engine_lens => 'Google Lens (online)';
   @override
+  String get floating_ball_screen_ocr_engine_local => 'On-device';
+  @override
   String get floating_ball_screen_ocr_engine_system => 'System (offline)';
   @override
   String get floating_ball_screen_ocr_lens_disclosure_body =>
@@ -265327,6 +265962,23 @@ class _StringsTr extends _StringsEn {
   String get floating_ball_screen_ocr_lens_language => 'Google Lens language';
   @override
   String get floating_ball_screen_ocr_lens_language_auto => 'Automatic';
+  @override
+  String floating_ball_screen_ocr_local_download_body({
+    required Object name,
+    required Object size,
+  }) =>
+      '${name} needs about ${size}. It is downloaded once and then works offline.';
+  @override
+  String get floating_ball_screen_ocr_local_download_title =>
+      'Download the OCR model?';
+  @override
+  String get floating_ball_screen_ocr_local_missing =>
+      'The on-device OCR model isn\'t downloaded yet, so system OCR was used.';
+  @override
+  String get floating_ball_screen_ocr_local_model => 'On-device OCR model';
+  @override
+  String get floating_ball_screen_ocr_local_model_hint =>
+      'Runs offline. Pick the model for the script you read; it is downloaded once and shared with manga and video subtitle OCR.';
   @override
   String get floating_ball_show_labels => 'Düğme etiketlerini göster';
   @override
@@ -269330,6 +269982,37 @@ class _StringsTr extends _StringsEn {
   @override
   String get manga_ocr_parallel_tasks_desc =>
       'Farklı kitapları aynı anda tanıyın. Aynı kitabın bölümleri sırayla kalır. Yüksek değerler daha fazla bellek kullanır; düşük bellek modu bunu bire sınırlar.';
+  @override
+  String get manga_ocr_ppocr_arabic_desc =>
+      'Reads Arabic, right to left. Horizontal text only; tapping picks words by line position. Model: PaddlePaddle/arabic_PP-OCRv5_mobile_rec.';
+  @override
+  String get manga_ocr_ppocr_arabic_model => 'PaddleOCR v5 (Arabic)';
+  @override
+  String get manga_ocr_ppocr_cyrillic_desc =>
+      'Reads Russian, Ukrainian, Bulgarian and other Cyrillic-script languages. Horizontal text only. Model: PaddlePaddle/cyrillic_PP-OCRv5_mobile_rec.';
+  @override
+  String get manga_ocr_ppocr_cyrillic_model => 'PaddleOCR v5 (Cyrillic)';
+  @override
+  String get manga_ocr_ppocr_greek_desc =>
+      'Reads Greek. Horizontal text only; accents are not always recognised. Model: PaddlePaddle/el_PP-OCRv5_mobile_rec.';
+  @override
+  String get manga_ocr_ppocr_greek_model => 'PaddleOCR v5 (Greek)';
+  @override
+  String get manga_ocr_ppocr_korean_desc =>
+      'Reads Korean (Hangul) for manhwa and webtoons. Horizontal text only. Model: PaddlePaddle/korean_PP-OCRv5_mobile_rec.';
+  @override
+  String get manga_ocr_ppocr_korean_model => 'PaddleOCR v5 (Korean)';
+  @override
+  String get manga_ocr_ppocr_small_desc =>
+      'Stock PP-OCRv6 small recognizer. Reads Chinese and Japanese, including vertical text, plus Latin scripts with diacritics. Pick it for Romanian (ș, ț). Model: PaddlePaddle/PP-OCRv6_small_rec.';
+  @override
+  String get manga_ocr_ppocr_small_model =>
+      'PaddleOCR v6 (Chinese, Japanese, Latin)';
+  @override
+  String get manga_ocr_ppocr_tiny_desc =>
+      'Small, fast recognizer for Latin-script languages such as English, Portuguese, Spanish, French, German and Polish. Horizontal text only. Model: PaddlePaddle/PP-OCRv6_tiny_rec.';
+  @override
+  String get manga_ocr_ppocr_tiny_model => 'PaddleOCR v6 (Latin, tiny)';
   @override
   String get manga_ocr_section => 'Manga OCR';
   @override
@@ -285915,6 +286598,8 @@ class _StringsVi extends _StringsEn {
   @override
   String get floating_ball_screen_ocr_engine_lens => 'Google Lens (online)';
   @override
+  String get floating_ball_screen_ocr_engine_local => 'On-device';
+  @override
   String get floating_ball_screen_ocr_engine_system => 'System (offline)';
   @override
   String get floating_ball_screen_ocr_lens_disclosure_body =>
@@ -285926,6 +286611,23 @@ class _StringsVi extends _StringsEn {
   String get floating_ball_screen_ocr_lens_language => 'Google Lens language';
   @override
   String get floating_ball_screen_ocr_lens_language_auto => 'Automatic';
+  @override
+  String floating_ball_screen_ocr_local_download_body({
+    required Object name,
+    required Object size,
+  }) =>
+      '${name} needs about ${size}. It is downloaded once and then works offline.';
+  @override
+  String get floating_ball_screen_ocr_local_download_title =>
+      'Download the OCR model?';
+  @override
+  String get floating_ball_screen_ocr_local_missing =>
+      'The on-device OCR model isn\'t downloaded yet, so system OCR was used.';
+  @override
+  String get floating_ball_screen_ocr_local_model => 'On-device OCR model';
+  @override
+  String get floating_ball_screen_ocr_local_model_hint =>
+      'Runs offline. Pick the model for the script you read; it is downloaded once and shared with manga and video subtitle OCR.';
   @override
   String get floating_ball_show_labels => 'Hiển thị nhãn nút';
   @override
@@ -289911,6 +290613,37 @@ class _StringsVi extends _StringsEn {
   @override
   String get manga_ocr_parallel_tasks_desc =>
       'Nhận dạng nhiều sách cùng lúc. Các chương của cùng một sách vẫn theo thứ tự. Giá trị cao hơn dùng nhiều bộ nhớ hơn; chế độ ít bộ nhớ giới hạn ở một.';
+  @override
+  String get manga_ocr_ppocr_arabic_desc =>
+      'Reads Arabic, right to left. Horizontal text only; tapping picks words by line position. Model: PaddlePaddle/arabic_PP-OCRv5_mobile_rec.';
+  @override
+  String get manga_ocr_ppocr_arabic_model => 'PaddleOCR v5 (Arabic)';
+  @override
+  String get manga_ocr_ppocr_cyrillic_desc =>
+      'Reads Russian, Ukrainian, Bulgarian and other Cyrillic-script languages. Horizontal text only. Model: PaddlePaddle/cyrillic_PP-OCRv5_mobile_rec.';
+  @override
+  String get manga_ocr_ppocr_cyrillic_model => 'PaddleOCR v5 (Cyrillic)';
+  @override
+  String get manga_ocr_ppocr_greek_desc =>
+      'Reads Greek. Horizontal text only; accents are not always recognised. Model: PaddlePaddle/el_PP-OCRv5_mobile_rec.';
+  @override
+  String get manga_ocr_ppocr_greek_model => 'PaddleOCR v5 (Greek)';
+  @override
+  String get manga_ocr_ppocr_korean_desc =>
+      'Reads Korean (Hangul) for manhwa and webtoons. Horizontal text only. Model: PaddlePaddle/korean_PP-OCRv5_mobile_rec.';
+  @override
+  String get manga_ocr_ppocr_korean_model => 'PaddleOCR v5 (Korean)';
+  @override
+  String get manga_ocr_ppocr_small_desc =>
+      'Stock PP-OCRv6 small recognizer. Reads Chinese and Japanese, including vertical text, plus Latin scripts with diacritics. Pick it for Romanian (ș, ț). Model: PaddlePaddle/PP-OCRv6_small_rec.';
+  @override
+  String get manga_ocr_ppocr_small_model =>
+      'PaddleOCR v6 (Chinese, Japanese, Latin)';
+  @override
+  String get manga_ocr_ppocr_tiny_desc =>
+      'Small, fast recognizer for Latin-script languages such as English, Portuguese, Spanish, French, German and Polish. Horizontal text only. Model: PaddlePaddle/PP-OCRv6_tiny_rec.';
+  @override
+  String get manga_ocr_ppocr_tiny_model => 'PaddleOCR v6 (Latin, tiny)';
   @override
   String get manga_ocr_section => 'OCR truyện tranh';
   @override
@@ -305903,9 +306636,11 @@ class _StringsZhCn extends _StringsEn {
   String get floating_ball_screen_ocr_engine => '截屏识字引擎';
   @override
   String get floating_ball_screen_ocr_engine_hint =>
-      'Google Lens 能读系统引擎读不了的文字（如俄文、希腊文），但需要联网，并会把截取的图片发送给 Google。识别失败时改用系统引擎。';
+      '「本地」用下载一次的 PaddleOCR 模型离线识别；Google Lens 需要联网，会把截取的图片发给 Google；系统引擎不需要额外下载。所选引擎失败时改用系统引擎。';
   @override
   String get floating_ball_screen_ocr_engine_lens => 'Google Lens（联网）';
+  @override
+  String get floating_ball_screen_ocr_engine_local => '本地';
   @override
   String get floating_ball_screen_ocr_engine_system => '系统（离线）';
   @override
@@ -305918,6 +306653,20 @@ class _StringsZhCn extends _StringsEn {
   String get floating_ball_screen_ocr_lens_language => 'Google Lens 识别语言';
   @override
   String get floating_ball_screen_ocr_lens_language_auto => '自动';
+  @override
+  String floating_ball_screen_ocr_local_download_body({
+    required Object name,
+    required Object size,
+  }) => '${name} 约需 ${size}。下载一次后即可离线使用。';
+  @override
+  String get floating_ball_screen_ocr_local_download_title => '下载识别模型？';
+  @override
+  String get floating_ball_screen_ocr_local_missing => '本地识别模型还没下载，这次用了系统 OCR。';
+  @override
+  String get floating_ball_screen_ocr_local_model => '本地识别模型';
+  @override
+  String get floating_ball_screen_ocr_local_model_hint =>
+      '离线运行。按要读的文字选模型；模型只下载一次，与漫画、视频字幕 OCR 共用。';
   @override
   String get floating_ball_show_labels => '显示按钮文字';
   @override
@@ -309532,6 +310281,36 @@ class _StringsZhCn extends _StringsEn {
   @override
   String get manga_ocr_parallel_tasks_desc =>
       '同时识别不同书籍，同一本书的章节按顺序处理。数量越大占用内存越多；低内存模式下最多运行一个任务。';
+  @override
+  String get manga_ocr_ppocr_arabic_desc =>
+      '读阿拉伯文（从右往左），只认横排；点词按行内位置估算。模型：PaddlePaddle/arabic_PP-OCRv5_mobile_rec。';
+  @override
+  String get manga_ocr_ppocr_arabic_model => 'PaddleOCR v5（阿拉伯文）';
+  @override
+  String get manga_ocr_ppocr_cyrillic_desc =>
+      '读俄、乌、保加利亚语等西里尔字母语言，只认横排。模型：PaddlePaddle/cyrillic_PP-OCRv5_mobile_rec。';
+  @override
+  String get manga_ocr_ppocr_cyrillic_model => 'PaddleOCR v5（西里尔字母）';
+  @override
+  String get manga_ocr_ppocr_greek_desc =>
+      '读希腊文，只认横排；重音符号不一定认得出。模型：PaddlePaddle/el_PP-OCRv5_mobile_rec。';
+  @override
+  String get manga_ocr_ppocr_greek_model => 'PaddleOCR v5（希腊文）';
+  @override
+  String get manga_ocr_ppocr_korean_desc =>
+      '读韩文（谚文），适合韩漫与条漫，只认横排。模型：PaddlePaddle/korean_PP-OCRv5_mobile_rec。';
+  @override
+  String get manga_ocr_ppocr_korean_model => 'PaddleOCR v5（韩文）';
+  @override
+  String get manga_ocr_ppocr_small_desc =>
+      'PaddlePaddle 官方 PP-OCRv6 small 识别模型：读中日文（含竖排）与带变音符的拉丁文，罗马尼亚语请选它。模型：PaddlePaddle/PP-OCRv6_small_rec。';
+  @override
+  String get manga_ocr_ppocr_small_model => 'PaddleOCR v6（中日文、拉丁文）';
+  @override
+  String get manga_ocr_ppocr_tiny_desc =>
+      '体积小、速度快，读英、葡、西、法、德、波兰语等拉丁字母语言，只认横排。模型：PaddlePaddle/PP-OCRv6_tiny_rec。';
+  @override
+  String get manga_ocr_ppocr_tiny_model => 'PaddleOCR v6（拉丁文，tiny）';
   @override
   String get manga_ocr_section => '漫画 OCR';
   @override
@@ -324848,6 +325627,8 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get floating_ball_screen_ocr_engine_lens => 'Google Lens (online)';
   @override
+  String get floating_ball_screen_ocr_engine_local => 'On-device';
+  @override
   String get floating_ball_screen_ocr_engine_system => 'System (offline)';
   @override
   String get floating_ball_screen_ocr_lens_disclosure_body =>
@@ -324859,6 +325640,23 @@ class _StringsZhHk extends _StringsEn {
   String get floating_ball_screen_ocr_lens_language => 'Google Lens language';
   @override
   String get floating_ball_screen_ocr_lens_language_auto => 'Automatic';
+  @override
+  String floating_ball_screen_ocr_local_download_body({
+    required Object name,
+    required Object size,
+  }) =>
+      '${name} needs about ${size}. It is downloaded once and then works offline.';
+  @override
+  String get floating_ball_screen_ocr_local_download_title =>
+      'Download the OCR model?';
+  @override
+  String get floating_ball_screen_ocr_local_missing =>
+      'The on-device OCR model isn\'t downloaded yet, so system OCR was used.';
+  @override
+  String get floating_ball_screen_ocr_local_model => 'On-device OCR model';
+  @override
+  String get floating_ball_screen_ocr_local_model_hint =>
+      'Runs offline. Pick the model for the script you read; it is downloaded once and shared with manga and video subtitle OCR.';
   @override
   String get floating_ball_show_labels => '顯示按鈕文字';
   @override
@@ -328512,6 +329310,37 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get manga_ocr_parallel_tasks_desc =>
       '同時識別不同書籍，同一本書的章節按順序處理。數量越大佔用記憶體越多；低記憶體模式下最多運行一個任務。';
+  @override
+  String get manga_ocr_ppocr_arabic_desc =>
+      'Reads Arabic, right to left. Horizontal text only; tapping picks words by line position. Model: PaddlePaddle/arabic_PP-OCRv5_mobile_rec.';
+  @override
+  String get manga_ocr_ppocr_arabic_model => 'PaddleOCR v5 (Arabic)';
+  @override
+  String get manga_ocr_ppocr_cyrillic_desc =>
+      'Reads Russian, Ukrainian, Bulgarian and other Cyrillic-script languages. Horizontal text only. Model: PaddlePaddle/cyrillic_PP-OCRv5_mobile_rec.';
+  @override
+  String get manga_ocr_ppocr_cyrillic_model => 'PaddleOCR v5 (Cyrillic)';
+  @override
+  String get manga_ocr_ppocr_greek_desc =>
+      'Reads Greek. Horizontal text only; accents are not always recognised. Model: PaddlePaddle/el_PP-OCRv5_mobile_rec.';
+  @override
+  String get manga_ocr_ppocr_greek_model => 'PaddleOCR v5 (Greek)';
+  @override
+  String get manga_ocr_ppocr_korean_desc =>
+      'Reads Korean (Hangul) for manhwa and webtoons. Horizontal text only. Model: PaddlePaddle/korean_PP-OCRv5_mobile_rec.';
+  @override
+  String get manga_ocr_ppocr_korean_model => 'PaddleOCR v5 (Korean)';
+  @override
+  String get manga_ocr_ppocr_small_desc =>
+      'Stock PP-OCRv6 small recognizer. Reads Chinese and Japanese, including vertical text, plus Latin scripts with diacritics. Pick it for Romanian (ș, ț). Model: PaddlePaddle/PP-OCRv6_small_rec.';
+  @override
+  String get manga_ocr_ppocr_small_model =>
+      'PaddleOCR v6 (Chinese, Japanese, Latin)';
+  @override
+  String get manga_ocr_ppocr_tiny_desc =>
+      'Small, fast recognizer for Latin-script languages such as English, Portuguese, Spanish, French, German and Polish. Horizontal text only. Model: PaddlePaddle/PP-OCRv6_tiny_rec.';
+  @override
+  String get manga_ocr_ppocr_tiny_model => 'PaddleOCR v6 (Latin, tiny)';
   @override
   String get manga_ocr_section => '漫畫 OCR';
   @override
@@ -343387,9 +344216,11 @@ extension on _StringsEn {
       case 'floating_ball_screen_ocr_engine':
         return 'Screen OCR engine';
       case 'floating_ball_screen_ocr_engine_hint':
-        return 'Google Lens reads scripts the system engine can\'t, such as Russian and Greek, but needs internet and sends the captured image to Google. If it fails, the system engine is used.';
+        return 'On-device reads text offline with PaddleOCR models you download once. Google Lens needs internet and sends the captured image to Google. The system engine needs nothing extra. If the chosen engine fails, the system engine is used.';
       case 'floating_ball_screen_ocr_engine_lens':
         return 'Google Lens (online)';
+      case 'floating_ball_screen_ocr_engine_local':
+        return 'On-device';
       case 'floating_ball_screen_ocr_engine_system':
         return 'System (offline)';
       case 'floating_ball_screen_ocr_lens_disclosure_body':
@@ -343400,6 +344231,17 @@ extension on _StringsEn {
         return 'Google Lens language';
       case 'floating_ball_screen_ocr_lens_language_auto':
         return 'Automatic';
+      case 'floating_ball_screen_ocr_local_download_body':
+        return ({required Object name, required Object size}) =>
+            '${name} needs about ${size}. It is downloaded once and then works offline.';
+      case 'floating_ball_screen_ocr_local_download_title':
+        return 'Download the OCR model?';
+      case 'floating_ball_screen_ocr_local_missing':
+        return 'The on-device OCR model isn\'t downloaded yet, so system OCR was used.';
+      case 'floating_ball_screen_ocr_local_model':
+        return 'On-device OCR model';
+      case 'floating_ball_screen_ocr_local_model_hint':
+        return 'Runs offline. Pick the model for the script you read; it is downloaded once and shared with manga and video subtitle OCR.';
       case 'floating_ball_show_labels':
         return 'Show button labels';
       case 'floating_ball_show_labels_hint':
@@ -346746,6 +347588,30 @@ extension on _StringsEn {
         return 'Parallel OCR tasks';
       case 'manga_ocr_parallel_tasks_desc':
         return 'Recognize different books at once. Chapters of the same book stay in order. Higher values use more memory; low-memory mode limits this to one.';
+      case 'manga_ocr_ppocr_arabic_desc':
+        return 'Reads Arabic, right to left. Horizontal text only; tapping picks words by line position. Model: PaddlePaddle/arabic_PP-OCRv5_mobile_rec.';
+      case 'manga_ocr_ppocr_arabic_model':
+        return 'PaddleOCR v5 (Arabic)';
+      case 'manga_ocr_ppocr_cyrillic_desc':
+        return 'Reads Russian, Ukrainian, Bulgarian and other Cyrillic-script languages. Horizontal text only. Model: PaddlePaddle/cyrillic_PP-OCRv5_mobile_rec.';
+      case 'manga_ocr_ppocr_cyrillic_model':
+        return 'PaddleOCR v5 (Cyrillic)';
+      case 'manga_ocr_ppocr_greek_desc':
+        return 'Reads Greek. Horizontal text only; accents are not always recognised. Model: PaddlePaddle/el_PP-OCRv5_mobile_rec.';
+      case 'manga_ocr_ppocr_greek_model':
+        return 'PaddleOCR v5 (Greek)';
+      case 'manga_ocr_ppocr_korean_desc':
+        return 'Reads Korean (Hangul) for manhwa and webtoons. Horizontal text only. Model: PaddlePaddle/korean_PP-OCRv5_mobile_rec.';
+      case 'manga_ocr_ppocr_korean_model':
+        return 'PaddleOCR v5 (Korean)';
+      case 'manga_ocr_ppocr_small_desc':
+        return 'Stock PP-OCRv6 small recognizer. Reads Chinese and Japanese, including vertical text, plus Latin scripts with diacritics. Pick it for Romanian (ș, ț). Model: PaddlePaddle/PP-OCRv6_small_rec.';
+      case 'manga_ocr_ppocr_small_model':
+        return 'PaddleOCR v6 (Chinese, Japanese, Latin)';
+      case 'manga_ocr_ppocr_tiny_desc':
+        return 'Small, fast recognizer for Latin-script languages such as English, Portuguese, Spanish, French, German and Polish. Horizontal text only. Model: PaddlePaddle/PP-OCRv6_tiny_rec.';
+      case 'manga_ocr_ppocr_tiny_model':
+        return 'PaddleOCR v6 (Latin, tiny)';
       case 'manga_ocr_section':
         return 'Manga OCR';
       case 'manga_ocr_section_summary':
@@ -360930,6 +361796,8 @@ extension on _StringsAr {
         return 'Google Lens reads scripts the system engine can\'t, such as Russian and Greek, but needs internet and sends the captured image to Google. If it fails, the system engine is used.';
       case 'floating_ball_screen_ocr_engine_lens':
         return 'Google Lens (online)';
+      case 'floating_ball_screen_ocr_engine_local':
+        return 'On-device';
       case 'floating_ball_screen_ocr_engine_system':
         return 'System (offline)';
       case 'floating_ball_screen_ocr_lens_disclosure_body':
@@ -360940,6 +361808,17 @@ extension on _StringsAr {
         return 'Google Lens language';
       case 'floating_ball_screen_ocr_lens_language_auto':
         return 'Automatic';
+      case 'floating_ball_screen_ocr_local_download_body':
+        return ({required Object name, required Object size}) =>
+            '${name} needs about ${size}. It is downloaded once and then works offline.';
+      case 'floating_ball_screen_ocr_local_download_title':
+        return 'Download the OCR model?';
+      case 'floating_ball_screen_ocr_local_missing':
+        return 'The on-device OCR model isn\'t downloaded yet, so system OCR was used.';
+      case 'floating_ball_screen_ocr_local_model':
+        return 'On-device OCR model';
+      case 'floating_ball_screen_ocr_local_model_hint':
+        return 'Runs offline. Pick the model for the script you read; it is downloaded once and shared with manga and video subtitle OCR.';
       case 'floating_ball_show_labels':
         return 'إظهار تسميات الأزرار';
       case 'floating_ball_show_labels_hint':
@@ -364281,6 +365160,30 @@ extension on _StringsAr {
         return 'مهام OCR المتوازية';
       case 'manga_ocr_parallel_tasks_desc':
         return 'التعرف على كتب مختلفة في وقت واحد. تبقى فصول الكتاب الواحد بالترتيب. القيم الأعلى تستهلك ذاكرة أكثر؛ ووضع الذاكرة المنخفضة يحدّها بمهمة واحدة.';
+      case 'manga_ocr_ppocr_arabic_desc':
+        return 'Reads Arabic, right to left. Horizontal text only; tapping picks words by line position. Model: PaddlePaddle/arabic_PP-OCRv5_mobile_rec.';
+      case 'manga_ocr_ppocr_arabic_model':
+        return 'PaddleOCR v5 (Arabic)';
+      case 'manga_ocr_ppocr_cyrillic_desc':
+        return 'Reads Russian, Ukrainian, Bulgarian and other Cyrillic-script languages. Horizontal text only. Model: PaddlePaddle/cyrillic_PP-OCRv5_mobile_rec.';
+      case 'manga_ocr_ppocr_cyrillic_model':
+        return 'PaddleOCR v5 (Cyrillic)';
+      case 'manga_ocr_ppocr_greek_desc':
+        return 'Reads Greek. Horizontal text only; accents are not always recognised. Model: PaddlePaddle/el_PP-OCRv5_mobile_rec.';
+      case 'manga_ocr_ppocr_greek_model':
+        return 'PaddleOCR v5 (Greek)';
+      case 'manga_ocr_ppocr_korean_desc':
+        return 'Reads Korean (Hangul) for manhwa and webtoons. Horizontal text only. Model: PaddlePaddle/korean_PP-OCRv5_mobile_rec.';
+      case 'manga_ocr_ppocr_korean_model':
+        return 'PaddleOCR v5 (Korean)';
+      case 'manga_ocr_ppocr_small_desc':
+        return 'Stock PP-OCRv6 small recognizer. Reads Chinese and Japanese, including vertical text, plus Latin scripts with diacritics. Pick it for Romanian (ș, ț). Model: PaddlePaddle/PP-OCRv6_small_rec.';
+      case 'manga_ocr_ppocr_small_model':
+        return 'PaddleOCR v6 (Chinese, Japanese, Latin)';
+      case 'manga_ocr_ppocr_tiny_desc':
+        return 'Small, fast recognizer for Latin-script languages such as English, Portuguese, Spanish, French, German and Polish. Horizontal text only. Model: PaddlePaddle/PP-OCRv6_tiny_rec.';
+      case 'manga_ocr_ppocr_tiny_model':
+        return 'PaddleOCR v6 (Latin, tiny)';
       case 'manga_ocr_section':
         return 'OCR المانغا';
       case 'manga_ocr_section_summary':
@@ -378496,6 +379399,8 @@ extension on _StringsDe {
         return 'Google Lens reads scripts the system engine can\'t, such as Russian and Greek, but needs internet and sends the captured image to Google. If it fails, the system engine is used.';
       case 'floating_ball_screen_ocr_engine_lens':
         return 'Google Lens (online)';
+      case 'floating_ball_screen_ocr_engine_local':
+        return 'On-device';
       case 'floating_ball_screen_ocr_engine_system':
         return 'System (offline)';
       case 'floating_ball_screen_ocr_lens_disclosure_body':
@@ -378506,6 +379411,17 @@ extension on _StringsDe {
         return 'Google Lens language';
       case 'floating_ball_screen_ocr_lens_language_auto':
         return 'Automatic';
+      case 'floating_ball_screen_ocr_local_download_body':
+        return ({required Object name, required Object size}) =>
+            '${name} needs about ${size}. It is downloaded once and then works offline.';
+      case 'floating_ball_screen_ocr_local_download_title':
+        return 'Download the OCR model?';
+      case 'floating_ball_screen_ocr_local_missing':
+        return 'The on-device OCR model isn\'t downloaded yet, so system OCR was used.';
+      case 'floating_ball_screen_ocr_local_model':
+        return 'On-device OCR model';
+      case 'floating_ball_screen_ocr_local_model_hint':
+        return 'Runs offline. Pick the model for the script you read; it is downloaded once and shared with manga and video subtitle OCR.';
       case 'floating_ball_show_labels':
         return 'Schaltflächentexte anzeigen';
       case 'floating_ball_show_labels_hint':
@@ -381861,6 +382777,30 @@ extension on _StringsDe {
         return 'Parallele OCR-Aufgaben';
       case 'manga_ocr_parallel_tasks_desc':
         return 'Verschiedene Bücher gleichzeitig erkennen. Kapitel desselben Buchs bleiben in Reihenfolge. Höhere Werte benötigen mehr Speicher; der Modus für wenig Speicher beschränkt dies auf eine Aufgabe.';
+      case 'manga_ocr_ppocr_arabic_desc':
+        return 'Reads Arabic, right to left. Horizontal text only; tapping picks words by line position. Model: PaddlePaddle/arabic_PP-OCRv5_mobile_rec.';
+      case 'manga_ocr_ppocr_arabic_model':
+        return 'PaddleOCR v5 (Arabic)';
+      case 'manga_ocr_ppocr_cyrillic_desc':
+        return 'Reads Russian, Ukrainian, Bulgarian and other Cyrillic-script languages. Horizontal text only. Model: PaddlePaddle/cyrillic_PP-OCRv5_mobile_rec.';
+      case 'manga_ocr_ppocr_cyrillic_model':
+        return 'PaddleOCR v5 (Cyrillic)';
+      case 'manga_ocr_ppocr_greek_desc':
+        return 'Reads Greek. Horizontal text only; accents are not always recognised. Model: PaddlePaddle/el_PP-OCRv5_mobile_rec.';
+      case 'manga_ocr_ppocr_greek_model':
+        return 'PaddleOCR v5 (Greek)';
+      case 'manga_ocr_ppocr_korean_desc':
+        return 'Reads Korean (Hangul) for manhwa and webtoons. Horizontal text only. Model: PaddlePaddle/korean_PP-OCRv5_mobile_rec.';
+      case 'manga_ocr_ppocr_korean_model':
+        return 'PaddleOCR v5 (Korean)';
+      case 'manga_ocr_ppocr_small_desc':
+        return 'Stock PP-OCRv6 small recognizer. Reads Chinese and Japanese, including vertical text, plus Latin scripts with diacritics. Pick it for Romanian (ș, ț). Model: PaddlePaddle/PP-OCRv6_small_rec.';
+      case 'manga_ocr_ppocr_small_model':
+        return 'PaddleOCR v6 (Chinese, Japanese, Latin)';
+      case 'manga_ocr_ppocr_tiny_desc':
+        return 'Small, fast recognizer for Latin-script languages such as English, Portuguese, Spanish, French, German and Polish. Horizontal text only. Model: PaddlePaddle/PP-OCRv6_tiny_rec.';
+      case 'manga_ocr_ppocr_tiny_model':
+        return 'PaddleOCR v6 (Latin, tiny)';
       case 'manga_ocr_section':
         return 'Manga-OCR';
       case 'manga_ocr_section_summary':
@@ -396096,6 +397036,8 @@ extension on _StringsEs {
         return 'Google Lens reads scripts the system engine can\'t, such as Russian and Greek, but needs internet and sends the captured image to Google. If it fails, the system engine is used.';
       case 'floating_ball_screen_ocr_engine_lens':
         return 'Google Lens (online)';
+      case 'floating_ball_screen_ocr_engine_local':
+        return 'On-device';
       case 'floating_ball_screen_ocr_engine_system':
         return 'System (offline)';
       case 'floating_ball_screen_ocr_lens_disclosure_body':
@@ -396106,6 +397048,17 @@ extension on _StringsEs {
         return 'Google Lens language';
       case 'floating_ball_screen_ocr_lens_language_auto':
         return 'Automatic';
+      case 'floating_ball_screen_ocr_local_download_body':
+        return ({required Object name, required Object size}) =>
+            '${name} needs about ${size}. It is downloaded once and then works offline.';
+      case 'floating_ball_screen_ocr_local_download_title':
+        return 'Download the OCR model?';
+      case 'floating_ball_screen_ocr_local_missing':
+        return 'The on-device OCR model isn\'t downloaded yet, so system OCR was used.';
+      case 'floating_ball_screen_ocr_local_model':
+        return 'On-device OCR model';
+      case 'floating_ball_screen_ocr_local_model_hint':
+        return 'Runs offline. Pick the model for the script you read; it is downloaded once and shared with manga and video subtitle OCR.';
       case 'floating_ball_show_labels':
         return 'Mostrar etiquetas de los botones';
       case 'floating_ball_show_labels_hint':
@@ -399458,6 +400411,30 @@ extension on _StringsEs {
         return 'Tareas de OCR en paralelo';
       case 'manga_ocr_parallel_tasks_desc':
         return 'Reconoce varios libros a la vez. Los capítulos de un mismo libro se mantienen en orden. Valores más altos usan más memoria; el modo de poca memoria lo limita a uno.';
+      case 'manga_ocr_ppocr_arabic_desc':
+        return 'Reads Arabic, right to left. Horizontal text only; tapping picks words by line position. Model: PaddlePaddle/arabic_PP-OCRv5_mobile_rec.';
+      case 'manga_ocr_ppocr_arabic_model':
+        return 'PaddleOCR v5 (Arabic)';
+      case 'manga_ocr_ppocr_cyrillic_desc':
+        return 'Reads Russian, Ukrainian, Bulgarian and other Cyrillic-script languages. Horizontal text only. Model: PaddlePaddle/cyrillic_PP-OCRv5_mobile_rec.';
+      case 'manga_ocr_ppocr_cyrillic_model':
+        return 'PaddleOCR v5 (Cyrillic)';
+      case 'manga_ocr_ppocr_greek_desc':
+        return 'Reads Greek. Horizontal text only; accents are not always recognised. Model: PaddlePaddle/el_PP-OCRv5_mobile_rec.';
+      case 'manga_ocr_ppocr_greek_model':
+        return 'PaddleOCR v5 (Greek)';
+      case 'manga_ocr_ppocr_korean_desc':
+        return 'Reads Korean (Hangul) for manhwa and webtoons. Horizontal text only. Model: PaddlePaddle/korean_PP-OCRv5_mobile_rec.';
+      case 'manga_ocr_ppocr_korean_model':
+        return 'PaddleOCR v5 (Korean)';
+      case 'manga_ocr_ppocr_small_desc':
+        return 'Stock PP-OCRv6 small recognizer. Reads Chinese and Japanese, including vertical text, plus Latin scripts with diacritics. Pick it for Romanian (ș, ț). Model: PaddlePaddle/PP-OCRv6_small_rec.';
+      case 'manga_ocr_ppocr_small_model':
+        return 'PaddleOCR v6 (Chinese, Japanese, Latin)';
+      case 'manga_ocr_ppocr_tiny_desc':
+        return 'Small, fast recognizer for Latin-script languages such as English, Portuguese, Spanish, French, German and Polish. Horizontal text only. Model: PaddlePaddle/PP-OCRv6_tiny_rec.';
+      case 'manga_ocr_ppocr_tiny_model':
+        return 'PaddleOCR v6 (Latin, tiny)';
       case 'manga_ocr_section':
         return 'OCR de manga';
       case 'manga_ocr_section_summary':
@@ -413701,6 +414678,8 @@ extension on _StringsFr {
         return 'Google Lens reads scripts the system engine can\'t, such as Russian and Greek, but needs internet and sends the captured image to Google. If it fails, the system engine is used.';
       case 'floating_ball_screen_ocr_engine_lens':
         return 'Google Lens (online)';
+      case 'floating_ball_screen_ocr_engine_local':
+        return 'On-device';
       case 'floating_ball_screen_ocr_engine_system':
         return 'System (offline)';
       case 'floating_ball_screen_ocr_lens_disclosure_body':
@@ -413711,6 +414690,17 @@ extension on _StringsFr {
         return 'Google Lens language';
       case 'floating_ball_screen_ocr_lens_language_auto':
         return 'Automatic';
+      case 'floating_ball_screen_ocr_local_download_body':
+        return ({required Object name, required Object size}) =>
+            '${name} needs about ${size}. It is downloaded once and then works offline.';
+      case 'floating_ball_screen_ocr_local_download_title':
+        return 'Download the OCR model?';
+      case 'floating_ball_screen_ocr_local_missing':
+        return 'The on-device OCR model isn\'t downloaded yet, so system OCR was used.';
+      case 'floating_ball_screen_ocr_local_model':
+        return 'On-device OCR model';
+      case 'floating_ball_screen_ocr_local_model_hint':
+        return 'Runs offline. Pick the model for the script you read; it is downloaded once and shared with manga and video subtitle OCR.';
       case 'floating_ball_show_labels':
         return 'Afficher le texte des boutons';
       case 'floating_ball_show_labels_hint':
@@ -417063,6 +418053,30 @@ extension on _StringsFr {
         return 'Tâches OCR en parallèle';
       case 'manga_ocr_parallel_tasks_desc':
         return 'Reconnaît plusieurs livres à la fois. Les chapitres d\'un même livre restent dans l\'ordre. Des valeurs plus élevées utilisent plus de mémoire ; le mode mémoire faible limite à une.';
+      case 'manga_ocr_ppocr_arabic_desc':
+        return 'Reads Arabic, right to left. Horizontal text only; tapping picks words by line position. Model: PaddlePaddle/arabic_PP-OCRv5_mobile_rec.';
+      case 'manga_ocr_ppocr_arabic_model':
+        return 'PaddleOCR v5 (Arabic)';
+      case 'manga_ocr_ppocr_cyrillic_desc':
+        return 'Reads Russian, Ukrainian, Bulgarian and other Cyrillic-script languages. Horizontal text only. Model: PaddlePaddle/cyrillic_PP-OCRv5_mobile_rec.';
+      case 'manga_ocr_ppocr_cyrillic_model':
+        return 'PaddleOCR v5 (Cyrillic)';
+      case 'manga_ocr_ppocr_greek_desc':
+        return 'Reads Greek. Horizontal text only; accents are not always recognised. Model: PaddlePaddle/el_PP-OCRv5_mobile_rec.';
+      case 'manga_ocr_ppocr_greek_model':
+        return 'PaddleOCR v5 (Greek)';
+      case 'manga_ocr_ppocr_korean_desc':
+        return 'Reads Korean (Hangul) for manhwa and webtoons. Horizontal text only. Model: PaddlePaddle/korean_PP-OCRv5_mobile_rec.';
+      case 'manga_ocr_ppocr_korean_model':
+        return 'PaddleOCR v5 (Korean)';
+      case 'manga_ocr_ppocr_small_desc':
+        return 'Stock PP-OCRv6 small recognizer. Reads Chinese and Japanese, including vertical text, plus Latin scripts with diacritics. Pick it for Romanian (ș, ț). Model: PaddlePaddle/PP-OCRv6_small_rec.';
+      case 'manga_ocr_ppocr_small_model':
+        return 'PaddleOCR v6 (Chinese, Japanese, Latin)';
+      case 'manga_ocr_ppocr_tiny_desc':
+        return 'Small, fast recognizer for Latin-script languages such as English, Portuguese, Spanish, French, German and Polish. Horizontal text only. Model: PaddlePaddle/PP-OCRv6_tiny_rec.';
+      case 'manga_ocr_ppocr_tiny_model':
+        return 'PaddleOCR v6 (Latin, tiny)';
       case 'manga_ocr_section':
         return 'OCR de manga';
       case 'manga_ocr_section_summary':
@@ -431287,6 +432301,8 @@ extension on _StringsId {
         return 'Google Lens reads scripts the system engine can\'t, such as Russian and Greek, but needs internet and sends the captured image to Google. If it fails, the system engine is used.';
       case 'floating_ball_screen_ocr_engine_lens':
         return 'Google Lens (online)';
+      case 'floating_ball_screen_ocr_engine_local':
+        return 'On-device';
       case 'floating_ball_screen_ocr_engine_system':
         return 'System (offline)';
       case 'floating_ball_screen_ocr_lens_disclosure_body':
@@ -431297,6 +432313,17 @@ extension on _StringsId {
         return 'Google Lens language';
       case 'floating_ball_screen_ocr_lens_language_auto':
         return 'Automatic';
+      case 'floating_ball_screen_ocr_local_download_body':
+        return ({required Object name, required Object size}) =>
+            '${name} needs about ${size}. It is downloaded once and then works offline.';
+      case 'floating_ball_screen_ocr_local_download_title':
+        return 'Download the OCR model?';
+      case 'floating_ball_screen_ocr_local_missing':
+        return 'The on-device OCR model isn\'t downloaded yet, so system OCR was used.';
+      case 'floating_ball_screen_ocr_local_model':
+        return 'On-device OCR model';
+      case 'floating_ball_screen_ocr_local_model_hint':
+        return 'Runs offline. Pick the model for the script you read; it is downloaded once and shared with manga and video subtitle OCR.';
       case 'floating_ball_show_labels':
         return 'Tampilkan label tombol';
       case 'floating_ball_show_labels_hint':
@@ -434644,6 +435671,30 @@ extension on _StringsId {
         return 'Tugas OCR paralel';
       case 'manga_ocr_parallel_tasks_desc':
         return 'Kenali buku berbeda sekaligus. Bab dari buku yang sama tetap berurutan. Nilai lebih tinggi memakai lebih banyak memori; mode memori rendah membatasi ke satu.';
+      case 'manga_ocr_ppocr_arabic_desc':
+        return 'Reads Arabic, right to left. Horizontal text only; tapping picks words by line position. Model: PaddlePaddle/arabic_PP-OCRv5_mobile_rec.';
+      case 'manga_ocr_ppocr_arabic_model':
+        return 'PaddleOCR v5 (Arabic)';
+      case 'manga_ocr_ppocr_cyrillic_desc':
+        return 'Reads Russian, Ukrainian, Bulgarian and other Cyrillic-script languages. Horizontal text only. Model: PaddlePaddle/cyrillic_PP-OCRv5_mobile_rec.';
+      case 'manga_ocr_ppocr_cyrillic_model':
+        return 'PaddleOCR v5 (Cyrillic)';
+      case 'manga_ocr_ppocr_greek_desc':
+        return 'Reads Greek. Horizontal text only; accents are not always recognised. Model: PaddlePaddle/el_PP-OCRv5_mobile_rec.';
+      case 'manga_ocr_ppocr_greek_model':
+        return 'PaddleOCR v5 (Greek)';
+      case 'manga_ocr_ppocr_korean_desc':
+        return 'Reads Korean (Hangul) for manhwa and webtoons. Horizontal text only. Model: PaddlePaddle/korean_PP-OCRv5_mobile_rec.';
+      case 'manga_ocr_ppocr_korean_model':
+        return 'PaddleOCR v5 (Korean)';
+      case 'manga_ocr_ppocr_small_desc':
+        return 'Stock PP-OCRv6 small recognizer. Reads Chinese and Japanese, including vertical text, plus Latin scripts with diacritics. Pick it for Romanian (ș, ț). Model: PaddlePaddle/PP-OCRv6_small_rec.';
+      case 'manga_ocr_ppocr_small_model':
+        return 'PaddleOCR v6 (Chinese, Japanese, Latin)';
+      case 'manga_ocr_ppocr_tiny_desc':
+        return 'Small, fast recognizer for Latin-script languages such as English, Portuguese, Spanish, French, German and Polish. Horizontal text only. Model: PaddlePaddle/PP-OCRv6_tiny_rec.';
+      case 'manga_ocr_ppocr_tiny_model':
+        return 'PaddleOCR v6 (Latin, tiny)';
       case 'manga_ocr_section':
         return 'OCR Manga';
       case 'manga_ocr_section_summary':
@@ -448851,6 +449902,8 @@ extension on _StringsIt {
         return 'Google Lens reads scripts the system engine can\'t, such as Russian and Greek, but needs internet and sends the captured image to Google. If it fails, the system engine is used.';
       case 'floating_ball_screen_ocr_engine_lens':
         return 'Google Lens (online)';
+      case 'floating_ball_screen_ocr_engine_local':
+        return 'On-device';
       case 'floating_ball_screen_ocr_engine_system':
         return 'System (offline)';
       case 'floating_ball_screen_ocr_lens_disclosure_body':
@@ -448861,6 +449914,17 @@ extension on _StringsIt {
         return 'Google Lens language';
       case 'floating_ball_screen_ocr_lens_language_auto':
         return 'Automatic';
+      case 'floating_ball_screen_ocr_local_download_body':
+        return ({required Object name, required Object size}) =>
+            '${name} needs about ${size}. It is downloaded once and then works offline.';
+      case 'floating_ball_screen_ocr_local_download_title':
+        return 'Download the OCR model?';
+      case 'floating_ball_screen_ocr_local_missing':
+        return 'The on-device OCR model isn\'t downloaded yet, so system OCR was used.';
+      case 'floating_ball_screen_ocr_local_model':
+        return 'On-device OCR model';
+      case 'floating_ball_screen_ocr_local_model_hint':
+        return 'Runs offline. Pick the model for the script you read; it is downloaded once and shared with manga and video subtitle OCR.';
       case 'floating_ball_show_labels':
         return 'Mostra le etichette dei pulsanti';
       case 'floating_ball_show_labels_hint':
@@ -452211,6 +453275,30 @@ extension on _StringsIt {
         return 'Attività OCR in parallelo';
       case 'manga_ocr_parallel_tasks_desc':
         return 'Riconosci libri diversi contemporaneamente. I capitoli dello stesso libro restano in ordine. Valori più alti usano più memoria; la modalità a bassa memoria lo limita a uno.';
+      case 'manga_ocr_ppocr_arabic_desc':
+        return 'Reads Arabic, right to left. Horizontal text only; tapping picks words by line position. Model: PaddlePaddle/arabic_PP-OCRv5_mobile_rec.';
+      case 'manga_ocr_ppocr_arabic_model':
+        return 'PaddleOCR v5 (Arabic)';
+      case 'manga_ocr_ppocr_cyrillic_desc':
+        return 'Reads Russian, Ukrainian, Bulgarian and other Cyrillic-script languages. Horizontal text only. Model: PaddlePaddle/cyrillic_PP-OCRv5_mobile_rec.';
+      case 'manga_ocr_ppocr_cyrillic_model':
+        return 'PaddleOCR v5 (Cyrillic)';
+      case 'manga_ocr_ppocr_greek_desc':
+        return 'Reads Greek. Horizontal text only; accents are not always recognised. Model: PaddlePaddle/el_PP-OCRv5_mobile_rec.';
+      case 'manga_ocr_ppocr_greek_model':
+        return 'PaddleOCR v5 (Greek)';
+      case 'manga_ocr_ppocr_korean_desc':
+        return 'Reads Korean (Hangul) for manhwa and webtoons. Horizontal text only. Model: PaddlePaddle/korean_PP-OCRv5_mobile_rec.';
+      case 'manga_ocr_ppocr_korean_model':
+        return 'PaddleOCR v5 (Korean)';
+      case 'manga_ocr_ppocr_small_desc':
+        return 'Stock PP-OCRv6 small recognizer. Reads Chinese and Japanese, including vertical text, plus Latin scripts with diacritics. Pick it for Romanian (ș, ț). Model: PaddlePaddle/PP-OCRv6_small_rec.';
+      case 'manga_ocr_ppocr_small_model':
+        return 'PaddleOCR v6 (Chinese, Japanese, Latin)';
+      case 'manga_ocr_ppocr_tiny_desc':
+        return 'Small, fast recognizer for Latin-script languages such as English, Portuguese, Spanish, French, German and Polish. Horizontal text only. Model: PaddlePaddle/PP-OCRv6_tiny_rec.';
+      case 'manga_ocr_ppocr_tiny_model':
+        return 'PaddleOCR v6 (Latin, tiny)';
       case 'manga_ocr_section':
         return 'OCR manga';
       case 'manga_ocr_section_summary':
@@ -466396,6 +467484,8 @@ extension on _StringsJa {
         return 'Google Lens reads scripts the system engine can\'t, such as Russian and Greek, but needs internet and sends the captured image to Google. If it fails, the system engine is used.';
       case 'floating_ball_screen_ocr_engine_lens':
         return 'Google Lens (online)';
+      case 'floating_ball_screen_ocr_engine_local':
+        return 'On-device';
       case 'floating_ball_screen_ocr_engine_system':
         return 'System (offline)';
       case 'floating_ball_screen_ocr_lens_disclosure_body':
@@ -466406,6 +467496,17 @@ extension on _StringsJa {
         return 'Google Lens language';
       case 'floating_ball_screen_ocr_lens_language_auto':
         return 'Automatic';
+      case 'floating_ball_screen_ocr_local_download_body':
+        return ({required Object name, required Object size}) =>
+            '${name} needs about ${size}. It is downloaded once and then works offline.';
+      case 'floating_ball_screen_ocr_local_download_title':
+        return 'Download the OCR model?';
+      case 'floating_ball_screen_ocr_local_missing':
+        return 'The on-device OCR model isn\'t downloaded yet, so system OCR was used.';
+      case 'floating_ball_screen_ocr_local_model':
+        return 'On-device OCR model';
+      case 'floating_ball_screen_ocr_local_model_hint':
+        return 'Runs offline. Pick the model for the script you read; it is downloaded once and shared with manga and video subtitle OCR.';
       case 'floating_ball_show_labels':
         return 'ボタンの文字を表示';
       case 'floating_ball_show_labels_hint':
@@ -469739,6 +470840,30 @@ extension on _StringsJa {
         return 'OCR の並列タスク数';
       case 'manga_ocr_parallel_tasks_desc':
         return '異なる本を同時に認識します。同じ本の章は順番どおりに処理されます。値を大きくするとメモリ使用量が増え、低メモリモードでは 1 に制限されます。';
+      case 'manga_ocr_ppocr_arabic_desc':
+        return 'Reads Arabic, right to left. Horizontal text only; tapping picks words by line position. Model: PaddlePaddle/arabic_PP-OCRv5_mobile_rec.';
+      case 'manga_ocr_ppocr_arabic_model':
+        return 'PaddleOCR v5 (Arabic)';
+      case 'manga_ocr_ppocr_cyrillic_desc':
+        return 'Reads Russian, Ukrainian, Bulgarian and other Cyrillic-script languages. Horizontal text only. Model: PaddlePaddle/cyrillic_PP-OCRv5_mobile_rec.';
+      case 'manga_ocr_ppocr_cyrillic_model':
+        return 'PaddleOCR v5 (Cyrillic)';
+      case 'manga_ocr_ppocr_greek_desc':
+        return 'Reads Greek. Horizontal text only; accents are not always recognised. Model: PaddlePaddle/el_PP-OCRv5_mobile_rec.';
+      case 'manga_ocr_ppocr_greek_model':
+        return 'PaddleOCR v5 (Greek)';
+      case 'manga_ocr_ppocr_korean_desc':
+        return 'Reads Korean (Hangul) for manhwa and webtoons. Horizontal text only. Model: PaddlePaddle/korean_PP-OCRv5_mobile_rec.';
+      case 'manga_ocr_ppocr_korean_model':
+        return 'PaddleOCR v5 (Korean)';
+      case 'manga_ocr_ppocr_small_desc':
+        return 'Stock PP-OCRv6 small recognizer. Reads Chinese and Japanese, including vertical text, plus Latin scripts with diacritics. Pick it for Romanian (ș, ț). Model: PaddlePaddle/PP-OCRv6_small_rec.';
+      case 'manga_ocr_ppocr_small_model':
+        return 'PaddleOCR v6 (Chinese, Japanese, Latin)';
+      case 'manga_ocr_ppocr_tiny_desc':
+        return 'Small, fast recognizer for Latin-script languages such as English, Portuguese, Spanish, French, German and Polish. Horizontal text only. Model: PaddlePaddle/PP-OCRv6_tiny_rec.';
+      case 'manga_ocr_ppocr_tiny_model':
+        return 'PaddleOCR v6 (Latin, tiny)';
       case 'manga_ocr_section':
         return 'マンガOCR';
       case 'manga_ocr_section_summary':
@@ -483862,6 +484987,8 @@ extension on _StringsKo {
         return 'Google Lens reads scripts the system engine can\'t, such as Russian and Greek, but needs internet and sends the captured image to Google. If it fails, the system engine is used.';
       case 'floating_ball_screen_ocr_engine_lens':
         return 'Google Lens (online)';
+      case 'floating_ball_screen_ocr_engine_local':
+        return 'On-device';
       case 'floating_ball_screen_ocr_engine_system':
         return 'System (offline)';
       case 'floating_ball_screen_ocr_lens_disclosure_body':
@@ -483872,6 +484999,17 @@ extension on _StringsKo {
         return 'Google Lens language';
       case 'floating_ball_screen_ocr_lens_language_auto':
         return 'Automatic';
+      case 'floating_ball_screen_ocr_local_download_body':
+        return ({required Object name, required Object size}) =>
+            '${name} needs about ${size}. It is downloaded once and then works offline.';
+      case 'floating_ball_screen_ocr_local_download_title':
+        return 'Download the OCR model?';
+      case 'floating_ball_screen_ocr_local_missing':
+        return 'The on-device OCR model isn\'t downloaded yet, so system OCR was used.';
+      case 'floating_ball_screen_ocr_local_model':
+        return 'On-device OCR model';
+      case 'floating_ball_screen_ocr_local_model_hint':
+        return 'Runs offline. Pick the model for the script you read; it is downloaded once and shared with manga and video subtitle OCR.';
       case 'floating_ball_show_labels':
         return '버튼 텍스트 표시';
       case 'floating_ball_show_labels_hint':
@@ -487205,6 +488343,30 @@ extension on _StringsKo {
         return '병렬 OCR 작업';
       case 'manga_ocr_parallel_tasks_desc':
         return '서로 다른 책을 동시에 인식합니다. 같은 책의 챕터는 순서를 유지합니다. 값이 높을수록 메모리를 더 사용하며, 저메모리 모드에서는 1개로 제한됩니다.';
+      case 'manga_ocr_ppocr_arabic_desc':
+        return 'Reads Arabic, right to left. Horizontal text only; tapping picks words by line position. Model: PaddlePaddle/arabic_PP-OCRv5_mobile_rec.';
+      case 'manga_ocr_ppocr_arabic_model':
+        return 'PaddleOCR v5 (Arabic)';
+      case 'manga_ocr_ppocr_cyrillic_desc':
+        return 'Reads Russian, Ukrainian, Bulgarian and other Cyrillic-script languages. Horizontal text only. Model: PaddlePaddle/cyrillic_PP-OCRv5_mobile_rec.';
+      case 'manga_ocr_ppocr_cyrillic_model':
+        return 'PaddleOCR v5 (Cyrillic)';
+      case 'manga_ocr_ppocr_greek_desc':
+        return 'Reads Greek. Horizontal text only; accents are not always recognised. Model: PaddlePaddle/el_PP-OCRv5_mobile_rec.';
+      case 'manga_ocr_ppocr_greek_model':
+        return 'PaddleOCR v5 (Greek)';
+      case 'manga_ocr_ppocr_korean_desc':
+        return 'Reads Korean (Hangul) for manhwa and webtoons. Horizontal text only. Model: PaddlePaddle/korean_PP-OCRv5_mobile_rec.';
+      case 'manga_ocr_ppocr_korean_model':
+        return 'PaddleOCR v5 (Korean)';
+      case 'manga_ocr_ppocr_small_desc':
+        return 'Stock PP-OCRv6 small recognizer. Reads Chinese and Japanese, including vertical text, plus Latin scripts with diacritics. Pick it for Romanian (ș, ț). Model: PaddlePaddle/PP-OCRv6_small_rec.';
+      case 'manga_ocr_ppocr_small_model':
+        return 'PaddleOCR v6 (Chinese, Japanese, Latin)';
+      case 'manga_ocr_ppocr_tiny_desc':
+        return 'Small, fast recognizer for Latin-script languages such as English, Portuguese, Spanish, French, German and Polish. Horizontal text only. Model: PaddlePaddle/PP-OCRv6_tiny_rec.';
+      case 'manga_ocr_ppocr_tiny_model':
+        return 'PaddleOCR v6 (Latin, tiny)';
       case 'manga_ocr_section':
         return '만화 OCR';
       case 'manga_ocr_section_summary':
@@ -501372,6 +502534,8 @@ extension on _StringsNl {
         return 'Google Lens reads scripts the system engine can\'t, such as Russian and Greek, but needs internet and sends the captured image to Google. If it fails, the system engine is used.';
       case 'floating_ball_screen_ocr_engine_lens':
         return 'Google Lens (online)';
+      case 'floating_ball_screen_ocr_engine_local':
+        return 'On-device';
       case 'floating_ball_screen_ocr_engine_system':
         return 'System (offline)';
       case 'floating_ball_screen_ocr_lens_disclosure_body':
@@ -501382,6 +502546,17 @@ extension on _StringsNl {
         return 'Google Lens language';
       case 'floating_ball_screen_ocr_lens_language_auto':
         return 'Automatic';
+      case 'floating_ball_screen_ocr_local_download_body':
+        return ({required Object name, required Object size}) =>
+            '${name} needs about ${size}. It is downloaded once and then works offline.';
+      case 'floating_ball_screen_ocr_local_download_title':
+        return 'Download the OCR model?';
+      case 'floating_ball_screen_ocr_local_missing':
+        return 'The on-device OCR model isn\'t downloaded yet, so system OCR was used.';
+      case 'floating_ball_screen_ocr_local_model':
+        return 'On-device OCR model';
+      case 'floating_ball_screen_ocr_local_model_hint':
+        return 'Runs offline. Pick the model for the script you read; it is downloaded once and shared with manga and video subtitle OCR.';
       case 'floating_ball_show_labels':
         return 'Knoplabels tonen';
       case 'floating_ball_show_labels_hint':
@@ -504735,6 +505910,30 @@ extension on _StringsNl {
         return 'Parallelle OCR-taken';
       case 'manga_ocr_parallel_tasks_desc':
         return 'Herken verschillende boeken tegelijk. Hoofdstukken van hetzelfde boek blijven op volgorde. Hogere waarden gebruiken meer geheugen; de modus voor weinig geheugen beperkt dit tot één.';
+      case 'manga_ocr_ppocr_arabic_desc':
+        return 'Reads Arabic, right to left. Horizontal text only; tapping picks words by line position. Model: PaddlePaddle/arabic_PP-OCRv5_mobile_rec.';
+      case 'manga_ocr_ppocr_arabic_model':
+        return 'PaddleOCR v5 (Arabic)';
+      case 'manga_ocr_ppocr_cyrillic_desc':
+        return 'Reads Russian, Ukrainian, Bulgarian and other Cyrillic-script languages. Horizontal text only. Model: PaddlePaddle/cyrillic_PP-OCRv5_mobile_rec.';
+      case 'manga_ocr_ppocr_cyrillic_model':
+        return 'PaddleOCR v5 (Cyrillic)';
+      case 'manga_ocr_ppocr_greek_desc':
+        return 'Reads Greek. Horizontal text only; accents are not always recognised. Model: PaddlePaddle/el_PP-OCRv5_mobile_rec.';
+      case 'manga_ocr_ppocr_greek_model':
+        return 'PaddleOCR v5 (Greek)';
+      case 'manga_ocr_ppocr_korean_desc':
+        return 'Reads Korean (Hangul) for manhwa and webtoons. Horizontal text only. Model: PaddlePaddle/korean_PP-OCRv5_mobile_rec.';
+      case 'manga_ocr_ppocr_korean_model':
+        return 'PaddleOCR v5 (Korean)';
+      case 'manga_ocr_ppocr_small_desc':
+        return 'Stock PP-OCRv6 small recognizer. Reads Chinese and Japanese, including vertical text, plus Latin scripts with diacritics. Pick it for Romanian (ș, ț). Model: PaddlePaddle/PP-OCRv6_small_rec.';
+      case 'manga_ocr_ppocr_small_model':
+        return 'PaddleOCR v6 (Chinese, Japanese, Latin)';
+      case 'manga_ocr_ppocr_tiny_desc':
+        return 'Small, fast recognizer for Latin-script languages such as English, Portuguese, Spanish, French, German and Polish. Horizontal text only. Model: PaddlePaddle/PP-OCRv6_tiny_rec.';
+      case 'manga_ocr_ppocr_tiny_model':
+        return 'PaddleOCR v6 (Latin, tiny)';
       case 'manga_ocr_section':
         return 'Manga-OCR';
       case 'manga_ocr_section_summary':
@@ -518953,9 +520152,11 @@ extension on _StringsPtBr {
       case 'floating_ball_screen_ocr_engine':
         return 'Mecanismo de OCR de tela';
       case 'floating_ball_screen_ocr_engine_hint':
-        return 'O Google Lens lê escritas que o mecanismo do sistema não lê, como russo e grego, mas precisa de internet e envia a imagem capturada ao Google. Se falhar, o mecanismo do sistema é usado.';
+        return '"No aparelho" lê o texto offline com modelos PaddleOCR baixados uma vez. O Google Lens precisa de internet e envia a imagem capturada ao Google. O mecanismo do sistema não precisa de nada extra. Se o mecanismo escolhido falhar, o do sistema é usado.';
       case 'floating_ball_screen_ocr_engine_lens':
         return 'Google Lens (online)';
+      case 'floating_ball_screen_ocr_engine_local':
+        return 'No aparelho';
       case 'floating_ball_screen_ocr_engine_system':
         return 'Sistema (offline)';
       case 'floating_ball_screen_ocr_lens_disclosure_body':
@@ -518966,6 +520167,17 @@ extension on _StringsPtBr {
         return 'Idioma do Google Lens';
       case 'floating_ball_screen_ocr_lens_language_auto':
         return 'Automático';
+      case 'floating_ball_screen_ocr_local_download_body':
+        return ({required Object name, required Object size}) =>
+            '${name} precisa de cerca de ${size}. Ele é baixado uma vez e depois funciona offline.';
+      case 'floating_ball_screen_ocr_local_download_title':
+        return 'Baixar o modelo de OCR?';
+      case 'floating_ball_screen_ocr_local_missing':
+        return 'O modelo de OCR no aparelho ainda não foi baixado, então foi usado o OCR do sistema.';
+      case 'floating_ball_screen_ocr_local_model':
+        return 'Modelo de OCR no aparelho';
+      case 'floating_ball_screen_ocr_local_model_hint':
+        return 'Funciona offline. Escolha o modelo da escrita que você lê; ele é baixado uma vez e compartilhado com o OCR de mangá e de legendas de vídeo.';
       case 'floating_ball_show_labels':
         return 'Mostrar rótulos dos botões';
       case 'floating_ball_show_labels_hint':
@@ -522316,6 +523528,30 @@ extension on _StringsPtBr {
         return 'Tarefas de OCR paralelas';
       case 'manga_ocr_parallel_tasks_desc':
         return 'Reconhece livros diferentes ao mesmo tempo. Os capítulos do mesmo livro permanecem em ordem. Valores maiores usam mais memória; o modo de pouca memória limita isso a um.';
+      case 'manga_ocr_ppocr_arabic_desc':
+        return 'Lê árabe, da direita para a esquerda. Só texto horizontal; o toque escolhe a palavra pela posição na linha. Modelo: PaddlePaddle/arabic_PP-OCRv5_mobile_rec.';
+      case 'manga_ocr_ppocr_arabic_model':
+        return 'PaddleOCR v5 (árabe)';
+      case 'manga_ocr_ppocr_cyrillic_desc':
+        return 'Lê russo, ucraniano, búlgaro e outros idiomas de escrita cirílica. Só texto horizontal. Modelo: PaddlePaddle/cyrillic_PP-OCRv5_mobile_rec.';
+      case 'manga_ocr_ppocr_cyrillic_model':
+        return 'PaddleOCR v5 (cirílico)';
+      case 'manga_ocr_ppocr_greek_desc':
+        return 'Lê grego. Só texto horizontal; os acentos nem sempre são reconhecidos. Modelo: PaddlePaddle/el_PP-OCRv5_mobile_rec.';
+      case 'manga_ocr_ppocr_greek_model':
+        return 'PaddleOCR v5 (grego)';
+      case 'manga_ocr_ppocr_korean_desc':
+        return 'Lê coreano (hangul), para manhwa e webtoons. Só texto horizontal. Modelo: PaddlePaddle/korean_PP-OCRv5_mobile_rec.';
+      case 'manga_ocr_ppocr_korean_model':
+        return 'PaddleOCR v5 (coreano)';
+      case 'manga_ocr_ppocr_small_desc':
+        return 'Reconhecedor PP-OCRv6 small oficial. Lê chinês e japonês, inclusive texto vertical, e escritas latinas com diacríticos. Escolha-o para romeno (ș, ț). Modelo: PaddlePaddle/PP-OCRv6_small_rec.';
+      case 'manga_ocr_ppocr_small_model':
+        return 'PaddleOCR v6 (chinês, japonês, latino)';
+      case 'manga_ocr_ppocr_tiny_desc':
+        return 'Reconhecedor pequeno e rápido para idiomas de escrita latina, como inglês, português, espanhol, francês, alemão e polonês. Só texto horizontal. Modelo: PaddlePaddle/PP-OCRv6_tiny_rec.';
+      case 'manga_ocr_ppocr_tiny_model':
+        return 'PaddleOCR v6 (latino, tiny)';
       case 'manga_ocr_section':
         return 'OCR de mangá';
       case 'manga_ocr_section_summary':
@@ -536540,6 +537776,8 @@ extension on _StringsRu {
         return 'Google Lens reads scripts the system engine can\'t, such as Russian and Greek, but needs internet and sends the captured image to Google. If it fails, the system engine is used.';
       case 'floating_ball_screen_ocr_engine_lens':
         return 'Google Lens (online)';
+      case 'floating_ball_screen_ocr_engine_local':
+        return 'On-device';
       case 'floating_ball_screen_ocr_engine_system':
         return 'System (offline)';
       case 'floating_ball_screen_ocr_lens_disclosure_body':
@@ -536550,6 +537788,17 @@ extension on _StringsRu {
         return 'Google Lens language';
       case 'floating_ball_screen_ocr_lens_language_auto':
         return 'Automatic';
+      case 'floating_ball_screen_ocr_local_download_body':
+        return ({required Object name, required Object size}) =>
+            '${name} needs about ${size}. It is downloaded once and then works offline.';
+      case 'floating_ball_screen_ocr_local_download_title':
+        return 'Download the OCR model?';
+      case 'floating_ball_screen_ocr_local_missing':
+        return 'The on-device OCR model isn\'t downloaded yet, so system OCR was used.';
+      case 'floating_ball_screen_ocr_local_model':
+        return 'On-device OCR model';
+      case 'floating_ball_screen_ocr_local_model_hint':
+        return 'Runs offline. Pick the model for the script you read; it is downloaded once and shared with manga and video subtitle OCR.';
       case 'floating_ball_show_labels':
         return 'Показывать подписи кнопок';
       case 'floating_ball_show_labels_hint':
@@ -539900,6 +541149,30 @@ extension on _StringsRu {
         return 'Параллельные задачи OCR';
       case 'manga_ocr_parallel_tasks_desc':
         return 'Распознавать разные книги одновременно. Главы одной книги остаются по порядку. Большие значения расходуют больше памяти; режим малой памяти ограничивает это одной задачей.';
+      case 'manga_ocr_ppocr_arabic_desc':
+        return 'Reads Arabic, right to left. Horizontal text only; tapping picks words by line position. Model: PaddlePaddle/arabic_PP-OCRv5_mobile_rec.';
+      case 'manga_ocr_ppocr_arabic_model':
+        return 'PaddleOCR v5 (Arabic)';
+      case 'manga_ocr_ppocr_cyrillic_desc':
+        return 'Reads Russian, Ukrainian, Bulgarian and other Cyrillic-script languages. Horizontal text only. Model: PaddlePaddle/cyrillic_PP-OCRv5_mobile_rec.';
+      case 'manga_ocr_ppocr_cyrillic_model':
+        return 'PaddleOCR v5 (Cyrillic)';
+      case 'manga_ocr_ppocr_greek_desc':
+        return 'Reads Greek. Horizontal text only; accents are not always recognised. Model: PaddlePaddle/el_PP-OCRv5_mobile_rec.';
+      case 'manga_ocr_ppocr_greek_model':
+        return 'PaddleOCR v5 (Greek)';
+      case 'manga_ocr_ppocr_korean_desc':
+        return 'Reads Korean (Hangul) for manhwa and webtoons. Horizontal text only. Model: PaddlePaddle/korean_PP-OCRv5_mobile_rec.';
+      case 'manga_ocr_ppocr_korean_model':
+        return 'PaddleOCR v5 (Korean)';
+      case 'manga_ocr_ppocr_small_desc':
+        return 'Stock PP-OCRv6 small recognizer. Reads Chinese and Japanese, including vertical text, plus Latin scripts with diacritics. Pick it for Romanian (ș, ț). Model: PaddlePaddle/PP-OCRv6_small_rec.';
+      case 'manga_ocr_ppocr_small_model':
+        return 'PaddleOCR v6 (Chinese, Japanese, Latin)';
+      case 'manga_ocr_ppocr_tiny_desc':
+        return 'Small, fast recognizer for Latin-script languages such as English, Portuguese, Spanish, French, German and Polish. Horizontal text only. Model: PaddlePaddle/PP-OCRv6_tiny_rec.';
+      case 'manga_ocr_ppocr_tiny_model':
+        return 'PaddleOCR v6 (Latin, tiny)';
       case 'manga_ocr_section':
         return 'OCR манги';
       case 'manga_ocr_section_summary':
@@ -554098,6 +555371,8 @@ extension on _StringsTh {
         return 'Google Lens reads scripts the system engine can\'t, such as Russian and Greek, but needs internet and sends the captured image to Google. If it fails, the system engine is used.';
       case 'floating_ball_screen_ocr_engine_lens':
         return 'Google Lens (online)';
+      case 'floating_ball_screen_ocr_engine_local':
+        return 'On-device';
       case 'floating_ball_screen_ocr_engine_system':
         return 'System (offline)';
       case 'floating_ball_screen_ocr_lens_disclosure_body':
@@ -554108,6 +555383,17 @@ extension on _StringsTh {
         return 'Google Lens language';
       case 'floating_ball_screen_ocr_lens_language_auto':
         return 'Automatic';
+      case 'floating_ball_screen_ocr_local_download_body':
+        return ({required Object name, required Object size}) =>
+            '${name} needs about ${size}. It is downloaded once and then works offline.';
+      case 'floating_ball_screen_ocr_local_download_title':
+        return 'Download the OCR model?';
+      case 'floating_ball_screen_ocr_local_missing':
+        return 'The on-device OCR model isn\'t downloaded yet, so system OCR was used.';
+      case 'floating_ball_screen_ocr_local_model':
+        return 'On-device OCR model';
+      case 'floating_ball_screen_ocr_local_model_hint':
+        return 'Runs offline. Pick the model for the script you read; it is downloaded once and shared with manga and video subtitle OCR.';
       case 'floating_ball_show_labels':
         return 'แสดงข้อความบนปุ่ม';
       case 'floating_ball_show_labels_hint':
@@ -557454,6 +558740,30 @@ extension on _StringsTh {
         return 'งาน OCR แบบขนาน';
       case 'manga_ocr_parallel_tasks_desc':
         return 'จดจำหนังสือต่างเล่มพร้อมกัน ตอนของหนังสือเล่มเดียวกันยังเรียงตามลำดับ ค่าสูงใช้หน่วยความจำมากขึ้น โหมดหน่วยความจำต่ำจำกัดไว้ที่หนึ่งงาน';
+      case 'manga_ocr_ppocr_arabic_desc':
+        return 'Reads Arabic, right to left. Horizontal text only; tapping picks words by line position. Model: PaddlePaddle/arabic_PP-OCRv5_mobile_rec.';
+      case 'manga_ocr_ppocr_arabic_model':
+        return 'PaddleOCR v5 (Arabic)';
+      case 'manga_ocr_ppocr_cyrillic_desc':
+        return 'Reads Russian, Ukrainian, Bulgarian and other Cyrillic-script languages. Horizontal text only. Model: PaddlePaddle/cyrillic_PP-OCRv5_mobile_rec.';
+      case 'manga_ocr_ppocr_cyrillic_model':
+        return 'PaddleOCR v5 (Cyrillic)';
+      case 'manga_ocr_ppocr_greek_desc':
+        return 'Reads Greek. Horizontal text only; accents are not always recognised. Model: PaddlePaddle/el_PP-OCRv5_mobile_rec.';
+      case 'manga_ocr_ppocr_greek_model':
+        return 'PaddleOCR v5 (Greek)';
+      case 'manga_ocr_ppocr_korean_desc':
+        return 'Reads Korean (Hangul) for manhwa and webtoons. Horizontal text only. Model: PaddlePaddle/korean_PP-OCRv5_mobile_rec.';
+      case 'manga_ocr_ppocr_korean_model':
+        return 'PaddleOCR v5 (Korean)';
+      case 'manga_ocr_ppocr_small_desc':
+        return 'Stock PP-OCRv6 small recognizer. Reads Chinese and Japanese, including vertical text, plus Latin scripts with diacritics. Pick it for Romanian (ș, ț). Model: PaddlePaddle/PP-OCRv6_small_rec.';
+      case 'manga_ocr_ppocr_small_model':
+        return 'PaddleOCR v6 (Chinese, Japanese, Latin)';
+      case 'manga_ocr_ppocr_tiny_desc':
+        return 'Small, fast recognizer for Latin-script languages such as English, Portuguese, Spanish, French, German and Polish. Horizontal text only. Model: PaddlePaddle/PP-OCRv6_tiny_rec.';
+      case 'manga_ocr_ppocr_tiny_model':
+        return 'PaddleOCR v6 (Latin, tiny)';
       case 'manga_ocr_section':
         return 'OCR มังงะ';
       case 'manga_ocr_section_summary':
@@ -571653,6 +572963,8 @@ extension on _StringsTr {
         return 'Google Lens reads scripts the system engine can\'t, such as Russian and Greek, but needs internet and sends the captured image to Google. If it fails, the system engine is used.';
       case 'floating_ball_screen_ocr_engine_lens':
         return 'Google Lens (online)';
+      case 'floating_ball_screen_ocr_engine_local':
+        return 'On-device';
       case 'floating_ball_screen_ocr_engine_system':
         return 'System (offline)';
       case 'floating_ball_screen_ocr_lens_disclosure_body':
@@ -571663,6 +572975,17 @@ extension on _StringsTr {
         return 'Google Lens language';
       case 'floating_ball_screen_ocr_lens_language_auto':
         return 'Automatic';
+      case 'floating_ball_screen_ocr_local_download_body':
+        return ({required Object name, required Object size}) =>
+            '${name} needs about ${size}. It is downloaded once and then works offline.';
+      case 'floating_ball_screen_ocr_local_download_title':
+        return 'Download the OCR model?';
+      case 'floating_ball_screen_ocr_local_missing':
+        return 'The on-device OCR model isn\'t downloaded yet, so system OCR was used.';
+      case 'floating_ball_screen_ocr_local_model':
+        return 'On-device OCR model';
+      case 'floating_ball_screen_ocr_local_model_hint':
+        return 'Runs offline. Pick the model for the script you read; it is downloaded once and shared with manga and video subtitle OCR.';
       case 'floating_ball_show_labels':
         return 'Düğme etiketlerini göster';
       case 'floating_ball_show_labels_hint':
@@ -575013,6 +576336,30 @@ extension on _StringsTr {
         return 'Paralel OCR görevleri';
       case 'manga_ocr_parallel_tasks_desc':
         return 'Farklı kitapları aynı anda tanıyın. Aynı kitabın bölümleri sırayla kalır. Yüksek değerler daha fazla bellek kullanır; düşük bellek modu bunu bire sınırlar.';
+      case 'manga_ocr_ppocr_arabic_desc':
+        return 'Reads Arabic, right to left. Horizontal text only; tapping picks words by line position. Model: PaddlePaddle/arabic_PP-OCRv5_mobile_rec.';
+      case 'manga_ocr_ppocr_arabic_model':
+        return 'PaddleOCR v5 (Arabic)';
+      case 'manga_ocr_ppocr_cyrillic_desc':
+        return 'Reads Russian, Ukrainian, Bulgarian and other Cyrillic-script languages. Horizontal text only. Model: PaddlePaddle/cyrillic_PP-OCRv5_mobile_rec.';
+      case 'manga_ocr_ppocr_cyrillic_model':
+        return 'PaddleOCR v5 (Cyrillic)';
+      case 'manga_ocr_ppocr_greek_desc':
+        return 'Reads Greek. Horizontal text only; accents are not always recognised. Model: PaddlePaddle/el_PP-OCRv5_mobile_rec.';
+      case 'manga_ocr_ppocr_greek_model':
+        return 'PaddleOCR v5 (Greek)';
+      case 'manga_ocr_ppocr_korean_desc':
+        return 'Reads Korean (Hangul) for manhwa and webtoons. Horizontal text only. Model: PaddlePaddle/korean_PP-OCRv5_mobile_rec.';
+      case 'manga_ocr_ppocr_korean_model':
+        return 'PaddleOCR v5 (Korean)';
+      case 'manga_ocr_ppocr_small_desc':
+        return 'Stock PP-OCRv6 small recognizer. Reads Chinese and Japanese, including vertical text, plus Latin scripts with diacritics. Pick it for Romanian (ș, ț). Model: PaddlePaddle/PP-OCRv6_small_rec.';
+      case 'manga_ocr_ppocr_small_model':
+        return 'PaddleOCR v6 (Chinese, Japanese, Latin)';
+      case 'manga_ocr_ppocr_tiny_desc':
+        return 'Small, fast recognizer for Latin-script languages such as English, Portuguese, Spanish, French, German and Polish. Horizontal text only. Model: PaddlePaddle/PP-OCRv6_tiny_rec.';
+      case 'manga_ocr_ppocr_tiny_model':
+        return 'PaddleOCR v6 (Latin, tiny)';
       case 'manga_ocr_section':
         return 'Manga OCR';
       case 'manga_ocr_section_summary':
@@ -589215,6 +590562,8 @@ extension on _StringsVi {
         return 'Google Lens reads scripts the system engine can\'t, such as Russian and Greek, but needs internet and sends the captured image to Google. If it fails, the system engine is used.';
       case 'floating_ball_screen_ocr_engine_lens':
         return 'Google Lens (online)';
+      case 'floating_ball_screen_ocr_engine_local':
+        return 'On-device';
       case 'floating_ball_screen_ocr_engine_system':
         return 'System (offline)';
       case 'floating_ball_screen_ocr_lens_disclosure_body':
@@ -589225,6 +590574,17 @@ extension on _StringsVi {
         return 'Google Lens language';
       case 'floating_ball_screen_ocr_lens_language_auto':
         return 'Automatic';
+      case 'floating_ball_screen_ocr_local_download_body':
+        return ({required Object name, required Object size}) =>
+            '${name} needs about ${size}. It is downloaded once and then works offline.';
+      case 'floating_ball_screen_ocr_local_download_title':
+        return 'Download the OCR model?';
+      case 'floating_ball_screen_ocr_local_missing':
+        return 'The on-device OCR model isn\'t downloaded yet, so system OCR was used.';
+      case 'floating_ball_screen_ocr_local_model':
+        return 'On-device OCR model';
+      case 'floating_ball_screen_ocr_local_model_hint':
+        return 'Runs offline. Pick the model for the script you read; it is downloaded once and shared with manga and video subtitle OCR.';
       case 'floating_ball_show_labels':
         return 'Hiển thị nhãn nút';
       case 'floating_ball_show_labels_hint':
@@ -592570,6 +593930,30 @@ extension on _StringsVi {
         return 'Số tác vụ OCR song song';
       case 'manga_ocr_parallel_tasks_desc':
         return 'Nhận dạng nhiều sách cùng lúc. Các chương của cùng một sách vẫn theo thứ tự. Giá trị cao hơn dùng nhiều bộ nhớ hơn; chế độ ít bộ nhớ giới hạn ở một.';
+      case 'manga_ocr_ppocr_arabic_desc':
+        return 'Reads Arabic, right to left. Horizontal text only; tapping picks words by line position. Model: PaddlePaddle/arabic_PP-OCRv5_mobile_rec.';
+      case 'manga_ocr_ppocr_arabic_model':
+        return 'PaddleOCR v5 (Arabic)';
+      case 'manga_ocr_ppocr_cyrillic_desc':
+        return 'Reads Russian, Ukrainian, Bulgarian and other Cyrillic-script languages. Horizontal text only. Model: PaddlePaddle/cyrillic_PP-OCRv5_mobile_rec.';
+      case 'manga_ocr_ppocr_cyrillic_model':
+        return 'PaddleOCR v5 (Cyrillic)';
+      case 'manga_ocr_ppocr_greek_desc':
+        return 'Reads Greek. Horizontal text only; accents are not always recognised. Model: PaddlePaddle/el_PP-OCRv5_mobile_rec.';
+      case 'manga_ocr_ppocr_greek_model':
+        return 'PaddleOCR v5 (Greek)';
+      case 'manga_ocr_ppocr_korean_desc':
+        return 'Reads Korean (Hangul) for manhwa and webtoons. Horizontal text only. Model: PaddlePaddle/korean_PP-OCRv5_mobile_rec.';
+      case 'manga_ocr_ppocr_korean_model':
+        return 'PaddleOCR v5 (Korean)';
+      case 'manga_ocr_ppocr_small_desc':
+        return 'Stock PP-OCRv6 small recognizer. Reads Chinese and Japanese, including vertical text, plus Latin scripts with diacritics. Pick it for Romanian (ș, ț). Model: PaddlePaddle/PP-OCRv6_small_rec.';
+      case 'manga_ocr_ppocr_small_model':
+        return 'PaddleOCR v6 (Chinese, Japanese, Latin)';
+      case 'manga_ocr_ppocr_tiny_desc':
+        return 'Small, fast recognizer for Latin-script languages such as English, Portuguese, Spanish, French, German and Polish. Horizontal text only. Model: PaddlePaddle/PP-OCRv6_tiny_rec.';
+      case 'manga_ocr_ppocr_tiny_model':
+        return 'PaddleOCR v6 (Latin, tiny)';
       case 'manga_ocr_section':
         return 'OCR truyện tranh';
       case 'manga_ocr_section_summary':
@@ -606670,9 +608054,11 @@ extension on _StringsZhCn {
       case 'floating_ball_screen_ocr_engine':
         return '截屏识字引擎';
       case 'floating_ball_screen_ocr_engine_hint':
-        return 'Google Lens 能读系统引擎读不了的文字（如俄文、希腊文），但需要联网，并会把截取的图片发送给 Google。识别失败时改用系统引擎。';
+        return '「本地」用下载一次的 PaddleOCR 模型离线识别；Google Lens 需要联网，会把截取的图片发给 Google；系统引擎不需要额外下载。所选引擎失败时改用系统引擎。';
       case 'floating_ball_screen_ocr_engine_lens':
         return 'Google Lens（联网）';
+      case 'floating_ball_screen_ocr_engine_local':
+        return '本地';
       case 'floating_ball_screen_ocr_engine_system':
         return '系统（离线）';
       case 'floating_ball_screen_ocr_lens_disclosure_body':
@@ -606683,6 +608069,17 @@ extension on _StringsZhCn {
         return 'Google Lens 识别语言';
       case 'floating_ball_screen_ocr_lens_language_auto':
         return '自动';
+      case 'floating_ball_screen_ocr_local_download_body':
+        return ({required Object name, required Object size}) =>
+            '${name} 约需 ${size}。下载一次后即可离线使用。';
+      case 'floating_ball_screen_ocr_local_download_title':
+        return '下载识别模型？';
+      case 'floating_ball_screen_ocr_local_missing':
+        return '本地识别模型还没下载，这次用了系统 OCR。';
+      case 'floating_ball_screen_ocr_local_model':
+        return '本地识别模型';
+      case 'floating_ball_screen_ocr_local_model_hint':
+        return '离线运行。按要读的文字选模型；模型只下载一次，与漫画、视频字幕 OCR 共用。';
       case 'floating_ball_show_labels':
         return '显示按钮文字';
       case 'floating_ball_show_labels_hint':
@@ -610009,6 +611406,30 @@ extension on _StringsZhCn {
         return '并行 OCR 任务';
       case 'manga_ocr_parallel_tasks_desc':
         return '同时识别不同书籍，同一本书的章节按顺序处理。数量越大占用内存越多；低内存模式下最多运行一个任务。';
+      case 'manga_ocr_ppocr_arabic_desc':
+        return '读阿拉伯文（从右往左），只认横排；点词按行内位置估算。模型：PaddlePaddle/arabic_PP-OCRv5_mobile_rec。';
+      case 'manga_ocr_ppocr_arabic_model':
+        return 'PaddleOCR v5（阿拉伯文）';
+      case 'manga_ocr_ppocr_cyrillic_desc':
+        return '读俄、乌、保加利亚语等西里尔字母语言，只认横排。模型：PaddlePaddle/cyrillic_PP-OCRv5_mobile_rec。';
+      case 'manga_ocr_ppocr_cyrillic_model':
+        return 'PaddleOCR v5（西里尔字母）';
+      case 'manga_ocr_ppocr_greek_desc':
+        return '读希腊文，只认横排；重音符号不一定认得出。模型：PaddlePaddle/el_PP-OCRv5_mobile_rec。';
+      case 'manga_ocr_ppocr_greek_model':
+        return 'PaddleOCR v5（希腊文）';
+      case 'manga_ocr_ppocr_korean_desc':
+        return '读韩文（谚文），适合韩漫与条漫，只认横排。模型：PaddlePaddle/korean_PP-OCRv5_mobile_rec。';
+      case 'manga_ocr_ppocr_korean_model':
+        return 'PaddleOCR v5（韩文）';
+      case 'manga_ocr_ppocr_small_desc':
+        return 'PaddlePaddle 官方 PP-OCRv6 small 识别模型：读中日文（含竖排）与带变音符的拉丁文，罗马尼亚语请选它。模型：PaddlePaddle/PP-OCRv6_small_rec。';
+      case 'manga_ocr_ppocr_small_model':
+        return 'PaddleOCR v6（中日文、拉丁文）';
+      case 'manga_ocr_ppocr_tiny_desc':
+        return '体积小、速度快，读英、葡、西、法、德、波兰语等拉丁字母语言，只认横排。模型：PaddlePaddle/PP-OCRv6_tiny_rec。';
+      case 'manga_ocr_ppocr_tiny_model':
+        return 'PaddleOCR v6（拉丁文，tiny）';
       case 'manga_ocr_section':
         return '漫画 OCR';
       case 'manga_ocr_section_summary':
@@ -624043,6 +625464,8 @@ extension on _StringsZhHk {
         return 'Google Lens reads scripts the system engine can\'t, such as Russian and Greek, but needs internet and sends the captured image to Google. If it fails, the system engine is used.';
       case 'floating_ball_screen_ocr_engine_lens':
         return 'Google Lens (online)';
+      case 'floating_ball_screen_ocr_engine_local':
+        return 'On-device';
       case 'floating_ball_screen_ocr_engine_system':
         return 'System (offline)';
       case 'floating_ball_screen_ocr_lens_disclosure_body':
@@ -624053,6 +625476,17 @@ extension on _StringsZhHk {
         return 'Google Lens language';
       case 'floating_ball_screen_ocr_lens_language_auto':
         return 'Automatic';
+      case 'floating_ball_screen_ocr_local_download_body':
+        return ({required Object name, required Object size}) =>
+            '${name} needs about ${size}. It is downloaded once and then works offline.';
+      case 'floating_ball_screen_ocr_local_download_title':
+        return 'Download the OCR model?';
+      case 'floating_ball_screen_ocr_local_missing':
+        return 'The on-device OCR model isn\'t downloaded yet, so system OCR was used.';
+      case 'floating_ball_screen_ocr_local_model':
+        return 'On-device OCR model';
+      case 'floating_ball_screen_ocr_local_model_hint':
+        return 'Runs offline. Pick the model for the script you read; it is downloaded once and shared with manga and video subtitle OCR.';
       case 'floating_ball_show_labels':
         return '顯示按鈕文字';
       case 'floating_ball_show_labels_hint':
@@ -627381,6 +628815,30 @@ extension on _StringsZhHk {
         return '並行 OCR 任務';
       case 'manga_ocr_parallel_tasks_desc':
         return '同時識別不同書籍，同一本書的章節按順序處理。數量越大佔用記憶體越多；低記憶體模式下最多運行一個任務。';
+      case 'manga_ocr_ppocr_arabic_desc':
+        return 'Reads Arabic, right to left. Horizontal text only; tapping picks words by line position. Model: PaddlePaddle/arabic_PP-OCRv5_mobile_rec.';
+      case 'manga_ocr_ppocr_arabic_model':
+        return 'PaddleOCR v5 (Arabic)';
+      case 'manga_ocr_ppocr_cyrillic_desc':
+        return 'Reads Russian, Ukrainian, Bulgarian and other Cyrillic-script languages. Horizontal text only. Model: PaddlePaddle/cyrillic_PP-OCRv5_mobile_rec.';
+      case 'manga_ocr_ppocr_cyrillic_model':
+        return 'PaddleOCR v5 (Cyrillic)';
+      case 'manga_ocr_ppocr_greek_desc':
+        return 'Reads Greek. Horizontal text only; accents are not always recognised. Model: PaddlePaddle/el_PP-OCRv5_mobile_rec.';
+      case 'manga_ocr_ppocr_greek_model':
+        return 'PaddleOCR v5 (Greek)';
+      case 'manga_ocr_ppocr_korean_desc':
+        return 'Reads Korean (Hangul) for manhwa and webtoons. Horizontal text only. Model: PaddlePaddle/korean_PP-OCRv5_mobile_rec.';
+      case 'manga_ocr_ppocr_korean_model':
+        return 'PaddleOCR v5 (Korean)';
+      case 'manga_ocr_ppocr_small_desc':
+        return 'Stock PP-OCRv6 small recognizer. Reads Chinese and Japanese, including vertical text, plus Latin scripts with diacritics. Pick it for Romanian (ș, ț). Model: PaddlePaddle/PP-OCRv6_small_rec.';
+      case 'manga_ocr_ppocr_small_model':
+        return 'PaddleOCR v6 (Chinese, Japanese, Latin)';
+      case 'manga_ocr_ppocr_tiny_desc':
+        return 'Small, fast recognizer for Latin-script languages such as English, Portuguese, Spanish, French, German and Polish. Horizontal text only. Model: PaddlePaddle/PP-OCRv6_tiny_rec.';
+      case 'manga_ocr_ppocr_tiny_model':
+        return 'PaddleOCR v6 (Latin, tiny)';
       case 'manga_ocr_section':
         return '漫畫 OCR';
       case 'manga_ocr_section_summary':

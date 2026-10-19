@@ -30,7 +30,7 @@ import io.flutter.plugin.common.MethodChannel;
  *       {@code ja}；</li>
  *   <li>{@code startSystemBall.labels} 额外认 {@code notification}（常驻通知标题）与
  *       {@code ocr_hint / ocr_no_text / ocr_model_unavailable / ocr_failed /
- *       ocr_recognizing（走 Google Lens 时等回话的提示）/
+ *       ocr_recognizing（交给 Dart 侧引擎时等回话的提示）/
  *       ocr_notification}（截屏 OCR 的提示文案），都缺省回退英文；</li>
  *   <li>{@code startScreenOcr.labels}：同上的 OCR 文案，缺省时沿用系统球已存的 labels。</li>
  *   <li>{@code startSystemBall.icons}：按钮 id → Material Icons 码位（与应用内球同一颗
@@ -53,13 +53,16 @@ final class FloatingBallChannel {
     static final String METHOD_OPEN_SYSTEM_OCR_SETUP = "openSystemOcrSetup";
     /** 原生 → Dart：用户在系统球 / 常驻通知上点了关闭，请关掉「应用外」开关。 */
     static final String METHOD_SYSTEM_BALL_CLOSED_BY_USER = "systemBallClosedByUser";
-    /** 原生 → Dart：截屏 OCR 截到帧、识别前问这次走不走 Google Lens，回 bool。 */
-    static final String METHOD_SCREEN_OCR_USES_LENS = "screenOcrUsesLens";
     /**
-     * 原生 → Dart：把截图（JPEG）交给 Dart 跑 Google Lens，回 {@code {lines}}（形状见 Dart
-     * {@code ScreenOcrLensLine.toWire}）或 null（没认出来 / 出错，退回 ML Kit）。
+     * 原生 → Dart：截屏 OCR 截到帧、识别前问这次交不交给 Dart 侧引擎（Google Lens 或本地
+     * PaddleOCR），回 bool。
      */
-    static final String METHOD_RECOGNIZE_SCREEN_OCR_LENS = "recognizeScreenOcrLens";
+    static final String METHOD_SCREEN_OCR_USES_DART_ENGINE = "screenOcrUsesDartEngine";
+    /**
+     * 原生 → Dart：把截图（JPEG）交给 Dart 侧引擎识别，回 {@code {lines}}（形状见 Dart
+     * {@code ScreenOcrLine.toWire}）或 null（没认出来 / 出错 / 模型没下，退回 ML Kit）。
+     */
+    static final String METHOD_RECOGNIZE_SCREEN_OCR_IN_DART = "recognizeScreenOcrInDart";
 
     /** Dart 的异步回话。主线程回调，每次请求恰好一次。 */
     interface Reply<T> {
@@ -214,17 +217,17 @@ final class FloatingBallChannel {
     }
 
     /**
-     * 截屏 OCR 这次走不走 Google Lens（设置里选了 Lens 且本设备同意过上传，由 Dart 判）。
-     * 主引擎不在 / Dart 报错一律回 false，照旧走 ML Kit。主线程调用。
+     * 截屏 OCR 这次交不交给 Dart 侧引擎（设置里选了本地 PaddleOCR，或选了 Lens 且本设备
+     * 同意过上传，由 Dart 判）。主引擎不在 / Dart 报错一律回 false，照旧走 ML Kit。主线程调用。
      */
-    static void queryScreenOcrUsesLens(@NonNull Reply<Boolean> reply) {
+    static void queryScreenOcrUsesDartEngine(@NonNull Reply<Boolean> reply) {
         MethodChannel ch = channel;
         if (ch == null) {
             reply.onReply(false);
             return;
         }
         try {
-            ch.invokeMethod(METHOD_SCREEN_OCR_USES_LENS, null, new MethodChannel.Result() {
+            ch.invokeMethod(METHOD_SCREEN_OCR_USES_DART_ENGINE, null, new MethodChannel.Result() {
                 @Override
                 public void success(@Nullable Object result) {
                     reply.onReply(Boolean.TRUE.equals(result));
@@ -233,7 +236,7 @@ final class FloatingBallChannel {
                 @Override
                 public void error(@NonNull String code, @Nullable String message,
                         @Nullable Object details) {
-                    Log.w(TAG, "screenOcrUsesLens failed: " + code + " " + message);
+                    Log.w(TAG, "screenOcrUsesDartEngine failed: " + code + " " + message);
                     reply.onReply(false);
                 }
 
@@ -243,16 +246,16 @@ final class FloatingBallChannel {
                 }
             });
         } catch (RuntimeException e) {
-            Log.w(TAG, "screenOcrUsesLens could not be delivered", e);
+            Log.w(TAG, "screenOcrUsesDartEngine could not be delivered", e);
             reply.onReply(false);
         }
     }
 
     /**
-     * 把截图交给 Dart 跑 Google Lens。回 Dart 给的行列表；主引擎不在、Dart 报错或回 null
+     * 把截图交给 Dart 侧引擎识别。回 Dart 给的行列表；主引擎不在、Dart 报错或回 null
      * 时回 null（调用方退回 ML Kit）。主线程调用。
      */
-    static void recognizeScreenOcrLens(@NonNull byte[] jpeg, @NonNull Reply<List<?>> reply) {
+    static void recognizeScreenOcrInDart(@NonNull byte[] jpeg, @NonNull Reply<List<?>> reply) {
         MethodChannel ch = channel;
         if (ch == null) {
             reply.onReply(null);
@@ -261,7 +264,7 @@ final class FloatingBallChannel {
         Map<String, Object> args = new HashMap<>();
         args.put("image", jpeg);
         try {
-            ch.invokeMethod(METHOD_RECOGNIZE_SCREEN_OCR_LENS, args, new MethodChannel.Result() {
+            ch.invokeMethod(METHOD_RECOGNIZE_SCREEN_OCR_IN_DART, args, new MethodChannel.Result() {
                 @Override
                 public void success(@Nullable Object result) {
                     Object lines = result instanceof Map ? ((Map<?, ?>) result).get("lines") : null;
@@ -271,7 +274,7 @@ final class FloatingBallChannel {
                 @Override
                 public void error(@NonNull String code, @Nullable String message,
                         @Nullable Object details) {
-                    Log.w(TAG, "recognizeScreenOcrLens failed: " + code + " " + message);
+                    Log.w(TAG, "recognizeScreenOcrInDart failed: " + code + " " + message);
                     reply.onReply(null);
                 }
 
@@ -281,7 +284,7 @@ final class FloatingBallChannel {
                 }
             });
         } catch (RuntimeException e) {
-            Log.w(TAG, "recognizeScreenOcrLens could not be delivered", e);
+            Log.w(TAG, "recognizeScreenOcrInDart could not be delivered", e);
             reply.onReply(null);
         }
     }

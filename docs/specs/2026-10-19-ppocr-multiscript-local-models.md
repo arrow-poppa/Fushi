@@ -1,0 +1,85 @@
+# 本地 OCR：多文字 PaddleOCR 模型与截屏「本地」引擎
+
+## 目标
+
+本地 OCR 原先只有漫画微调的逐列 CTC（Kellenok/PP-OCRv6_manga），只认日文。截屏 /
+拍照识字只有系统 OCR 与 Google Lens 两种引擎：系统 OCR 读不了俄文、希腊文等没有
+识别器的文字，Lens 要联网并把截图发给 Google。
+
+本次加上 PaddlePaddle 官方的通用识别权重，覆盖更多文字，同一份下载供三处使用：
+
+- 漫画 OCR：设置 › 模型 › OCR 的本地模型下拉；
+- 视频图形字幕 OCR：沿用漫画 OCR 的引擎偏好与本地模型；
+- 截屏 / 拍照识字：「截屏识字引擎」新增「本地」档，另有本地模型下拉。
+
+## 模型
+
+都是 ONNX，在 ONNX Runtime 上直接跑，**不做格式转换**。Android 也经
+`flutter_onnxruntime` 跑，不需要 NCNN 之类的原生库。
+
+| key | 识别权重（HF 仓 @ revision） | 文字 | 竖排 |
+|---|---|---|---|
+| `manga_ctc`（默认） | Kellenok/PP-OCRv6_manga rec v0.2 | 日文（漫画） | 是 |
+| `ppocr_v6_small` | PaddlePaddle/PP-OCRv6_small_rec_onnx @ b8f84f0 | 中日文 + 带变音符的拉丁文（含罗马尼亚语 ș ț） | 是 |
+| `ppocr_v6_tiny` | PaddlePaddle/PP-OCRv6_tiny_rec_onnx @ 2612ab3 | 拉丁字母语言 | 否 |
+| `ppocr_v5_korean` | PaddlePaddle/korean_PP-OCRv5_mobile_rec_onnx @ 5c6f574 | 韩文 | 否 |
+| `ppocr_v5_cyrillic` | PaddlePaddle/cyrillic_PP-OCRv5_mobile_rec_onnx @ 2cef881 | 西里尔字母 | 否 |
+| `ppocr_v5_greek` | PaddlePaddle/el_PP-OCRv5_mobile_rec_onnx @ 8152b89 | 希腊文 | 否 |
+| `ppocr_v5_arabic` | PaddlePaddle/arabic_PP-OCRv5_mobile_rec_onnx @ 14aaedc | 阿拉伯文（从右往左） | 否 |
+
+- 每个模型的清单都是：漫画文字块检测器 + PP-OCRv6 small 行检测器 + 识别权重 +
+  同仓的 `inference.yml`（CTC 字典）。
+- 每个模型下载到 `<support>/ocr_models/` 下自己的目录，删一个不影响别的。代价是
+  两个检测器（约 21 MB）在每个目录里各存一份。
+- 语言 → 模型的映射是 `localMangaOcrModelForLanguage`，对齐 Lookupper 的语言表。
+
+### 完整性
+
+新加的五套权重没能核实精确字节数（开发环境访问不了 HF API），所以
+`expectedBytes = 0`，改为钉 LFS sha256：`manga_ocr_model_downloader.dart` 在最后那条
+done 事件之前逐个校验，不符的文件删掉并报错。设置页显示的大小用 `estimatedBytes`，
+按同一权重 FP16 转换产物的 2.003 倍估算；PP-OCRv6 small 两个已知文件的实测比例就是这个值。
+
+字典 `inference.yml` 没有钉哈希，只做非空检查。
+
+## 文字特征（`OcrScriptTraits`）
+
+漫画流水线里有几条规则原先是按日文写死的，现在按模型取：
+
+- `verticalText`：为 false 时一律按横行读，细高的气泡里是折行的横排短行。
+- `dropRuby`：只有日文需要去振假名。
+- `spaceBetweenLines`：行与行之间按接缝处的文字补空格。空格挂在前一行行尾，
+  `lines.join() == text` 依然成立，逐字区间顺延一位。汉字、假名、全角符号这类不写
+  空格的文字不补；前一行以连字符结尾也不补。
+- `rightToLeft`：阿拉伯文先把 CTC 的视觉顺序翻回逻辑顺序（与 PaddleOCR 的
+  `pred_reverse` 同一规则），这时不出逐字框，点词按行内均分。
+
+另外，页面补检（`page_text_sweep.dart`）只给 `manga_ctc` 建：它只保留日文过半的块，
+而且装饰字只有漫画权重读得可靠。
+
+`manga_ctc` 取 `OcrScriptTraits.japanese`，与之前的行为逐项相同。
+
+## 截屏「本地」引擎
+
+实现在 `packages/fushi_engine/lib/ocr/ppocr_screen_reader.dart`，宿主装配在
+`fushi/lib/src/floating_ball/screen_ocr_local.dart`。
+
+1. 整屏缩到长边 1280 后跑行检测，行框换回原图坐标。
+2. 同方向、粗细比不超过 1.6、上下间距不超过 0.8 倍行厚（或同一排、空隙不超过 1.5
+   倍行厚）的行归为一段。
+3. 逐行 CTC 识别，竖列逆时针转 90°。吐字帧最小置信度低于 0.3 的行丢掉，这类多半是
+   图标或分隔线。
+4. 输出屏幕行，形状与 Lens 相同（`ScreenOcrLine.toWire`）。Android 原生经通道
+   `screenOcrUsesDartEngine` / `recognizeScreenOcrInDart` 取回（原名 `screenOcrUsesLens` /
+   `recognizeScreenOcrLens`）。
+
+推理会话在最后一次识别后保留 2 分钟，换模型时先关旧的。模型没下时先提示，再退回
+系统 OCR。设置页选「本地」或换模型时会询问是否下载。
+
+## 已知限制
+
+- 通用 PP-OCR 权重的识别率没有在本仓的漫画基准上测过。转换验证里看到 tiny 会把
+  「Łódź」读错，希腊文会丢重音，西里尔会漏「ї」。这些是权重本身的表现，与格式无关。
+- 截屏识别在主 isolate 上做前后处理（解图在 `compute` 里），整屏一次是几百毫秒级的
+  CPU 计算。
+- 阿拉伯文没有逐字框。

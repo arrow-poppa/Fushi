@@ -431,7 +431,7 @@ class _MangaOcrSettingsSectionState
                   Padding(
                     padding: const EdgeInsets.only(bottom: 4),
                     child: Text(
-                      '${model.fileName} · ${_formatBytes(model.expectedBytes)}',
+                      '${model.fileName} · ${_formatBytes(model.displayBytes)}',
                       style: dialogTheme.textTheme.bodySmall,
                     ),
                   ),

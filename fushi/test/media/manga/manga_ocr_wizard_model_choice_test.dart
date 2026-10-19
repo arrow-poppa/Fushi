@@ -73,7 +73,7 @@ void main() {
     if (imageDir.existsSync()) imageDir.deleteSync(recursive: true);
   });
 
-  testWidgets('local engine downloads the only model without a picker', (
+  testWidgets('local engine lists every model and downloads the selected one', (
     WidgetTester tester,
   ) async {
     final List<String> storedModels = <String>[];
@@ -102,15 +102,13 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    // 五端都只列得出逐列 CTC 一个模型：只有一个选项的模型下拉不画；选中的
-    // 模型没下时下载入口仍在向导里，开跑按钮置灰。
-    expect(platformMangaOcrLocalModels(), <MangaOcrLocalModel>[
-      MangaOcrLocalModel.mangaCtc,
-    ]);
+    // 五端列得出全部本地模型（漫画 CTC + 各文字的 PaddleOCR）：模型下拉画出来；
+    // 选中的模型没下时下载入口在向导里，开跑按钮置灰。
+    expect(platformMangaOcrLocalModels(), MangaOcrLocalModel.values);
     final Finder modelField = find.byKey(
       const ValueKey<String>('manga_ocr_wizard_local_model'),
     );
-    expect(modelField, findsNothing);
+    expect(modelField, findsOneWidget);
     final Finder run = find.widgetWithText(
       FilledButton,
       t.manga_ocr_wizard_run,
@@ -141,7 +139,7 @@ void main() {
       tester.widget<FilledButton>(glassUnwrap<FilledButton>(run)).onPressed,
       isNotNull,
     );
-    // 没有选择器就不会改写模型偏好。
+    // 没动选择器就不会改写模型偏好。
     expect(storedModels, isEmpty);
   });
 }

@@ -238,11 +238,12 @@ class FloatingBallChannel {
   ///  - `sensorHousingEdgeChanged 'left'|'top'|'right'|'bottom'|null`（iOS 界面方向
   ///    变了，含横屏左 ↔ 右翻转——那种翻转窗口尺寸与对称安全区都不变，宿主的
   ///    didChangeMetrics 不一定触发，只能靠原生推）→ [onSensorHousingEdgeChanged]。
-  ///  - `screenOcrUsesLens`（Android 截屏 OCR 截到帧、识别前问一句）→
-  ///    [onScreenOcrUsesLens]，回 bool：true 时原生把截图送 `recognizeScreenOcrLens`；
-  ///  - `recognizeScreenOcrLens {image}`（JPEG 字节）→ [onRecognizeScreenOcrLens]，回
-  ///    `{lines: [...]}`（形状见 `ScreenOcrLensLine.toWire`）或 null；null = Lens 没
-  ///    认出来 / 出错，原生退回 ML Kit。
+  ///  - `screenOcrUsesDartEngine`（Android 截屏 OCR 截到帧、识别前问一句）→
+  ///    [onScreenOcrUsesDartEngine]，回 bool：true（设置选了 Google Lens 或本地
+  ///    PaddleOCR）时原生把截图送 `recognizeScreenOcrInDart`；
+  ///  - `recognizeScreenOcrInDart {image}`（JPEG 字节）→ [onRecognizeScreenOcrInDart]，
+  ///    回 `{lines: [...]}`（形状见 `ScreenOcrLine.toWire`）或 null；null = Dart 侧引擎
+  ///    没认出来 / 出错 / 模型没下，原生退回 ML Kit。
   ///
   /// 必须先装 handler、再取冷启动时排队的那个词：iOS 原生侧把这次 take 当作
   /// 「Dart 已就绪」的信号，之后才会直接推送。Android 同理：主引擎不在时原生只
@@ -260,9 +261,9 @@ class FloatingBallChannel {
     void Function(Offset point)? onScreenOcrTap,
     void Function()? onScreenOcrDismissed,
     void Function(AxisDirection? edge)? onSensorHousingEdgeChanged,
-    Future<bool> Function()? onScreenOcrUsesLens,
+    Future<bool> Function()? onScreenOcrUsesDartEngine,
     Future<Map<String, Object?>?> Function(Uint8List image)?
-    onRecognizeScreenOcrLens,
+    onRecognizeScreenOcrInDart,
   }) async {
     if (_handlerInstalled) return;
     _handlerInstalled = true;
@@ -311,13 +312,13 @@ class FloatingBallChannel {
           onSensorHousingEdgeChanged?.call(
             sensorHousingEdgeFromWire(call.arguments),
           );
-        case 'screenOcrUsesLens':
-          return await onScreenOcrUsesLens?.call() ?? false;
-        case 'recognizeScreenOcrLens':
+        case 'screenOcrUsesDartEngine':
+          return await onScreenOcrUsesDartEngine?.call() ?? false;
+        case 'recognizeScreenOcrInDart':
           final Object? args = call.arguments;
           final Object? image = args is Map ? args['image'] : null;
           if (image is! Uint8List) return null;
-          return await onRecognizeScreenOcrLens?.call(image);
+          return await onRecognizeScreenOcrInDart?.call(image);
       }
       return null;
     });

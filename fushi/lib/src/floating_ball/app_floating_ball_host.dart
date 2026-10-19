@@ -32,7 +32,10 @@ import 'package:fushi/src/floating_ball/floating_ball_config.dart';
 import 'package:fushi/src/pages/implementations/feedback/feedback_common.dart';
 import 'package:fushi/src/floating_ball/floating_ball_scene.dart';
 import 'package:fushi/src/floating_ball/screen_ocr_lens.dart';
+import 'package:fushi/src/floating_ball/screen_ocr_lines.dart';
+import 'package:fushi/src/floating_ball/screen_ocr_local.dart';
 import 'package:fushi_engine/media/manga/mokuro_payload.dart' show MokuroImage;
+import 'package:fushi_engine/ocr/manga_ocr_local_model.dart';
 import 'package:fushi/src/floating_ball/screen_ocr_picker.dart';
 import 'package:fushi/src/lookup/global_lookup_channel.dart';
 import 'package:fushi/src/lookup/global_lookup_controller.dart';
@@ -436,8 +439,9 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
           onScreenOcrTap: _onDesktopScreenOcrTap,
           onScreenOcrDismissed: _onDesktopScreenOcrDismissed,
           onSensorHousingEdgeChanged: _onSensorHousingEdge,
-          onScreenOcrUsesLens: _screenOcrUsesLens,
-          onRecognizeScreenOcrLens: _recognizeScreenOcrLensForNative,
+          onScreenOcrUsesDartEngine: () async =>
+              await _screenOcrDartEngine() != null,
+          onRecognizeScreenOcrInDart: _recognizeScreenOcrInDartForNative,
         ),
       );
     }
@@ -1150,55 +1154,96 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
     await _recognizeAndPick(bytes, fit: ScreenOcrImageFit.contain);
   }
 
-  /// 设置里选了 Google Lens、且本设备同意过上传截图。同意只在设置页切到 Lens 时
-  /// 收集：截屏发生时 Fushi 可能在后台，不能当场弹同意框。
-  Future<bool> _screenOcrUsesLens() async {
+  /// 这次截屏 / 拍照交给哪个 Dart 侧引擎：[kScreenOcrEngineLocal]（设置选了本地
+  /// PaddleOCR）或 [kScreenOcrEngineLens]（选了 Google Lens 且本设备同意过上传）；
+  /// null = 用系统 OCR。Lens 的同意只在设置页切到 Lens 时收集：截屏发生时 Fushi
+  /// 可能在后台，不能当场弹同意框。
+  Future<String?> _screenOcrDartEngine() async {
     final AppModel appModel = ref.read(appProvider);
-    if (!appModel.isPreferencesReady) return false;
-    if (appModel.prefsRepo.floatingBallScreenOcrEngine !=
-        kScreenOcrEngineLens) {
-      return false;
+    if (!appModel.isPreferencesReady) return null;
+    final String engine = appModel.prefsRepo.floatingBallScreenOcrEngine;
+    if (engine == kScreenOcrEngineLocal) return engine;
+    if (engine == kScreenOcrEngineLens &&
+        await hasGoogleLensDisclosure(
+          scene: GoogleLensDisclosureScene.screenCaptures,
+        )) {
+      return engine;
     }
-    return hasGoogleLensDisclosure(
-      scene: GoogleLensDisclosureScene.screenCaptures,
-    );
+    return null;
   }
 
-  Future<MokuroImage?> _recognizeWithLens(Uint8List bytes) =>
-      recognizeScreenWithLens(
+  /// 用 Dart 侧引擎 [engine] 读 [bytes]：屏幕行 + 送检图尺寸。识别失败、本地模型
+  /// 还没下返回 null，调用方退回系统 OCR。
+  Future<({List<ScreenOcrLine> lines, int width, int height})?>
+  _recognizeInDart(Uint8List bytes, String engine) async {
+    final PreferencesRepository prefs = ref.read(appProvider).prefsRepo;
+    if (engine == kScreenOcrEngineLens) {
+      final MokuroImage? lens = await recognizeScreenWithLens(
         bytes,
-        language: ref.read(appProvider).prefsRepo
-            .floatingBallScreenOcrLensLanguage,
+        language: prefs.floatingBallScreenOcrLensLanguage,
       );
+      if (lens == null) return null;
+      return (
+        lines: screenOcrLinesFromLens(lens),
+        width: lens.size.width.round(),
+        height: lens.size.height.round(),
+      );
+    }
+    try {
+      final ScreenOcrLocalRead read = await ScreenOcrLocalEngine.instance
+          .recognize(
+            bytes,
+            model: MangaOcrLocalModel.fromKey(
+              prefs.floatingBallScreenOcrLocalModel,
+            ),
+          );
+      return (lines: read.lines, width: read.width, height: read.height);
+    } on ScreenOcrLocalModelMissing {
+      _toast(t.floating_ball_screen_ocr_local_missing);
+      return null;
+    } catch (error, stack) {
+      ErrorLogService.instance.log(
+        'floating_ball.screen_ocr_local',
+        error,
+        stack,
+      );
+      return null;
+    }
+  }
 
-  /// Android 原生截屏 OCR 的 Lens 识别（见 [FloatingBallChannel.installHandler]）。
-  /// 返回 null 时原生退回 ML Kit。
-  Future<Map<String, Object?>?> _recognizeScreenOcrLensForNative(
+  /// Android 原生截屏 OCR 交给 Dart 侧引擎的识别（见
+  /// [FloatingBallChannel.installHandler]）。返回 null 时原生退回 ML Kit。
+  Future<Map<String, Object?>?> _recognizeScreenOcrInDartForNative(
     Uint8List image,
   ) async {
-    if (!await _screenOcrUsesLens()) return null;
-    final MokuroImage? result = await _recognizeWithLens(image);
-    if (result == null) return null;
+    final String? engine = await _screenOcrDartEngine();
+    if (engine == null) return null;
+    final ({List<ScreenOcrLine> lines, int width, int height})? read =
+        await _recognizeInDart(image, engine);
+    if (read == null) return null;
     return <String, Object?>{
       'lines': <Map<String, Object?>>[
-        for (final ScreenOcrLensLine line in screenOcrLinesFromLens(result))
-          line.toWire(),
+        for (final ScreenOcrLine line in read.lines) line.toWire(),
       ],
     };
   }
 
-  /// 送检图 → OCR（设置选了 Lens 先走 Lens，失败退回系统 OCR）→ 全屏选取页
+  /// 送检图 → OCR（设置选了 Lens / 本地先走它，失败退回系统 OCR）→ 全屏选取页
   /// （点字查词）。截屏与拍照共用。
   Future<void> _recognizeAndPick(
     Uint8List bytes, {
     required ScreenOcrImageFit fit,
   }) async {
-    final MokuroImage? lens = await _screenOcrUsesLens()
-        ? await _recognizeWithLens(bytes)
-        : null;
+    final String? engine = await _screenOcrDartEngine();
+    final ({List<ScreenOcrLine> lines, int width, int height})? read =
+        engine == null ? null : await _recognizeInDart(bytes, engine);
     final SystemOcrPageResult result;
-    if (lens != null) {
-      result = screenOcrPageFromLens(lens);
+    if (read != null) {
+      result = screenOcrPageFromLines(
+        read.lines,
+        width: read.width,
+        height: read.height,
+      );
     } else {
       try {
         result = await const MethodChannelSystemOcr().recognize(

@@ -143,7 +143,8 @@ object ScreenOcrLayout {
     }
 
     /**
-     * Dart 回来的 Google Lens 行（`ScreenOcrLensLine.toWire`）→ [Line]。字段缺、类型不对或
+     * Dart 侧引擎（Google Lens / 本地 PaddleOCR）回来的行（`ScreenOcrLine.toWire`）→ [Line]。
+     * 字段缺、类型不对或
      * 框是空的行跳过；越界的逐字框丢掉，一个都不剩时按行框均分。块全文对不上本行文本
      * 时退回本行自身（偏移 0），制卡句子不会截错位置。
      */

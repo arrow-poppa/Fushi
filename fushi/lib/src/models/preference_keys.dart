@@ -206,10 +206,13 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'floating_ball.dock',
   'floating_ball.in_app',
   'floating_ball.mode',
-  // String：截屏 / 拍照识字引擎 `system`（默认）/ `lens`（Google Lens，联网）。
+  // String：截屏 / 拍照识字引擎 `system`（默认）/ `lens`（Google Lens，联网）/
+  // `local`（本地 PaddleOCR，离线）。
   'floating_ball.screen_ocr_engine',
   // String：上一项为 `lens` 时报给 Lens 的语言：`auto`（默认，设备语言）或 Lens 主子标签。
   'floating_ball.screen_ocr_lens_language',
+  // String：上上项为 `local` 时用的本地识别模型 key（默认 `ppocr_v6_small`）。
+  'floating_ball.screen_ocr_local_model',
   // bool：展开按钮旁显示文字，默认 true；保留 tooltip / 无障碍名称。
   'floating_ball.show_labels',
   'floating_ball.system',

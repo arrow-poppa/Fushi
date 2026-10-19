@@ -19,7 +19,9 @@
 ///   块外形猜；投票结论同时决定去注音的口径、阅读序和要不要转向。
 ///
 /// 行识别器就是现有的 [PpOcrLineRecognizer]（只认横行，竖列转向后交它），只是会话
-/// 换成漫画权重——用哪套权重由装配层决定，本类不知道。
+/// 换成漫画权重——用哪套权重由装配层决定，本类不知道。换成读别的文字的通用 PP-OCR
+/// 权重时，装配层另给 [OcrScriptTraits]：不竖排、不去注音、行间按文字补空格、
+/// 从右往左的文字翻回逻辑顺序。
 library;
 
 import 'package:image/image.dart' as img;
@@ -27,6 +29,7 @@ import 'package:image/image.dart' as img;
 import 'package:fushi_engine/ocr/manga_ocr_pipeline.dart';
 import 'package:fushi_engine/ocr/ocr_glyph_boxes.dart';
 import 'package:fushi_engine/ocr/ocr_line_layout.dart';
+import 'package:fushi_engine/ocr/ocr_script_traits.dart';
 import 'package:fushi_engine/ocr/ocr_types.dart';
 import 'package:fushi_engine/ocr/ppocr_line_detector.dart';
 import 'package:fushi_engine/ocr/ppocr_line_recognizer.dart';
@@ -35,11 +38,14 @@ class CtcColumnOcrRecognizer implements LineOcrRecognizer {
   CtcColumnOcrRecognizer({
     required PpOcrLineDetector lineDetector,
     required PpOcrLineRecognizer lineRecognizer,
+    OcrScriptTraits traits = OcrScriptTraits.japanese,
   }) : _lineDetector = lineDetector,
-       _lineRecognizer = lineRecognizer;
+       _lineRecognizer = lineRecognizer,
+       _traits = traits;
 
   final PpOcrLineDetector _lineDetector;
   final PpOcrLineRecognizer _lineRecognizer;
+  final OcrScriptTraits _traits;
 
   /// 单框识别（路由横排路径里的竖行也走这里）：块方向先按外形猜，再由检出的
   /// 行改判。
@@ -48,7 +54,7 @@ class CtcColumnOcrRecognizer implements LineOcrRecognizer {
     final OcrRecognition recognition = await recognizeWithLines(
       page,
       box,
-      vertical: isVerticalBlock(box),
+      vertical: _traits.verticalText && isVerticalBlock(box),
     );
     return recognition.text;
   }
@@ -67,10 +73,14 @@ class CtcColumnOcrRecognizer implements LineOcrRecognizer {
     final List<OcrRect> detected = layout.lines;
     // 方向按检出行长度投票（宽扁的多列竖排常被外形或碎片带偏），没有明确的行时
     // 保持调用方的判断。
-    final bool blockVertical = voteOcrLineOrientation(detected) ?? vertical;
+    // 不竖排的文字一律按横行读。
+    final bool blockVertical =
+        _traits.verticalText && (voteOcrLineOrientation(detected) ?? vertical);
     final List<OcrRect> lines = orderOcrLinesForReading(
       mergeOcrLineFragments(
-        dropOcrRubyLines(detected, vertical: blockVertical),
+        _traits.dropRuby
+            ? dropOcrRubyLines(detected, vertical: blockVertical)
+            : detected,
         vertical: blockVertical,
       ),
       vertical: blockVertical,
@@ -106,18 +116,31 @@ class CtcColumnOcrRecognizer implements LineOcrRecognizer {
       );
       // 读不出字的行连同行框一起丢，`lines` 与 `lineBoxes` 仍一一对应。
       if (read.text.isEmpty) continue;
+      // 词间有空格的文字：空格挂在上一行行尾（[joinOcrLineTexts]），本行的字从
+      // 空格之后算起。
+      if (_traits.spaceBetweenLines &&
+          texts.isNotEmpty &&
+          needsOcrLineSpace(texts.last, read.text)) {
+        texts.last = '${texts.last} ';
+        utf16Offset += 1;
+      }
       texts.add(read.text);
       boxes.add(region);
       // 行图沿阅读方向的 0 点就是裁图的左边（横行）/ 上边（竖列转向后的左边）。
+      // 从右往左的文字翻过序，token 位置与翻后的文字对不上：不出字格，整块退回
+      // 按行均分。
       glyphs.add(
-        ocrLineGlyphBoxes(
-          text: read.text,
-          tokens: read.tokens,
-          line: region,
-          vertical: blockVertical,
-          alongOrigin: (blockVertical ? read.cropY : read.cropX).toDouble(),
-          utf16Offset: utf16Offset,
-        ),
+        _traits.rightToLeft
+            ? null
+            : ocrLineGlyphBoxes(
+                text: read.text,
+                tokens: read.tokens,
+                line: region,
+                vertical: blockVertical,
+                alongOrigin: (blockVertical ? read.cropY : read.cropX)
+                    .toDouble(),
+                utf16Offset: utf16Offset,
+              ),
       );
       utf16Offset += read.text.length;
       confidence = minOcrConfidence(confidence, read.confidence);
@@ -163,7 +186,7 @@ class CtcColumnOcrRecognizer implements LineOcrRecognizer {
           vertical ? img.copyRotate(crop.image, angle: -90) : crop.image,
         );
     return _ReadLine(
-      text: read.text,
+      text: _traits.rightToLeft ? restoreRtlOcrText(read.text) : read.text,
       confidence: read.confidence,
       tokens: read.tokens,
       cropX: crop.x,

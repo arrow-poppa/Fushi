@@ -30,6 +30,7 @@ import 'package:fushi/src/settings/audio_sources_cli.dart'
     show listAudioSourcesForCli;
 import 'package:fushi/src/settings/settings_actions.dart';
 import 'package:fushi/src/settings/settings_context.dart';
+import 'package:fushi/src/settings/settings_schema_ai_explanation.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/settings/settings_destination_id.dart';
 import 'package:fushi/src/settings/settings_detail_page.dart';
@@ -532,6 +533,21 @@ SettingsDestination buildLookupDestination() {
               settingsContext.refresh();
             },
             defaultValue: true,
+          ),
+          // 独立查词窗（截屏识字 / 外部选中文本）顶部的源文本条开窗时先折成一行预览。
+          SettingsSwitchItem(
+            id: 'lookup.source_text_collapsed',
+            title: t.lookup_source_text_collapsed,
+            subtitle: t.lookup_source_text_collapsed_hint,
+            icon: FushiIcons.expandLess,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.sourceTextCollapsedByDefault,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.appModel
+                  .setSourceTextCollapsedByDefault(value);
+              settingsContext.refresh();
+            },
+            defaultValue: false,
           ),
           // TODO-845: how many leading *rows* of dictionary blocks the popup
           // auto-expands even when "collapse dictionaries" is on. The unit is
@@ -1252,6 +1268,9 @@ SettingsDestination buildLookupDestination() {
           // 加回设置项前请先想清楚它凭什么值得占一个全局条目。
         ],
       ),
+      // BYOK AI 解释：查词时用用户自己的 AI 服务生成结合上下文的解释。
+      // 分区正文在 settings_schema_ai_explanation.dart，契约见 docs/agent/ai-explanation.md。
+      buildAiExplanationSection(),
     ],
   );
 }

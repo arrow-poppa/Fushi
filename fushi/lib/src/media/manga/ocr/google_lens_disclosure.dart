@@ -18,6 +18,10 @@ const String kVideoGoogleLensDisclosurePreferenceKey =
 /// 视频分开：用户同意过发漫画页 / 视频帧，不等于同意发整块游戏屏幕。
 const String kGameGoogleLensDisclosurePreferenceKey =
     'game_google_lens_disclosure_version';
+/// 截屏 / 拍照识字上传同意的设备本地键。与漫画、视频分开：截屏拍下的是此刻整块
+/// 屏幕（可能是别的 app），用户同意过上传漫画页不等于同意上传屏幕。
+const String kScreenOcrGoogleLensDisclosurePreferenceKey =
+    'screen_ocr_google_lens_disclosure_version';
 
 typedef GoogleLensDisclosureGate = Future<bool> Function(BuildContext context);
 
@@ -30,7 +34,9 @@ enum GoogleLensDisclosureScene {
   videoFrames(kVideoGoogleLensDisclosurePreferenceKey),
 
   /// 互联设备发来的游戏截屏（`/api/ocr/screen`）。
-  gameScreens(kGameGoogleLensDisclosurePreferenceKey);
+  gameScreens(kGameGoogleLensDisclosurePreferenceKey),
+  /// 截屏 / 拍照识字（悬浮球、系统球）。
+  screenCaptures(kScreenOcrGoogleLensDisclosurePreferenceKey);
 
   const GoogleLensDisclosureScene(this.preferenceKey);
 
@@ -44,6 +50,8 @@ enum GoogleLensDisclosureScene {
       t.video_google_lens_disclosure_title,
     GoogleLensDisclosureScene.gameScreens =>
       t.game_google_lens_disclosure_title,
+    GoogleLensDisclosureScene.screenCaptures =>
+      t.floating_ball_screen_ocr_lens_disclosure_title,
   };
 
   String get body => switch (this) {
@@ -51,6 +59,8 @@ enum GoogleLensDisclosureScene {
     GoogleLensDisclosureScene.videoFrames =>
       t.video_google_lens_disclosure_body,
     GoogleLensDisclosureScene.gameScreens => t.game_google_lens_disclosure_body,
+    GoogleLensDisclosureScene.screenCaptures =>
+      t.floating_ball_screen_ocr_lens_disclosure_body,
   };
 }
 

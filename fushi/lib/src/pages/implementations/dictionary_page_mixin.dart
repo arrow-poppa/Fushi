@@ -1090,6 +1090,13 @@ mixin DictionaryPageMixin {
     Widget child,
   ) => wrap == null ? child : wrap(child);
 
+  /// BYOK AI 解释的 `{{sentence}}` 上下文（docs/agent/ai-explanation.md §6.2）。
+  ///
+  /// 默认空串：没有上下文是合法状态，模型照样能解释一个孤立的词，只是不结合语境。
+  /// 有句子的宿主覆写它，指到自己已有的那个字段即可——不必新造状态，那只会多一处
+  /// 要同步的真相。
+  String get aiSentenceContext => '';
+
   /// Builds the [Positioned] popup layer widget for the entry at [index] in
   /// [controller].entries.
   ///
@@ -1211,6 +1218,9 @@ mixin DictionaryPageMixin {
         wrapContent,
         DictionaryPopupLayer(
           result: entry.result,
+          aiSentence: entry.contextSentence.isEmpty
+              ? aiSentenceContext
+              : entry.contextSentence,
           restoreScrollTop: entry.restoreScrollTop,
           isSearching: entry.isSearching,
           keepWebViewWarm: entry.isWarmSlot,
@@ -1506,6 +1516,7 @@ mixin DictionaryPageMixin {
     bool revealWhileSearching = false,
     List<FushiRubySpan> rubySpans = const <FushiRubySpan>[],
     String contextSentence = '',
+    bool explicitBoundary = false,
   }) async {
     final String trimmed = query.trim();
     if (trimmed.isEmpty) return 0;
@@ -1566,10 +1577,16 @@ mixin DictionaryPageMixin {
         mounted && controller.isCurrentLookup(entry, generation);
     late final DictionarySearchResult result;
     try {
-      result = await searchPopupDictionary(
-        term: trimmed,
-        maximumTerms: maxTerms,
-        rubySpans: trimmedRuby,
+      result = mixinAppModel.applyAiFallback(
+        await searchPopupDictionary(
+          term: trimmed,
+          maximumTerms: maxTerms,
+          rubySpans: trimmedRuby,
+        ),
+        // 调用方给的 query 分两种：用户自己给的整串（搜索框输入、链接点击，传
+        // explicitBoundary: true）就是要问的东西；点按 / 悬停交来的扫描窗（屏幕
+        // OCR、来源条、字幕、texthooker）是「被点的词到行尾」，只取开头那个词。
+        hasExplicitBoundary: explicitBoundary,
       );
       // 词典查询（三级缓存 → FFI）到此为止。小内存模式把 popupJson 缓存砍到 2MB、
       // ffiLookup 砍到 8MB，重复查词的命中率随之下降、这一段会更常真跑 FFI——所以条目
@@ -1753,9 +1770,14 @@ mixin DictionaryPageMixin {
     final String termAtStart = entry.searchTerm;
     entry.isSearching = true;
     try {
-      final DictionarySearchResult result = await searchPopupDictionary(
-        term: trimmed,
-        maximumTerms: mixinAppModel.maximumTerms,
+      final DictionarySearchResult result = mixinAppModel.applyAiFallback(
+        await searchPopupDictionary(
+          term: trimmed,
+          maximumTerms: mixinAppModel.maximumTerms,
+        ),
+        // 同 BaseSourcePageState.navigatePopupInPlace：只有词头 / 链接 / 汉字这一种
+        // 来路，边界明确。
+        hasExplicitBoundary: true,
       );
       if (!mounted ||
           !controller.entries.contains(entry) ||

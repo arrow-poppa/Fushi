@@ -974,6 +974,31 @@ class FushiDicts {
   static const int defaultMaxResults = 16;
   static const int defaultScanLength = 16;
 
+  /// 连字符复合词（`state-of-the-art`、`jack-of-all-trades`）能把扫描窗口撑到多长。
+  static const int maxHyphenatedScanLength = 48;
+
+  /// 串首的连字符复合词：至少两段字母 / 数字（段内允许撇号），段间是单个 `-` / `‐`。
+  static final RegExp _leadingHyphenatedCompound = RegExp(
+    r"^[\p{L}\p{M}\p{N}]+(?:['’][\p{L}\p{M}\p{N}]+)*"
+    r"(?:[-‐][\p{L}\p{M}\p{N}]+(?:['’][\p{L}\p{M}\p{N}]+)*)+",
+    unicode: true,
+  );
+
+  /// 查询串 [text] 该用的扫描窗口（码点数）。
+  ///
+  /// 引擎只在前 [scanLength] 个码点里找最长匹配，默认 [defaultScanLength]。串首是
+  /// 一个比它长的连字符复合词时把窗口撑到恰好装下整个复合词（上限
+  /// [maxHyphenatedScanLength]）——否则 `jack-of-all-trades`（18 码点）这类词条
+  /// 永远查不到整词。引擎的候选前缀不会切在两个字母之间，窗口截在复合词中间时
+  /// 只能退回更短的那几段。别的查询（日文、普通单词）窗口不变。
+  static int scanLengthFor(String text) {
+    final RegExpMatch? match = _leadingHyphenatedCompound.firstMatch(text);
+    if (match == null) return defaultScanLength;
+    final int runes = match.group(0)!.runes.length;
+    if (runes <= defaultScanLength) return defaultScanLength;
+    return runes > maxHyphenatedScanLength ? maxHyphenatedScanLength : runes;
+  }
+
   // ── lookup (with deinflection) ──────────────────────────────────
   //
   // 排序选项（上游 bc62d2b/86c6e2f）：默认参数下走老导出、行为零变化。
@@ -990,7 +1015,7 @@ class FushiDicts {
   List<FushiLookupResult> lookup(
     String text, {
     int maxResults = defaultMaxResults,
-    int scanLength = defaultScanLength,
+    int? scanLength,
     String? frequencyDictionary,
     FushiLookupFrequencyOrder frequencyOrder = FushiLookupFrequencyOrder.auto,
     String? primaryReading,
@@ -1015,13 +1040,14 @@ class FushiDicts {
     Pointer<Void> handle,
     String text, {
     int maxResults = defaultMaxResults,
-    int scanLength = defaultScanLength,
+    int? scanLength,
     String? frequencyDictionary,
     FushiLookupFrequencyOrder frequencyOrder = FushiLookupFrequencyOrder.auto,
     String? primaryReading,
     bool chineseSimpToTrad = false,
     List<FushiRubySpan> rubySpans = const <FushiRubySpan>[],
   }) {
+    scanLength ??= scanLengthFor(text);
     final bool useOptions =
         frequencyDictionary != null ||
         frequencyOrder != FushiLookupFrequencyOrder.auto ||
@@ -1152,7 +1178,7 @@ class FushiDicts {
   String lookupPopupJson(
     String text, {
     int maxResults = defaultMaxResults,
-    int scanLength = defaultScanLength,
+    int? scanLength,
     int maxTerms = 100,
   }) {
     final tp = text.toNativeUtf8(allocator: calloc);
@@ -1161,7 +1187,7 @@ class FushiDicts {
         _handle!,
         tp,
         maxResults,
-        scanLength,
+        scanLength ?? scanLengthFor(text),
         maxTerms,
       );
       if (ptr == nullptr) return '[]';
@@ -1318,23 +1344,24 @@ class FushiDicts {
 
   /// [text] 开头的最长匹配长度（UTF-16 码元；0 = 未命中）。
   ///
-  /// 引擎只看前 [defaultScanLength] + 1 个码点（见 tokenize.hpp），这里先按码点截好
+  /// 引擎只看前 [scanLengthFor] 返回的长度再加一个码点（见 tokenize.hpp），这里先按码点截好
   /// 再编码——wordFromIndex 一类调用传进来的是整段余文，没必要整段转 UTF-8。
   int matchedLength(String text) {
     final tp = scanWindowOf(text).toNativeUtf8(allocator: calloc);
     try {
-      return _bindings!.matchLength(_handle!, tp, defaultScanLength);
+      return _bindings!.matchLength(_handle!, tp, scanLengthFor(text));
     } finally {
       calloc.free(tp);
     }
   }
 
-  /// [text] 的前 [defaultScanLength] + 1 个码点（引擎结果只依赖这一段）。
+  /// The scan window plus one code point for the native word boundary check.
   @visibleForTesting
   static String scanWindowOf(String text) {
     int units = 0;
     int codePoints = 0;
-    while (units < text.length && codePoints <= defaultScanLength) {
+    final int scanLength = scanLengthFor(text);
+    while (units < text.length && codePoints <= scanLength) {
       final int unit = text.codeUnitAt(units);
       final bool surrogatePair =
           unit >= 0xD800 &&

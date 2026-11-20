@@ -108,4 +108,53 @@ class ScreenOcrLayoutTest {
         assertEquals("あいう", l.blockText)
         assertEquals(0, l.blockOffset)
     }
+
+    @Test
+    fun lensWireLinesKeepGlyphsAndBlockOffsets() {
+        val block = "Привет мир снова"
+        val lines = ScreenOcrLayout.linesFromWire(
+            listOf(
+                mapOf(
+                    "text" to "Привет мир",
+                    "left" to 10, "top" to 0, "right" to 110, "bottom" to 20,
+                    "vertical" to false,
+                    "blockText" to block, "blockOffset" to 0,
+                    // 第二个框越界（end > 行长），丢掉。
+                    "glyphs" to listOf(0, 1, 10, 0, 20, 20, 9, 40, 100, 0, 110, 20),
+                ),
+                mapOf(
+                    "text" to "снова",
+                    "left" to 10, "top" to 30, "right" to 60, "bottom" to 50,
+                    "vertical" to false,
+                    "blockText" to block, "blockOffset" to 11,
+                    "glyphs" to emptyList<Int>(),
+                ),
+                // 空框、缺字段的行跳过。
+                mapOf("text" to "x", "left" to 5, "top" to 5, "right" to 5, "bottom" to 9),
+                mapOf("text" to "y"),
+            ),
+        )
+        assertEquals(2, lines.size)
+        assertEquals(1, lines[0].glyphs.size)
+        assertEquals(0, ScreenOcrLayout.charIndexAt(lines[0], 15, 10))
+        assertEquals(block, lines[1].blockText)
+        assertEquals(11, lines[1].blockOffset)
+        // 没有逐字框：按行框均分出 5 个字。
+        assertEquals(5, lines[1].glyphs.size)
+    }
+
+    @Test
+    fun lensWireLineWithMismatchedBlockFallsBackToItself() {
+        val lines = ScreenOcrLayout.linesFromWire(
+            listOf(
+                mapOf(
+                    "text" to "abc",
+                    "left" to 0, "top" to 0, "right" to 30, "bottom" to 10,
+                    "blockText" to "zzz abc", "blockOffset" to 1,
+                ),
+            ),
+        )
+        assertEquals("abc", lines.single().blockText)
+        assertEquals(0, lines.single().blockOffset)
+    }
 }

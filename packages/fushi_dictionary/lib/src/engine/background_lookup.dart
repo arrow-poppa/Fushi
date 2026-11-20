@@ -32,7 +32,7 @@ const int kDefaultLookupFfiCacheMaxBytes = 32 << 20;
 /// 拿到的是不同长度的结果集；load-more 以更大上限重查同一个词，键里不含上限就会命中
 /// 上一轮的短结果集，`allLoaded` 随即为 true —— load-more 永久失灵（BUG-1307）。
 ///
-/// 用扫描窗口而不是整串作键：引擎结果只依赖前 [FushiDicts.defaultScanLength] + 1 个
+/// 用扫描窗口而不是整串作键：引擎结果只依赖前 [FushiDicts.scanLengthFor] + 1 个
 /// 码点（`lookup.cpp` 的 scan_window + `word_scan.cpp` 的 scan_candidates 只看窗口与
 /// 窗口后第一个码点，与 [FushiDicts.matchedLength] 同一份契约）。阅读器传进来的是
 /// 「光标到句尾」的整段余文，整串作键时同一位置的不同余文互相命中不了。

@@ -12,7 +12,16 @@ void main() {
         };
         expect(names, hasLength(manifest.length));
         for (final MangaOcrModelFile m in manifest) {
-          expect(m.expectedBytes, greaterThan(0), reason: m.fileName);
+          // 精确字节数未知的文件要有展示用的估计值；权重文件还必须钉 sha256，
+          // 否则截断或上游换档都拦不住。
+          expect(m.displayBytes, greaterThan(0), reason: m.fileName);
+          if (m.expectedBytes <= 0 && m.fileName.endsWith('.onnx')) {
+            expect(
+              m.sha256,
+              matches(RegExp(r'^[0-9a-f]{64}$')),
+              reason: m.fileName,
+            );
+          }
         }
         expect(
           manifest.where(

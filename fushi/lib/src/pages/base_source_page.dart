@@ -403,6 +403,7 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
     required Rect selectionRect,
     int? overrideMaximumTerms,
     bool deferDisplay = false,
+    bool hasExplicitBoundary = false,
     LookupOrigin origin = LookupOrigin.explicit,
     List<FushiRubySpan> rubySpans = const <FushiRubySpan>[],
   }) async {
@@ -429,7 +430,7 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
       }
 
       // 原文自带振假名（取词处的 ruby）时让读音吻合的同长度候选排前；没有就走原入口。
-      final dictionaryResult = rubySpans.isEmpty
+      final lookupResult = rubySpans.isEmpty
           ? await appModel.searchDictionary(
               searchTerm: searchTerm,
               searchWithWildcards: false,
@@ -440,6 +441,10 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
               rubySpans: rubySpans,
               overrideMaximumTerms: overrideMaximumTerms,
             );
+      final dictionaryResult = appModel.applyAiFallback(
+        lookupResult,
+        hasExplicitBoundary: hasExplicitBoundary,
+      );
       trace?.mark(
         'search',
         detail:
@@ -602,10 +607,16 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
     final String termAtStart = item.searchTerm;
     item.isSearching = true;
     try {
-      final DictionarySearchResult result = await appModel.searchDictionary(
-        searchTerm: trimmed,
-        searchWithWildcards: false,
-        overrideMaximumTerms: appModel.maximumTerms,
+      final DictionarySearchResult result = appModel.applyAiFallback(
+        await appModel.searchDictionary(
+          searchTerm: trimmed,
+          searchWithWildcards: false,
+          overrideMaximumTerms: appModel.maximumTerms,
+        ),
+        // 本函数只有一种语义：弹窗内点词头 / 链接 / 汉字后的原地跳转（三个调用点
+        // 逐一核过）。点中的那一串就是那个词，边界明确——与旧 onLinkClick 传
+        // `hasExplicitBoundary: true` 等价，2.7.0 把那条路改成原地跳转时丢掉了。
+        hasExplicitBoundary: true,
       );
       if (!mounted ||
           !_popup.entries.contains(item) ||
@@ -1047,6 +1058,14 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
     );
   }
 
+
+  /// BYOK AI 解释的 `{{sentence}}` 上下文（docs/agent/ai-explanation.md §6.2）。
+  ///
+  /// 默认空串：没有上下文是合法状态，模型照样能解释一个孤立的词，只是不结合语境。
+  /// 有句子的宿主覆写它，指到自己已有的那个字段即可——不必新造状态，那只会多一处
+  /// 要同步的真相。
+  String get aiSentenceContext => '';
+
   Widget _buildPopupLayer(
     List<DictionaryPopupEntry> stack,
     int index,
@@ -1137,6 +1156,7 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
       child: DictionaryPopupLayer(
         result: item.result,
         restoreScrollTop: item.restoreScrollTop,
+        aiSentence: aiSentenceContext,
         webViewKey: item.webViewKey,
         keepWebViewWarm: item.isWarmSlot,
         // TODO-869：本层有后代弹窗时注入 __hasChildPopup，点卡片本体留白才能关子窗。

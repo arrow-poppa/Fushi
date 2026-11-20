@@ -2957,6 +2957,9 @@ async function buildMinePayload(expression, reading, frequencies, pitches, rules
         popupSelectionText,
         popupSelectionHtml,
         glossarySelectionHighlighted,
+        // {ai-explanation}：只有 done 态才有内容（见 __fushiAiFinalText），
+        // 加载中/出错/超时的占位文案绝不进卡片。
+        aiExplanation: window.__fushiAiFinalText(),
         audio,
         selectedDictionary: miningDictionaryFor(idx),
         dictionaryMedia: JSON.stringify([...dictionaryMedia.values()])
@@ -8871,6 +8874,227 @@ function popupLoadingHoldRemaining(now, shownAt, minVisible) {
     if (!shownAt) return 0;
     return Math.max(0, minVisible - (now - shownAt));
 }
+// ===== BYOK AI Explanation =====================================================
+// 契约见 docs/agent/ai-explanation.md。Dart 是请求状态的唯一真相源，这里只负责
+// 把状态画出来、把用户意图回传，**不** 在 JS 里再存一份状态机。
+//
+// 两条更新路径刻意分开：
+//   · renderPopup() 换词时重建整个盒子（新词 = 新盒子）；
+//   · __fushiAiUpdate() 流式期间只改那一个文本节点。
+// 流式每来一个 chunk 就重建 DOM 会把用户正在做的选择清掉、并让整个弹窗闪，
+// 参考实现踩过这个坑，注释写得很清楚。
+
+/// 当前这次查词的 AI 状态。换词时由 Dart 重新注入，`resetAiExplanation()` 清空。
+window.__fushiAiState = null;
+
+/// 换词时清掉上一轮的 AI 状态。
+///
+/// 和 resetSentenceContextMirror / resetSelectedDictionaries 同一批：热槽 WebView
+/// 跨查词不重载页面，这些「一次性」的镜像不清就会串到下一个词上。
+window.resetAiExplanation = function () {
+    window.__fushiAiState = null;
+    __fushiAiOpen = null;
+    __fushiAiPendingText = null;
+    if (__fushiAiRaf) {
+        try { cancelAnimationFrame(__fushiAiRaf); } catch (_) { /* no-op */ }
+        __fushiAiRaf = 0;
+    }
+};
+
+var __fushiAiRaf = 0;
+var __fushiAiPendingText = null;
+
+/// 用户这次查词里手动开合过盒子：true / false；null = 没动过，按 Dart 注入的
+/// `state.collapsed`（「默认折叠 AI 解释」设置）。
+///
+/// 记在 JS 而不是状态里：盒子在 loading → done 这类状态类别变化时会整块重建，不记
+/// 住的话用户刚展开、答案一到又收回去了。换词由 resetAiExplanation 清掉——与折叠的
+/// 词典一样，每个新词按设置重新开始。
+var __fushiAiOpen = null;
+
+function __fushiAiIsOpen(state) {
+    if (__fushiAiOpen !== null) return __fushiAiOpen;
+    return !(state && state.collapsed === true);
+}
+
+/// 开合只改盒子上的 data-collapsed 与标题的 aria-expanded，不重建、不碰文本节点：
+/// 流式期间收起再展开，选择与 rAF 合并写入照常。
+function __fushiAiApplyOpen(box, open) {
+    box.setAttribute('data-collapsed', open ? 'false' : 'true');
+    var toggle = box.querySelector('.ai-explanation-toggle');
+    if (toggle) toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+}
+
+function __fushiAiRoot() {
+    var r = window.__fushiRoot;
+    return r ? r.querySelector('#ai-explanation') : document.getElementById('ai-explanation');
+}
+
+function __fushiAiBodyText(state) {
+    switch (state.status) {
+        case 'notConfigured':
+            return window.i18nAiStateNotConfigured || 'AI explanation is not available. Configure a provider in settings.';
+        case 'manual':
+            return window.i18nAiStateManual || 'Automatic generation is off. Use regenerate to generate it.';
+        case 'loading':
+            return window.i18nAiStateGenerating || 'Generating explanation...';
+        case 'timedOut':
+            return window.i18nAiStateTimedOut || 'The AI request timed out. Please try again.';
+        case 'failed':
+            // provider 自己写的那句（已脱敏）比通用文案有用得多，有就优先显示。
+            return state.detail || window.i18nAiStateFailed || 'Failed to generate the AI explanation.';
+        case 'streaming':
+        case 'done':
+            return state.text || (window.i18nAiStateEmpty || 'No explanation available.');
+        default:
+            return '';
+    }
+}
+
+/// 该状态下允许哪些动作。
+///
+/// 取消只在真有请求在飞时出现——参考实现压根没有取消按钮，用户只能靠关弹窗，
+/// 这是需求里明确要补的一条。
+function __fushiAiActions(state) {
+    var active = state.status === 'loading' || state.status === 'streaming';
+    return {
+        cancel: active,
+        // 「生成」与「重新生成」是同一个按钮，只换提示语：manual 态下它是首次生成。
+        regenerate: !active,
+        regenerateLabel: state.status === 'manual'
+            ? (window.i18nAiActionGenerate || 'Generate explanation')
+            : (window.i18nAiActionRegenerate || 'Regenerate explanation'),
+    };
+}
+
+function __fushiAiEmit(action) {
+    try {
+        window.flutter_inappwebview.callHandler('aiExplainAction', { action: action });
+    } catch (e) {
+        console.error('[popup] aiExplainAction failed', e);
+    }
+}
+
+/// 按当前状态造整个盒子。renderPopup() 每轮调一次。
+function buildAiExplanationBox() {
+    var state = window.__fushiAiState;
+    if (!state || !state.status || state.status === 'hidden') return null;
+    // 取消是「正常操作」不是错误：参考实现在这个状态下什么都不重画，保留用户眼前
+    // 已经看到的内容。这里同理——上一轮的盒子已经随 renderPopup 没了，不再造新的。
+    if (state.status === 'cancelled') return null;
+
+    var actions = __fushiAiActions(state);
+
+    var title = el('span', {
+        className: 'ai-explanation-title',
+        textContent: window.i18nAiTitle || 'AI Explanation',
+    });
+    // 折叠箭头 + 标题是开合的点击区（与词典分组的 <summary> 同一观感）。不用
+    // <details>/<summary>：summary 被鼠标点一下就拿 DOM 焦点，macOS 上宿主快捷键随之
+    // 整条失效（BUG-2447），而普通元素不可聚焦，这条坑天然不存在。
+    var toggle = el('span', {
+        className: 'ai-explanation-toggle',
+        role: 'button',
+        title: window.i18nAiActionToggle || 'Show or hide',
+        'aria-label': window.i18nAiActionToggle || 'Show or hide',
+    }, [el('span', { className: 'ai-explanation-chevron', 'aria-hidden': 'true' }), title]);
+
+    var buttons = [];
+    if (actions.regenerate) {
+        buttons.push(el('button', {
+            className: 'ai-explanation-action',
+            type: 'button',
+            title: actions.regenerateLabel,
+            'aria-label': actions.regenerateLabel,
+            textContent: '↻',
+            onclick: function (e) { e.preventDefault(); e.stopPropagation(); __fushiAiEmit('regenerate'); },
+        }));
+    }
+    if (actions.cancel) {
+        buttons.push(el('button', {
+            className: 'ai-explanation-action',
+            type: 'button',
+            title: window.i18nAiActionCancel || 'Cancel',
+            'aria-label': window.i18nAiActionCancel || 'Cancel',
+            textContent: '×',
+            onclick: function (e) { e.preventDefault(); e.stopPropagation(); __fushiAiEmit('cancel'); },
+        }));
+    }
+
+    var header = el('div', { className: 'ai-explanation-header' }, [toggle].concat(buttons));
+    // 点标题行（动作按钮自己截住点击，不会走到这里）开合；截住冒泡，否则弹窗的点击
+    // 委托会把它当成「点了卡片外」发 tapOutside。
+    header.onclick = function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+        var current = __fushiAiRoot();
+        if (!current) return;
+        __fushiAiOpen = current.getAttribute('data-collapsed') === 'true';
+        __fushiAiApplyOpen(current, __fushiAiOpen);
+    };
+
+    // 文本节点单独挂 data-ai-role，流式更新只认它。
+    var body = el('div', {
+        className: 'ai-explanation-text',
+        textContent: __fushiAiBodyText(state),
+    });
+    body.setAttribute('data-ai-role', 'text');
+
+    var box = el('div', { className: 'ai-explanation', id: 'ai-explanation' }, [header, body]);
+    box.setAttribute('data-status', state.status);
+    __fushiAiApplyOpen(box, __fushiAiIsOpen(state));
+    return box;
+}
+
+/// 流式期间的增量更新：只改文本节点，不碰 DOM 结构。
+///
+/// 用 rAF 合并——provider 一秒能推几十个 chunk，每个都同步写一次 textContent 会让
+/// 弹窗在低端机上掉帧；合并到一帧一次，用户完全看不出差别。
+window.__fushiAiUpdate = function (state) {
+    if (!state) return;
+    var previous = window.__fushiAiState;
+    window.__fushiAiState = state;
+
+    var box = __fushiAiRoot();
+    if (!box) return;
+
+    // 状态类别变了（按钮该换、或该从 loading 变成 done）就整块重建，
+    // 纯文本增长才走轻量路径。
+    var sameShape = previous
+        && __fushiAiActions(previous).cancel === __fushiAiActions(state).cancel
+        && __fushiAiActions(previous).regenerate === __fushiAiActions(state).regenerate;
+    if (!sameShape) {
+        var rebuilt = buildAiExplanationBox();
+        if (rebuilt) {
+            box.replaceWith(rebuilt);
+        } else {
+            box.remove();
+        }
+        return;
+    }
+
+    box.setAttribute('data-status', state.status);
+    __fushiAiPendingText = __fushiAiBodyText(state);
+    if (__fushiAiRaf) return;
+    __fushiAiRaf = requestAnimationFrame(function () {
+        __fushiAiRaf = 0;
+        var target = __fushiAiRoot();
+        if (!target || __fushiAiPendingText === null) return;
+        var node = target.querySelector('[data-ai-role="text"]');
+        if (node) node.textContent = __fushiAiPendingText;
+        __fushiAiPendingText = null;
+    });
+};
+
+/// 当前 AI 解释的最终文本，供制卡时取 {ai-explanation}。
+///
+/// 只在 done 态返回内容：加载中/出错/超时的占位文案绝不能进卡片。
+window.__fushiAiFinalText = function () {
+    var state = window.__fushiAiState;
+    if (!state || state.status !== 'done') return '';
+    return state.text || '';
+};
+// ===== end BYOK AI Explanation =================================================
 
 window.renderPopup = function() {
     // 有结果要替换已露出的加载指示器：先补足最短停留时间，再真正渲染（宿主等的
@@ -9011,6 +9235,17 @@ window.renderPopup = function() {
     let firstEntry = null;
     try {
         container.innerHTML = '';
+
+        // AI 解释摆在词条之前（与参考实现同位置）。只在有词条结果时出现：
+        // 纯汉字卡那条路径上面已经 return 了，无结果也不画——没有词就没有要解释的东西。
+        try {
+            const aiBox = buildAiExplanationBox();
+            if (aiBox) container.appendChild(aiBox);
+        } catch (e) {
+            // AI 区块画不出来绝不能把整个查词结果一起拖垮。
+            console.error('[popup] renderPopup ai box failed', e);
+            window.__fushiReportJsError('renderPopup.aiBox', (e && e.message) || String(e), e && e.stack);
+        }
 
         if (kanjiSection) {
             container.appendChild(kanjiSection);
@@ -10057,7 +10292,10 @@ function __fushiPopupClick(e) {
     // 用 .kanji-card 会漏掉「两张 kanji-card 之间的 4px 间隙」和「section 自身的上下外
     // 边距」——点这些留白两个 closest 都不命中→落 tapOutside 关子窗=死区对汉字卡复发。
     // 改判 .kanji-card-section 才能覆盖卡间留白 + section 外边距。
-    if (target?.closest('.entry') || target?.closest('.kanji-card-section')) {
+    // AI 解释盒子与词条卡片同语义：点它的正文 / 留白保留本层（用户常要在里面拖选制卡），
+    // 有子弹窗时才关后代。此前它不在任何卡片选择器内，点一下正文就落到末尾的 tapOutside。
+    if (target?.closest('.entry') || target?.closest('.kanji-card-section') ||
+        target?.closest('.ai-explanation')) {
         // TODO-869：点卡片本体留白本应保留本层（TODO-859 语义）。但若本层有子弹窗
         // （__hasChildPopup，宿主据 index < entries.length-1 注入），点卡片区也得发
         // tapOutside 让宿主关掉后代层（dismissDescendantsOf）——否则父窗点卡片关不掉子

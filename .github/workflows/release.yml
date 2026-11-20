@@ -442,7 +442,7 @@ jobs:
         cat > key.properties <<EOF
         storePassword=${{ secrets.KEYSTORE_PASSWORD }}
         keyPassword=${{ secrets.KEY_PASSWORD }}
-        keyAlias=${{ secrets.KEY_ALIAS }}
+        keyAlias=${{ secrets.KEY_ALIAS || 'fushi' }}
         storeFile=fushi-release.jks
         EOF
 

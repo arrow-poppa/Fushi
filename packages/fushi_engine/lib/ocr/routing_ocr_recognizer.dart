@@ -36,6 +36,10 @@
 /// 主识别器本身逐行识别（[LineOcrRecognizer]，如 `ctc_column_ocr_recognizer.dart`
 /// 的逐列 CTC）时，整块交它的块直接采用它逐行读出的文本与行框（路由时检过的行
 /// 作为 `lineHints` 交给它复用），不再按列长估算切分。
+///
+/// 读别的文字的通用 PP-OCR 权重另带 [OcrScriptTraits]：不竖排时所有行都走横排
+/// 逐行路径、不去注音、行间按文字补空格、从右往左的文字翻回逻辑顺序。默认
+/// [OcrScriptTraits.japanese] 与原行为相同。
 library;
 
 import 'dart:math' as math;
@@ -45,6 +49,7 @@ import 'package:image/image.dart' as img;
 import 'package:fushi_engine/ocr/manga_ocr_pipeline.dart';
 import 'package:fushi_engine/ocr/ocr_glyph_boxes.dart';
 import 'package:fushi_engine/ocr/ocr_line_layout.dart';
+import 'package:fushi_engine/ocr/ocr_script_traits.dart';
 import 'package:fushi_engine/ocr/ocr_types.dart';
 import 'package:fushi_engine/ocr/ppocr_line_detector.dart';
 import 'package:fushi_engine/ocr/ppocr_line_recognizer.dart';
@@ -75,6 +80,7 @@ class RoutingOcrRecognizer
     required OcrRecognizer mangaOcr,
     required PpOcrLineDetector lineDetector,
     required PpOcrLineRecognizer lineRecognizer,
+    OcrScriptTraits traits = OcrScriptTraits.japanese,
   }) {
     // 只向 pipeline 暴露真实可用的批处理能力。不支持批处理的块识别器不因此
     // 被合成一个假 batch，仍保留逐框调用和取消检查。
@@ -83,12 +89,14 @@ class RoutingOcrRecognizer
         mangaOcr: mangaOcr,
         lineDetector: lineDetector,
         lineRecognizer: lineRecognizer,
+        traits: traits,
       );
     }
     return RoutingOcrRecognizer._(
       mangaOcr: mangaOcr,
       lineDetector: lineDetector,
       lineRecognizer: lineRecognizer,
+      traits: traits,
     );
   }
 
@@ -96,13 +104,16 @@ class RoutingOcrRecognizer
     required OcrRecognizer mangaOcr,
     required PpOcrLineDetector lineDetector,
     required PpOcrLineRecognizer lineRecognizer,
+    required OcrScriptTraits traits,
   }) : _mangaOcr = mangaOcr,
        _lineDetector = lineDetector,
-       _lineRecognizer = lineRecognizer;
+       _lineRecognizer = lineRecognizer,
+       _traits = traits;
 
   final OcrRecognizer _mangaOcr;
   final PpOcrLineDetector _lineDetector;
   final PpOcrLineRecognizer _lineRecognizer;
+  final OcrScriptTraits _traits;
 
   @override
   Future<String> recognize(img.Image page, OcrRect box) async =>
@@ -254,7 +265,10 @@ class RoutingOcrRecognizer
   Future<_RoutedBlock> _routeBlock(img.Image page, OcrRect box) async {
     if (!routesToHorizontalPath(box)) {
       return _RoutedBlock(
-        OcrRecognition(text: '', vertical: isVerticalBlock(box)),
+        OcrRecognition(
+          text: '',
+          vertical: _traits.verticalText && isVerticalBlock(box),
+        ),
       );
     }
     final OcrBlockCrop? crop = cropOcrBlock(page, box);
@@ -271,7 +285,7 @@ class RoutingOcrRecognizer
     final List<OcrRect> lineHints = <OcrRect>[
       for (final PpTextLine line in raw) crop.toPage(line.rect),
     ];
-    if (linesAreVerticalMajority(detected)) {
+    if (_traits.verticalText && linesAreVerticalMajority(detected)) {
       return _RoutedBlock(
         const OcrRecognition(text: '', vertical: true),
         lineHints: lineHints,
@@ -279,7 +293,11 @@ class RoutingOcrRecognizer
       );
     }
     final List<PpTextLine> lines = orderLinesForReading(
-      horizontalBlockReadingLines(detected),
+      horizontalBlockReadingLines(
+        detected,
+        dropRuby: _traits.dropRuby,
+        verticalText: _traits.verticalText,
+      ),
     );
     final List<String> texts = <String>[];
     final List<OcrRect> boxes = <OcrRect>[];
@@ -296,7 +314,7 @@ class RoutingOcrRecognizer
       final OcrRect pageLine = crop.toPage(r);
       final ScoredOcrText lineRead;
       List<OcrGlyphBox>? lineGlyphs;
-      if (line.vertical) {
+      if (_traits.verticalText && line.vertical) {
         // 竖行回到页面坐标、外扩边距，仍由 manga-ocr 识别。
         lineRead = await _readScored(
           _mangaOcr,
@@ -320,18 +338,44 @@ class RoutingOcrRecognizer
         );
         final PpOcrPositionedLine positioned = await _lineRecognizer
             .recognizeLinePositioned(lineCrop);
-        lineRead = (text: positioned.text, confidence: positioned.confidence);
-        lineGlyphs = ocrLineGlyphBoxes(
-          text: positioned.text,
-          tokens: positioned.tokens,
-          line: pageLine,
-          vertical: false,
-          // 行裁图左边在页面上的 x。
-          alongOrigin: (x + lx).toDouble(),
-          utf16Offset: utf16Offset,
+        // 从右往左的文字翻回逻辑顺序后 token 位置对不上，不出字格（整块按行均分）。
+        lineRead = (
+          text: _traits.rightToLeft
+              ? restoreRtlOcrText(positioned.text)
+              : positioned.text,
+          confidence: positioned.confidence,
         );
+        if (!_traits.rightToLeft) {
+          lineGlyphs = ocrLineGlyphBoxes(
+            text: positioned.text,
+            tokens: positioned.tokens,
+            line: pageLine,
+            vertical: false,
+            // 行裁图左边在页面上的 x。
+            alongOrigin: (x + lx).toDouble(),
+            utf16Offset: utf16Offset,
+          );
+        }
       }
       if (lineRead.text.isEmpty) continue;
+      // 词间有空格的文字：空格挂在上一行行尾（[joinOcrLineTexts]）。本行字格是按
+      // 补空格前的偏移算的，整体后移一位。
+      if (_traits.spaceBetweenLines &&
+          texts.isNotEmpty &&
+          needsOcrLineSpace(texts.last, lineRead.text)) {
+        texts.last = '${texts.last} ';
+        utf16Offset += 1;
+        lineGlyphs = lineGlyphs == null
+            ? null
+            : <OcrGlyphBox>[
+                for (final OcrGlyphBox glyph in lineGlyphs)
+                  OcrGlyphBox(
+                    start: glyph.start + 1,
+                    end: glyph.end + 1,
+                    rect: glyph.rect,
+                  ),
+              ];
+      }
       texts.add(lineRead.text);
       boxes.add(pageLine);
       glyphs.add(lineGlyphs);
@@ -361,15 +405,23 @@ class RoutingOcrRecognizer
 /// 这一步以前只有按 p75 行厚 0.6 的 [filterThinLines]：字幕注音约为正文的
 /// 0.6~0.65，整排漏过、被当正文读进去；说话人标签「（スネ夫）」与台词被切成两段、
 /// 又按 top 排序，标签落到台词后面（BUG-3314）。
-List<PpTextLine> horizontalBlockReadingLines(List<PpTextLine> lines) {
+///
+/// [verticalText] 为 false（文字不竖排）时细高的行也当横行并进来；[dropRuby] 为
+/// false 时不去注音。
+List<PpTextLine> horizontalBlockReadingLines(
+  List<PpTextLine> lines, {
+  bool dropRuby = true,
+  bool verticalText = true,
+}) {
   final List<PpTextLine> horizontal = <PpTextLine>[
     for (final PpTextLine line in lines)
-      if (!line.vertical) line,
+      if (!verticalText || !line.vertical) line,
+  ];
+  final List<OcrRect> rects = <OcrRect>[
+    for (final PpTextLine line in horizontal) line.rect,
   ];
   final List<OcrRect> rows = mergeOcrLineFragments(
-    dropOcrRubyLines(<OcrRect>[
-      for (final PpTextLine line in horizontal) line.rect,
-    ], vertical: false),
+    dropRuby ? dropOcrRubyLines(rects, vertical: false) : rects,
     vertical: false,
   );
   double scoreOf(OcrRect row) => horizontal
@@ -378,8 +430,9 @@ List<PpTextLine> horizontalBlockReadingLines(List<PpTextLine> lines) {
       )
       .fold<double>(0, (double m, PpTextLine l) => math.max(m, l.score));
   return <PpTextLine>[
-    for (final PpTextLine line in lines)
-      if (line.vertical) line,
+    if (verticalText)
+      for (final PpTextLine line in lines)
+        if (line.vertical) line,
     for (final OcrRect row in rows) PpTextLine(rect: row, score: scoreOf(row)),
   ];
 }
@@ -392,6 +445,7 @@ class _BatchRoutingOcrRecognizer extends RoutingOcrRecognizer
     required BatchOcrRecognizer mangaOcr,
     required super.lineDetector,
     required super.lineRecognizer,
+    required super.traits,
   }) : _batchMangaOcr = mangaOcr,
        super._(mangaOcr: mangaOcr);
 

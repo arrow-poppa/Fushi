@@ -724,6 +724,7 @@ class AnkiMiningPayload {
     this.popupSelectionText = '',
     this.popupSelectionHtml = '',
     this.glossarySelectionHighlighted = false,
+    this.aiExplanation = '',
     this.allowDuplicate = false,
     this.audio = '',
     this.selectedDictionary = '',
@@ -816,6 +817,7 @@ class AnkiMiningPayload {
       glossarySelectionHighlighted: _boolFromPayloadWire(
         json['glossarySelectionHighlighted'],
       ),
+      aiExplanation: json['aiExplanation'] as String? ?? '',
       allowDuplicate: _boolFromPayloadWire(json[allowDuplicateKey]),
       audio: json['audio'] as String? ?? '',
       selectedDictionary: json['selectedDictionary'] as String? ?? '',
@@ -857,6 +859,12 @@ class AnkiMiningPayload {
   /// `false` → 行为逐字节不变。
   final bool glossarySelectionHighlighted;
 
+  /// BYOK AI 解释的**最终**答案（`{ai-explanation}`）。
+  ///
+  /// popup.js 只在 done 态填它（`__fushiAiFinalText`）：加载中/出错/超时的占位
+  /// 文案进了卡片就是永久污染，而且制卡当时没人会发现。旧 payload 没有这个键 →
+  /// 空串 → 行为逐字节不变。
+  final String aiExplanation;
   /// 用户在「卡已在 Anki」对话框里明确选了「新增为重复卡」（BUG-2605）。
   ///
   /// 三个后端的 `addNote` 都以 `settings.allowDupes || allowDuplicate` 决定是否放行
@@ -1151,6 +1159,10 @@ class AnkiHandlebarRenderer {
         // 同一个选区的带样式版本，让位判据与纯文本版相同：让位的理由（Lapis 卡背
         // 轮播被一段选区占住默认页）与内容是纯文本还是 HTML 无关。
         return yieldSelectionText ? '' : payload.popupSelectionHtml;
+      case '{ai-explanation}':
+        // 纯追加：不动 {popup-selection-text} 的语义，两者互不影响。选中一段解释
+        // 去制卡时，SelectionText 仍然只给那一段，这里给的是完整答案。
+        return payload.aiExplanation;
       case '{sentence}':
         return _sentenceValue(payload, context);
       case '{cue-sentence}':
@@ -1344,6 +1356,7 @@ class AnkiHandlebarOptions {
     '{selected-glossary}',
     '{popup-selection-text}',
     '{popup-selection-html}',
+    '{ai-explanation}',
     '{sentence}',
     '{cue-sentence}',
     '{frequencies}',

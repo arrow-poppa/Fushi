@@ -74,6 +74,63 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // 远程使用 AI 助手（会用本机的 AI 指派、调本机操作目录）。与服务端
   // `ai.agent_for_peers` 同一判据：默认关、用户在设置里亲手打开（设备本地）。
   'ai_agent_for_peers',
+  // ===== BYOK AI Explanation（docs/agent/ai-explanation.md）=====
+  // bool：查词打开时自动生成解释。关 = 弹窗照常出 AI 区块但**不发请求**，
+  // 由用户点重新生成按钮手动触发。
+  'ai_explain_auto_generate',
+  // bool：弹窗关闭 / 查下一个词时中止仍在生成的请求。关 = 请求跑完进缓存，
+  // 但永远不会画到另一个词的弹窗上。
+  'ai_explain_cancel_pending',
+  // bool：查词弹窗里的 AI 区块默认折叠（与折叠的词典同一观感，点标题展开）。只管
+  // 显示，不影响要不要发请求、发什么。默认 false。
+  'ai_explain_collapsed',
+  // 🔴 String：自定义 OpenAI 兼容端点的 API key。
+  'ai_explain_custom_api_key',
+  // 🔴 String（JSON 对象）：深合并进生成请求体的自定义字段。**值里可能裹着
+  // key**（形如 {"api_key": ...}），键名本身没有凭据形状，必须点名脱敏。
+  'ai_explain_custom_body_json',
+  // 🔴 String：自定义端点完整 URL（不追加任何路径）。可能是私有服务地址，也
+  // 可能自带 query credential，键名无凭据形状，必须点名脱敏。
+  'ai_explain_custom_endpoint',
+  'ai_explain_custom_model',
+  // bool：OpenRouter allow_fallbacks。默认 true。
+  'ai_explain_custom_routing_allow_fallbacks',
+  // String：'' | 'order' | 'only' | 'ignore'，OpenRouter provider 路由策略。
+  'ai_explain_custom_routing_mode',
+  // String：逗号或换行分隔的 OpenRouter provider slug。
+  'ai_explain_custom_routing_slugs',
+  // String：'' | 'high' | 'max' | 'custom'。
+  'ai_explain_custom_thinking_intensity',
+  // String：'' | 'enabled' | 'disabled'。
+  'ai_explain_custom_thinking_mode',
+  // String：thinking intensity 选 custom 时的自由值（词 / 整数 / JSON 对象）。
+  'ai_explain_custom_thinking_value',
+  // 🔴 String：DeepSeek API key。
+  'ai_explain_deepseek_api_key',
+  'ai_explain_deepseek_model',
+  'ai_explain_deepseek_thinking_intensity',
+  'ai_explain_deepseek_thinking_mode',
+  // 🔴 String：Gemini API key。**注意 Gemini 把 key 放在 URL query 里**，
+  // 完整 URL 一律不得落日志。
+  'ai_explain_gemini_api_key',
+  'ai_explain_gemini_model',
+  // String：'' | 'MINIMAL' | 'LOW' | 'MEDIUM' | 'HIGH'（大写是 Gemini API 口径）。
+  'ai_explain_gemini_thinking_level',
+  // 🔴 String：OpenAI API key。
+  'ai_explain_openai_api_key',
+  'ai_explain_openai_model',
+  // String：用户提示词模板，支持 {{target}} / {{sentence}} 占位符。
+  'ai_explain_prompt',
+  // String：'openai' | 'gemini' | 'deepseek' | 'custom'。
+  'ai_explain_provider',
+  // bool：流式返回（SSE），边生成边写进弹窗。
+  'ai_explain_stream',
+  // String：system 提示词，同样支持占位符；空 = 不发 system 消息。
+  'ai_explain_system_prompt',
+  // double：0~2，默认 0.7。
+  'ai_explain_temperature',
+  // bool：词典查不到时合成一条 `AI Fallback` 结果把弹窗开出来。
+  'ai_explain_unknown_fallback',
   // 「哪个功能用哪家 AI」的映射。不含凭据，但跟着 ai_providers 一起设备本地：
   // providers 不跨设备，映射跨过去只会指向一个不存在的 id。
   'ai_feature_providers',
@@ -225,6 +282,13 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'floating_ball.dock',
   'floating_ball.in_app',
   'floating_ball.mode',
+  // String：截屏 / 拍照识字引擎 `system`（默认）/ `lens`（Google Lens，联网）/
+  // `local`（本地 PaddleOCR，离线）。
+  'floating_ball.screen_ocr_engine',
+  // String：上一项为 `lens` 时报给 Lens 的语言：`auto`（默认，设备语言）或 Lens 主子标签。
+  'floating_ball.screen_ocr_lens_language',
+  // String：上上项为 `local` 时用的本地识别模型 key（默认 `ppocr_v6_small`）。
+  'floating_ball.screen_ocr_local_model',
   // bool：展开按钮旁显示文字，默认 true；保留 tooltip / 无障碍名称。
   'floating_ball.show_labels',
   'floating_ball.system',
@@ -388,6 +452,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // bool（默认 true = 原行为）：查词结果滚到顶后继续下拉 = 清空查询、回到搜索
   // 历史（反馈 3D-JH966Kr）。关掉后下拉不再清空。
   'lookup_page_pull_to_clear',
+  // bool（默认 false）：独立查词窗顶部的源文本条（截屏识字 / 外部选中的那一句）
+  // 开窗时先折成一行预览，点开再看整句。只管显示，不影响查什么、制卡用哪句。
+  'lookup_source_text_collapsed',
   'low_memory_mode',
   // String（`MangaBackground.key`，默认 `black`）：页图周围留白的底色。
   'manga_background',
@@ -415,6 +482,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'manga_ocr_engine_preference',
   'manga_ocr_ignore_furigana',
   'manga_ocr_lens_language',
+  // String：通用 PaddleOCR 权重的行检测器 `ppocr_v6_small_det`（默认）/
+  // `ppocr_v6_tiny_det`。
+  'manga_ocr_line_detector',
   'manga_ocr_local_model',
   'manga_ocr_paired_host_model',
   'manga_ocr_parallel_tasks',
@@ -1098,6 +1168,14 @@ const List<String> kKnownPreferenceKeyPrefixes = <String>[
 /// 🔴 凭据键：值为 base64 敏感凭据，不进日志 / 不进明文导出。
 /// （`media_source_secret_<id>` 前缀族见 [kKnownPreferenceKeyPrefixes]。）
 const Set<String> kCredentialPreferenceKeys = <String>{
+  // BYOK AI Explanation：四家 provider 的 API key，外加两个「名字不像凭据但值
+  // 里可能有凭据」的键（自定义端点 URL 与自定义请求体 JSON）。
+  'ai_explain_custom_api_key',
+  'ai_explain_custom_body_json',
+  'ai_explain_custom_endpoint',
+  'ai_explain_deepseek_api_key',
+  'ai_explain_gemini_api_key',
+  'ai_explain_openai_api_key',
   // 复习同步 v2 各存储位置的集合密钥（hex）。
   'srs_sync2_location_keys',
   // 每条 AI 提供商记录里带 base64 的 apiKeyB64。

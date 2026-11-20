@@ -180,6 +180,43 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'system/EasyPrivacy': 'test/web_adblock/web_adblock_service_test.dart',
   'system/AdGuard Chinese': 'test/web_adblock/web_adblock_service_test.dart',
   'system/AdGuard Japanese': 'test/web_adblock/web_adblock_service_test.dart',
+  // BYOK AI 解释（docs/agent/ai-explanation.md）。五行都写 prefsRepo
+  // （changed=true），但生效点都不在 harness 的渲染输入里：provider / 模型决定的是
+  // **出站请求长什么样**，另外三个决定的是**查词时怎么调度请求**，两者都要有真实
+  // 弹窗和真实网络才看得见。分层咬住：
+  //
+  // - 持久化与读回（含无类型旧值的防御性读、逗号小数点、按 provider 取对应 key）：
+  //   test/ai/ai_settings_store_test.dart
+  // - provider 选择真正改变出站契约（端点 / 鉴权 / body / reasoning 映射）：
+  //   test/ai/ai_request_builder_test.dart + test/ai/ai_gemini_request_test.dart
+  // - 「实时返回」真正切换流式与非流式两条路径，「取消未完成的请求」真正中止：
+  //   test/ai/ai_explanation_repository_test.dart
+  //
+  // 「查词时自动生成」与「未知词兜底」的查词期行为现在也有用例了（弹窗控制器与
+  // AppModel.applyAiFallback 都已接上），指向已从「仅持久化」换成真行为。
+  'lookup/AI provider':
+      'test/ai/ai_settings_store_test.dart + test/ai/ai_request_builder_test.dart '
+          '+ test/ai/ai_gemini_request_test.dart（provider 决定出站契约）',
+  'lookup/Real time response':
+      'test/ai/ai_explanation_repository_test.dart（流式 / 非流式两条路径）',
+  'lookup/Cancel unfinished requests':
+      'test/ai/ai_explanation_repository_test.dart（cancelAll / cancelExcept 真中止，'
+          '且取消不写缓存）',
+  'lookup/Auto generate on lookup':
+      'test/ai/ai_explanation_controller_test.dart（关闭时**一个请求都不发**，'
+          '改由重新生成按钮触发）',
+  // 「默认折叠 AI 解释」：生效点在查词弹窗 WebView 里的 popup.js（harness 没有
+  // WebView）。持久化与「不碰请求配置」由 store 用例咬住，收起 / 展开、点标题开合、
+  // 用户的选择熬过状态重建、换词按设置重来由 jsdom 真 DOM 用例咬住。
+  'lookup/Collapse AI explanation by default':
+      'test/ai/ai_settings_store_test.dart + '
+          'test/js/popup_ai_explanation.test.mjs（收起 / 展开与开合）',
+  'lookup/Collapse the source text by default':
+      'test/pages/popup_dictionary_source_line_test.dart（独立查词窗的源文本条按偏好'
+      '开窗即折成一行预览，点开 / 收起只改显示）',
+  'lookup/Fallback for unknown words':
+      'test/ai/app_model_ai_fallback_test.dart（开关门、真结果不被顶替、'
+          '有边界才合成）+ test/ai/ai_fallback_entry_test.dart（分词器与合成结果）',
   // 悬浮球「显示按钮文字」：生效点在悬浮球展开态（应用内球 / 系统球原生面），
   // 设置页 harness 里没有展开的悬浮球。行为由 floating_ball_labels_test 咬住。
   'floatingBall/Show button labels':
@@ -807,6 +844,14 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
       'test/floating_ball/screen_ocr_session_and_card_image_guard_test.dart',
   'floatingBall/Show over other apps':
       'test/floating_ball/app_floating_ball_host_test.dart: 桌面应用外球：打开开关即起原生球…；Android 原生服务见 BUG-2793 真机记录',
+  // 截屏 / 拍照识字引擎（含本地模型）与 Lens 语言：生效点是宿主识别截图时选引擎
+  // （Android 在原生服务里经通道问 Dart），harness 里没有截屏。
+  'floatingBall/Screen OCR engine':
+      'test/floating_ball/screen_ocr_lens_test.dart: 原生截屏 OCR 经通道向 Dart 要 Lens 结果',
+  'floatingBall/Line detector':
+      'test/ocr/manga_ocr_local_model_test.dart: the cache signature follows the selected line detector',
+  'floatingBall/Google Lens language':
+      'test/floating_ball/screen_ocr_lens_test.dart: 一段折成两行：按逐字区拆回视觉行',
   // 关闭后自动恢复三态：生效点是宿主处理「关闭」与回到前台。
   'floatingBall/Auto-restore floating ball':
       'test/floating_ball/app_floating_ball_host_test.dart: 自动恢复含应用内 / 不自动恢复 / 桌面应用外球「应用内外」三条',

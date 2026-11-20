@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:material_ui/material_ui.dart';
+import 'package:flutter/rendering.dart' show ScrollDirection;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart'
     show FushiRubySpan, shiftRubySpans;
@@ -24,6 +25,7 @@ import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart'
     show MinePopupResult;
 import 'package:fushi/src/utils/components/clipboard_lookup_text_panel.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
+import 'package:fushi/src/utils/components/source_lookup_strip.dart';
 import 'package:fushi/src/utils/misc/popup_channel.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/lookup/swipe_dismiss_wrapper.dart';
@@ -132,6 +134,14 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
   /// 那个字素簇（见 [_pushSearch] 的 `scan`）。长度两种情形都要等引擎回报。
   SourceLookupHighlight? _sourceHighlight;
 
+  /// 源文本条折成一行预览（开窗时按「默认折叠源文本」偏好，之后由用户点开 / 收起）。
+  late bool _sourceCollapsed = _readSourceCollapsedDefault();
+
+  /// 结果正文往下滚时源文本条跟着滚走，回到顶部再出现。
+  final SourceStripScrollAway _sourceScrollAway = SourceStripScrollAway();
+  final GlobalKey _sourceStripKey = GlobalKey();
+  bool _resultScrollUserDriven = false;
+
   /// 迟到匹配长度的发号器（见首页词典 tab 的同名字段）。
   int _sourceHighlightGeneration = 0;
 
@@ -160,6 +170,36 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
     }
   }
 
+  bool _readSourceCollapsedDefault() {
+    try {
+      return appModel.sourceTextCollapsedByDefault;
+    } on Object {
+      // 偏好还没加载（早帧 / 测试桩）：照旧展开。
+      return false;
+    }
+  }
+
+  /// 基础层结果正文的滚动（[DictionaryPopupLayer.forwardScrollToHost] 冒泡上来的）。
+  /// 桥只在方向变化时发 [UserScrollNotification]，方向 idle = 程序滚动（换词归零、
+  /// 恢复滚动位），这种滚动不带走源文本条。
+  bool _onResultScroll(ScrollNotification notification) {
+    if (notification is UserScrollNotification) {
+      _resultScrollUserDriven =
+          notification.direction != ScrollDirection.idle;
+      return false;
+    }
+    if (notification is! ScrollUpdateNotification) return false;
+    if (_sourceLookupText.trim().isEmpty) return false;
+    final bool changed = _sourceScrollAway.update(
+      pixels: notification.metrics.pixels,
+      maxScrollExtent: notification.metrics.maxScrollExtent,
+      stripHeight: _sourceStripKey.currentContext?.size?.height ?? 0,
+      userDriven: _resultScrollUserDriven,
+    );
+    if (changed && mounted) setState(() {});
+    return false;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -186,24 +226,80 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
     }
   }
 
-  static String _sentenceOf(PopupDictionaryPage page) =>
-      page.sourceCharIndex >= 0
-      ? _sentenceAtLineUnit(page, page.sourceCharIndex)
-      : '';
+  /// 源文本条上的原文与被点字在其中的 UTF-16 下标。
+  ///
+  /// - 靠空格分词的文字（拉丁、西里尔、希腊……）：被点那一行所在 OCR 块的**全部行**
+  ///   （[ocrSpacedBlockAt]），条上能点块里任何一行；句子从拼好的整块里截
+  ///   （[_OcrSourceText.wholeBlock]）。
+  /// - 其余（日文 / 中文等，或块太长）：被点的那一行；那一行最后一句折到下面几行时
+  ///   把这句剩下的部分接上（[ocrLineWithSentenceContinuation]），接上的部分只在行尾
+  ///   之后，行内下标原样有效。
+  static _OcrSourceText _sourceOf(PopupDictionaryPage page) {
+    final String line = page.searchTerm;
+    final int unit = page.sourceCharIndex;
+    final String? block = page.sourceBlock;
+    if (unit >= 0 && block != null) {
+      final ({String text, int unit})? whole = ocrSpacedBlockAt(
+        block,
+        page.sourceBlockOffset,
+        line,
+        unit,
+      );
+      if (whole != null) {
+        return _OcrSourceText(
+          text: whole.text,
+          unit: whole.unit,
+          wholeBlock: true,
+        );
+      }
+      final String? continued = ocrLineWithSentenceContinuation(
+        block,
+        page.sourceBlockOffset,
+        line,
+      );
+      if (continued != null) {
+        return _OcrSourceText(text: continued, unit: unit, wholeBlock: false);
+      }
+    }
+    return _OcrSourceText(text: line, unit: unit, wholeBlock: false);
+  }
+
+  static String _sentenceOf(PopupDictionaryPage page) {
+    if (page.sourceCharIndex < 0) return '';
+    final _OcrSourceText source = _sourceOf(page);
+    return _sentenceAtSourceUnit(page, source, source.unit);
+  }
+
+  /// [source] 上 UTF-16 下标 [unit] 那个字所在的整句。整块模式在拼好的整块上按书本
+  /// 阅读器的句读截（[ocrSpacedBlockSentenceAt]），截不出时回落为被点的那一行。
+  static String _sentenceAtSourceUnit(
+    PopupDictionaryPage page,
+    _OcrSourceText source,
+    int unit,
+  ) {
+    if (!source.wholeBlock) return _sentenceAtLineUnit(page, unit);
+    return ocrSpacedBlockSentenceAt(source.text, unit) ??
+        page.searchTerm.trim();
+  }
 
   /// 行内 UTF-16 下标 [unitInLine] 那个字所在的整句（BUG-3487）：有所属块就从块里截，
   /// 块与行对不上 / 截不出（无标点的超长块）时回落为整行。
+  ///
+  /// 下标落在行尾之后（源文本条接上的下一行部分，见 [_sourceOf]）时，那部分按
+  /// 构造就属于行尾那一句，按行内最后一个非空白字取句子。
   static String _sentenceAtLineUnit(PopupDictionaryPage page, int unitInLine) {
     final String line = page.searchTerm;
     final String? block = page.sourceBlock;
     final int offset = page.sourceBlockOffset;
+    final int lastUnit = line.trimRight().length - 1;
+    final int unit = unitInLine > lastUnit ? lastUnit : unitInLine;
     if (block != null &&
         offset >= 0 &&
-        unitInLine >= 0 &&
-        unitInLine < line.length &&
+        unit >= 0 &&
+        unit < line.length &&
         offset + line.length <= block.length &&
         block.substring(offset, offset + line.length) == line) {
-      final String? sentence = ocrBlockSentenceAt(block, offset + unitInLine);
+      final String? sentence = ocrBlockSentenceAt(block, offset + unit);
       if (sentence != null) return sentence;
     }
     return line.trim();
@@ -212,8 +308,9 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
   /// 宿主推来的这一次查词：整串入口直接查整串；带被点字下标的整行入口（BUG-2899）
   /// 把整行放上源文本条，从被点字起扫描查词——与在条上点那个字同一条路径。
   void _lookupWidgetSource() {
-    final String text = widget.searchTerm;
-    final int unitIndex = widget.sourceCharIndex;
+    final _OcrSourceText source = _sourceOf(widget);
+    final String text = source.text;
+    final int unitIndex = source.unit;
     final ({String suffix, int start})? scan = unitIndex < 0
         ? null
         : sourceLookupSuffixAt(
@@ -222,7 +319,12 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
           );
     if (scan == null) {
       _sourceLineQuery = '';
-      _pushSearch(text, Rect.zero, reuseWarmSlot: true);
+      _pushSearch(
+        text,
+        Rect.zero,
+        reuseWarmSlot: true,
+        explicitBoundary: true,
+      );
       return;
     }
     _sourceLineQuery = scan.suffix.trim();
@@ -321,6 +423,9 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
     List<FushiRubySpan> rubySpans = const <FushiRubySpan>[],
     // 释义里点词时被点处那一句（反馈 TnKWBi4C-9），嵌套层制卡的例句。
     String contextSentence = '',
+    // 整串就是用户要问的（宿主推来的选中文本、搜索栏提交）。扫描查词与卡片内点词
+    // 交来的是「被点的词到行尾」，AI 兜底只取开头那个词。
+    bool explicitBoundary = false,
   }) async {
     final String trimmed = query.trim();
     if (trimmed.isEmpty) return;
@@ -358,6 +463,7 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
         length: trimmed.length,
       ),
       contextSentence: contextSentence,
+      explicitBoundary: explicitBoundary,
     );
     if (!mounted || highlightGeneration != _sourceHighlightGeneration) return;
     setState(() {
@@ -377,12 +483,14 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
   /// 记作「出自这一行」（BUG-2900 制卡句子的判据）。
   Future<void> _lookupFromSourceStrip(String query, Rect rect, int charIndex) {
     if (_sourceSentence.isNotEmpty && widget.sourceBlock != null) {
-      // BUG-3487：条上点的是同一行的别的字，它可能落在块里的另一句。
-      final String line = widget.searchTerm;
+      // BUG-3487：条上点的是同一行（整块模式下是块里任一行）的别的字，它可能落在
+      // 块里的另一句。
+      final _OcrSourceText source = _sourceOf(widget);
+      final String line = source.text;
       final int leading = line.length - line.trimLeft().length;
       final int unit =
           leading + line.trim().characters.take(charIndex).toString().length;
-      _sourceSentence = _sentenceAtLineUnit(widget, unit);
+      _sourceSentence = _sentenceAtSourceUnit(widget, source, unit);
     }
     _sourceLineQuery = _sourceSentence.isEmpty ? '' : query.trim();
     return _pushSearch(
@@ -461,7 +569,12 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
     // TODO-951 症状C：保留常驻热槽（pruneToWarmSlot），别 clear 掉热 WebView；
     // 顶层重查走 reuseWarmSlot 原地复用。
     setState(_popup.pruneToWarmSlot);
-    _pushSearch(text.trim(), Rect.zero, reuseWarmSlot: true);
+    _pushSearch(
+      text.trim(),
+      Rect.zero,
+      reuseWarmSlot: true,
+      explicitBoundary: true,
+    );
   }
 
   /// BUG-2900：基础层的结果来自外部入口那一行，制卡 / 覆写时用整行补 `{sentence}`
@@ -477,6 +590,18 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
         sourceQuery: _sourceLineQuery,
         sentence: _sourceSentence,
       );
+
+  /// BYOK AI 解释的 `{{sentence}}`（docs/agent/ai-explanation.md §6.2）：与制卡补
+  /// `{sentence}` 同一判据（[_withSourceSentence]）——基础层当前词条仍出自外部入口那
+  /// 一行时给那一句，原地跳到释义里的别的词、嵌套层、搜索栏另查都给空串。
+  ///
+  /// 此前本页不传，AI 收到的句子恒为空：截屏识字查词时模型只看得到孤立的词。
+  String _aiSentenceFor(int index, DictionaryPopupEntry entry) {
+    if (index != 0 || _sourceSentence.isEmpty || _sourceLineQuery.isEmpty) {
+      return '';
+    }
+    return entry.searchTerm.trim() == _sourceLineQuery ? _sourceSentence : '';
+  }
 
   Future<MinePopupResult> _mineBaseEntry(Map<String, String> fields) =>
       onMineEntry(_withSourceSentence(fields));
@@ -668,17 +793,32 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
               color: tokens.surfaces.outline,
             ),
           if (_sourceLookupText.trim().isNotEmpty)
-            SourceLookupTextPanel(
+            SourceLookupStrip(
+              key: _sourceStripKey,
               text: _sourceLookupText,
-              tonalHighlight: m3e,
-              coordinateSpaceKey: _resultStackKey,
-              dictionaryHeadwordScale: _dictionaryHeadwordScale,
-              highlight: _sourceHighlight,
-              // 源文本面板点选 = 扫描查词：复用常驻热槽原地换结果（TODO-951 症状C），
-              // 条上的整句与搜索框里的整句都留着，只有高亮跨度跟着挪。
-              onLookup: _lookupFromSourceStrip,
+              collapsed: _sourceCollapsed,
+              scrolledAway: _sourceScrollAway.hidden,
+              // 整块识字的长句不能把结果挤出窗口：超过这个高度就在条内滚。
+              maxExpandedHeight: MediaQuery.sizeOf(context).height * 0.3,
+              onToggleCollapsed: () =>
+                  setState(() => _sourceCollapsed = !_sourceCollapsed),
+              panel: SourceLookupTextPanel(
+                text: _sourceLookupText,
+                tonalHighlight: m3e,
+                coordinateSpaceKey: _resultStackKey,
+                dictionaryHeadwordScale: _dictionaryHeadwordScale,
+                highlight: _sourceHighlight,
+                // 源文本面板点选 = 扫描查词：复用常驻热槽原地换结果（TODO-951 症状C），
+                // 条上的整句与搜索框里的整句都留着，只有高亮跨度跟着挪。
+                onLookup: _lookupFromSourceStrip,
+              ),
             ),
-          Expanded(child: _buildStack(context)),
+          Expanded(
+            child: NotificationListener<ScrollNotification>(
+              onNotification: _onResultScroll,
+              child: _buildStack(context),
+            ),
+          ),
         ],
       ),
     );
@@ -841,6 +981,9 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
       transparentDocumentBackground: true,
       result: entry.result,
       restoreScrollTop: entry.restoreScrollTop,
+      aiSentence: _aiSentenceFor(index, entry),
+      // 只有基础层的正文滚动带着源文本条走；嵌套层查的是释义里的词。
+      forwardScrollToHost: isBase,
       isSearching: entry.isSearching,
       // TODO-951 症状C：常驻热槽（isWarmSlot）的 WebView 全程挂载、冷加载一次后复用，
       // 消除「每次查词重建弹窗 WebView 露白屏一瞬」。与 reader/video/首页查词同口径。
@@ -1029,4 +1172,23 @@ class _CompactPopupCloseButton extends StatelessWidget {
       ),
     );
   }
+}
+
+/// 截屏识字查词窗源文本条的内容（见 `_PopupDictionaryPageState._sourceOf`）。
+class _OcrSourceText {
+  const _OcrSourceText({
+    required this.text,
+    required this.unit,
+    required this.wholeBlock,
+  });
+
+  /// 条上显示、扫描查词所用的原文。
+  final String text;
+
+  /// 被点字在 [text] 里的 UTF-16 下标；-1 = 整串入口。
+  final int unit;
+
+  /// [text] 是拼好的整块（靠空格分词的文字）：句子在 [text] 上截，而不是回到块
+  /// 原文按行截。
+  final bool wholeBlock;
 }

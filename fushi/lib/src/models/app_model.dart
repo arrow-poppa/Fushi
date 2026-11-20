@@ -179,6 +179,11 @@ import 'package:fushi/src/pages/implementations/popup_settings_injection.dart'
         browserExtensionDictionaryFontForView;
 import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi/src/anki/anki_settings_drift_store.dart';
+import 'package:fushi/src/ai/ai_credential_store.dart';
+import 'package:fushi/src/ai/ai_fallback_entry.dart';
+import 'package:fushi/src/ai/ai_explanation_client.dart';
+import 'package:fushi/src/ai/ai_explanation_repository.dart';
+import 'package:fushi/src/ai/ai_settings_store.dart';
 import 'package:fushi/src/anki/anki_media_dedup_runner.dart';
 import 'package:fushi/src/media/floating_dict_channel.dart';
 import 'package:fushi/src/models/app_font_loader.dart';
@@ -1548,6 +1553,27 @@ class AppModel with ChangeNotifier {
           as bool? ??
       true;
   bool get isPreferencesReady => _prefsRepo != null;
+
+  /// BYOK AI 解释的行为设置与凭据（见 docs/agent/ai-explanation.md）。
+  ///
+  /// 两者都只包一个 [prefsRepo] 引用，构造本身零成本；缓存成字段是因为设置页与
+  /// 每次查词都会读它们，没必要每帧新建对象。凭据走独立 store：它的规则（不出境、
+  /// 不跟 Profile、不落日志）与其它偏好不同，收在一个窄接口里才好审计。
+  AiSettingsStore? _aiSettings;
+  AiSettingsStore get aiSettings => _aiSettings ??= AiSettingsStore(prefsRepo);
+
+  AiCredentialStore? _aiCredentials;
+  AiCredentialStore get aiCredentials =>
+      _aiCredentials ??= PrefsAiCredentialStore(prefsRepo);
+
+  /// BYOK AI 解释的请求编排（缓存 / 去重 / 超时 / 取消）。
+  ///
+  /// **app 级单例**，不是每个弹窗一个：60 秒缓存要跨弹窗生效，不然刚查过的词换个
+  /// 界面再查一次又得付一次钱。弹窗侧各自持 [AiExplanationController]，共用这一个。
+  /// 懒建：AI 没配置时这条路径一次都不会走到，弹窗热路径不该为它付任何代价。
+  AiExplanationRepository? _aiExplanations;
+  AiExplanationRepository get aiExplanations =>
+      _aiExplanations ??= AiExplanationRepository(client: AiExplanationClient());
 
   /// v101 统一更新提醒。懒建：四个投递方（番剧订阅检查、漫画库刷新、扩展检查、
   /// app 版本检查）与更新页共用这一份，进程内单例。
@@ -9089,6 +9115,47 @@ class AppModel with ChangeNotifier {
         (cp >= 0x2F800 && cp <= 0x2FA1F); // Compatibility Ideographs Supplement
   }
 
+  /// 词典一条都没查到时，按需合成一条 `AI Fallback` 结果，让弹窗照常开出来。
+  ///
+  /// 契约见 docs/agent/ai-explanation.md §5.8 / §8.5。要点：
+  ///
+  /// * **不进引擎、不进索引**：结果整条在 Dart 侧造，`popupJson` 留空走纯 Dart
+  ///   分组器，`native/fushidicts/` 一行都不碰。
+  /// * **没有明确边界时只取扫描窗开头的那个词**，且只在靠空格分词的文字上。参考
+  ///   实现是按语言黑名单（ja/zh/th…）关掉这条路的，
+  ///   但本仓查词流水线**有意语言无关**（`targetLanguage` 已于 2026-07-26 按用户
+  ///   指令删除，并有守卫 `target_language_removed_guard_test.dart` 钉死）。所以这里
+  ///   不引入语言概念：调用方给了边界（用户选中的那段文本）就用它；没给时只看扫描窗
+  ///   开头的文字本身靠不靠空格分词，靠空格就取开头那个词，否则不兜底。
+  ///   参考实现要黑名单，正是因为它得从一段裸缓冲里**猜**词边界；边界是现成的时候
+  ///   那个问题根本不存在。
+  /// * 用户没开这个开关时是**零成本**：先读偏好再谈别的。
+  DictionarySearchResult applyAiFallback(
+    DictionarySearchResult result, {
+    required bool hasExplicitBoundary,
+  }) {
+    if (result.entries.isNotEmpty) return result;
+    // 偏好没加载完就别读：`prefsRepo` 是个 `!`，而查词可以先于 initialise() 发生
+    // （热槽种子、widget 测试）。这里抛异常会把**整条查词渲染**一起带走。
+    if (!isPreferencesReady) return result;
+    if (!aiSettings.read().unknownWordFallback) return result;
+    // 有边界：整串就是用户要问的（搜索框输入、外部 app 选中的文本、链接）。
+    // 没边界：点按 / 悬停交来的是「从被点的词到行尾」的扫描窗，整串当词会把
+    // 「testemunha neste país」造成一个词——只取开头那个词；窗以不靠空格分词的
+    // 文字开头时取不出边界，不兜底（见 [AiFallback.resolveScanFallbackTerm]）。
+    final AiFallbackToken? token = hasExplicitBoundary
+        ? AiFallback.resolveFallbackTerm(
+            result.searchTerm,
+            hasExplicitBoundary: true,
+            // 有边界时 resolveFallbackTerm 根本不看这个参数。传空串是为了不把语言
+            // 概念带进查词链路。
+            language: '',
+          )
+        : AiFallback.resolveScanFallbackTerm(result.searchTerm);
+    if (token == null) return result;
+    return AiFallback.buildResult(token);
+  }
+
   Future<DictionarySearchResult> searchDictionary({
     required String searchTerm,
     required bool searchWithWildcards,
@@ -11014,6 +11081,10 @@ class AppModel with ChangeNotifier {
   /// [FushiToast.mineNoticeFilter] 的接线：偏好还没载入（启动最早期）时一律弹。
   bool mineNoticeShown(MineToastStatus status) =>
       _prefsRepo?.mineNoticeShown(status) ?? true;
+  bool get sourceTextCollapsedByDefault =>
+      prefsRepo.sourceTextCollapsedByDefault;
+  Future<void> setSourceTextCollapsedByDefault(bool value) =>
+      prefsRepo.setSourceTextCollapsedByDefault(value);
   void toggleCompactGlossaries() => prefsRepo.toggleCompactGlossaries();
   bool get dictionaryUnifiedStyle => prefsRepo.dictionaryUnifiedStyle;
   void toggleDictionaryUnifiedStyle() =>
@@ -12621,6 +12692,9 @@ class AppModel with ChangeNotifier {
   String get mangaOcrLensLanguage => prefsRepo.mangaOcrLensLanguage;
   Future<void> setMangaOcrLensLanguage(String value) =>
       prefsRepo.setMangaOcrLensLanguage(value);
+  String get mangaOcrLineDetector => prefsRepo.mangaOcrLineDetector;
+  Future<void> setMangaOcrLineDetector(String value) =>
+      prefsRepo.setMangaOcrLineDetector(value);
 
   String get asrTranscribeLanguage => prefsRepo.asrTranscribeLanguage;
   Future<void> setAsrTranscribeLanguage(String value) =>

@@ -1010,6 +1010,7 @@ mixin AnkiNoteComposer {
       popupSelectionText: payload.popupSelectionText,
       popupSelectionHtml: payload.popupSelectionHtml,
       glossarySelectionHighlighted: payload.glossarySelectionHighlighted,
+      aiExplanation: payload.aiExplanation,
       audio: processedAudio,
       selectedDictionary: payload.selectedDictionary,
       dictionaryMedia: payload.dictionaryMedia,

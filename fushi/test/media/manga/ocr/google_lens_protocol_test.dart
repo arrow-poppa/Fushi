@@ -36,7 +36,6 @@ void main() {
   test('decodes line text, removes CJK spaces and records UTF-16 regions', () {
     final List<GoogleLensParagraph> result = GoogleLensProtocol.decodeResponse(
       makeGoogleLensFixture(),
-      language: 'ja',
       imageWidth: 1000,
       imageHeight: 1000,
     );
@@ -63,7 +62,6 @@ void main() {
         height: 0.4,
         rotation: 1.57079632679,
       ),
-      language: 'ja',
       imageWidth: 1000,
       imageHeight: 1000,
     );
@@ -93,7 +91,6 @@ void main() {
             height: line.height,
             words: words,
           ),
-          language: 'ja',
           imageWidth: 1000,
           imageHeight: 1000,
         );
@@ -148,7 +145,6 @@ void main() {
         secondLineText: '下',
         secondLineCenterY: 0.7,
       ),
-      language: 'ja',
       imageWidth: 1000,
       imageHeight: 1000,
     );
@@ -163,7 +159,6 @@ void main() {
     expect(
       () => GoogleLensProtocol.decodeResponse(
         Uint8List.fromList(<int>[0x12, 0xff, 0xff]),
-        language: 'ja',
         imageWidth: 1000,
         imageHeight: 1000,
       ),
@@ -188,7 +183,6 @@ void main() {
         height: lineHeight,
         rotation: rotation,
       ),
-      language: 'ja',
       imageWidth: pageWidth,
       imageHeight: pageHeight,
     );
@@ -225,7 +219,6 @@ void main() {
         height: 0.08,
         rotation: -math.pi / 2,
       ),
-      language: 'ja',
       imageWidth: 1200,
       imageHeight: 1700,
     );
@@ -249,7 +242,6 @@ void main() {
         height: lineHeight,
         rotation: math.pi / 2,
       ),
-      language: 'ja',
       imageWidth: pageWidth,
       imageHeight: pageHeight,
     );
@@ -263,7 +255,6 @@ void main() {
   test('English decode keeps word spaces instead of CJK stripping', () {
     final List<GoogleLensParagraph> result = GoogleLensProtocol.decodeResponse(
       makeGoogleLensFixture(firstWord: 'Hello ', secondWord: 'world'),
-      language: 'en',
       imageWidth: 1000,
       imageHeight: 1000,
     );
@@ -324,6 +315,7 @@ void main() {
       expect(normalizeLensLanguage('zh_Hans'), 'zh');
       expect(normalizeLensLanguage('EN'), 'en');
       expect(normalizeLensLanguage(''), 'ja');
+      expect(normalizeLensLanguage('und'), 'ja');
       expect(normalizeLensLanguage(null), 'ja');
       expect(normalizeLensLanguage('all'), 'ja');
       expect(normalizeLensLanguage('multi'), 'ja');

@@ -1,0 +1,44 @@
+name: Linux x64 artifact
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Build Linux x64 release bundle
+        env:
+          FUSHI_DOCKER_CPUS: '3'
+          FUSHI_DOCKER_MEMORY: 12g
+        run: bash tool/linux/build_in_docker.sh
+
+      - name: Upload Linux x64 bundle
+        uses: actions/upload-artifact@v7
+        with:
+          name: fushi-linux-x64-${{ github.sha }}
+          path: build/linux-dist/fushi-*-linux-x64.tar.gz
+          if-no-files-found: error
+
+  popup:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Test the AI explanation popup
+        working-directory: test/js
+        run: |
+          npm install --ignore-scripts
+          node --test popup_ai_explanation.test.mjs

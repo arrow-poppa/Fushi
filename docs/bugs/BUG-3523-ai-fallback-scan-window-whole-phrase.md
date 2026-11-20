@@ -1,0 +1,6 @@
+## BUG-3523 · AI Fallback 把扫描窗整串当成一个词：屏幕 OCR 点词时解释整句后半段
+- **报告**：2026-10-18（用户：屏幕 OCR 查词时查的是整段「testemunha neste país」而不是点中的那个词；查词与 OCR 语言都设成英语也一样）
+- **真实性**：✅ 真 bug。屏幕 OCR / 源文本条 / 字幕 / texthooker 点词交给查词的是「被点的词到行尾」的扫描窗；`pushNestedPopup`（`fushi/lib/src/pages/implementations/dictionary_page_mixin.dart`，修前约 1275 行）对所有调用方写死 `hasExplicitBoundary: true`，词典查不到时 `AppModel.applyAiFallback` 便把整个扫描窗当作「用户选定的词」造兜底卡，高亮与 AI 解释都覆盖整段。语言设置与此无关：查词链路本来就语言无关，葡萄牙语没有变形规则，词典里没有 `testemunha` 时必然走兜底。
+- **[x] ① 已修复**（`09580c7209`）— `AiFallback.resolveScanFallbackTerm`（`fushi/lib/src/ai/ai_fallback_entry.dart`）：扫描窗以靠空格分词的文字开头时只取开头那个词，以汉字 / 假名 / 泰文等开头时不兜底。`applyAiFallback` 在 `hasExplicitBoundary: false` 时走它；`pushNestedPopup` 新增 `explicitBoundary`（默认 `false`），只有搜索栏提交、外部 app 交来的选中文本（`popup_dictionary_page.dart`）与链接点击（`home_dictionary_page.dart`）传 `true`。
+- **[x] ② 已加自动化测试** — `fushi/test/ai/ai_fallback_entry_test.dart`（扫描窗取词：葡萄牙语 / 连字符 / 西里尔 / 无空格文字 / 空白）、`fushi/test/ai/app_model_ai_fallback_test.dart`（`testemunha neste país` 无边界 → 只解释 `testemunha`，`bestLength` 同步）、`fushi/test/ai/ai_fallback_call_site_guard_test.dart`（`pushNestedPopup` 不许再写死 `true`）。
+- **备注**：书本阅读器点按（`base_source_page.dart`，原本无边界即不兜底）现在对靠空格分词的文字也会兜底开头那个词。未在真机复测（本环境无 Android 设备）。

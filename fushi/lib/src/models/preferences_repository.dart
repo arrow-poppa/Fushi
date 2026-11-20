@@ -57,7 +57,11 @@ import 'package:fushi/src/media/manga/ocr/manga_ocr_engine.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_job_registry.dart'
     show kMangaOcrMaxSelectableTasks;
 import 'package:fushi_engine/ocr/manga_ocr_local_model.dart'
-    show kDefaultMangaOcrLocalModel, MangaOcrLocalModel;
+    show
+        kDefaultMangaOcrLocalModel,
+        MangaOcrLocalModel,
+        PpOcrLineDetectorModel,
+        mangaOcrLineDetectorChoice;
 import 'package:fushi_engine/media/music/apple_music/apple_music_catalog_client.dart'
     show appleMusicStorefrontForCountry, normalizeAppleMusicStorefront;
 import 'package:fushi_engine/media/music/server/subsonic_server_config.dart';
@@ -317,6 +321,11 @@ class PreferencesRepository extends ChangeNotifier
     // AI 多 key 轮换的冷却记录（引擎全局装配点）：落偏好表，app 重启后被拒 /
     // 限流的 key 仍在冷却里，不会一启动就把同一把坏 key 再打一遍。
     aiKeyHealthStore = _PrefsAiKeyHealthStore(this);
+    // 通用 PaddleOCR 权重的行检测器（引擎全局装配点）：漫画 / 视频字幕 / 截屏识字
+    // 建会话时读它。
+    mangaOcrLineDetectorChoice = PpOcrLineDetectorModel.fromKey(
+      mangaOcrLineDetector,
+    );
   }
 
   /// BUG-2429 的存量数据修复标记。跑过一次就再也不跑。
@@ -1265,6 +1274,43 @@ class PreferencesRepository extends ChangeNotifier
 
   Future<void> setFloatingBallSystemOpenApp(bool value) async {
     await setPref('floating_ball.system_open_app', value);
+    notifyListeners();
+  }
+
+  /// 截屏 / 拍照识字用的识别引擎：[kScreenOcrEngineSystem]（系统 OCR，离线，默认）、
+  /// [kScreenOcrEngineLens]（Google Lens，联网；能读系统 OCR 没有识别器的文字，
+  /// 如俄文、希腊文）或 [kScreenOcrEngineLocal]（本地 PaddleOCR，离线，模型见
+  /// [floatingBallScreenOcrLocalModel]）。不认识的值按系统 OCR。
+  String get floatingBallScreenOcrEngine =>
+      getPref('floating_ball.screen_ocr_engine',
+          defaultValue: kScreenOcrEngineSystem) as String;
+
+  Future<void> setFloatingBallScreenOcrEngine(String value) async {
+    await setPref('floating_ball.screen_ocr_engine', value);
+    notifyListeners();
+  }
+
+  /// 截屏 / 拍照识字走 Google Lens 时报给 Lens 的语言：`auto`（默认，报设备语言）
+  /// 或 Lens 主子标签（见 `kGoogleLensLanguageOptions`）。只是提示，Lens 照样认出
+  /// 别的文字。系统 OCR 不读它。
+  String get floatingBallScreenOcrLensLanguage =>
+      getPref('floating_ball.screen_ocr_lens_language', defaultValue: 'auto')
+          as String;
+
+  Future<void> setFloatingBallScreenOcrLensLanguage(String value) async {
+    await setPref('floating_ball.screen_ocr_lens_language', value);
+    notifyListeners();
+  }
+
+  /// 截屏 / 拍照识字走本地引擎时用的识别模型（`MangaOcrLocalModel.key`）：默认
+  /// PP-OCRv6 small（中日文 + 拉丁文，屏幕上的界面字比漫画字规整，通用权重更合适）。
+  /// 模型文件与漫画 / 视频字幕 OCR 共用同一份下载。
+  String get floatingBallScreenOcrLocalModel =>
+      getPref('floating_ball.screen_ocr_local_model',
+          defaultValue: kDefaultScreenOcrLocalModel) as String;
+
+  Future<void> setFloatingBallScreenOcrLocalModel(String value) async {
+    await setPref('floating_ball.screen_ocr_local_model', value);
     notifyListeners();
   }
 
@@ -4494,6 +4540,15 @@ class PreferencesRepository extends ChangeNotifier
   bool get compactGlossaries =>
       getPref('popup_compact_glossaries', defaultValue: false) as bool;
 
+  // 独立查词窗顶部的源文本条开窗时先折成一行。只管显示。
+  bool get sourceTextCollapsedByDefault =>
+      getPref('lookup_source_text_collapsed', defaultValue: false) as bool;
+
+  Future<void> setSourceTextCollapsedByDefault(bool value) async {
+    await setPref('lookup_source_text_collapsed', value);
+    notifyListeners();
+  }
+
   void toggleCompactGlossaries() async {
     await setPref('popup_compact_glossaries', !compactGlossaries);
     notifyListeners();
@@ -5932,6 +5987,22 @@ class PreferencesRepository extends ChangeNotifier
 
   Future<void> setMangaOcrLocalModel(String value) async {
     await setPref('manga_ocr_local_model', value);
+    notifyListeners();
+  }
+
+  /// 通用 PaddleOCR 识别权重用的行检测器（`PpOcrLineDetectorModel.key`）：默认
+  /// PP-OCRv6 small，可换 tiny（小而快）。漫画 CTC 权重不读它。漫画、视频字幕与
+  /// 截屏识字共用这一个选择。
+  String get mangaOcrLineDetector =>
+      getPref(
+            'manga_ocr_line_detector',
+            defaultValue: PpOcrLineDetectorModel.small.key,
+          )
+          as String;
+
+  Future<void> setMangaOcrLineDetector(String value) async {
+    await setPref('manga_ocr_line_detector', value);
+    mangaOcrLineDetectorChoice = PpOcrLineDetectorModel.fromKey(value);
     notifyListeners();
   }
 

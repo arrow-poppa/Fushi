@@ -323,6 +323,8 @@ const Set<String> kGameStreamHostMineFieldKeys = <String>{
   'popupSelectionText',
   'popupSelectionHtml',
   'glossarySelectionHighlighted',
+  // BYOK AI 解释的最终答案（`{ai-explanation}`），popup.js 只在 done 态填。
+  'aiExplanation',
   'selectedDictionary',
   'dictionaryMedia',
   'audio',

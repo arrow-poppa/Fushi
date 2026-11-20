@@ -95,3 +95,4 @@
 | material_ui 升级 | [material-ui-upgrade.md](docs/agent/material-ui-upgrade.md) |
 | 拍板原文（起因、日期、例外、实测数据） | [rules-detail.md](docs/agent/rules-detail.md) |
 | `fushi/` 主应用模块说明 | [fushi-app-module.md](docs/agent/fushi-app-module.md) |
+| BYOK AI Explanation | [ai-explanation.md](docs/agent/ai-explanation.md) |

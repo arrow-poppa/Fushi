@@ -2128,6 +2128,9 @@ updateLive: function(patch) {
                       rubySpans: sel != null && sel.text == text
                           ? sel.rubySpans
                           : const <FushiRubySpan>[],
+                      // 边界明确：这是**原生选区**（用户拖选的那一段），
+                      // 不是点按取的扫描窗。
+                      hasExplicitBoundary: true,
                     );
                     if (mounted) _checkFavoriteStatus();
                   },

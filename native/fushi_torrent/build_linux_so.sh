@@ -22,6 +22,7 @@ VCPKG_TOOLCHAIN="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake"
 # HEAD 的祖先（versions/ 只增不删）。同款检查见 build_android_so.sh / vcpkg_baseline.ps1。
 baseline="$(sed -n 's/.*"builtin-baseline"[[:space:]]*:[[:space:]]*"\([0-9a-f]*\)".*/\1/p' "$SCRIPT_DIR/vcpkg.json")"
 [[ -n "$baseline" ]] || { echo "vcpkg.json 缺少 builtin-baseline" >&2; exit 1; }
+bash "$SCRIPT_DIR/cache_boost_math_patch.sh" "$VCPKG_ROOT"
 if [[ "$(git -C "$VCPKG_ROOT" cat-file -t "$baseline" 2>/dev/null)" != commit ]]; then
   echo "==> fetch vcpkg baseline $baseline"
   git -C "$VCPKG_ROOT" fetch --no-tags --quiet origin "$baseline" \

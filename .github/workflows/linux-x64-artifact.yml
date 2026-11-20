@@ -2,12 +2,18 @@ name: Linux x64 artifact
 
 on:
   workflow_dispatch:
+    inputs:
+      validate_only:
+        description: 'Run lookup and OCR checks without packaging Linux'
+        type: boolean
+        default: false
 
 permissions:
   contents: read
 
 jobs:
   build:
+    if: ${{ !inputs.validate_only }}
     runs-on: ubuntu-24.04
     timeout-minutes: 150
     steps:
@@ -42,3 +48,38 @@ jobs:
         run: |
           npm install --ignore-scripts
           node --test popup_ai_explanation.test.mjs
+
+  lookup-and-ocr:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.47.6'
+      - uses: ./.github/actions/fetch-vendored-binaries
+        with:
+          groups: android
+      - name: Resolve Flutter dependencies
+        working-directory: fushi
+        run: flutter pub get
+      - name: Apply pub cache patches
+        run: bash ci/apply-patches.sh
+      - uses: ./.github/actions/gen-i18n
+      - name: Check app and fork integration
+        working-directory: fushi
+        run: flutter analyze --no-pub --no-fatal-infos --no-fatal-warnings
+      - name: Test lookup, PP-OCR and AI Explanation
+        working-directory: fushi
+        run: >-
+          flutter test --no-pub
+          test/lookup/hyphenated_compound_lookup_test.dart
+          test/lookup/ocr_block_sentence_test.dart
+          test/ocr/ppocr_script_traits_test.dart
+          test/floating_ball/screen_ocr_lens_test.dart
+          test/floating_ball/screen_ocr_local_test.dart
+          test/media/manga/ocr/google_lens_protocol_test.dart
+          test/ai/ai_explanation_controller_test.dart
+          test/ai/ai_explanation_repository_test.dart

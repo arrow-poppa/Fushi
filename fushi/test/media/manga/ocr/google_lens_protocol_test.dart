@@ -272,7 +272,6 @@ void main() {
         secondLineText: 'LONG',
         secondLineCenterY: 0.7,
       ),
-      language: 'en',
       imageWidth: 1000,
       imageHeight: 1000,
     );
@@ -285,6 +284,87 @@ void main() {
       ],
       <String>['B', 'E', 'E', 'N', 'S', 'O', 'L', 'O', 'N', 'G'],
     );
+  });
+
+  test('spaced languages join wrapped lines with a space', () {
+    final List<GoogleLensParagraph> result = GoogleLensProtocol.decodeResponse(
+      makeGoogleLensFixture(
+        firstWord: 'Привет ',
+        secondWord: 'мир',
+        centerY: 0.3,
+        secondLineText: 'снова',
+        secondLineCenterY: 0.7,
+      ),
+      imageWidth: 1000,
+      imageHeight: 1000,
+    );
+    final GoogleLensParagraph paragraph = result.single;
+    expect(paragraph.sentence, 'Привет мир снова');
+    // 第二行的逐字区偏移要跳过补上的空格，仍落在「снова」上。
+    final GoogleLensTextRegion firstOfSecondLine = paragraph.regions
+        .firstWhere((GoogleLensTextRegion r) => r.normalizedBounds.top > 0.5);
+    expect(
+      paragraph.sentence.substring(
+        firstOfSecondLine.utf16Start,
+        firstOfSecondLine.utf16End,
+      ),
+      'с',
+    );
+    expect(paragraph.regions.last.utf16End, paragraph.sentence.length);
+  });
+
+  test('mixed Japanese and Latin: only spaces next to kana or kanji go', () {
+    final List<GoogleLensParagraph> result = GoogleLensProtocol.decodeResponse(
+      makeGoogleLensFixture(firstWord: 'Hello world ', secondWord: 'です'),
+      imageWidth: 1000,
+      imageHeight: 1000,
+    );
+    expect(result.single.sentence, 'Hello worldです');
+  });
+
+  test('a wrapped line joins a Japanese line without a space', () {
+    final List<GoogleLensParagraph> result = GoogleLensProtocol.decodeResponse(
+      makeGoogleLensFixture(
+        firstWord: 'Fushi',
+        secondWord: '',
+        centerY: 0.3,
+        secondLineText: 'で読む',
+        secondLineCenterY: 0.7,
+      ),
+      imageWidth: 1000,
+      imageHeight: 1000,
+    );
+    expect(result.single.sentence, 'Fushiで読む');
+  });
+
+  test('Greek and Korean keep their word spaces', () {
+    for (final (String first, String second) in <(String, String)>[
+      ('Καλή ', 'μέρα'),
+      ('안녕 ', '하세요'),
+    ]) {
+      final List<GoogleLensParagraph> result =
+          GoogleLensProtocol.decodeResponse(
+        makeGoogleLensFixture(firstWord: first, secondWord: second),
+        imageWidth: 1000,
+        imageHeight: 1000,
+      );
+      expect(result.single.sentence, '$first$second');
+    }
+  });
+
+  test('a line ending in a hyphen keeps the word together', () {
+    final List<GoogleLensParagraph> result = GoogleLensProtocol.decodeResponse(
+      makeGoogleLensFixture(
+        firstWord: 'guarda-',
+        secondWord: '',
+        centerY: 0.3,
+        secondLineText: 'chuva',
+        secondLineCenterY: 0.7,
+      ),
+      imageWidth: 1000,
+      imageHeight: 1000,
+    );
+    expect(result.single.sentence, 'guarda-chuva');
   });
 
   test('request carries the requested locale language on the wire', () {

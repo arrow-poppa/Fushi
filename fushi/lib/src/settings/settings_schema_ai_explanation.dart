@@ -10,13 +10,15 @@
 library;
 
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/ai/ai_prompt_renderer.dart';
 import 'package:fushi/src/ai/ai_provider_config.dart';
 import 'package:fushi/src/ai/ai_request_builder.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
-import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart'
+    show FushiSnackBar;
 
 /// 当前选中的 provider。
 AiProvider _provider(SettingsContext c) =>

@@ -415,9 +415,8 @@ class GoogleLensProtocol {
         }
         return a.geometry.rect.left.compareTo(b.geometry.rect.left);
       });
-      // 反馈 vXYKPudf7U：各行首尾相接，拉丁文行界补一个词间空格（[mangaOcrNeedsWordGap]）
-      // ——段落只有一行 `sentence`，行界一丢下游就再也认不出「SO / LONG」是两个词。
-      // 日文行界无缝，与旧行为逐字相同。
+      // Keep wrapped words separate in scripts that use spaces, while
+      // preserving hyphenated compounds and unspaced scripts at line breaks.
       final StringBuffer sentenceBuffer = StringBuffer();
       final List<GoogleLensTextRegion> regions = <GoogleLensTextRegion>[];
       int utf16Base = 0;

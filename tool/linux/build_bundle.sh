@@ -22,6 +22,25 @@ done
 cd /src
 step() { echo; echo "==> $*"; }
 
+# The GitHub release URL used by the plugin no longer serves this tarball.
+# Stage the same ONNX Runtime version from Microsoft's official NuGet package.
+step "stage ONNX Runtime 1.22.0"
+rm -rf fushi/build/linux
+ort_dir=/src/fushi/build/linux/x64/release/plugins/flutter_onnxruntime/onnxruntime/onnxruntime-linux-x64-1.22.0
+mkdir -p "$ort_dir/include" "$ort_dir/lib"
+ort_package="$(mktemp --suffix=.nupkg)"
+trap 'rm -f "$ort_package"' EXIT
+curl --fail --silent --show-error --location --retry 3 --max-time 180 \
+  'https://api.nuget.org/v3-flatcontainer/microsoft.ml.onnxruntime/1.22.0/microsoft.ml.onnxruntime.1.22.0.nupkg' \
+  --output "$ort_package"
+printf '%s  %s\n' d571e63a2329baacb713f441e65ad75284de354db6e1ac435fe4bebbb417986a "$ort_package" \
+  | sha256sum --check
+unzip -jo "$ort_package" 'build/native/include/*.h' -d "$ort_dir/include"
+unzip -jo "$ort_package" 'runtimes/linux-x64/native/*.so' -d "$ort_dir/lib"
+mv "$ort_dir/lib/libonnxruntime.so" "$ort_dir/lib/libonnxruntime.so.1.22.0"
+ln -s libonnxruntime.so.1.22.0 "$ort_dir/lib/libonnxruntime.so.1"
+ln -s libonnxruntime.so.1 "$ort_dir/lib/libonnxruntime.so"
+
 # bootstrap.sh builds the required Rust libs (compute, fsrs, web_core, rwkv,
 # music, corpus); p2p and torrent are copy-if-present for the app CMake, so they
 # are built here to make them required for a shipped bundle.
@@ -36,24 +55,6 @@ fi
 
 step "bootstrap (pub get, pub-cache patches, vendored binaries, required Rust libs)"
 bash tool/bootstrap.sh
-
-# The GitHub release URL used by the plugin no longer serves this tarball.
-# Stage the same ONNX Runtime version from Microsoft's official NuGet package.
-step "stage ONNX Runtime 1.22.0"
-rm -rf fushi/build/linux
-ort_dir=/src/fushi/build/linux/x64/release/plugins/flutter_onnxruntime/onnxruntime/onnxruntime-linux-x64-1.22.0
-ort_package="$(mktemp --suffix=.nupkg)"
-trap 'rm -f "$ort_package"' EXIT
-curl --fail --silent --show-error --location --retry 3 --max-time 180 \
-  'https://api.nuget.org/v3-flatcontainer/microsoft.ml.onnxruntime/1.22.0/microsoft.ml.onnxruntime.1.22.0.nupkg' \
-  --output "$ort_package"
-printf '%s  %s\n' d571e63a2329baacb713f441e65ad75284de354db6e1ac435fe4bebbb417986a "$ort_package" \
-  | sha256sum --check
-unzip -jo "$ort_package" 'build/native/include/*.h' -d "$ort_dir/include"
-unzip -jo "$ort_package" 'runtimes/linux-x64/native/*.so' -d "$ort_dir/lib"
-mv "$ort_dir/lib/libonnxruntime.so" "$ort_dir/lib/libonnxruntime.so.1.22.0"
-ln -s libonnxruntime.so.1.22.0 "$ort_dir/lib/libonnxruntime.so.1"
-ln -s libonnxruntime.so.1 "$ort_dir/lib/libonnxruntime.so"
 
 step "flutter build linux --release"
 (cd fushi && flutter build linux --release --no-pub)

@@ -71,6 +71,7 @@ jobs:
       - name: Check app and fork integration
         working-directory: fushi
         run: flutter analyze --no-pub --no-fatal-infos --no-fatal-warnings
+      - uses: ./.github/actions/setup-fushi-compute
       - name: Test lookup, PP-OCR and AI Explanation
         working-directory: fushi
         run: >-

@@ -7,6 +7,10 @@ on:
         description: 'Run lookup and OCR checks without packaging Linux'
         type: boolean
         default: false
+      flatpak_from_run:
+        description: 'Actions run ID of a successful Linux x64 tarball build on this branch.'
+        type: string
+        default: ''
 
 permissions:
   contents: read

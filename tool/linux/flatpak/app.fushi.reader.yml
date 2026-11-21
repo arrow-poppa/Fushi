@@ -89,8 +89,9 @@ modules:
     buildsystem: cmake-ninja
     builddir: true
     build-options:
-      # WebCore's -g debug info passes 4 GB, overflowing ld's 32-bit DWARF relocations in
-      # libWPEWebKit; drop it at link time (the compile flags, and ccache, stay the same).
+      # Keep WebCore's object files small enough for a hosted CI runner.
+      cflags: -g0
+      cxxflags: -g0
       ldflags: -Wl,--strip-debug
     config-opts:
       - -DPORT=WPE

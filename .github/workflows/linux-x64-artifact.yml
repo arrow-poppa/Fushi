@@ -13,7 +13,7 @@ permissions:
 
 jobs:
   build:
-    if: ${{ !inputs.validate_only }}
+    if: ${{ !inputs.validate_only && inputs.flatpak_from_run == '' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 150
     steps:
@@ -34,7 +34,80 @@ jobs:
           path: build/linux-dist/fushi-*-linux-x64.tar.gz
           if-no-files-found: error
 
+  flatpak:
+    if: ${{ !inputs.validate_only && inputs.flatpak_from_run != '' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 350
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Check the source Linux bundle
+        id: source
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_RUN: ${{ inputs.flatpak_from_run }}
+        run: |
+          set -euo pipefail
+          [[ "$SOURCE_RUN" =~ ^[0-9]+$ ]]
+          run=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$SOURCE_RUN")
+          sha=$(jq -er --arg branch "$GITHUB_REF_NAME" --arg repo "$GITHUB_REPOSITORY" '
+            select(.head_branch == $branch and .head_repository.full_name == $repo
+              and .path == ".github/workflows/linux-x64-artifact.yml"
+              and .conclusion == "success")
+            | .head_sha
+          ' <<< "$run")
+          echo "name=fushi-linux-x64-$sha" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/download-artifact@v7
+        with:
+          name: ${{ steps.source.outputs.name }}
+          path: build/flatpak-input
+          run-id: ${{ inputs.flatpak_from_run }}
+          github-token: ${{ github.token }}
+
+      - name: Build the Flatpak with WPE WebKit
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          bundles=(build/flatpak-input/fushi-*-linux-x64.tar.gz)
+          test "${#bundles[@]}" -eq 1
+          bash tool/linux/flatpak/build_flatpak.sh "${bundles[0]}"
+
+      - name: Verify WPE and the dictionary engine in the installed sandbox
+        run: |
+          set -euo pipefail
+          docker run --rm -i --privileged \
+            -v fushi-flatpak-state:/root/.local/share/flatpak \
+            -v "$PWD/build/linux-dist:/out:ro" \
+            fushi-flatpak-build bash -euo pipefail <<'CONTAINER'
+          flatpak install --user --noninteractive --or-update --bundle /out/fushi-*.flatpak
+          flatpak run --user --command=sh app.fushi.reader -es <<'APP'
+          test -x /app/fushi/fushi
+          test -f /app/fushi/lib/libfushidicts_ffi.so
+          for binary in /app/fushi/fushi /app/fushi/lib/libflutter_inappwebview_linux_wpe.so; do
+            report="$(ldd "$binary")"
+            printf '%s\n' "$report"
+            if printf '%s\n' "$report" | grep -q 'not found'; then exit 1; fi
+          done
+          printf '%s\n' "$report" | grep -E 'libWPEWebKit-2.0.so.1 => /app/lib/'
+          APP
+          CONTAINER
+
+      - name: Upload the Flatpak
+        uses: actions/upload-artifact@v7
+        with:
+          name: fushi-flatpak-x64-${{ github.sha }}
+          path: build/linux-dist/fushi-*.flatpak
+          compression-level: 0
+          if-no-files-found: error
+
   popup:
+    if: ${{ inputs.flatpak_from_run == '' }}
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v6
@@ -50,6 +123,7 @@ jobs:
           node --test popup_ai_explanation.test.mjs
 
   lookup-and-ocr:
+    if: ${{ inputs.flatpak_from_run == '' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     steps:

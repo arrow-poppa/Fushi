@@ -163,38 +163,51 @@ jobs:
             echo "SIGNING_MODE=throwaway" >> "$GITHUB_ENV"
           fi
 
-      # fushi_web_core 是硬依赖：build.gradle 的 requireWebCoreSo 在缺
-      # native/fushi_web_core/prebuilt/android/arm64-v8a/libfushi_web_core.so 时拒绝出包。
-      # 与 release.yml 同一编法（cargo-ndk，Rust / cargo-ndk 钉版从 native-store-names 读），
-      # 这里只编 arm64-v8a；不加 rust-cache，理由同上面的 Gradle 缓存（配额）。
+      # Rust 原生内核（Android arm64-v8a）。与 release.yml 同一编法（cargo-ndk，Rust /
+      # cargo-ndk 钉版从 native-store-names 读）：
+      # * 硬依赖——build.gradle 缺库即拒绝出包：fushi_web_core（requireWebCoreSo）、
+      #   fushi_compute / fushi_rwkv / fushi_music / fushi_corpus（check*Native）。
+      # * copy-if-present——缺了能出包但对应能力判不可用：fushi_fsrs（SRS 原生排程内核）、
+      #   fushi_p2p（互联 P2P 隧道）。一并编，产物与正式包能力一致。
+      # libtorrent（C++ / vcpkg）不编：缺库时 app 回退外接 qBittorrent，冷编代价过大。
+      # 不加 rust-cache，理由同上面的 Gradle 缓存（配额）。
       - name: Resolve native toolchain pins (Android)
         id: native_store
         uses: ./.github/actions/native-store-names
         with:
           platform: android
 
-      - name: Set up Rust (fushi_web_core, arm64)
+      - name: Set up Rust (Android arm64)
         uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{ steps.native_store.outputs.p2p_rust }}
           targets: aarch64-linux-android
 
-      - name: Install cargo-ndk (fushi_web_core)
+      - name: Install cargo-ndk
         uses: taiki-e/install-action@v2
         with:
           tool: cargo-ndk@${{ steps.native_store.outputs.cargo_ndk }}
 
-      - name: Build fushi_web_core Android .so (arm64-v8a)
-        timeout-minutes: 45
+      - name: Build Rust native libraries (arm64-v8a)
+        timeout-minutes: 90
         shell: bash
         run: |
           set -euo pipefail
-          bash native/fushi_web_core/build_android_so.sh "$ANDROID_NDK_LATEST_HOME" arm64-v8a
-          so=native/fushi_web_core/prebuilt/android/arm64-v8a/libfushi_web_core.so
-          test -f "$so" || { echo "::error::missing artifact $so"; exit 1; }
           nm_bin="$ANDROID_NDK_LATEST_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-nm"
           if [ ! -x "$nm_bin" ]; then nm_bin=nm; fi
-          bash native/fushi_web_core/verify_abi.sh "$so" "$nm_bin"
+          for crate in fushi_web_core fushi_compute fushi_rwkv fushi_music fushi_corpus fushi_fsrs fushi_p2p; do
+            echo "::group::$crate"
+            bash "native/$crate/build_android_so.sh" "$ANDROID_NDK_LATEST_HOME" arm64-v8a
+            so="native/$crate/prebuilt/android/arm64-v8a/lib$crate.so"
+            test -f "$so" || { echo "::error::missing artifact $so"; exit 1; }
+            machine="$(readelf -h "$so" | sed -n 's/^[[:space:]]*Machine:[[:space:]]*//p')"
+            case "$machine" in
+              *AArch64*) : ;;
+              *) echo "::error title=wrong target arch::$crate 期望 AArch64，实际 $machine"; exit 1 ;;
+            esac
+            bash "native/$crate/verify_abi.sh" "$so" "$nm_bin"
+            echo "::endgroup::"
+          done
 
       - name: Build arm64-v8a release APK
         working-directory: fushi

@@ -163,6 +163,39 @@ jobs:
             echo "SIGNING_MODE=throwaway" >> "$GITHUB_ENV"
           fi
 
+      # fushi_web_core 是硬依赖：build.gradle 的 requireWebCoreSo 在缺
+      # native/fushi_web_core/prebuilt/android/arm64-v8a/libfushi_web_core.so 时拒绝出包。
+      # 与 release.yml 同一编法（cargo-ndk，Rust / cargo-ndk 钉版从 native-store-names 读），
+      # 这里只编 arm64-v8a；不加 rust-cache，理由同上面的 Gradle 缓存（配额）。
+      - name: Resolve native toolchain pins (Android)
+        id: native_store
+        uses: ./.github/actions/native-store-names
+        with:
+          platform: android
+
+      - name: Set up Rust (fushi_web_core, arm64)
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ steps.native_store.outputs.p2p_rust }}
+          targets: aarch64-linux-android
+
+      - name: Install cargo-ndk (fushi_web_core)
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-ndk@${{ steps.native_store.outputs.cargo_ndk }}
+
+      - name: Build fushi_web_core Android .so (arm64-v8a)
+        timeout-minutes: 45
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash native/fushi_web_core/build_android_so.sh "$ANDROID_NDK_LATEST_HOME" arm64-v8a
+          so=native/fushi_web_core/prebuilt/android/arm64-v8a/libfushi_web_core.so
+          test -f "$so" || { echo "::error::missing artifact $so"; exit 1; }
+          nm_bin="$ANDROID_NDK_LATEST_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-nm"
+          if [ ! -x "$nm_bin" ]; then nm_bin=nm; fi
+          bash native/fushi_web_core/verify_abi.sh "$so" "$nm_bin"
+
       - name: Build arm64-v8a release APK
         working-directory: fushi
         run: >-

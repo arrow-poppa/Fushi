@@ -48,6 +48,13 @@ jobs:
           # 的 fetch-depth: 0 同源理由，见 TODO-414）。
           fetch-depth: 0
 
+      # 预编译第三方二进制（FFmpegKit AAR、libmpv full-*.jar）不入库（tool/vendored_binaries.json），
+      # 与 release.yml 的 Android job 同一 action、同一组。
+      - name: Fetch vendored binaries
+        uses: ./.github/actions/fetch-vendored-binaries
+        with:
+          groups: android
+
       - name: Resolve shared release sequence
         shell: bash
         run: |

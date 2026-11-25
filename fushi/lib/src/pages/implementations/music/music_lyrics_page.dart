@@ -36,6 +36,10 @@ import 'package:fushi_music/fushi_music.dart';
 import 'package:fushi/src/anki/mined_card_undo.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
 import 'package:fushi/src/media/audiobook/floating_lyric_channel.dart';
+import 'package:fushi/src/lookup/latin_word_lookup.dart'
+    show LookupMatchedUnits;
+import 'package:fushi/src/media/video/subtitle_transcript_text.dart'
+    show subtitleTranscriptLookupSpan;
 import 'package:fushi/src/media/favorites/favorite_lookup_context.dart';
 import 'package:fushi/src/media/music/lyrics/karaoke/karaoke_lyrics_view.dart';
 import 'package:fushi/src/media/music/lyrics/karaoke/karaoke_stage_plan.dart';
@@ -164,13 +168,41 @@ String? musicCdgCompanionOf(MusicPlayItem item) {
   return pickCdgCompanion(item.path, siblings);
 }
 
-/// 纯函数：查词命中 → 查词起点文本（从命中字符到行尾，查词引擎自己取最长匹配）。
-String musicLyricsLookupTerm(KaraokeLookupHit hit) {
-  final int at = hit.charIndexInLine.clamp(0, hit.lineText.length);
-  return hit.lineText.substring(at);
+/// 纯函数：查词命中 → 查词串与它在行内的 **UTF-16** 起点。
+///
+/// 取词规则与视频字幕点词同一份（[subtitleTranscriptLookupSpan]）：拉丁单词退到
+/// 词首（连字符复合词按 `latinLookupStartAt` 探测），跳过前导空白 / 标点，其余脚本
+/// 起点就是被点字；终点恒为行尾，最长匹配交给查词引擎。
+///
+/// 卡拉 OK 命中测试回报的是音节里**被点的那个字**，旧实现直接从它截到行尾，点
+/// `bikbik` 的后半段就只查到 `bik`。越界或整段只有空白 / 标点时返回
+/// `(start: -1, term: '')`。
+({int start, String term}) musicLyricsLookupSpan(
+  KaraokeLookupHit hit, {
+  LookupMatchedUnits? matchedUnits,
+}) {
+  final String text = hit.lineText;
+  final int unit = hit.charIndexInLine;
+  if (unit < 0 || unit >= text.length) return (start: -1, term: '');
+  // UTF-16 下标 → 字位下标：命中字所在的那个字位簇。
+  int graphemeIndex = 0;
+  int consumed = 0;
+  for (final String grapheme in text.characters) {
+    if (unit < consumed + grapheme.length) break;
+    consumed += grapheme.length;
+    graphemeIndex++;
+  }
+  final ({int start, String term}) span = subtitleTranscriptLookupSpan(
+    text,
+    graphemeIndex,
+    matchedUnits: matchedUnits,
+  );
+  if (span.start < 0 || span.term.isEmpty) return (start: -1, term: '');
+  // 查询串恒为行的后缀，起点的 UTF-16 偏移由长度差得出。
+  return (start: text.length - span.term.length, term: span.term);
 }
 
-/// 纯函数：[musicLyricsLookupTerm] 查词串上的源注音区间（坐标系 = 查词串）。
+/// 纯函数：[musicLyricsLookupSpan] 查词串上的源注音区间（坐标系 = 查词串）。
 ///
 /// [syllables] 是命中行的音节（行文本 = 音节文本拼接），只取起点不早于
 /// [charIndexInLine] 的音节：被查词起点截断的注音基字丢弃。只用解析器读出的
@@ -458,6 +490,9 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
   }
 
   Future<void> _onLookup(KaraokeLookupHit hit) async {
+    final ({int start, String term}) span = musicLyricsLookupSpan(hit);
+    // 点在只有空白 / 标点的位置：没有可查的词，不暂停、不弹空浮层。
+    if (span.term.isEmpty) return;
     _lookupLine = hit.lineIndex;
     appModel.musicStudy.noteLearningAction();
     if (musicLyricsShouldPauseForLookup(
@@ -475,9 +510,9 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
         ? timeline.lines[hit.lineIndex]
         : null;
     await searchDictionaryResult(
-      searchTerm: musicLyricsLookupTerm(hit),
+      searchTerm: span.term,
       rubySpans: line != null && line.text == hit.lineText
-          ? musicLyricsRubySpans(line.syllables, hit.charIndexInLine)
+          ? musicLyricsRubySpans(line.syllables, span.start)
           : const <FushiRubySpan>[],
       selectionRect: hit.globalRect,
     );

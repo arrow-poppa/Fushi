@@ -155,6 +155,8 @@ jobs:
         run: >-
           flutter test --no-pub
           test/lookup/hyphenated_compound_lookup_test.dart
+          test/media/music/lyrics/music_lyrics_page_logic_test.dart
+          test/utils/components/content_language_engine_coverage_test.dart
           test/lookup/ocr_block_sentence_test.dart
           test/ocr/ppocr_script_traits_test.dart
           test/floating_ball/screen_ocr_lens_test.dart

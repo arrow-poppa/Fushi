@@ -24,26 +24,82 @@ void main() {
     );
   });
 
-  test('查词起点：从命中字符到行尾，越界夹住', () {
-    const KaraokeLookupHit hit = KaraokeLookupHit(
-      lineIndex: 0,
-      syllableIndex: 2,
-      charIndexInLine: 2,
-      lineText: '夜に駆ける',
-      globalRect: Rect.zero,
-    );
-    expect(musicLyricsLookupTerm(hit), '駆ける');
+  KaraokeLookupHit hitAt(String lineText, int charIndexInLine) =>
+      KaraokeLookupHit(
+        lineIndex: 0,
+        syllableIndex: 0,
+        charIndexInLine: charIndexInLine,
+        lineText: lineText,
+        globalRect: Rect.zero,
+      );
+
+  test('查词起点：日文从命中字符到行尾', () {
+    expect(musicLyricsLookupSpan(hitAt('夜に駆ける', 2)), (
+      start: 2,
+      term: '駆ける',
+    ));
+  });
+
+  test('查词起点：越界或只点到空白 / 标点时没有查词串', () {
+    expect(musicLyricsLookupSpan(hitAt('ab', 99)), (start: -1, term: ''));
+    expect(musicLyricsLookupSpan(hitAt('ab', -1)), (start: -1, term: ''));
+    expect(musicLyricsLookupSpan(hitAt('ab！', 2)), (start: -1, term: ''));
+  });
+
+  test('查词起点：拉丁单词点中间任意字母都退到词首（不查成 bik）', () {
+    for (int i = 0; i < 'bikbik'.length; i++) {
+      expect(
+        musicLyricsLookupSpan(hitAt('bikbik dance', i)),
+        (start: 0, term: 'bikbik dance'),
+        reason: 'tapped index $i',
+      );
+    }
+    expect(musicLyricsLookupSpan(hitAt('say bikbik', 7)), (
+      start: 4,
+      term: 'bikbik',
+    ));
+    // 点在词间空格上：跳过前导空白，从下一个词起查。
+    expect(musicLyricsLookupSpan(hitAt('say bikbik', 3)), (
+      start: 4,
+      term: 'bikbik',
+    ));
+  });
+
+  test('查词起点：重音字母与组合附加符都算拉丁单词', () {
+    expect(musicLyricsLookupSpan(hitAt('o coração', 6)), (
+      start: 2,
+      term: 'coração',
+    ));
+    // NFD：e + U+0301，点在附加符上仍属于这个词。
+    const String nfd = 'cafe\u0301 noir';
+    expect(musicLyricsLookupSpan(hitAt(nfd, 4)), (start: 0, term: nfd));
+  });
+
+  test('查词起点：UTF-16 下标按代理对映射到字位，起点回报 UTF-16 偏移', () {
+    // 😀 占两个 UTF-16 码元：点后面的拉丁词时起点仍是正确的码元偏移。
+    expect(musicLyricsLookupSpan(hitAt('😀 hello', 5)), (
+      start: 3,
+      term: 'hello',
+    ));
+  });
+
+  test('查词起点：连字符复合词词典里有整词时退到复合词开头', () {
+    int fullCompound(String text) =>
+        text.startsWith('gaming-mode') ? 'gaming-mode'.length : 0;
     expect(
-      musicLyricsLookupTerm(
-        const KaraokeLookupHit(
-          lineIndex: 0,
-          syllableIndex: 0,
-          charIndexInLine: 99,
-          lineText: 'ab',
-          globalRect: Rect.zero,
-        ),
+      musicLyricsLookupSpan(
+        hitAt('gaming-mode on', 9),
+        matchedUnits: fullCompound,
       ),
-      '',
+      (start: 0, term: 'gaming-mode on'),
+    );
+    // 词典没收复合词：停在被点那个词的词首，不查成前一段。
+    expect(
+      musicLyricsLookupSpan(
+        hitAt('gaming-mode on', 9),
+        matchedUnits: (String _) => 0,
+      ),
+      (start: 7, term: 'mode on'),
     );
   });
 

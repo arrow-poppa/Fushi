@@ -29,6 +29,26 @@ const List<({String? tag, String label})> kContentLanguageOptions =
       (tag: 'zh-Hant', label: '繁體中文 (zh-Hant)'),
       (tag: 'ko', label: '한국어 (ko)'),
       (tag: 'en', label: 'English (en)'),
+      // 下面是查词引擎带去屈折规则表的其余语言（`assets/transforms/manifest.json`），
+      // 按标签字母序；引擎新增语言时这里跟着加。
+      (tag: 'ar', label: 'العربية (ar)'),
+      (tag: 'de', label: 'Deutsch (de)'),
+      (tag: 'el', label: 'Ελληνικά (el)'),
+      (tag: 'eo', label: 'Esperanto (eo)'),
+      (tag: 'es', label: 'Español (es)'),
+      (tag: 'eu', label: 'Euskara (eu)'),
+      (tag: 'fr', label: 'Français (fr)'),
+      (tag: 'ga', label: 'Gaeilge (ga)'),
+      (tag: 'grc', label: 'Ἀρχαία Ἑλληνικά (grc)'),
+      (tag: 'it', label: 'Italiano (it)'),
+      (tag: 'ka', label: 'ქართული (ka)'),
+      (tag: 'la', label: 'Latina (la)'),
+      (tag: 'pt', label: 'Português (pt)'),
+      (tag: 'ru', label: 'Русский (ru)'),
+      (tag: 'sga', label: 'Goídelc (sga)'),
+      (tag: 'sq', label: 'Shqip (sq)'),
+      (tag: 'tl', label: 'Tagalog (tl)'),
+      (tag: 'yi', label: 'ייִדיש (yi)'),
     ];
 
 /// BCP-47 标签 -> 显示名。不认识的标签原样返回（用户可能手动写了别的语言）。

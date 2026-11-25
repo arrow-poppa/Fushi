@@ -115,6 +115,10 @@ jobs:
           chmod +x ci/apply-patches.sh
           bash ci/apply-patches.sh
 
+      # fushi/lib/i18n/strings.g.dart 不入库（3.3.0 起）：编 app 前生成，与 release.yml 同一 action。
+      - name: Generate i18n
+        uses: ./.github/actions/gen-i18n
+
       # build.gradle 拒绝 debug 签名的 release APK，所以必须有一个 keystore。
       #
       # 优先用 fork 自己配的固定 keystore（`KEYSTORE_BASE64` 等四个 secret，名字沿用
